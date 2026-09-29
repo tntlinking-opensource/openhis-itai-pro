@@ -42,6 +42,7 @@ import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConsta
 import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.CashierSettlementStatus;
 import com.openhis.health.domain.share.enums.CashierSettlementType;
+import com.openhis.health.application.shared.chargediscount.ChargeDiscountApplySupport;
 import com.openhis.health.application.shared.financial.ContractExpenseNatureAssembler;
 import com.openhis.health.application.shared.financial.DailySettlementCashierScope;
 import com.openhis.health.application.shared.financial.DailySettlementCashierScopeResolver;
@@ -55,7 +56,7 @@ import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.domain.financial.cashiersettlement.entity.CashierSettlement;
 import com.openhis.health.domain.financial.cashiersettlement.queries.model.CashierSettlementHistoryItemQueryModel;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
-import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
+import com.openhis.health.application.shared.practitioner.PractitionerRoleScopeLoader;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.session.CurrentOperatorResolver;
@@ -81,7 +82,7 @@ import java.util.Set;
  *
  * <p>职责边界：</p>
  * <ul>
- *   <li>Gate：登录、日期窗、经办人代交账权限。</li>
+ *   <li>Gate：登录、日期窗、款员岗（提交与撤回均须 {@code ROLE_CASHIER}）。</li>
  *   <li>Pre：未交账候选集、医保关联与子明细渠道 enrichment。</li>
  *   <li>Cmd：提交交账并挂载 payment。</li>
  *   <li>Asm：经 {@link OutpatientDailySettlementMapper} 装配响应。</li>
@@ -119,11 +120,13 @@ public class OutpatientDailySettlementAppService {
     /** 费用性质（fin_contract）读侧。 */
     private final ContractQueryService contractQueryService;
 
-    /** 岗位人员预解析（财务代交账权限与下拉）。 */
+    /** 岗位人员预解析（款员提交/撤回与下拉）。 */
     private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
 
     /** Request/Response 映射。 */
     private final OutpatientDailySettlementMapper outpatientDailySettlementMapper;
+    /** 收费折扣能力门控（日结列显隐；BR-OP-DCL-031）。 */
+    private final ChargeDiscountApplySupport chargeDiscountApplySupport;
 
     /** 费用性质（合同）展示判定。 */
     private final ContractExpenseNatureAssembler contractExpenseNatureAssembler;
@@ -165,11 +168,15 @@ public class OutpatientDailySettlementAppService {
         List<OptionDto> cashierOptions = this.buildCashierOptions();
         LocalDate today = LocalDate.now();
         // Asm：只读初始化数据装配（收款人默认勾选由前端按 preview 窗内有流水人驱动）
-        return this.outpatientDailySettlementMapper.toLoadOutpatientDailySettlementPageInitResponse(
-            today,
-            expensePropertyOptions,
-            cashierOptions,
-            currentCashierId);
+        LoadOutpatientDailySettlementPageInitResponse response =
+            this.outpatientDailySettlementMapper.toLoadOutpatientDailySettlementPageInitResponse(
+                today,
+                expensePropertyOptions,
+                cashierOptions,
+                currentCashierId);
+        // Asm：折扣列显隐门控；未配置时 false，前端不展示折扣合计
+        response.setDiscountFeatureEnabled(chargeDiscountApplySupport.isDiscountFeatureEnabled());
+        return response;
     }
 
     /**
@@ -271,6 +278,12 @@ public class OutpatientDailySettlementAppService {
         Long submitterId = this.currentPractitionerResolver.requirePractitionerId(
             OutpatientDailySettlementConstants.EX_OP_DCL_102,
             "当前账号未绑定医务人员，无法提交交账");
+        // Gate：提交人须为款员岗，财务/管理员不能代交
+        if (!this.holdsCashierRole(submitterId)) {
+            throw new BusinessException(
+                OutpatientDailySettlementConstants.EX_OP_DCL_102,
+                "仅款员可提交交账");
+        }
         this.assertDateRangeValid(request.getDateFrom(), request.getDateTo());
         this.assertOrgIdRequired(request.getOrgId(), OutpatientDailySettlementConstants.EX_OP_DCL_102);
         PreviewOutpatientDailySettlementRequest previewRequest = this.toPreviewRequestFromSubmit(request);
@@ -546,7 +559,7 @@ public class OutpatientDailySettlementAppService {
     }
 
     /**
-     * 撤回门诊待审交账（仅 SUBMITTED；提交人或会计）。
+     * 撤回门诊待审交账（仅 SUBMITTED；须为款员岗）。
      *
      * @param request 交账头主键
      * @return 交账标识与单号
@@ -570,7 +583,7 @@ public class OutpatientDailySettlementAppService {
                 OutpatientDailySettlementConstants.EX_OP_DCL_103,
                 "交账记录不存在");
         }
-        // Gate：仅待审可撤回；须为提交人或会计
+        // Gate：仅待审可撤回；须为款员岗
         this.assertWithdrawPermission(
             settlement,
             OutpatientDailySettlementConstants.EX_OP_DCL_107);
@@ -586,24 +599,20 @@ public class OutpatientDailySettlementAppService {
     }
 
     /**
-     * 当前操作员是否具备财务代交账权限（会计或管理员岗位）。
+     * 当前医务人员是否挂了激活的款员岗（{@code ROLE_CASHIER} / {@code adm_pr_assign}）。
      *
-     * @param currentCashierId 当前经办人 Practitioner 主键
-     * @return 可代指定收费员交账时为 true
+     * @param practitionerId 当前经办人 Practitioner 主键
+     * @return 是款员时为 true
      */
-    private boolean isFinancialDelegateEnabled(Long currentCashierId) {
-        Set<Long> accountantIds = this.practitionerRoleScopeLoader.resolvePractitionerIdsForActivePlatformRole(
-            WhalePlatformRoleCodeConstants.ROLE_ACCOUNTANT,
-            null);
-        // 会计岗位视为可代指定收费员交账
-        if (accountantIds.contains(currentCashierId)) {
-            return true;
+    private boolean holdsCashierRole(Long practitionerId) {
+        // 未绑定医务人员没有岗位，不能当款员交账
+        if (practitionerId == null) {
+            return false;
         }
-        Set<Long> adminIds = this.practitionerRoleScopeLoader.resolvePractitionerIdsForActivePlatformRole(
-            WhalePlatformRoleCodeConstants.ROLE_ADMIN,
+        Set<Long> cashierIds = this.practitionerRoleScopeLoader.resolvePractitionerIdsForActivePlatformRole(
+            WhalePlatformRoleCodeConstants.ROLE_CASHIER,
             null);
-        // 管理员岗位兜底具备代交账权限
-        return adminIds.contains(currentCashierId);
+        return cashierIds.contains(practitionerId);
     }
 
     /**
@@ -636,17 +645,17 @@ public class OutpatientDailySettlementAppService {
     }
 
     /**
-     * 构造收款人下拉岗池：仅财务岗（{@code ROLE_ACCOUNTANT} / {@code adm_pr_assign}），供多选软筛。
+     * 构造收款人下拉岗池：仅款员岗（{@code ROLE_CASHIER} / {@code adm_pr_assign}），供多选软筛。
      *
-     * <p>不含管理员岗：admin 仅当挂了财务岗，或查询后作为窗内实际收费人合并进下拉。
+     * <p>不含管理员岗、不含财务岗：admin 仅当挂了款员岗，或查询后作为窗内实际收费人合并进下拉。
      * 空选表示不按人过滤。岗池直出 Option，不做 identity 用户态二次过滤。</p>
      *
      * @return 收款人 OptionDto 列表；永不为 null
      */
     private List<OptionDto> buildCashierOptions() {
-        // Pre：仅财务岗在岗人员（adm_pr_assign + ROLE_ACCOUNTANT；不含 ROLE_ADMIN 单独入池）
+        // Pre：仅款员岗在岗人员（adm_pr_assign + ROLE_CASHIER；不含 ROLE_ADMIN / ROLE_ACCOUNTANT 单独入池）
         Page<Practitioner> page = this.practitionerRoleScopeLoader.pageActivePractitionersForPlatformRole(
-            WhalePlatformRoleCodeConstants.ROLE_ACCOUNTANT,
+            WhalePlatformRoleCodeConstants.ROLE_CASHIER,
             null,
             null,
             PageRequest.of(0, OutpatientDailySettlementConstants.CASHIER_OPTION_PAGE_SIZE),
@@ -821,27 +830,26 @@ public class OutpatientDailySettlementAppService {
     }
 
     /**
-     * 撤回权限 Gate：提交人或会计；且头表须为 SUBMITTED。
+     * 撤回权限 Gate：须为款员岗，且头表须为 SUBMITTED。
      *
      * @param settlement 交账头
      * @param errorCode  权限不足异常码
      */
     private void assertWithdrawPermission(CashierSettlement settlement, String errorCode) {
+        // 无头不能撤回
         if (settlement == null) {
             throw new BusinessException(errorCode, "交账记录不存在");
         }
+        // 已审或已撤回不可再撤，只允许待审
         if (!CashierSettlementStatus.isSubmitted(settlement.getStatusEnum())) {
             throw new BusinessException(errorCode, "仅待审交账可撤回");
         }
         Long currentPractitionerId = this.currentPractitionerResolver.findPractitionerIdOrNull();
-        Long submitterId = settlement.getSubmitterId();
-        if (currentPractitionerId != null && currentPractitionerId.equals(submitterId)) {
+        // 撤回只认款员岗，不认提交人、财务或管理员
+        if (this.holdsCashierRole(currentPractitionerId)) {
             return;
         }
-        if (currentPractitionerId != null && this.isFinancialDelegateEnabled(currentPractitionerId)) {
-            return;
-        }
-        throw new BusinessException(errorCode, "仅提交人或会计可撤回该交账");
+        throw new BusinessException(errorCode, "仅款员可撤回该交账");
     }
 
     /**

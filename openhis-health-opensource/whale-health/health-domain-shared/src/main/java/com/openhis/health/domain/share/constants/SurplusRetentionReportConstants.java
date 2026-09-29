@@ -35,6 +35,18 @@ public interface SurplusRetentionReportConstants {
     /** 是否中选：否。 */
     String NO_TEXT = "否";
 
+    /**
+     * 参保类型展示：自费（合同分类 SELF_CHARGE / ChargeTypeCategory.SELF_PAY）；
+     * 自费行的参保地区同写此文案。
+     */
+    String INSURED_CATEGORY_SELF_PAY = "自费";
+
+    /** 参保类型展示：省医保。 */
+    String INSURED_CATEGORY_PROVINCIAL = "省医保";
+
+    /** 参保类型展示：市医保。 */
+    String INSURED_CATEGORY_MUNICIPAL = "市医保";
+
     /** 页面初始化失败（IF-RPT-SRB-01）。 */
     String EX_RPT_SRB_101 = "EX-RPT-SRB-101";
 

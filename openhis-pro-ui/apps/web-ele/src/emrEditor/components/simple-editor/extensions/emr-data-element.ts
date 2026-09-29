@@ -7,6 +7,7 @@ import { isTextLikeEmrDataElementWidget } from '../data-element-types';
 import { isWholeFillableNodeDelete, resolveDataElementWidget } from '../emr-data-element-text';
 import { buildFillableNodeInsertJson } from '../emr-fillable-json';
 import { fillableNodeExtraClass } from '../node-views/fillable-field-view.shared';
+import { keepVueNodeViewIfEq } from '../node-views/keep-vue-node-view-if-eq';
 import { fillableCaretAfterInsertCommand } from '../../../fillable-field/runtime/caret-policy';
 import EmrDataElementView from '../node-views/EmrDataElementView.vue';
 
@@ -215,7 +216,7 @@ export const EmrDataElement = Node.create({
   },
 
   addNodeView() {
-    return VueNodeViewRenderer(EmrDataElementView);
+    return VueNodeViewRenderer(EmrDataElementView, { update: keepVueNodeViewIfEq });
   },
 
   addProseMirrorPlugins() {

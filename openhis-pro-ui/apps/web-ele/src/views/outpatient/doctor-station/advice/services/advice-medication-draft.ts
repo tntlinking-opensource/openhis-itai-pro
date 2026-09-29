@@ -373,6 +373,8 @@ function buildServiceDraftLine(
     executionCount,
     ...(encounterDiagnosisIds ? { encounterDiagnosisIds } : {}),
     ...(contractId ? { contractId } : {}),
+    // 检验/检查加急：勾选→EM，未勾→空串清空
+    priorityEnum: String(item.priorityEnum ?? '').trim() || '',
   };
   return {
     lineOp: op,

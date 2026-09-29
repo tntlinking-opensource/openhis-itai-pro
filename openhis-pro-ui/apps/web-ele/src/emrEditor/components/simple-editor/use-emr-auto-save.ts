@@ -1,8 +1,6 @@
 import type { JSONContent } from '@tiptap/core';
 
-import { onBeforeUnmount, onMounted, ref } from 'vue';
-
-import { isForceLogoutSession } from '../../use-emr-unsaved-guard';
+import { onBeforeUnmount, ref } from 'vue';
 
 export type EmrSaveStatus = 'dirty' | 'saved' | 'saving';
 
@@ -162,20 +160,8 @@ export function useEmrAutoSave(opts: UseEmrAutoSaveOptions) {
     }
   }
 
-  function beforeUnloadHandler(e: BeforeUnloadEvent) {
-    if (isForceLogoutSession()) return;
-    if (status.value === 'dirty') {
-      e.preventDefault();
-    }
-  }
-
-  onMounted(() => {
-    window.addEventListener('beforeunload', beforeUnloadHandler);
-  });
-
   onBeforeUnmount(() => {
     clearTimer();
-    window.removeEventListener('beforeunload', beforeUnloadHandler);
     const content = opts.getContent();
     if (content && status.value === 'dirty' && opts.docId) {
       saveDraft(opts.docId, content).catch(() => {});

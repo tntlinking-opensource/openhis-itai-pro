@@ -15,6 +15,8 @@ import {
   pageProcedureCatalogApi,
   updateProcedureCatalogApi,
 } from '#/api';
+import { httpSearchSurchargeActivityDefinition } from '#/api/inpatient/doctor-station/inpatient-doctor-station-surgery-anesth.http';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import SelectTable from '#/components/select-table.vue';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
@@ -47,6 +49,8 @@ const currentSource = ref<string>('');
 const clinicSelectedLabel = ref('');
 /** 医保选码展示名（clinical_proc_v3 侧） */
 const ybSelectedLabel = ref('');
+/** 挂靠诊疗项目展示名 */
+const activitySelectedLabel = ref('');
 
 const isEditMode = computed(() => !!props.formData?.id);
 const isClinicalProcV3 = computed(() => currentSource.value === SOURCE_CLINICAL_PROC_V3);
@@ -131,6 +135,41 @@ function clearYbNo() {
   ybSelectedLabel.value = '';
 }
 
+/** 国临目录挂靠计费诊疗项目，供医生站术式开立 */
+async function remoteSearchActivity(params: Record<string, unknown>) {
+  const res = await httpSearchSurchargeActivityDefinition({
+    keyword: String(params.keyword ?? '').trim() || undefined,
+    sideCode: 'SURGERY',
+    pageNo: Number(params.pageNo ?? 1) || 1,
+    pageSize: Number(params.pageSize ?? 20) || 20,
+  });
+  const content = (res.items ?? []).map((item) => ({
+    ...item,
+    value: preserveApiIdForRequest(item.activityDefinitionId) ?? '',
+    label: item.name ?? '',
+  }));
+  return { content, totalCount: res.totalCount ?? content.length };
+}
+
+function onActivityPicked(id: string | string[]) {
+  const v = Array.isArray(id) ? (id[0] ?? '') : id;
+  formApi.setFieldValue('activityDefinitionId', v || undefined);
+}
+
+function onActivityBeforeClose(item: Record<string, unknown>) {
+  activitySelectedLabel.value = String(item.name ?? item.label ?? '');
+  formApi.setFieldValue(
+    'activityDefinitionId',
+    preserveApiIdForRequest(item.activityDefinitionId ?? item.value) || undefined,
+  );
+  return true;
+}
+
+function clearActivity() {
+  formApi.setFieldValue('activityDefinitionId', undefined);
+  activitySelectedLabel.value = '';
+}
+
 async function handleSubmit() {
   const { valid } = await formApi.validate();
   if (!valid) {
@@ -147,6 +186,8 @@ async function handleSubmit() {
         submitData[key] = value;
       }
     });
+    submitData.activityDefinitionId =
+      preserveApiIdForRequest(submitData.activityDefinitionId) || undefined;
     if (submitData.sourceEnum === SOURCE_CLINICAL_PROC_V3) {
       submitData.clinicCode = String(submitData.procedureCode ?? '').trim() || undefined;
       const yb = String(submitData.ybNo ?? '').trim();
@@ -183,6 +224,7 @@ async function handleSubmit() {
 async function loadFormData() {
   clinicSelectedLabel.value = '';
   ybSelectedLabel.value = '';
+  activitySelectedLabel.value = '';
   const id = props.formData?.id;
   if (id) {
     modalApi.setState({ loading: true });
@@ -195,6 +237,9 @@ async function loadFormData() {
         formApi.setValues(normalizeDetailForForm(data as Record<string, unknown>));
         clinicSelectedLabel.value = String(data.clinicCode ?? '');
         ybSelectedLabel.value = String(data.ybNo ?? '');
+        activitySelectedLabel.value = data.activityDefinitionId
+          ? String(data.activityDefinitionId)
+          : '';
         if (data.sourceEnum === SOURCE_GENERAL_OP && data.clinicCode) {
           await resolveLabel(SOURCE_CLINICAL_PROC_V3, String(data.clinicCode), (n) => {
             clinicSelectedLabel.value = n;
@@ -383,6 +428,16 @@ const [Form, formApi] = useVbenForm(
         componentProps: { placeholder: '请输入手术类别', clearable: true },
       },
       ...crossCodeSchema.value,
+      ...(isClinicalProcV3.value
+        ? [
+            {
+              component: 'Input' as const,
+              fieldName: 'activityDefinitionId',
+              label: '挂靠项目',
+              formItemClass: 'col-span-2',
+            },
+          ]
+        : []),
       {
         component: 'Select',
         fieldName: 'statusEnum',
@@ -456,6 +511,26 @@ watch(
             @update:model-value="onYbNoPicked"
           />
           <ElButton link type="danger" @click="clearYbNo">清除</ElButton>
+        </div>
+      </template>
+      <template #activityDefinitionId="slotProps">
+        <div v-if="isClinicalProcV3" class="procedure-form-dialog__picker">
+          <SelectTable
+            :model-value="slotProps?.value ?? undefined"
+            :selected-label="activitySelectedLabel"
+            placeholder="选择计费诊疗项目"
+            :remote-method="remoteSearchActivity"
+            :columns="[
+              { prop: 'busNo', label: '编码', width: 140 },
+              { prop: 'name', label: '名称', minWidth: 220 },
+            ]"
+            value-key="activityDefinitionId"
+            label-key="name"
+            :panel-width="640"
+            :before-close="onActivityBeforeClose"
+            @update:model-value="onActivityPicked"
+          />
+          <ElButton link type="danger" @click="clearActivity">清除</ElButton>
         </div>
       </template>
       <template #clinicCode="slotProps">

@@ -207,6 +207,27 @@ public class NurseStationOrderExecuteListReadAssembler {
         char procedureAnchorSeparator = GeneralSharedConstants.PRODUCT_DEFINITION_COMPOSITE_KEY_SEPARATOR;
         boolean pendingOnly = InpatientNurseStationConstants.EXECUTE_TAB_PENDING.equals(
             trimToEmpty(executeTab));
+        // Pre：合管 activity→device 一次批量，禁逐行 findMergeDeviceIdByActivityId
+        Set<Long> activityIdsForMerge = new LinkedHashSet<>();
+        for (ServiceRequestListModel svc : index.getSvcDetailById().values()) {
+            if (svc != null && svc.getActivityId() != null) {
+                activityIdsForMerge.add(svc.getActivityId());
+            }
+        }
+        Map<Long, Long> mergeDeviceByActivityId =
+            specimenTubeMergeBindResolveSupport.mapMergeDeviceIdByActivityIds(activityIdsForMerge);
+        // Pre：本页药嘱实体一次装载，供一盒一点/拆零下限剩余计算复用（禁逐行 findById）
+        Map<Long, MedicationRequest> medEntityById = new HashMap<>();
+        List<Long> medIdsForEntity = new ArrayList<>(index.getMedDetailById().keySet());
+        if (!medIdsForEntity.isEmpty()) {
+            for (MedicationRequest entity : medicationRequestQueryService.listByIds(medIdsForEntity)) {
+                if (entity != null && entity.getId() != null) {
+                    medEntityById.put(entity.getId(), entity);
+                }
+            }
+        }
+        // Pre：改量链请求内缓存（同 displayId 只上溯一次）
+        Map<Long, List<MedicationRequest>> doseChainByDisplayId = new HashMap<>();
         // Pre：bind 模板按 (bindType|sourceKey|orgId) 请求内缓存，禁逐行打库
         Map<String, List<AdviceOrderBindRowDto>> bindRowsCache = new HashMap<>();
         Map<Long, List<NurseStationOrderExecuteRowDto>> rowsByEncounter = new LinkedHashMap<>();
@@ -244,7 +265,12 @@ public class NurseStationOrderExecuteListReadAssembler {
                 medicationProductByKey,
                 executionRecordHistory,
                 pendingOnly,
-                bindRowsCache);
+                bindRowsCache,
+                mergeDeviceByActivityId,
+                medEntityById,
+                doseChainByDisplayId,
+                proceduresByAnchor,
+                procedureAnchorSeparator);
             if (expandOutcome == null || expandOutcome.row == null) {
                 continue;
             }
@@ -256,13 +282,7 @@ public class NurseStationOrderExecuteListReadAssembler {
             }
             // Tab 过滤：一盒一点锚点已按盒首≤deadline 选出；可选 planTimeFrom 收窄下界
             this.applyExecuteTabSlotFilter(line, executeTab, executionDeadline, planTimeFrom);
-            // 待执行 Tab：过滤后无 pending 槽则不回传该行（省 bind/传输）
-            if (pendingOnly) {
-                List<NurseStationOrderExecuteSlotDto> pendingAfterFilter = line.getPendingSlots();
-                if (pendingAfterFilter == null || pendingAfterFilter.isEmpty()) {
-                    continue;
-                }
-            }
+            // 待执行 Tab：无 pending 槽的行仍回传（与优化前一致，避免列表缺医嘱）
             List<NurseStationOrderExecuteRowDto> bucket = rowsByEncounter.get(order.getEncounterId());
             if (bucket == null) {
                 bucket = new ArrayList<>();
@@ -452,14 +472,11 @@ public class NurseStationOrderExecuteListReadAssembler {
             methodLabelByCode,
             false,
             true);
-        // 与 IF-IP-EXE-01 同源：一盒一点/拆零下限剩余按天抑制（改量后仍够用不拦出院）
+        // 与 IF-IP-EXE-01 / 医生站 enrich 同源：剩余按槽量抑制（有 schedule 只改正算量）
         if (medDetail != null
-            && (buckets.packageBatchApplied || buckets.minSplitUnitBatchApplied)) {
-            StandingOrderOralPackageInventorySupport.UnitClaimMode claimMode =
-                StandingOrderOralPackageInventorySupport.UnitClaimMode.PACKAGE;
-            if (buckets.minSplitUnitBatchApplied && !buckets.packageBatchApplied) {
-                claimMode = StandingOrderOralPackageInventorySupport.UnitClaimMode.MIN_SPLIT;
-            }
+            && (buckets.packageBatchApplied
+                || buckets.minSplitUnitBatchApplied
+                || applyStandingOrderPackageBatch)) {
             NurseStationOrderExecuteRowDto suppressCarrier = new NurseStationOrderExecuteRowDto();
             suppressCarrier.setPendingSlots(buckets.pendingSlots);
             this.applyUnitClaimInventoryToExecuteRow(
@@ -467,10 +484,15 @@ public class NurseStationOrderExecuteListReadAssembler {
                 medDetail,
                 procedureRows,
                 applyStandingOrderPackageBatch,
-                claimMode,
+                buckets.packageBatchApplied,
+                buckets.minSplitUnitBatchApplied,
                 medicationProductByKey,
                 methodLabelByCode,
-                executionDeadline);
+                executionDeadline,
+                null,
+                null,
+                null,
+                GeneralSharedConstants.PRODUCT_DEFINITION_COMPOSITE_KEY_SEPARATOR);
             buckets.pendingSlots = suppressCarrier.getPendingSlots();
         }
         return this.collectPendingPlanTimes(buckets);
@@ -902,6 +924,11 @@ public class NurseStationOrderExecuteListReadAssembler {
      * @param executionRecordHistory       true=事实行分桶；false=净态分桶
      * @param pendingOnly                  true=仅待执行 Tab，跳过终态槽 DTO
      * @param bindRowsCache                绑定模板请求内缓存；可空
+     * @param mergeDeviceByActivityId      合管 activity→device；可空
+     * @param medEntityById                药嘱实体请求内缓存；可空
+     * @param doseChainByDisplayId         改量链请求内缓存；可空
+     * @param proceduresByAnchor           就诊批量 Procedure 锚点索引；可空
+     * @param procedureAnchorSeparator     锚点分隔符
      * @return 行与是否已按包装一盒一点；不可映射时 null
      */
     private PackageBatchExpandOutcome mapOrderRow(
@@ -916,7 +943,12 @@ public class NurseStationOrderExecuteListReadAssembler {
         Map<String, ProductDefinitionDisplayDto> medicationProductByKey,
         boolean executionRecordHistory,
         boolean pendingOnly,
-        Map<String, List<AdviceOrderBindRowDto>> bindRowsCache) {
+        Map<String, List<AdviceOrderBindRowDto>> bindRowsCache,
+        Map<Long, Long> mergeDeviceByActivityId,
+        Map<Long, MedicationRequest> medEntityById,
+        Map<Long, List<MedicationRequest>> doseChainByDisplayId,
+        Map<String, List<ProcedureRecordQueryModel>> proceduresByAnchor,
+        char procedureAnchorSeparator) {
         NurseStationOrderViewDisplayCore core;
         if (ReadModelOrderTypeConstants.MED_REQUEST.equals(order.getOrderType())) {
             core = orderViewListAssembler.buildMedicationDisplayCore(order, medDetail, displayContext);
@@ -931,10 +963,19 @@ public class NurseStationOrderExecuteListReadAssembler {
         }
         NurseStationOrderExecuteRowDto line = new NurseStationOrderExecuteRowDto();
         this.applyViewCoreToExecuteRow(core, line);
-        if (svcDetail != null && svcDetail.getActivityId() != null) {
-            line.setActivityDefinitionId(svcDetail.getActivityId());
-            specimenTubeMergeBindResolveSupport.findMergeDeviceIdByActivityId(svcDetail.getActivityId())
-                .ifPresent(line::setSpecimenTubeMergeDeviceId);
+        if (svcDetail != null) {
+            // Asm：优先级供采血贴「急」（与合管 device 无关）
+            line.setPriorityEnum(svcDetail.getPriorityEnum());
+            if (svcDetail.getActivityId() != null) {
+                line.setActivityDefinitionId(svcDetail.getActivityId());
+                // Asm：合管 device 走批量预热，禁逐行 QS
+                if (mergeDeviceByActivityId != null) {
+                    Long mergeDeviceId = mergeDeviceByActivityId.get(svcDetail.getActivityId());
+                    if (mergeDeviceId != null) {
+                        line.setSpecimenTubeMergeDeviceId(mergeDeviceId);
+                    }
+                }
+            }
         }
         // 药嘱途径 code / 输液标志：供打印中心等按 code 筛选，禁止前端用 usageDisplay 文案分支
         if (medDetail != null) {
@@ -975,42 +1016,46 @@ public class NurseStationOrderExecuteListReadAssembler {
         line.setExecutedSlots(buckets.executedSlots);
         line.setSkippedSlots(buckets.skippedSlots);
         line.setCancelledSlots(buckets.cancelledSlots);
-        // 待执行 Tab 且无 pending：整行跳过（不装 bind / 单位领用）
-        if (pendingOnly
-            && (buckets.pendingSlots == null || buckets.pendingSlots.isEmpty())) {
-            return null;
-        }
-        // 单位领用剩余展示 + 按天抑制下一单位 pending（BR-IP-EXE-038：一盒一点 / 拆零下限同源）
+        // 单位领用剩余展示 + 按天抑制下一单位 pending（BR-IP-EXE-038：与医生站 enrich 同源，仅算量用 schedule）
         if (medDetail != null
-            && (buckets.packageBatchApplied || buckets.minSplitUnitBatchApplied)) {
-            StandingOrderOralPackageInventorySupport.UnitClaimMode claimMode =
-                StandingOrderOralPackageInventorySupport.UnitClaimMode.PACKAGE;
-            if (buckets.minSplitUnitBatchApplied && !buckets.packageBatchApplied) {
-                // 035 优先；仅命中拆零下限切批时走 MIN_SPLIT
-                claimMode = StandingOrderOralPackageInventorySupport.UnitClaimMode.MIN_SPLIT;
-            }
+            && (buckets.packageBatchApplied
+                || buckets.minSplitUnitBatchApplied
+                || applyStandingOrderPackageBatch)) {
             this.applyUnitClaimInventoryToExecuteRow(
                 line,
                 medDetail,
                 procedures,
                 applyStandingOrderPackageBatch,
-                claimMode,
+                buckets.packageBatchApplied,
+                buckets.minSplitUnitBatchApplied,
                 medicationProductByKey,
                 methodLabelByCode,
-                executionDeadline);
-            // 抑制后可能清空 pending
-            if (pendingOnly
-                && (line.getPendingSlots() == null || line.getPendingSlots().isEmpty())) {
-                return null;
-            }
+                executionDeadline,
+                medEntityById,
+                doseChainByDisplayId,
+                proceduresByAnchor,
+                procedureAnchorSeparator);
         }
         Long orgId = null;
         if (encounterOrgIds != null) {
             orgId = encounterOrgIds.get(order.getEncounterId());
         }
-        // bindItems 供前端勾选；写路径按勾选项派生
-        line.setBindItems(
-            this.loadBindItems(order, medDetail, svcDetail, orgId, displayContext.getUnitLabelByCode(), bindRowsCache));
+        // bindItems 供前端勾选；待执行且无 pending 时跳过模板 IO（行仍回传，避免列表缺医嘱）
+        boolean skipBindIo = pendingOnly
+            && (line.getPendingSlots() == null || line.getPendingSlots().isEmpty());
+        if (skipBindIo) {
+            line.setBindItems(new ArrayList<>());
+        } else {
+            line.setBindItems(
+                this.loadBindItems(
+                    order,
+                    medDetail,
+                    svcDetail,
+                    orgId,
+                    displayContext.getUnitLabelByCode(),
+                    bindRowsCache,
+                    mergeDeviceByActivityId));
+        }
         PackageBatchExpandOutcome outcome = new PackageBatchExpandOutcome();
         outcome.row = line;
         outcome.packageBatchApplied = buckets.packageBatchApplied;
@@ -1018,36 +1063,66 @@ public class NurseStationOrderExecuteListReadAssembler {
     }
 
     /**
-     * 命中一盒一点或拆零下限切批后：回填剩余字段，并按自然日抑制过早的下一单位 pending。
+     * 命中一盒一点或拆零下限后：回填剩余字段，并按自然日抑制过早的下一单位 pending。
+     *
+     * <p>与医生站 {@code enrichOralPackageInventory} 同源：剩余/已吃按槽临床量累加（有 schedule 则分槽取段）；
+     * 开嘱/执行/取消/不执行/出院槽位集合规则不变。</p>
      *
      * @param line                           执行行
      * @param medDetail                      药嘱明细
      * @param currentProcedures              本行已加载 Procedure
      * @param applyStandingOrderPackageBatch 全局不可拆
-     * @param claimMode                      PACKAGE / MIN_SPLIT
+     * @param packageBatchApplied            本行切批命中一盒一点
+     * @param minSplitUnitBatchApplied       本行切批命中拆零下限
      * @param medicationProductByKey         目录
      * @param methodLabelByCode              用法名
      * @param executionDeadline              列表截止（仅展开待执行窗口；已吃 asOf 在 Support 内钳到今天）
+     * @param medEntityById                  药嘱实体缓存；可空
+     * @param doseChainByDisplayId           改量链缓存；可空
+     * @param proceduresByAnchor             就诊批量 Procedure；可空（链上兄弟优先从此取）
+     * @param procedureAnchorSeparator       锚点分隔符
      */
     private void applyUnitClaimInventoryToExecuteRow(
         NurseStationOrderExecuteRowDto line,
         MedicationRequestListQueryModel medDetail,
         List<ProcedureRecordQueryModel> currentProcedures,
         boolean applyStandingOrderPackageBatch,
-        StandingOrderOralPackageInventorySupport.UnitClaimMode claimMode,
+        boolean packageBatchApplied,
+        boolean minSplitUnitBatchApplied,
         Map<String, ProductDefinitionDisplayDto> medicationProductByKey,
         Map<String, String> methodLabelByCode,
-        LocalDateTime executionDeadline) {
-        if (line == null || medDetail == null || medDetail.getId() == null || claimMode == null) {
+        LocalDateTime executionDeadline,
+        Map<Long, MedicationRequest> medEntityById,
+        Map<Long, List<MedicationRequest>> doseChainByDisplayId,
+        Map<String, List<ProcedureRecordQueryModel>> proceduresByAnchor,
+        char procedureAnchorSeparator) {
+        if (line == null || medDetail == null || medDetail.getId() == null) {
             return;
         }
-        MedicationRequest display = medicationRequestQueryService.findById(medDetail.getId());
+        MedicationRequest display = null;
+        if (medEntityById != null) {
+            display = medEntityById.get(medDetail.getId());
+        }
+        if (display == null) {
+            display = medicationRequestQueryService.findById(medDetail.getId());
+            if (display != null && medEntityById != null) {
+                medEntityById.put(display.getId(), display);
+            }
+        }
         if (display == null) {
             return;
         }
         ProductDefinitionDisplayDto product = this.resolveMedicationProduct(medDetail, medicationProductByKey);
-        List<MedicationRequest> chain =
-            standingOrderOralPackageInventorySupport.loadDoseChangeChain(display.getId());
+        List<MedicationRequest> chain = null;
+        if (doseChainByDisplayId != null) {
+            chain = doseChainByDisplayId.get(display.getId());
+        }
+        if (chain == null) {
+            chain = standingOrderOralPackageInventorySupport.loadDoseChangeChain(display.getId());
+            if (doseChainByDisplayId != null) {
+                doseChainByDisplayId.put(display.getId(), chain);
+            }
+        }
         Map<Long, List<ProcedureRecordQueryModel>> proceduresByRequestId = new HashMap<>();
         // 本行 Procedure 先放入，减少重复 IO
         List<ProcedureRecordQueryModel> currentList = currentProcedures;
@@ -1062,14 +1137,29 @@ public class NurseStationOrderExecuteListReadAssembler {
             if (proceduresByRequestId.containsKey(mr.getId())) {
                 continue;
             }
-            proceduresByRequestId.put(
-                mr.getId(),
-                procedureQueryService.getProcedureRecords(mr.getId(), TableNameConstants.MED_MEDICATION_REQUEST));
+            List<ProcedureRecordQueryModel> siblingProcedures = null;
+            if (proceduresByAnchor != null) {
+                String anchor =
+                    TableNameConstants.MED_MEDICATION_REQUEST + procedureAnchorSeparator + mr.getId();
+                siblingProcedures = proceduresByAnchor.get(anchor);
+            }
+            if (siblingProcedures == null) {
+                // Fallback：链上旧嘱不在本页就诊批量索引时再单查
+                siblingProcedures = procedureQueryService.getProcedureRecords(
+                    mr.getId(), TableNameConstants.MED_MEDICATION_REQUEST);
+            }
+            proceduresByRequestId.put(mr.getId(), siblingProcedures);
         }
         // 截止可晚于今天（为看未来待执行）；已吃统计日传截止日，由 Support 钳到今天，避免「剩余0但领用点未出」
         LocalDate asOf = LocalDate.now();
         if (executionDeadline != null) {
             asOf = executionDeadline.toLocalDate();
+        }
+        // Asm：035 优先；仅命中 036 时 MIN_SPLIT；否则先 PACKAGE 再 MIN_SPLIT（与医生站 enrich 同源）
+        StandingOrderOralPackageInventorySupport.UnitClaimMode preferredMode =
+            StandingOrderOralPackageInventorySupport.UnitClaimMode.PACKAGE;
+        if (minSplitUnitBatchApplied && !packageBatchApplied) {
+            preferredMode = StandingOrderOralPackageInventorySupport.UnitClaimMode.MIN_SPLIT;
         }
         StandingOrderOralPackageInventorySupport.OralPackageInventorySnapshot snap =
             standingOrderOralPackageInventorySupport.compute(
@@ -1078,8 +1168,21 @@ public class NurseStationOrderExecuteListReadAssembler {
                 product,
                 methodLabelByCode,
                 asOf,
-                claimMode,
-                applyStandingOrderPackageBatch);
+                preferredMode,
+                applyStandingOrderPackageBatch,
+                chain);
+        if (!snap.isApplied()
+            && StandingOrderOralPackageInventorySupport.UnitClaimMode.PACKAGE.equals(preferredMode)) {
+            snap = standingOrderOralPackageInventorySupport.compute(
+                display,
+                proceduresByRequestId,
+                product,
+                methodLabelByCode,
+                asOf,
+                StandingOrderOralPackageInventorySupport.UnitClaimMode.MIN_SPLIT,
+                applyStandingOrderPackageBatch,
+                chain);
+        }
         if (!snap.isApplied() || !snap.isDisplayHost()) {
             return;
         }
@@ -1107,26 +1210,32 @@ public class NurseStationOrderExecuteListReadAssembler {
                 kept.add(slot);
             }
         }
-        this.ensureNextClaimPendingSlot(display, snap, kept, executionDeadline);
+        this.ensureNextClaimPendingSlot(display, snap, kept, executionDeadline, currentList);
         line.setPendingSlots(kept);
     }
 
     /**
-     * 已领用且截止覆盖「预计下次领用日」时，保证待执行至少有该日首频次锚点。
+     * 已领用且截止覆盖「预计下次领用日」时，保证待执行恰好一个该日首频次锚点（BR-IP-EXE-038⑥ / 035③）。
      *
      * <p>切批按单条新嘱开立日累计量，改量续算后下一单位真实领用日往往不是切批「首槽」；
-     * 抑制开立日假锚点后若不再补点，列表会出现「有下次领用日、无待执行时间点」。</p>
+     * 抑制开立日假锚点后若不再补点，列表会出现「有下次领用日、无待执行时间点」。
+     * 切批曾因非整除降级日点时，领用日可能残留全日频次——须收成首频次单点，与相同计量盒首形态一致
+     *（ceil 封盒后主路径不再因非整降级；本收口仍防残留多点）。
+     * 补点前须认 occurrence 终态：不执行（STOPPED）与净已执行同为终态，禁止只认 COMPLETED 再补假 pending
+     *（否则出院门禁 {@code LONG_PENDING_SLOTS} 误拦）。</p>
      *
      * @param display           链尾药嘱
      * @param snap              剩余快照
      * @param kept              抑制后的 pending（可被本方法改写）
      * @param executionDeadline 列表截止
+     * @param currentProcedures 本药嘱 Procedure（认不执行/已执行终态）
      */
     private void ensureNextClaimPendingSlot(
         MedicationRequest display,
         StandingOrderOralPackageInventorySupport.OralPackageInventorySnapshot snap,
         List<NurseStationOrderExecuteSlotDto> kept,
-        LocalDateTime executionDeadline) {
+        LocalDateTime executionDeadline,
+        List<ProcedureRecordQueryModel> currentProcedures) {
         if (kept == null || display == null || snap == null || executionDeadline == null) {
             return;
         }
@@ -1144,16 +1253,21 @@ public class NurseStationOrderExecuteListReadAssembler {
             // 截止尚未覆盖领盒日：本窗不展
             return;
         }
-        boolean hasOnNextClaim = false;
+        // BR-IP-EXE-038⑥ / 035③：已领用后 pending 锚「下次领用日首频次」且同时最多一个；
+        // 防残留 bid 多点收成单点（ceil 封盒后主路径不再因非整除降级日点；本收口仍保留）
+        int totalKept = 0;
+        int onNextClaim = 0;
         for (NurseStationOrderExecuteSlotDto slot : kept) {
-            if (slot != null
-                && slot.getPlanTime() != null
-                && nextClaim.equals(slot.getPlanTime().toLocalDate())) {
-                hasOnNextClaim = true;
-                break;
+            if (slot == null || slot.getPlanTime() == null) {
+                continue;
+            }
+            totalKept++;
+            if (nextClaim.equals(slot.getPlanTime().toLocalDate())) {
+                onNextClaim++;
             }
         }
-        if (hasOnNextClaim) {
+        if (totalKept == 1 && onNextClaim == 1) {
+            // 已是领用日单点：与相同计量一盒一点一致
             return;
         }
         LocalDateTime anchor =
@@ -1165,13 +1279,18 @@ public class NurseStationOrderExecuteListReadAssembler {
         if (normalized.isAfter(executionDeadline)) {
             return;
         }
+        // Gate：该锚点已不执行/净已执行/孤立取消 → 禁止补回假 pending（出院/列表同源）
+        if (!standingOrderOralPackageInventorySupport.allowsNextClaimPendingReinjection(
+            currentProcedures, normalized)) {
+            return;
+        }
         LocalDateTime openedTime = display.getReqOpenedTime();
         LocalDateTime stopTime = display.getStopTime();
         LocalDateTime firstPlanTime = LongTermFirstExecutionSlotSupport.resolveFirstPlanTimeOnOpenedDay(
             List.of(normalized), openedTime);
         LocalDateTime lastPlanTimeOnStopDay = LongTermFirstExecutionSlotSupport.resolveLastPlanTimeOnStopDay(
             List.of(normalized), stopTime);
-        // 一盒一点同时最多一个 pending：清掉抑制后残留的错位锚点，只留领盒日
+        // 只留领用日首频次（清掉同日第二点及错位锚点）
         kept.clear();
         kept.add(
             this.buildPendingSlotWithBoundaryDefaults(
@@ -1331,6 +1450,12 @@ public class NurseStationOrderExecuteListReadAssembler {
         // 临嘱/出院带药开立总量；长期为 null（摆药总量另走 dose×次数或一盒一点）
         line.setQuantityDisplay(core.getQuantityDisplay());
         line.setDailyDoseDisplay(core.getDailyDoseDisplay());
+        // 首日用量：与 OrderView 内核同字段拷贝，供执行列表剂量列展示（BR-IP-EXE-012）
+        line.setFirstDose(core.getFirstDose());
+        line.setFirstDoseUnitCode(core.getFirstDoseUnitCode());
+        line.setFirstDoseUnitName(core.getFirstDoseUnitName());
+        line.setDoseSchedule(core.getDoseSchedule());
+        line.setQuantitySchedule(core.getQuantitySchedule());
         line.setUsageDisplay(core.getUsageDisplay());
         line.setFrequencyDisplay(core.getFrequencyDisplay());
         line.setSpeedCode(core.getSpeedCode());
@@ -1602,9 +1727,10 @@ public class NurseStationOrderExecuteListReadAssembler {
      * 长嘱不可拆一盒一点见 BR-IP-EXE-035）。
      *
      * <p>可拆口径：左边界仍取开立自然日 00:00；右边界 = {@code min(停嘱时刻, executionDeadline)}；
-     * 再按开立时刻裁首次槽。不可拆且长期 + 包装≠拆零 + 口服类：在首日逻辑之后按包装拆零量切盒，
+     * 再按开立时刻裁首次槽。不可拆且长期 + 包装≠拆零 + 口服类：在首日逻辑之后按包装拆零量
+     * <strong>ceil</strong> 切盒（余量结转；剂量不必整除包装比），
      * 筛选截止落在第 N 盒时仅回传第 1～N 盒<strong>盒首锚点</strong>（一盒一点）；
-     * 单槽超量/累加无法整除 → 降级可拆；停嘱硬顶截断未凑满当前盒 → <strong>不</strong>降级可拆，
+     * 单槽超量 → 降级可拆；停嘱硬顶截断未凑满当前盒 → <strong>不</strong>降级可拆，
      * 仅回传已完整盒首（无则空；已执行锚点由 Procedure 并集保留）。</p>
      *
      * @param applyStandingOrderPackageBatch 是否尝试不可拆一盒一点
@@ -1700,6 +1826,8 @@ public class NurseStationOrderExecuteListReadAssembler {
             measure.setFirstDose(medDetail.getFirstDose());
             measure.setFirstDoseUnitCode(medDetail.getFirstDoseUnitCode());
             measure.setMethodCode(medDetail.getMethodCode());
+            measure.setQuantitySchedule(medDetail.getQuantitySchedule());
+            measure.setRateCode(medDetail.getRateCode());
             product = this.resolveMedicationProduct(medDetail, medicationProductByKey);
         }
         try {
@@ -2524,12 +2652,14 @@ public class NurseStationOrderExecuteListReadAssembler {
     /**
      * 批量挂载 bindItems（BR-IP-EXE-013）。
      *
-     * <p>药嘱：用法 {@code method_code}（术语 code）→ {@code USAGE} 来源绑定模板；
-     * 诊嘱：按 activityId 查 {@code ACTIVITY} 来源绑定（按 targetItemTable 区分诊疗/耗材）。
-     * <b>标本合管 / 耗材</b>：检验已合管或目标为器材定义时，本列表<strong>不</strong>挂载
-     * （AS-BAS-CFG-001 §7.7；住院开立与执行均不自动带耗材）。药嘱用法绑耗材仍按模板挂载。</p>
+     * <p>药嘱：用法 {@code method_code}（术语 code）→ {@code USAGE} 来源绑定模板（含诊疗/耗材）。
+     * 诊嘱：按 activityId 查 {@code ACTIVITY} 来源绑定（含诊疗与耗材）。
+     * <b>标本合管</b>：检验已合管时本列表<strong>不</strong>挂载（合管派生开立/执行均不带）。
+     * <b>未合管</b>：住院范围模板在本列表带出；医生开立 {@code resolveInpatientDoctorStationAdviceDraftBinds} 恒不带（**BR-IP-ORD-036**）。</p>
      *
      * @param organizationUnitId 机构主键，模板查询 org 收窄；可 null
+     * @param bindRowsCache      绑定模板缓存；可空
+     * @param mergeDeviceByActivityId 合管预热；可空（空则回落单查）
      */
     private List<NurseStationOrderExecuteBindItemDto> loadBindItems(
         InpatientOrderListSkeleton order,
@@ -2537,10 +2667,11 @@ public class NurseStationOrderExecuteListReadAssembler {
         ServiceRequestListModel svcDetail,
         Long organizationUnitId,
         Map<String, String> unitLabelByCode,
-        Map<String, List<AdviceOrderBindRowDto>> bindRowsCache) {
+        Map<String, List<AdviceOrderBindRowDto>> bindRowsCache,
+        Map<Long, Long> mergeDeviceByActivityId) {
         List<NurseStationOrderExecuteBindItemDto> bindItems = new ArrayList<>();
         if (ReadModelOrderTypeConstants.MED_REQUEST.equals(order.getOrderType())) {
-            // 药嘱：用法 method_code（术语 code）→ USAGE 来源绑定模板
+            // 药嘱：用法 method_code（术语 code）→ USAGE 来源绑定模板（含耗材）
             String methodCode = null;
             if (medDetail != null && StringUtils.isNotEmpty(medDetail.getMethodCode())) {
                 methodCode = medDetail.getMethodCode().trim();
@@ -2554,30 +2685,28 @@ public class NurseStationOrderExecuteListReadAssembler {
                 bindItems.addAll(this.mapBindRows(rows, unitLabelByCode));
             }
         } else if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(order.getOrderType())) {
-            // 诊嘱：住院不自动带耗材——已合管短路；未合管仅保留非耗材模板目标（如诊疗绑诊疗）
+            // 诊嘱：已合管短路；未合管挂 ACTIVITY 模板（含耗材，供执行勾选派生）
             Long activityId = order.getActivityId();
             if (svcDetail != null && svcDetail.getActivityId() != null) {
                 activityId = svcDetail.getActivityId();
             }
             if (activityId != null) {
-                // Pre：合管已配 → 执行侧不挂 bindItems
-                boolean mergeConfigured =
-                    specimenTubeMergeBindResolveSupport.findMergeDeviceIdByActivityId(activityId).isPresent();
+                // Pre：合管已配 → 执行侧不挂 bindItems（开立亦不带；AS-BAS-CFG-001 §7.7）
+                boolean mergeConfigured = false;
+                if (mergeDeviceByActivityId != null) {
+                    mergeConfigured = mergeDeviceByActivityId.containsKey(activityId);
+                } else {
+                    mergeConfigured =
+                        specimenTubeMergeBindResolveSupport.findMergeDeviceIdByActivityId(activityId).isPresent();
+                }
+                // 未合管：挂住院范围模板（诊疗绑诊疗 + 诊疗绑耗材），供执行勾选派生
                 if (!mergeConfigured) {
                     List<AdviceOrderBindRowDto> rows = this.resolveBindRowsCached(
                         DoctorStationAdviceConstants.BIND_TYPE_ACTIVITY,
                         String.valueOf(activityId),
                         organizationUnitId,
                         bindRowsCache);
-                    List<NurseStationOrderExecuteBindItemDto> mapped =
-                        this.mapBindRows(rows, unitLabelByCode);
-                    for (NurseStationOrderExecuteBindItemDto item : mapped) {
-                        // 跳过耗材目标（deviceId 有值）
-                        if (item == null || item.getDeviceId() != null) {
-                            continue;
-                        }
-                        bindItems.add(item);
-                    }
+                    bindItems.addAll(this.mapBindRows(rows, unitLabelByCode));
                 }
             }
         }
@@ -3262,7 +3391,7 @@ public class NurseStationOrderExecuteListReadAssembler {
     }
 
     /**
-     * 兼容旧调用：仅上界过滤（planTimeFrom 为空）。
+     * 按执行 Tab 收窄槽位（仅上界：{@code planTimeFrom} 为空时与区间过滤同形）。
      *
      * @param row                医嘱执行行
      * @param executeTab         执行 Tab

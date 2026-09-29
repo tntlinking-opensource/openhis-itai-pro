@@ -319,6 +319,10 @@ public class DailySettlementExpenseNatureDetailAccumulator {
                 // 冲抵占用不计入日结现金/渠道小计。
                 continue;
             }
+            if (PaymentChannel.DISCOUNT.equals(channel)) {
+                // 折扣旁证不计入日结现金/渠道小计（BR-OP-DCL-031 / BR-IP-DCL-031）。
+                continue;
+            }
             if (PaymentChannel.CASH.equals(channel) || PaymentChannel.CASHIER.equals(channel)) {
                 natureBucket.addCash(lineAmount);
                 if (insutypeBucket != null) {
@@ -409,6 +413,10 @@ public class DailySettlementExpenseNatureDetailAccumulator {
                 // 预交金冲抵不计入个人自付
                 continue;
             }
+            if (PaymentChannel.DISCOUNT.equals(channel)) {
+                // 折扣旁证不计入个人自付
+                continue;
+            }
             if (PaymentChannel.INSURANCE_FUND.equals(channel)) {
                 boolean countInsurance = false;
                 if (shouldCountInsuranceDetail != null) {
@@ -457,6 +465,10 @@ public class DailySettlementExpenseNatureDetailAccumulator {
         }
         if (PaymentChannel.DEPOSIT_OFFSET.equals(channel)) {
             // 预交金冲抵不计入费用性质自付/医保现金小计。
+            return;
+        }
+        if (PaymentChannel.DISCOUNT.equals(channel)) {
+            // 折扣旁证不计入费用性质自付/医保现金小计。
             return;
         }
         if (PaymentChannel.INSURANCE_FUND.equals(channel)) {

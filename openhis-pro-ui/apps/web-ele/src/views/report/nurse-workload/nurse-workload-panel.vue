@@ -62,7 +62,7 @@ interface QueryState {
   encounterScope: EncounterScope;
   dateFrom: string;
   dateTo: string;
-  /** 默认登录科室；UI 用 ALL_ORG_VALUE 表示全部。 */
+  /** 工作科室；UI 用 ALL_ORG_VALUE 表示全部。 */
   organizationId?: string;
 }
 
@@ -107,7 +107,7 @@ const queryParams = reactive<QueryState>({
   dateTo: '',
 });
 
-/** 默认登录科室「全部」哨兵值。 */
+/** 工作科室「全部」哨兵值。 */
 const ALL_ORG_VALUE = '__ALL__';
 
 /** 是否已应用过后端返回的默认就诊范围（仅首次初始化）。 */
@@ -150,7 +150,7 @@ const dateRange = computed<[string, string] | undefined>({
 
 const baseQueryFilter = computed<NurseWorkloadQueryFilter>(() => {
   const orgId = queryParams.organizationId;
-  // 「全部」或空值不传默认登录科室，避免哨兵串进后端 Long
+  // 「全部」或空值不传工作科室，避免哨兵串进后端 Long
   const resolvedOrgId =
     orgId && orgId !== ALL_ORG_VALUE ? preserveApiIdForRequest(orgId) : undefined;
   return {
@@ -167,7 +167,7 @@ function buildQueryFilter(): NurseWorkloadQueryFilter {
 }
 
 /**
- * 重新加载下拉（切换门诊/住院或默认登录科室时刷新护士列表）。
+ * 重新加载下拉（切换门诊/住院或工作科室时刷新人员列表）。
  * @param clearOrganization 是否重置科室为「全部」
  */
 async function reloadInitOptions(clearOrganization = false) {
@@ -183,7 +183,7 @@ async function reloadInitOptions(clearOrganization = false) {
   });
 }
 
-/** 默认登录科室变更：clearable 清空时回落「全部」，并刷新该科护士下拉后再查询。 */
+/** 工作科室变更：clearable 清空时回落「全部」，并刷新该科人员下拉后再查询。 */
 async function handleOrganizationChange(value?: string) {
   if (!value) {
     queryParams.organizationId = ALL_ORG_VALUE;
@@ -402,7 +402,7 @@ onMounted(async () => {
             </ElRadioButton>
           </ElRadioGroup>
         </ElFormItem>
-        <ElFormItem label="科室">
+        <ElFormItem label="工作科室">
           <ElSelect
             v-model="queryParams.organizationId"
             clearable

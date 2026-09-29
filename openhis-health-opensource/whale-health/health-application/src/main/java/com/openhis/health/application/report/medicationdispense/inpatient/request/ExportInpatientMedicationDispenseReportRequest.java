@@ -78,6 +78,14 @@ public class ExportInpatientMedicationDispenseReportRequest {
     private String feeNatureContractNo;
 
     /**
+     * 药品性质筛选（{@code KeyDrugType}：NARCOTIC/PSYCH_ONE/PSYCH_TWO）；空=不限。
+     *
+     * <p>对齐药典 {@code pharmacology_category_code}；下拉仅麻/精一/精二，不展示普通/毒性等全量性质。</p>
+     */
+    @Schema(description = "药品性质 KeyDrugType code：NARCOTIC/PSYCH_ONE/PSYCH_TWO；空=不限")
+    private String keyDrugType;
+
+    /**
      * 科室组织主键：患者侧=开立科室（药嘱 org_id）；领用侧=领用科室（consuming_organization_id）。
      */
     @Schema(description = "开立/领用科室组织主键（随来源解释）")

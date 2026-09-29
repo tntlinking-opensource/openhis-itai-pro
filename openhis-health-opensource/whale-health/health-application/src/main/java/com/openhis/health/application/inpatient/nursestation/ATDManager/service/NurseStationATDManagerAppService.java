@@ -963,13 +963,22 @@ public class NurseStationATDManagerAppService {
             }
             Map<Long, String> medicationNameById = this.mapMedicationNamesByIds(medicationIds);
             Map<Long, String> locationNameById = locationQueryService.mapNamesByIds(locationIds);
+            // Pre：计量单位术语（与待执行列表同源；禁止前端直接展示 unitCode 数字码）
+            Map<String, String> unitLabelByCode =
+                terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.UNIT_CODE);
             List<DischargePendingMedicationItemDto> items = new ArrayList<>();
             for (MedicationDispenseListQueryModel row : pendingRows) {
                 String medicationName = medicationNameById.get(row.getMedicationId());
                 String locationName = locationNameById.get(row.getLocationId());
                 String statusText = this.resolveDispenseStatusDisplay(row.getStatusEnum());
+                // Asm：单位展示名；解析不到时回落 code，避免空列
+                String unitCodeText = ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(
+                    unitLabelByCode, row.getUnitCode(), null);
+                if (StringUtils.isBlank(unitCodeText)) {
+                    unitCodeText = StringUtils.trimToNull(row.getUnitCode());
+                }
                 DischargePendingMedicationItemDto item = nurseStationATDManagerMapper.toDischargePendingMedicationItemDto(
-                    row, medicationName, locationName, statusText);
+                    row, medicationName, locationName, statusText, unitCodeText);
                 if (item != null) {
                     items.add(item);
                 }
@@ -989,7 +998,7 @@ public class NurseStationATDManagerAppService {
      *
      * @param request 就诊主键
      * @return 办理结果
-     * @throws BusinessException 门禁失败 EX-IP-ATD-301～305/308；持久化失败 EX-IP-ATD-306
+     * @throws BusinessException 门禁失败 EX-IP-ATD-301～305/308/309；持久化失败 EX-IP-ATD-306
      */
     public ExecuteInpatientDischargeResponse executeInpatientDischarge(ExecuteInpatientDischargeRequest request) {
         if (request == null || request.getEncounterId() == null) {
@@ -1021,7 +1030,7 @@ public class NurseStationATDManagerAppService {
             }
             // Pre 步骤 4：须待出院 ON_HOLD 分流（BR-IP-ATD-011④ → EX-IP-ATD-305）。
             this.assertDischargeHoldReady(inpatientContext);
-            // Pre 步骤 6：出院门禁（长期/临时/待发退药，BR-IP-ATD-011①～③）。
+            // Pre 步骤 6：出院门禁（长期/临时/待发退药/医技确费，BR-IP-ATD-011①～③⑤）。
             this.assertDischargeGatePassed(encounterId);
             // Pre 步骤 7：出院时刻优先取已校对出院医嘱计划时间。
             LocalDateTime dischargedAt = this.resolveDischargedAt(encounterId);
@@ -1039,13 +1048,15 @@ public class NurseStationATDManagerAppService {
             // Asm：办理出院不触发汇总径 3505（须待结算完成后再清床上报）
             return nurseStationATDManagerMapper.toExecuteInpatientDischargeResponse(encounterId);
         } catch (BusinessException ex) {
+            // 业务门禁原样透出（含医技未确费 EX-IP-ATD-309），禁止吞成笼统「出院失败」
             if (InpatientNurseStationConstants.EX_IP_ATD_301.equals(ex.getErrorCode())
                 || InpatientNurseStationConstants.EX_IP_ATD_307.equals(ex.getErrorCode())
                 || InpatientNurseStationConstants.EX_IP_ATD_302.equals(ex.getErrorCode())
                 || InpatientNurseStationConstants.EX_IP_ATD_303.equals(ex.getErrorCode())
                 || InpatientNurseStationConstants.EX_IP_ATD_308.equals(ex.getErrorCode())
                 || InpatientNurseStationConstants.EX_IP_ATD_304.equals(ex.getErrorCode())
-                || InpatientNurseStationConstants.EX_IP_ATD_305.equals(ex.getErrorCode())) {
+                || InpatientNurseStationConstants.EX_IP_ATD_305.equals(ex.getErrorCode())
+                || InpatientNurseStationConstants.EX_IP_ATD_309.equals(ex.getErrorCode())) {
                 throw ex;
             }
             if (ErrorCodeConstants.ENCOUNTER_INVALID_STATUS.equals(ex.getErrorCode())) {

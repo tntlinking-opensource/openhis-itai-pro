@@ -14,7 +14,7 @@ export const ROLE_MRMS_ADMIN = 'ROLE_MRMS_ADMIN';
 /** 门诊行上用于比对接诊医生与病例归档态的最小字段 */
 export interface OutpatientClinicalEditGateRow {
   admitterPractitionerId?: string;
-  /** 病例是否已归档（文书 LOCKED/ARCHIVED） */
+  /** 病例是否已归档（文书 PENDING_ARCHIVE/ARCHIVED） */
   clinicalArchived?: boolean;
 }
 
@@ -22,7 +22,7 @@ export interface OutpatientClinicalEditGateRow {
 export interface InpatientClinicalEditGateRow {
   /** 就诊入院科室主键 */
   organizationId?: string;
-  /** 病例是否已归档（就诊下存在 LOCKED 文书） */
+  /** 病例是否已归档（就诊下存在 PENDING_ARCHIVE/ARCHIVED 文书） */
   clinicalArchived?: boolean;
   /** 病区或病房位置主键（体温单/护理记录管辖病区放行） */
   wardId?: string;
@@ -110,7 +110,7 @@ export function resolveInpatientClinicalEditDenial(
   if (!preserveApiIdForRequest(loginPractitionerId)) {
     return 'no_login_practitioner';
   }
-  // 临床「归档病例」后文书 LOCKED，本科室也只读
+  // 临床「归档病例」后文书 ARCHIVED，本科室也只读
   if (row.clinicalArchived) {
     return 'clinical_archived';
   }

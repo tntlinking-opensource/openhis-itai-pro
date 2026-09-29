@@ -36,13 +36,42 @@ function handleAdd() {
   markDirty();
 }
 
+/** 按当前顺序重写 sortNo（1 起） */
+function reindex(list: ProcedureLineDto[]) {
+  list.forEach((row, i) => {
+    row.sortNo = i + 1;
+  });
+}
+
 /** 删除手术行 */
 function handleRemove(index: number) {
   const list = [...(rows.value ?? [])];
   list.splice(index, 1);
-  list.forEach((row, i) => {
-    row.sortNo = i + 1;
-  });
+  reindex(list);
+  rows.value = list;
+  markDirty();
+}
+
+/**
+ * 上移/下移手术行（与诊断出院组同构）。
+ *
+ * @param index 当前行下标
+ * @param direction -1 上移 / 1 下移
+ */
+function handleMove(index: number, direction: -1 | 1) {
+  const list = [...(rows.value ?? [])];
+  const target = index + direction;
+  if (target < 0 || target >= list.length) {
+    return;
+  }
+  const current = list[index];
+  const neighbor = list[target];
+  if (!current || !neighbor) {
+    return;
+  }
+  list[index] = neighbor;
+  list[target] = current;
+  reindex(list);
   rows.value = list;
   markDirty();
 }
@@ -54,6 +83,7 @@ function handleRemove(index: number) {
       <ElButton type="primary" size="small" @click="handleAdd">新增手术</ElButton>
     </div>
     <ElTable :data="rows" border size="small">
+      <ElTableColumn type="index" label="序号" width="52" align="center" />
       <ElTableColumn label="编码" width="140" align="center">
         <template #default="{ row }">
           <ElInput
@@ -145,6 +175,39 @@ function handleRemove(index: number) {
           />
         </template>
       </ElTableColumn>
+      <ElTableColumn label="一助" width="90" align="center">
+        <template #default="{ row }">
+          <ElInput
+            v-model="row.asit1Name"
+            size="small"
+            :disabled="props.readonly"
+            :placeholder="HOMEPAGE_EMPTY_DISPLAY"
+            @change="markDirty"
+          />
+        </template>
+      </ElTableColumn>
+      <ElTableColumn label="二助" width="90" align="center">
+        <template #default="{ row }">
+          <ElInput
+            v-model="row.asit2Name"
+            size="small"
+            :disabled="props.readonly"
+            :placeholder="HOMEPAGE_EMPTY_DISPLAY"
+            @change="markDirty"
+          />
+        </template>
+      </ElTableColumn>
+      <ElTableColumn label="护士" width="90" align="center">
+        <template #default="{ row }">
+          <ElInput
+            v-model="row.nurseName"
+            size="small"
+            :disabled="props.readonly"
+            :placeholder="HOMEPAGE_EMPTY_DISPLAY"
+            @change="markDirty"
+          />
+        </template>
+      </ElTableColumn>
       <ElTableColumn label="麻醉医师" width="100" align="center">
         <template #default="{ row }">
           <ElInput
@@ -156,8 +219,30 @@ function handleRemove(index: number) {
           />
         </template>
       </ElTableColumn>
-      <ElTableColumn v-if="!props.readonly" label="操作" width="80" align="center" fixed="right">
+      <ElTableColumn label="主手术" width="80" align="center">
+        <template #default="{ row }">
+          <ElInput
+            v-model="row.mainOprnFlag"
+            size="small"
+            :disabled="props.readonly"
+            placeholder="1/0"
+            @change="markDirty"
+          />
+        </template>
+      </ElTableColumn>
+      <ElTableColumn v-if="!props.readonly" label="操作" width="156" align="center" fixed="right">
         <template #default="{ $index }">
+          <ElButton link type="primary" :disabled="$index <= 0" @click="handleMove($index, -1)">
+            上移
+          </ElButton>
+          <ElButton
+            link
+            type="primary"
+            :disabled="$index >= (rows?.length ?? 0) - 1"
+            @click="handleMove($index, 1)"
+          >
+            下移
+          </ElButton>
           <ElButton link type="danger" @click="handleRemove($index)">删除</ElButton>
         </template>
       </ElTableColumn>

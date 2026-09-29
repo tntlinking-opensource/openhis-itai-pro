@@ -340,6 +340,28 @@ const handleSelect = () => {
               (outpatient.phone ?? '').trim()
             }}</span>
           </div>
+          <div
+            v-if="variantResolved === 'nurse' && (outpatient.accountBalanceSummary ?? '').trim()"
+            class="flex min-w-0 items-center"
+          >
+            <span class="shrink-0 text-gray-600">余额:</span>
+            <span
+              class="ml-1.5 truncate font-medium"
+              :class="
+                outpatient.lowBalanceWarning
+                  ? 'text-[var(--el-color-danger)]'
+                  : 'text-[var(--el-color-primary)]'
+              "
+            >
+              {{ outpatient.accountBalanceSummary }}
+              <span
+                v-if="(outpatient.accountBalanceSub ?? '').trim()"
+                class="ml-1 text-[var(--el-text-color-regular)]"
+              >
+                {{ outpatient.accountBalanceSub }}
+              </span>
+            </span>
+          </div>
         </template>
 
         <template v-if="display.showNurseAddon && outpatient">

@@ -8,25 +8,21 @@ import type {
 
 import { saveDoctorStationAdviceDraftBatchWithSkinTestCrossLotConfirm } from './advice-skin-test-cross-lot-confirm';
 
-import { saveAdviceDraftBatchWithBindResolution } from './advice-draft-bind.service';
-
 /**
  * 门诊医生站 · 医嘱草稿暂存统一入口
  *
- * ## IF-DOR-23 用法/诊疗绑定带出策略
+ * ## IF-DOR-23 用法/诊疗绑定带出策略（产品口径：签发时带出）
  *
  * | 场景 | 策略 | 函数 |
  * |------|------|------|
- * | 编辑卡手动保存（新建药品/诊疗 CREATE） | MANUAL_USAGE_BIND | saveAdviceDraftBatchWithManualUsageBind |
- * | 编辑卡手动保存（纯 UPDATE / DELETE） | DIRECT_ONLY 同等 | 同上入口内自动跳过绑定 |
+ * | 编辑卡手动保存 | DIRECT_ONLY | saveAdviceDraftBatchWithManualUsageBind → 仅主医嘱 |
  * | 组套套用 | DIRECT_ONLY | saveAdviceDraftBatchDirect |
  * | 历史医嘱复用 | DIRECT_ONLY | saveAdviceDraftBatchDirect |
  * | 删除草稿行 | DIRECT_ONLY | saveAdviceDraftBatchDirect |
+ * | 工具栏「签发」 | SIGN_TIME_BIND | resolveAndPersistAdviceDraftBindsAtSign（见 bind.service） |
  *
- * **手动开立绑定带出** 与 **批量套用/编辑保存不带出** 是独立链路：
- * - 新建药品（CREATE）→ 解析 USAGE 用法绑定并弹窗确认；
- * - 新建诊疗（CREATE）→ 解析 ACTIVITY 诊疗绑定并弹窗确认；
- * - 纯编辑（UPDATE）、组套、历史医嘱复用均不二次带出。
+ * **暂存不弹绑定**；**签发前**对本次待签草稿统一解析、确认（可改量/删行）、落派生后再扩 signTargets。
+ * 去重仍由 bind.service 既有规则保证（合管同设备一份、同组同用法一份、已有 based_on 不重复）。
  *
  * 新增暂存入口时：先对照上表选定策略，禁止直接调用 httpSaveDoctorStationAdviceDraftBatch。
  */
@@ -34,7 +30,10 @@ import { saveAdviceDraftBatchWithBindResolution } from './advice-draft-bind.serv
 /** 暂存策略：仅落库变更行，不解析 IF-DOR-23 绑定 */
 export const ADVICE_DRAFT_SAVE_DIRECT_ONLY = 'DIRECT_ONLY' as const;
 
-/** 暂存策略：手动医嘱保存，解析用法/诊疗绑定并弹窗确认后带出诊疗/耗材 */
+/**
+ * @deprecated 历史名：曾表示「保存时解析绑定」。现产品改为签发时带出，本常量与 DIRECT_ONLY 等价。
+ * 保留常量以免调用方 import 断裂。
+ */
 export const ADVICE_DRAFT_SAVE_MANUAL_USAGE_BIND = 'MANUAL_USAGE_BIND' as const;
 
 export type AdviceDraftSavePolicy =
@@ -45,12 +44,12 @@ export interface SaveAdviceDraftBatchOptions {
   encounterId: string;
   patientId: string;
   lines: DoctorStationAdviceDraftLineRequest[];
-  /** MANUAL_USAGE_BIND 时传入，用于绑定去重与锚点解析 */
+  /** 签发前带出时由 bind.service 使用；暂存入口可忽略 */
   existingAdviceRows?: AdviceRowItem[] | DoctorStationAdviceRowDto[];
   pricingSourceCode?: string;
 }
 
-/** 直接暂存：不解析用法/诊疗绑定（删除、组套、历史医嘱等） */
+/** 直接暂存：不解析用法/诊疗绑定（删除、组套、历史医嘱、编辑保存等） */
 export async function saveAdviceDraftBatchDirect(
   options: SaveAdviceDraftBatchOptions,
 ): Promise<SaveDoctorStationAdviceDraftBatchResponse> {
@@ -63,16 +62,12 @@ export async function saveAdviceDraftBatchDirect(
   });
 }
 
-/** 手动编辑保存：新建药品→用法绑定、新建诊疗→诊疗绑定；纯 UPDATE 直接暂存 */
+/**
+ * 编辑卡「保存」：只落主医嘱（IF-DOR-14），不解析 IF-DOR-23。
+ * 函数名保留兼容；绑定改在签发前 `resolveAndPersistAdviceDraftBindsAtSign`。
+ */
 export async function saveAdviceDraftBatchWithManualUsageBind(
   options: SaveAdviceDraftBatchOptions,
 ): Promise<SaveDoctorStationAdviceDraftBatchResponse> {
-  const { encounterId, patientId, lines, existingAdviceRows, pricingSourceCode } = options;
-  return saveAdviceDraftBatchWithBindResolution({
-    encounterId,
-    patientId,
-    lines,
-    existingAdviceRows,
-    pricingSourceCode,
-  });
+  return saveAdviceDraftBatchDirect(options);
 }

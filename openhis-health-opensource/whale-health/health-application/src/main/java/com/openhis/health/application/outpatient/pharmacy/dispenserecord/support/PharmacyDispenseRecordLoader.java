@@ -86,6 +86,41 @@ public class PharmacyDispenseRecordLoader {
     }
 
     /**
+     * 按重点药/药品性质类型收窄 {@code resolvedMedicationIdsForCategory}（与类型多选求交）。
+     *
+     * <p>空筛选跳过；未知码写入空列表（拒查）。用于发药报表「药品性质」筛麻醉/精一/精二。</p>
+     *
+     * @param query       发放域记录查询入参（原地修改）
+     * @param keyDrugType {@link com.openhis.health.domain.share.enums.KeyDrugType} code；空=不限
+     */
+    public void enrichKeyDrugTypeFilter(MedicationDispenseRecordPageQuery query, String keyDrugType) {
+        if (query == null || StringUtils.isEmpty(keyDrugType)) {
+            return;
+        }
+        List<Long> byKeyDrug =
+            this.medicationDefinitionQueryService.listIdsByKeyDrugType(keyDrugType.trim());
+        List<Long> existing = query.getResolvedMedicationIdsForCategory();
+        // 尚无类型预筛：直接写入重点药主键
+        if (existing == null) {
+            query.setResolvedMedicationIdsForCategory(byKeyDrug);
+            return;
+        }
+        // 已有类型 IN：与重点药求交
+        if (existing.isEmpty() || byKeyDrug == null || byKeyDrug.isEmpty()) {
+            query.setResolvedMedicationIdsForCategory(List.of());
+            return;
+        }
+        LinkedHashSet<Long> keyDrugSet = new LinkedHashSet<>(byKeyDrug);
+        List<Long> intersected = new ArrayList<>();
+        for (Long medicationId : existing) {
+            if (medicationId != null && keyDrugSet.contains(medicationId)) {
+                intersected.add(medicationId);
+            }
+        }
+        query.setResolvedMedicationIdsForCategory(intersected);
+    }
+
+    /**
      * 按药品类别 code 解析 medicationId 列表并写入查询预筛字段。
      *
      * @param query                   发药记录分页查询

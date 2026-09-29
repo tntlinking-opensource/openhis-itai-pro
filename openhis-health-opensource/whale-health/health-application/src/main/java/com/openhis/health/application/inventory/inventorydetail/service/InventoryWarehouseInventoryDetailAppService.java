@@ -976,7 +976,8 @@ public class InventoryWarehouseInventoryDetailAppService {
      * 定时库存快照（IF-INV-DTL-10）：全量现库装配后批量写入静表。
      *
      * <p>处理器 key {@code inventoryWarehouseInventoryDetail/executeInventoryDetailSnapshot}；
-     * cron 建议每日 {@code 0 5 0 * * ?}（00:05，**BR-INV-DTL-028**），与库房期初期末明细零点备份口径一致；
+     * cron 固定每日 {@code 0 5 0 * * ?}（00:05，**BR-INV-DTL-028**），与库房期初期末明细零点备份口径一致；
+     * <strong>住院滚费须错开为 {@code 0 10 0 * * ?}（00:10）</strong>，禁止与本任务同秒抢跑，避免备份长事务被拖死或滚费整单回滚；
      * 启停由 whale-job 管理界面配置，并发策略建议 {@code DISALLOW}（BR-INV-DTL-021）。</p>
      *
      * <p>单号自然日 {@code D} 表示 {@code D} 日抓拍时刻库存，日结语义为 {@code (D-1)} 自然日日终（**BR-INV-SET-004**）。</p>

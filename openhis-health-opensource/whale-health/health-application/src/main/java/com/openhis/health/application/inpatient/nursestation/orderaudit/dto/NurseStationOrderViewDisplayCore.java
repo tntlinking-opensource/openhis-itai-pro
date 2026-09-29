@@ -95,6 +95,28 @@ public class NurseStationOrderViewDisplayCore {
      */
     private String dailyDoseDisplay;
 
+    /**
+     * 首日/首次用量（仅长期药品有值；空=首次槽仍用常规单次量，BR-IP-ORD-030 / BR-IP-EXE-032）。
+     * 库内为最小/拆零单位数量（与长期 {@code quantity} 同口径）。
+     */
+    private BigDecimal firstDose;
+
+    /** 首日用量单位编码（与 {@link #firstDose} 成对；最小/拆零单位码）。 */
+    private String firstDoseUnitCode;
+
+    /** 首日用量单位展示名（术语/目录字典；与医生站列表同解析链）。 */
+    private String firstDoseUnitName;
+
+    /**
+     * 分次剂量序列（计量、逗号分隔；可空；有值时剂量列可拼序列；BR-IP-EXE-040 / BR-IP-ORD-037）。
+     */
+    private String doseSchedule;
+
+    /**
+     * 分次用量序列（拆零、逗号分隔；与 {@link #doseSchedule} 同序；空=算量走 quantity）。
+     */
+    private String quantitySchedule;
+
     /** 用法展示（药品）。 */
     private String usageDisplay;
 
@@ -189,4 +211,16 @@ public class NurseStationOrderViewDisplayCore {
      * 皮试临床状态展示文案（如 阳性 / 阴性）；与 {@link #skinTestOutcomeCode} 同源。
      */
     private String skinTestOutcomeText;
+
+    /**
+     * 计划出院时间（出院医嘱 {@code occurrence_start_time}；医生填写的业务出院时间真源）。
+     * <p>仅 {@code category_enum=34} 出院行有值；转科/普通诊疗为 null。与住院医生站
+     * {@code plannedDischargeTime} 同口径（BR-IP-ORD-017 / BR-IP-AUD-006）。</p>
+     */
+    private LocalDateTime plannedDischargeTime;
+
+    /**
+     * 出院/转科原因（{@code wkf_service_request.reason_text}）；非特殊类目为 null。
+     */
+    private String reasonText;
 }

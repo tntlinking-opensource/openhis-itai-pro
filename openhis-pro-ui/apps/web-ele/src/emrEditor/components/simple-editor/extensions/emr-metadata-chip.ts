@@ -6,6 +6,7 @@ import { VueNodeViewRenderer } from '@tiptap/vue-3';
 import { isWholeFillableNodeDelete } from '../emr-data-element-text';
 import { buildFillableNodeInsertJson } from '../emr-fillable-json';
 import { fillableNodeExtraClass } from '../node-views/fillable-field-view.shared';
+import { keepVueNodeViewIfEq } from '../node-views/keep-vue-node-view-if-eq';
 import { resolveInsertEmrMetadataChip } from '../../../fillable-field';
 import EmrFillableFieldView from '../node-views/EmrFillableFieldView.vue';
 
@@ -89,7 +90,7 @@ export const EmrMetadataChip = Node.create({
   },
 
   addNodeView() {
-    return VueNodeViewRenderer(EmrFillableFieldView);
+    return VueNodeViewRenderer(EmrFillableFieldView, { update: keepVueNodeViewIfEq });
   },
 
   addProseMirrorPlugins() {

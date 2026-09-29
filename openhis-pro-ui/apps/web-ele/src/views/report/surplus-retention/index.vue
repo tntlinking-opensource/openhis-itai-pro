@@ -155,6 +155,11 @@ const { run: runPage, loading: pageLoading } = useRequest(pageSurplusRetentionRe
 const { run: runExport, loading: exportLoading } = useRequest(exportSurplusRetentionReportApi, {
   manual: true,
   onSuccess: (data) => {
+    const base64 = (data.body ?? data.fileBytes ?? data.content)?.trim();
+    if (!base64) {
+      ElMessage.error('导出失败：未返回文件内容');
+      return;
+    }
     downloadBinaryExportFile(data, '药品结余留用.xlsx');
     const rowCount = data.rowCount ?? data.exportedRowCount ?? 0;
     // 触顶截断：与 AS §7 / BR-RPT-SRB-006 一致，须提示用户
@@ -288,16 +293,6 @@ function formatQtyCell(value: unknown): string {
 }
 
 /**
- * 文本空值占位。
- */
-function formatTextCell(value: unknown): string {
-  if (value === undefined || value === null || value === '') {
-    return '—';
-  }
-  return String(value);
-}
-
-/**
  * 行稳定主键（门诊住院号 + 处方日期 + 品名 + 下标）。
  */
 function resolveRowKey(row: SurplusRetentionReportRowDto, index: number) {
@@ -311,7 +306,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <Page auto-content-height>
+  <Page auto-content-height content-class="!overflow-hidden flex h-full min-h-0 flex-col">
     <ReportListPageLayout>
       <template #query>
         <ReportQueryBar :model="queryBarModel" label-width="128px">
@@ -362,229 +357,170 @@ onMounted(async () => {
 
       <template #table>
         <ReportTableScroll ref="tableScrollRef">
-          <ReportElTable
-            :data="tableData"
-            :loading="tableLoading"
-            :row-key="resolveRowKey"
-            border
-            stripe
-          >
-            <ElTableColumn
-              prop="outpatientInpatientNo"
-              label="门诊住院号"
-              align="center"
-              header-align="center"
-              min-width="120"
+          <template #default="{ tableHeight }">
+            <ReportElTable
+              :data="tableData"
+              :loading="tableLoading"
+              :height="tableHeight"
+              :row-key="resolveRowKey"
+              border
+              stripe
+              class="surplus-retention-report-table"
             >
-              <template #default="{ row }">
-                {{ formatTextCell(row.outpatientInpatientNo) }}
-              </template>
-            </ElTableColumn>
-            <ElTableColumn
-              prop="patientName"
-              label="患者姓名"
-              align="center"
-              header-align="center"
-              min-width="100"
-            >
-              <template #default="{ row }">
-                {{ formatTextCell(row.patientName) }}
-              </template>
-            </ElTableColumn>
-            <ElTableColumn
-              prop="insuredRegion"
-              label="参保地区"
-              align="center"
-              header-align="center"
-              min-width="100"
-            >
-              <template #default="{ row }">
-                {{ formatTextCell(row.insuredRegion) }}
-              </template>
-            </ElTableColumn>
-            <ElTableColumn
-              prop="insuredType"
-              label="参保类型"
-              align="center"
-              header-align="center"
-              min-width="100"
-            >
-              <template #default="{ row }">
-                {{ formatTextCell(row.insuredType) }}
-              </template>
-            </ElTableColumn>
-            <ElTableColumn
-              prop="admissionTime"
-              label="入院时间"
-              align="center"
-              header-align="center"
-              min-width="160"
-            >
-              <template #default="{ row }">
-                {{ formatTextCell(row.admissionTime) }}
-              </template>
-            </ElTableColumn>
-            <ElTableColumn
-              prop="dischargeTime"
-              label="出院时间"
-              align="center"
-              header-align="center"
-              min-width="160"
-            >
-              <template #default="{ row }">
-                {{ formatTextCell(row.dischargeTime) }}
-              </template>
-            </ElTableColumn>
-            <ElTableColumn
-              prop="prescriptionDate"
-              label="处方日期"
-              align="center"
-              header-align="center"
-              min-width="160"
-            >
-              <template #default="{ row }">
-                {{ formatTextCell(row.prescriptionDate) }}
-              </template>
-            </ElTableColumn>
-            <ElTableColumn
-              prop="drugGenericName"
-              label="药品通用名"
-              align="center"
-              header-align="center"
-              min-width="140"
-            >
-              <template #default="{ row }">
-                {{ formatTextCell(row.drugGenericName) }}
-              </template>
-            </ElTableColumn>
-            <ElTableColumn
-              prop="productName"
-              label="产品名称"
-              align="center"
-              header-align="center"
-              min-width="140"
-            >
-              <template #default="{ row }">
-                {{ formatTextCell(row.productName) }}
-              </template>
-            </ElTableColumn>
-            <ElTableColumn
-              prop="drugCategoryText"
-              label="药品类别"
-              align="center"
-              header-align="center"
-              min-width="100"
-            >
-              <template #default="{ row }">
-                {{ formatTextCell(row.drugCategoryText) }}
-              </template>
-            </ElTableColumn>
-            <ElTableColumn
-              prop="doseFormText"
-              label="剂型"
-              align="center"
-              header-align="center"
-              min-width="90"
-            >
-              <template #default="{ row }">
-                {{ formatTextCell(row.doseFormText) }}
-              </template>
-            </ElTableColumn>
-            <ElTableColumn
-              prop="specification"
-              label="规格"
-              align="center"
-              header-align="center"
-              min-width="110"
-            >
-              <template #default="{ row }">
-                {{ formatTextCell(row.specification) }}
-              </template>
-            </ElTableColumn>
-            <ElTableColumn
-              prop="packageUnitText"
-              label="包装"
-              align="center"
-              header-align="center"
-              min-width="80"
-            >
-              <template #default="{ row }">
-                {{ formatTextCell(row.packageUnitText) }}
-              </template>
-            </ElTableColumn>
-            <ElTableColumn
-              prop="pricingUnitText"
-              label="计价单位"
-              align="center"
-              header-align="center"
-              min-width="90"
-            >
-              <template #default="{ row }">
-                {{ formatTextCell(row.pricingUnitText) }}
-              </template>
-            </ElTableColumn>
-            <ElTableColumn
-              prop="selectedProductText"
-              label="是否中选产品"
-              align="center"
-              header-align="center"
-              min-width="110"
-            >
-              <template #default="{ row }">
-                {{ formatTextCell(row.selectedProductText) }}
-              </template>
-            </ElTableColumn>
-            <ElTableColumn
-              prop="manufacturerName"
-              label="生产企业"
-              align="center"
-              header-align="center"
-              min-width="140"
-            >
-              <template #default="{ row }">
-                {{ formatTextCell(row.manufacturerName) }}
-              </template>
-            </ElTableColumn>
-            <ElTableColumn
-              prop="unitPrice"
-              label="单价"
-              align="right"
-              header-align="right"
-              min-width="100"
-            >
-              <template #default="{ row }">
-                <span :class="REPORT_TABLE_AMOUNT_CELL">
-                  {{ formatMoneyCell(row.unitPrice) }}
-                </span>
-              </template>
-            </ElTableColumn>
-            <ElTableColumn
-              prop="usageQuantity"
-              label="使用数量"
-              align="right"
-              header-align="right"
-              min-width="100"
-            >
-              <template #default="{ row }">
-                <span :class="REPORT_TABLE_NUM_CELL">
-                  {{ formatQtyCell(row.usageQuantity) }}
-                </span>
-              </template>
-            </ElTableColumn>
-            <ElTableColumn
-              prop="usageAmount"
-              label="使用总金额"
-              align="right"
-              header-align="right"
-              min-width="110"
-            >
-              <template #default="{ row }">
-                <span :class="REPORT_TABLE_AMOUNT_CELL">
-                  {{ formatMoneyCell(row.usageAmount) }}
-                </span>
-              </template>
-            </ElTableColumn>
-          </ReportElTable>
+              <!-- 仅 min-width、禁 tooltip：横向滚动展示全文，避免省略号与固定 width 比例失调 -->
+              <ElTableColumn
+                prop="outpatientInpatientNo"
+                label="门诊住院号"
+                align="center"
+                header-align="center"
+                min-width="120"
+              />
+              <ElTableColumn
+                prop="patientName"
+                label="患者姓名"
+                align="center"
+                header-align="center"
+                min-width="88"
+              />
+              <ElTableColumn
+                prop="insuredRegion"
+                label="参保地区"
+                align="center"
+                header-align="center"
+                min-width="88"
+              />
+              <ElTableColumn
+                prop="insuredType"
+                label="参保类型"
+                align="center"
+                header-align="center"
+                min-width="88"
+              />
+              <ElTableColumn
+                prop="admissionTime"
+                label="入院时间"
+                align="center"
+                header-align="center"
+                min-width="168"
+              />
+              <ElTableColumn
+                prop="dischargeTime"
+                label="出院时间"
+                align="center"
+                header-align="center"
+                min-width="168"
+              />
+              <ElTableColumn
+                prop="prescriptionDate"
+                label="处方日期"
+                align="center"
+                header-align="center"
+                min-width="168"
+              />
+              <ElTableColumn
+                prop="drugGenericName"
+                label="药品通用名"
+                align="center"
+                header-align="center"
+                min-width="160"
+              />
+              <ElTableColumn
+                prop="productName"
+                label="产品名称"
+                align="center"
+                header-align="center"
+                min-width="160"
+              />
+              <ElTableColumn
+                prop="drugCategoryText"
+                label="药品类别"
+                align="center"
+                header-align="center"
+                min-width="96"
+              />
+              <ElTableColumn
+                prop="doseFormText"
+                label="剂型"
+                align="center"
+                header-align="center"
+                min-width="80"
+              />
+              <ElTableColumn
+                prop="specification"
+                label="规格"
+                align="center"
+                header-align="center"
+                min-width="120"
+              />
+              <ElTableColumn
+                prop="packageUnitText"
+                label="包装"
+                align="center"
+                header-align="center"
+                min-width="72"
+              />
+              <ElTableColumn
+                prop="pricingUnitText"
+                label="计价单位"
+                align="center"
+                header-align="center"
+                min-width="88"
+              />
+              <ElTableColumn
+                prop="selectedProductText"
+                label="是否中选产品"
+                align="center"
+                header-align="center"
+                min-width="112"
+              />
+              <ElTableColumn
+                prop="manufacturerName"
+                label="生产企业"
+                align="center"
+                header-align="center"
+                min-width="160"
+              />
+              <ElTableColumn
+                prop="unitPrice"
+                label="单价"
+                align="right"
+                header-align="right"
+                min-width="96"
+              >
+                <template #default="{ row }">
+                  <span :class="REPORT_TABLE_AMOUNT_CELL">
+                    {{ formatMoneyCell(row.unitPrice) }}
+                  </span>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="usageQuantity"
+                label="使用数量"
+                align="right"
+                header-align="right"
+                min-width="96"
+              >
+                <template #default="{ row }">
+                  <span :class="REPORT_TABLE_NUM_CELL">
+                    {{ formatQtyCell(row.usageQuantity) }}
+                  </span>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="usageAmount"
+                label="使用总金额"
+                align="right"
+                header-align="right"
+                min-width="112"
+              >
+                <template #default="{ row }">
+                  <span :class="REPORT_TABLE_AMOUNT_CELL">
+                    {{ formatMoneyCell(row.usageAmount) }}
+                  </span>
+                </template>
+              </ElTableColumn>
+            </ReportElTable>
+          </template>
         </ReportTableScroll>
       </template>
 
@@ -600,3 +536,14 @@ onMounted(async () => {
     </ReportListPageLayout>
   </Page>
 </template>
+
+<style lang="scss">
+/* 外挂双保险：禁止单元格省略号，全文靠横向滚动查看 */
+.surplus-retention-report-table.report-list-page__table {
+  .el-table__cell .cell {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
+  }
+}
+</style>

@@ -57,11 +57,11 @@ public class PageNurseConsumableWorkloadDetailRequest {
     private Long requestingOrgId;
 
     /**
-     * 默认登录科室主键（可选；{@code Practitioner.org_id}）。
+     * 工作科室主键（可选；岗位 {@code adm_pr_assign.org_id}）。
      *
-     * <p>未传单护士时按该科下全部护士收窄。</p>
+     * <p>未传单人时按该科下护士/医技岗位收窄。</p>
      */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "默认登录科室主键（可选；Practitioner.org_id）")
+    @Schema(description = "工作科室主键（可选；岗位 adm_pr_assign.org_id）")
     private Long organizationId;
 }

@@ -34,6 +34,17 @@ export const WORKBENCH_GROUPS: WorkbenchGroupConfig[] = [
     menuCodes: ['OutpatientNurseStation', 'InpatientNurseStation'],
   },
   {
+    id: 'medical-tech',
+    title: '医技',
+    subtitle: '医技执行与计费',
+    icon: 'lucide:microscope',
+    accentColor: '#0066e6',
+    accentGradient: 'linear-gradient(135deg, #3b82f6 0%, #0066e6 100%)',
+    iconBgColors: ['#f0f7ff', '#e8f1ff', '#e0ebff', '#d8e5ff'],
+    iconColors: ['#0066e6', '#1d5bb8', '#1e4a9e', '#1e3a7a'],
+    menuCodes: ['MedicalTechWorkstation'],
+  },
+  {
     id: 'cashier',
     title: '收费处',
     subtitle: '挂号收费与结算',

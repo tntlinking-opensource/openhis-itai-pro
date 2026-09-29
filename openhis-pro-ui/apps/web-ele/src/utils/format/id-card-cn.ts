@@ -1,6 +1,36 @@
 /** 与主数据性别字典 value 对齐的二代证解析结果 */
 export type IdCardGenderCode = 'FEMALE' | 'MALE';
 
+/** 18 位大陆居民身份证格式（与患者档案 / 后端 ID_CARD_REGEX 对齐） */
+const ID_CARD_18_REGEX =
+  /^[1-9]\d{5}(?:18|19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dX]$/i;
+
+/** 15 位大陆居民身份证格式 */
+const ID_CARD_15_REGEX = /^[1-9]\d{7}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}$/;
+
+/**
+ * 是否符合 15/18 位大陆居民身份证号格式（空串视为不通过）。
+ */
+export function isValidChineseIdCard(value: unknown): boolean {
+  const t = String(value ?? '').trim();
+  if (!t) {
+    return false;
+  }
+  return ID_CARD_18_REGEX.test(t) || ID_CARD_15_REGEX.test(t);
+}
+
+/**
+ * 表单侧身份证输入是否可接受：空串通过（必填由 required 管）；
+ * 非空须通过 {@link isValidChineseIdCard}。产品允许无证建档（id_card 可空）。
+ */
+export function isAcceptableChineseIdCardInput(value: unknown): boolean {
+  const t = String(value ?? '').trim();
+  if (!t) {
+    return true;
+  }
+  return isValidChineseIdCard(t);
+}
+
 /**
  * 由出生日期（YYYY-MM-DD）计算周岁年龄字符串；非法日期返回空串。
  *
@@ -36,6 +66,19 @@ export function calcAgeFromBirthDate(birthDate: string, referenceDate: Date = ne
     age -= 1;
   }
   return age >= 0 ? String(age) : '';
+}
+
+/**
+ * 由周岁年龄反推出生日期（今天减 N 年，与患者档案编辑同口径）。
+ *
+ * @param age 周岁
+ * @param referenceDate 基准日，默认当天
+ */
+export function birthDateFromAgeYears(age: number, referenceDate: Date = new Date()): string {
+  const year = referenceDate.getFullYear() - age;
+  const month = String(referenceDate.getMonth() + 1).padStart(2, '0');
+  const day = String(referenceDate.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 /**

@@ -57,6 +57,14 @@ public class CreateMedicationOrderDraftCommand {
     private BigDecimal firstDose;
     /** 首日量单位编码。 */
     private String firstDoseUnitCode;
+    /**
+     * 分次剂量序列（计量、逗号分隔；仅长期西药/中成药；空=走 {@link #dose}；BR-MRQ-035）。
+     */
+    private String doseSchedule;
+    /**
+     * 分次用量序列（拆零、逗号分隔；与 {@link #doseSchedule} 同序；空=走 {@link #quantity}；BR-MRQ-035）。
+     */
+    private String quantitySchedule;
 
     /**
      * 生成来源持久化码（医生站开立与列表过滤一致；可空表示由调用方未显式传入）。

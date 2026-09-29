@@ -13,7 +13,6 @@ import { isEmrDataElementWidget } from '../data-element-types';
 import { parseEmrWidgetOptions, resolveEmrWidgetOptionLabel } from '../emr-widget-options';
 import {
   contentEditableCaretOffset,
-  clearPinnedIslandCaret,
   insertPlainTextAtCaret,
   peekPinnedIslandCaret,
   pinIslandCaret,
@@ -134,13 +133,18 @@ function syncTextFieldFromAttrs() {
     if (!el || props.editor.view?.composing) return;
     const next = valueStr.value;
     const dom = readContentEditablePlainText(el);
-    if (dom === next) return;
-    if (document.activeElement === el) return;
     const pinned = peekPinnedIslandCaret(el);
-    const caret = pinned ?? -1;
+    if (document.activeElement === el) {
+      if (dom !== next && pinned != null) {
+        el.textContent = next;
+        setContentEditableCaretOffset(el, Math.min(pinned, next.length));
+      }
+      return;
+    }
+    if (dom === next) return;
     el.textContent = next;
-    if (pinned != null && caret >= 0) {
-      setContentEditableCaretOffset(el, Math.min(caret, next.length));
+    if (pinned != null) {
+      setContentEditableCaretOffset(el, Math.min(pinned, next.length));
     }
   });
 }
@@ -148,11 +152,28 @@ function syncTextFieldFromAttrs() {
 function onTextFieldInput() {
   const el = textFieldRef.value;
   if (!el) return;
-  // 短钉光标：分页若刚好重挂岛屿垫片，用当前偏移恢复，避免飞文末
+  const next = readContentEditablePlainText(el);
+  if (next === valueStr.value) return;
   const caret = contentEditableCaretOffset(el);
-  if (caret >= 0) pinIslandCaret(el, caret, 500);
-  else clearPinnedIslandCaret(el);
-  props.updateAttributes({ value: readContentEditablePlainText(el) });
+  if (caret >= 0) pinIslandCaret(el, caret, 400);
+  props.updateAttributes({ value: next });
+  nextTick(() => {
+    const now = textFieldRef.value;
+    if (!now) return;
+    const pinned = peekPinnedIslandCaret(now);
+    if (pinned == null) return;
+    const at = Math.min(pinned, readContentEditablePlainText(now).length);
+    setContentEditableCaretOffset(now, at);
+    requestAnimationFrame(() => {
+      const later = textFieldRef.value;
+      if (!later) return;
+      const latest = peekPinnedIslandCaret(later) ?? pinned;
+      setContentEditableCaretOffset(
+        later,
+        Math.min(latest, readContentEditablePlainText(later).length),
+      );
+    });
+  });
 }
 
 function onTextFieldPaste(e: ClipboardEvent) {
@@ -194,16 +215,6 @@ function onTextFieldBeforeInput(e: InputEvent) {
   }
 }
 
-function syncLineInputWidth() {
-  nextTick(() => {
-    const el = lineInputRef.value;
-    if (!el) return;
-    el.style.width = '1px';
-    const minPx = 28;
-    el.style.width = `${Math.max(minPx, el.scrollWidth)}px`;
-  });
-}
-
 /** 下拉宽度跟当前展示文案走，避免占一整行 */
 function syncSelectWidth() {
   nextTick(() => {
@@ -224,9 +235,17 @@ function syncSelectWidth() {
   });
 }
 
+/** 数字岛：按输入框当前值回写 attrs，并钉住光标，避免 NodeView 刷新把后续数字插到格首（B23） */
 function onNumberInput(e: Event) {
-  props.updateAttributes({ value: (e.target as HTMLInputElement).value });
-  syncLineInputWidth();
+  const el = e.target as HTMLInputElement;
+  const caret = el.selectionStart ?? el.value.length;
+  props.updateAttributes({ value: el.value });
+  nextTick(() => {
+    const input = lineInputRef.value;
+    if (!input || document.activeElement !== input) return;
+    const at = Math.min(caret, input.value.length);
+    input.setSelectionRange(at, at);
+  });
 }
 
 function onTextareaInput(e: Event) {
@@ -306,12 +325,19 @@ const selectDisplayLabel = computed(() =>
   resolveEmrWidgetOptionLabel(selectOptions.value, valueStr.value),
 );
 
+/** v-once 冻住 contenteditable；只读打开后再复用必须按 caps 写回 DOM */
+function syncIslandDomEditable() {
+  const el = textFieldRef.value;
+  if (!el) return;
+  const next = domEditable.value;
+  if (el.isContentEditable === next) return;
+  el.contentEditable = next ? 'true' : 'false';
+}
+
 onMounted(() => {
   if (editable.value && isTextWidget.value) {
     syncTextFieldFromAttrs();
-  }
-  if (editable.value && effectiveWidget.value === 'number') {
-    syncLineInputWidth();
+    syncIslandDomEditable();
   }
   if (editable.value && effectiveWidget.value === 'multiline') {
     syncTextareaHeight();
@@ -321,12 +347,13 @@ onMounted(() => {
   }
 });
 
+watch(domEditable, () => {
+  if (isTextWidget.value) syncIslandDomEditable();
+});
+
 watch([valueStr, effectiveWidget, editable, optionsJson], () => {
   if (editable.value && isTextWidget.value) {
     syncTextFieldFromAttrs();
-  }
-  if (editable.value && effectiveWidget.value === 'number') {
-    syncLineInputWidth();
   }
   if (editable.value && effectiveWidget.value === 'multiline') {
     syncTextareaHeight();
@@ -421,6 +448,7 @@ watch([valueStr, effectiveWidget, editable, optionsJson], () => {
         <span v-if="showBrackets" class="emr-bracket-field__bracket" aria-hidden="true">[</span>
         <span
           ref="textFieldRef"
+          v-once
           role="textbox"
           class="emr-inline-text__field emr-de__text-field"
           tabindex="0"
@@ -456,6 +484,8 @@ watch([valueStr, effectiveWidget, editable, optionsJson], () => {
         v-else-if="effectiveWidget === 'number'"
         class="emr-de-text-bracket emr-de-slot-bracket emr-de-number"
         :class="{ 'emr-de-text-bracket--plain': !valueStr }"
+        @pointerdown.stop
+        @mousedown.stop
       >
         <span v-if="valueStr" class="emr-bracket-field__bracket" aria-hidden="true">[</span>
         <span class="emr-de-number__wrap">
@@ -474,7 +504,8 @@ watch([valueStr, effectiveWidget, editable, optionsJson], () => {
             :aria-label="titleTip"
             :title="valueStr ? valueStr : visualPlaceholder || fieldHint"
             @input="onNumberInput"
-            @keydown="keydownHandler('number')"
+            @beforeinput.stop
+            @keydown.stop="keydownHandler('number')"
           />
         </span>
         <span v-if="valueStr" class="emr-bracket-field__bracket" aria-hidden="true">]</span>
@@ -508,6 +539,8 @@ watch([valueStr, effectiveWidget, editable, optionsJson], () => {
         class="emr-de__radio-group"
         role="radiogroup"
         :aria-label="titleTip"
+        @pointerdown.stop
+        @mousedown.stop
       >
         <span v-if="!valueStr && visualPlaceholder" class="emr-de__slot-placeholder">{{
           visualPlaceholder
@@ -555,7 +588,12 @@ watch([valueStr, effectiveWidget, editable, optionsJson], () => {
         </span>
         <span v-if="valueStr" class="emr-bracket-field__bracket" aria-hidden="true">]</span>
       </span>
-      <label v-else-if="effectiveWidget === 'checkbox'" class="emr-de__checkbox-wrap">
+      <label
+        v-else-if="effectiveWidget === 'checkbox'"
+        class="emr-de__checkbox-wrap"
+        @pointerdown.stop
+        @mousedown.stop
+      >
         <input
           class="emr-de__checkbox"
           type="checkbox"
@@ -738,6 +776,38 @@ watch([valueStr, effectiveWidget, editable, optionsJson], () => {
   pointer-events: none;
 }
 
+/* 空槽聚焦让开占位，避免光标叠在「请在这里填写…」上 */
+.emr-de-text-bracket:focus-within .emr-de__text-field::before,
+.emr-de__text-field:focus::before,
+.emr-de__text-field:focus-visible::before {
+  content: none !important;
+}
+
+.emr-de-text-bracket:focus-within .emr-de__text-field:empty,
+.emr-de__text-field:focus:empty,
+.emr-de__text-field:focus-visible:empty {
+  min-width: 1ch;
+  caret-color: transparent;
+}
+
+.emr-de-text-bracket:focus-within .emr-de__text-field:empty::after,
+.emr-de__text-field:focus:empty::after,
+.emr-de__text-field:focus-visible:empty::after {
+  content: '';
+  display: inline-block;
+  width: 1px;
+  height: 1.05em;
+  background: #111827;
+  vertical-align: text-bottom;
+  animation: emr-de-text-caret-blink 1s step-end infinite;
+}
+
+@keyframes emr-de-text-caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
 .emr-de--free .emr-de__text-field:focus {
   box-shadow: inset 0 -1px 0 0 #0d9488;
   border-radius: 1px;
@@ -897,7 +967,7 @@ watch([valueStr, effectiveWidget, editable, optionsJson], () => {
   position: relative;
   display: inline-block;
   min-width: 2.5em;
-  max-width: 8em;
+  /* 不要 max-width：占位词比 8em 宽时点击落在透明输入外，字会打进正文（B23） */
   vertical-align: baseline;
 }
 
@@ -917,10 +987,10 @@ watch([valueStr, effectiveWidget, editable, optionsJson], () => {
   position: absolute;
   inset: 0;
   opacity: 0;
-  width: 100%;
+  width: auto;
   max-width: none;
   min-width: 0;
-  height: 100%;
+  height: auto;
   cursor: text;
 }
 

@@ -534,6 +534,7 @@ defineExpose({ open, close });
           :force-write-disabled="effectiveReadonly"
           default-time-sort-order="asc"
           include-tcm-prescriptions
+          show-execution-record
           @quick-action="handleQuickAction"
           @edit-service-apply="handleEditServiceApply"
         />

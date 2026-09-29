@@ -54,6 +54,14 @@ public class PaymentChannelDisplayAssembler {
             return null;
         }
         PaymentChannel channel = PaymentChannel.fromCode(payEnum.trim());
+        // 折扣旁证不进自付渠道四格（BR-OP-DCL-031）
+        if (PaymentChannel.DISCOUNT.equals(channel)) {
+            return null;
+        }
+        // 预交金冲抵不进自付渠道四格
+        if (PaymentChannel.DEPOSIT_OFFSET.equals(channel)) {
+            return null;
+        }
         if (PaymentChannel.SCAN_PAY.equals(channel)) {
             return PaymentChannel.WECHAT.getDisplay();
         }

@@ -26,6 +26,7 @@ const emit = defineEmits<{
   deleteSkinTestRow: [allergyRecordId: string];
   execute: [];
   printInfusionLabel: [row: NurseAdviceExecuteRow];
+  printLabRows: [rows: NurseAdviceExecuteRow[]];
   refreshSkinTest: [];
   saveSkinTestRow: [draft: NurseSkinTestRowDraft];
   selectionChange: [keys: string[]];
@@ -85,6 +86,7 @@ defineExpose({
         @execute="emit('execute')"
         @cancel-execute="emit('cancelExecute', $event)"
         @print-infusion-label="emit('printInfusionLabel', $event)"
+        @print-lab-rows="emit('printLabRows', $event)"
       />
       <NurseSkinTestCenter
         v-show="activeTab === 'skintest'"

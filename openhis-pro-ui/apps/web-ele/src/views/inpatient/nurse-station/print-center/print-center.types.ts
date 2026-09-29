@@ -86,6 +86,12 @@ export interface PrintPendingRow {
   infusionFlag?: boolean;
   /** 合管检验设备主键（采血贴按 device 分组） */
   specimenTubeMergeDeviceId?: string;
+  /**
+   * 检验开立数量展示（如「2次」；与申请单数量列同源 dosageDisplay；采血贴张数用）。
+   */
+  dosageDisplay?: string;
+  /** 医嘱优先级 code（加急=EM；采血贴印「急」） */
+  priorityEnum?: string;
 }
 
 export const PRINT_DOC_CATEGORIES: PrintDocCategoryOption[] = [
@@ -185,7 +191,7 @@ export const PRINT_DOC_TYPES: PrintDocTypeOption[] = [
     scope: 'multiple',
     previewKind: 'label',
     description:
-      '按开嘱日查询；按检验医嘱逐张打印采血贴（categoryEnum=22，30×50mm，与门诊模板分开）',
+      '按开嘱日查询；按检验医嘱开立数量打对应贴数（如 2次→2 张；合管组取组内最大；categoryEnum=22，30×50mm）',
   },
   {
     code: 'temp_sheet',

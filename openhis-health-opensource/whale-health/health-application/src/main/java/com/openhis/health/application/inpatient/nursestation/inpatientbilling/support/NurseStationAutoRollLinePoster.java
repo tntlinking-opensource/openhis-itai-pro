@@ -18,40 +18,48 @@ import org.springframework.stereotype.Component;
 public class NurseStationAutoRollLinePoster {
 
     private final InpatientAutoRollOrderExecutionOrchestrator inpatientAutoRollOrderExecutionOrchestrator;
+    private final AutoRollBillingActorSecuritySupport autoRollBillingActorSecuritySupport;
 
     /**
      * 单条滚费执行落账。
      *
-     * @param line        落账行（含 occurrenceTime）
-     * @param operatorId  操作人（写入 Charge.performer_id；配置项路径与计费人同值）
-     * @param performerId 主执行人（写入 Procedure performer；配置项=计费人，护理=责任护士）
+     * <p>操作人与主执行人均为计费人（配置项）或责任护士（护理分支）；审计 {@code created_by}
+     * 亦写入计费人绑定的系统用户，禁止回落种子 admin。</p>
+     *
+     * @param line                  落账行（含 occurrenceTime）
+     * @param billingPractitionerId 计费人医务人员主键（同时作为 operator / performer）
      * @return 执行结果
      */
     public InpatientAutoRollOrderExecutionOrchestrator.Outcome postLine(
         AutoRollLineContext line,
-        Long operatorId,
-        Long performerId) {
+        Long billingPractitionerId) {
         try {
-            InpatientAutoRollServiceOrderExecuteSpec command = new InpatientAutoRollServiceOrderExecuteSpec();
-            command.setServiceRequestId(line.getServiceRequestId());
-            command.setEncounterId(line.getEncounterId());
-            command.setPatientId(line.getPatientId());
-            command.setAccountId(line.getAccountId());
-            command.setOrganizationId(line.getOrganizationId());
-            command.setBillDate(line.getBillDate());
-            command.setQuantity(line.getQuantity());
-            command.setQuantityUnit(line.getUnitCode());
-            command.setPreferredDefinitionId(line.getChargeDefinitionId());
-            command.setOccurrenceTime(line.getOccurrenceTime());
-            command.setPerformerId(performerId);
-            command.setOperatorId(operatorId);
-            return inpatientAutoRollOrderExecutionOrchestrator.executeLongTermServiceOrderSlot(command);
+            return autoRollBillingActorSecuritySupport.runAsBillingPractitioner(
+                billingPractitionerId,
+                () -> {
+                    InpatientAutoRollServiceOrderExecuteSpec command = new InpatientAutoRollServiceOrderExecuteSpec();
+                    command.setServiceRequestId(line.getServiceRequestId());
+                    command.setEncounterId(line.getEncounterId());
+                    command.setPatientId(line.getPatientId());
+                    command.setAccountId(line.getAccountId());
+                    command.setOrganizationId(line.getOrganizationId());
+                    command.setBillDate(line.getBillDate());
+                    command.setQuantity(line.getQuantity());
+                    command.setQuantityUnit(line.getUnitCode());
+                    command.setPreferredDefinitionId(line.getChargeDefinitionId());
+                    command.setOccurrenceTime(line.getOccurrenceTime());
+                    // 计费人同时写入 operator / performer（BR-IP-ARG-019/021）
+                    command.setPerformerId(billingPractitionerId);
+                    command.setOperatorId(billingPractitionerId);
+                    return inpatientAutoRollOrderExecutionOrchestrator.executeLongTermServiceOrderSlot(command);
+                });
         } catch (RuntimeException ex) {
             log.warn(
-                "住院滚费单条落账失败 encounterId={} serviceRequestId={} chargeDefinitionId={}",
+                "住院滚费单条落账失败 encounterId={} serviceRequestId={} chargeDefinitionId={} billingPractitionerId={}",
                 line.getEncounterId(),
                 line.getServiceRequestId(),
                 line.getChargeDefinitionId(),
+                billingPractitionerId,
                 ex);
             return InpatientAutoRollOrderExecutionOrchestrator.Outcome.FAILED;
         }

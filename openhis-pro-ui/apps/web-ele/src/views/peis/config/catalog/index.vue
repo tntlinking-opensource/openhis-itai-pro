@@ -206,6 +206,7 @@ const categoryLabelOptions = [
   { value: PROJECT_CONCLUSION_CATEGORY, label: '项目结论' },
 ];
 
+/** 项目类型下拉（对齐 ActivityType code；含外检 6、诊查 7） */
 const typeOptions = [
   { value: '1', label: '检验' },
   { value: '2', label: '检查' },
@@ -213,6 +214,7 @@ const typeOptions = [
   { value: '4', label: '手术' },
   { value: '5', label: '其他' },
   { value: '6', label: '外检' },
+  { value: '7', label: '诊查' },
 ];
 
 const genderOptions = [

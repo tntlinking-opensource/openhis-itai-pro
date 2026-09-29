@@ -20,7 +20,7 @@ public class QueryOutpatientEmrListRequest extends AbstractPageQuery {
     /** 序列化版本号。 */
     private static final long serialVersionUID = 1L;
 
-    /** 文书状态 code（如 DRAFT/SUBMITTED）；空则不过滤。 */
+    /** 文书状态 code（如 DRAFT/PENDING_ARCHIVE/ARCHIVED）；空则不过滤。 */
     private String statusCode;
 
     /** 就诊科室主键；空则不过滤。 */

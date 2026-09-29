@@ -36,8 +36,15 @@ public class SummarizeKeyMedicationUsageReportRequest {
 
     /**
      * 重点药类型多选（{@code BASIC}/{@code NATIONAL_MONITOR}/{@code CENTRAL_PURCHASE}/{@code ANTIBIOTIC}）；
-     * 空/null 表示全部；结果按类型<strong>拆行</strong>，组内合计行占比用全部药典药品。
+     * 空/null 且药品性质亦空 → 七类全开；仅本框有值 → 只出四旗行。
      */
-    @Schema(description = "重点药类型多选")
+    @Schema(description = "重点药类型多选（四旗）")
     private List<String> keyDrugTypeCodes;
+
+    /**
+     * 药品性质多选（{@code NARCOTIC}/{@code PSYCH_ONE}/{@code PSYCH_TWO}）；与重点药类型分框；
+     * 空/null 且重点药亦空 → 七类全开；仅本框有值 → 只出麻/精行。
+     */
+    @Schema(description = "药品性质多选（麻/精一/精二）")
+    private List<String> medicinePropertyCodes;
 }

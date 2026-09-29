@@ -46,7 +46,7 @@ export const QUALITY_GRADE_OPTIONS: FormItemOption[] = [
 ];
 
 /** 质控工作台默认筛选：已接收 + 质控中 */
-export const QC_WORKBENCH_DEFAULT_STATUSES = ['received', 'qcing'] as const;
+export const QC_WORKBENCH_DEFAULT_STATUSES = ['PENDING_ARCHIVE', 'ARCHIVED'] as const;
 
 /** 可预览卷宗的状态 */
-export const VOLUME_ACCESS_STATUSES = ['qcing', 'archived'] as const;
+export const VOLUME_ACCESS_STATUSES = ['ARCHIVED'] as const;

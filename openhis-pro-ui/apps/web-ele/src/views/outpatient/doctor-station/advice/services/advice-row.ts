@@ -4,7 +4,11 @@ import type { DoctorStationAdviceResourceKeyDto } from '#/api/doctor-station/adv
 
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
-import { ADVICE_ROW_PRODUCT_TABLE_FALLBACK, DEVICE_DEFINITION_TABLE } from './advice-tab.constants';
+import {
+  ACTIVITY_DEFINITION_TABLE,
+  ADVICE_ROW_PRODUCT_TABLE_FALLBACK,
+  DEVICE_DEFINITION_TABLE,
+} from './advice-tab.constants';
 
 /** 复合 selectedId：`{productTableName}:{definitionId}` */
 
@@ -100,6 +104,28 @@ export function isAdviceRowBoundConsumableFromService(row: AdviceRowItem): boole
   return tbl === DEVICE_DEFINITION_TABLE || tbl.includes('device');
 }
 
+/** 诊疗绑定带出的诊疗行（合管采血费等派生 ServiceRequest，basedOnServiceRequestId 锚定父诊疗） */
+export function isAdviceRowBoundActivityFromService(row: AdviceRowItem): boolean {
+  const basedOn = String(row.basedOnServiceRequestId ?? '').trim();
+  if (!basedOn) {
+    return false;
+  }
+  // 耗材派生另有判定，互斥
+  if (isAdviceRowBoundConsumableFromService(row)) {
+    return false;
+  }
+  const rt = String(row.resourceType ?? '')
+    .trim()
+    .toUpperCase();
+  if (rt === 'SERVICE') {
+    return true;
+  }
+  const tbl = String(row.productTableName ?? '')
+    .trim()
+    .toLowerCase();
+  return tbl === ACTIVITY_DEFINITION_TABLE || tbl.includes('activity_definition');
+}
+
 function normalizeAdviceRowRequestId(value: unknown): string {
   const preserved = preserveApiIdForRequest(value);
   if (preserved) {
@@ -108,14 +134,11 @@ function normalizeAdviceRowRequestId(value: unknown): string {
   return String(value ?? '').trim();
 }
 
-/** 申请单诊疗带出的绑定耗材（父诊疗行带 applyFormNo）；不含正常开立医嘱诊疗耗材 */
-export function isAdviceRowServiceApplyFormBoundConsumable(
+/** 父诊疗是否为申请单行（带 applyFormNo） */
+function isServiceApplyFormAnchorRow(
   row: AdviceRowItem,
   allRows: readonly AdviceRowItem[],
 ): boolean {
-  if (!isAdviceRowBoundConsumableFromService(row)) {
-    return false;
-  }
   if (String(row.applyFormNo ?? '').trim()) {
     return true;
   }
@@ -128,9 +151,33 @@ export function isAdviceRowServiceApplyFormBoundConsumable(
     if (parentId !== anchorId) {
       continue;
     }
-    return Boolean(String(parent.applyFormNo ?? '').trim());
+    if (String(parent.applyFormNo ?? '').trim()) {
+      return true;
+    }
   }
   return false;
+}
+
+/** 申请单诊疗带出的绑定耗材（父诊疗行带 applyFormNo）；不含正常开立医嘱诊疗耗材 */
+export function isAdviceRowServiceApplyFormBoundConsumable(
+  row: AdviceRowItem,
+  allRows: readonly AdviceRowItem[],
+): boolean {
+  if (!isAdviceRowBoundConsumableFromService(row)) {
+    return false;
+  }
+  return isServiceApplyFormAnchorRow(row, allRows);
+}
+
+/** 申请单诊疗带出的绑定诊疗（合管采血费等）；不含手工开立诊疗 */
+export function isAdviceRowServiceApplyFormBoundActivity(
+  row: AdviceRowItem,
+  allRows: readonly AdviceRowItem[],
+): boolean {
+  if (!isAdviceRowBoundActivityFromService(row)) {
+    return false;
+  }
+  return isServiceApplyFormAnchorRow(row, allRows);
 }
 
 export function productTableNameForAdviceRow(row: AdviceRowItem): string | undefined {

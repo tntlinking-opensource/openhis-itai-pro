@@ -40,18 +40,18 @@ public class ListNurseWorkloadNurseCardsRequest {
     /**
      * 开立科室主键（可选；仅金额按 requesting_org_id 二次收窄）。
      *
-     * <p>科室工作量请传 {@link #organizationId}。</p>
+     * <p>科室工作量请传 {@link #organizationId}（工作科室）。</p>
      */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "开立科室主键（可选；金额二次收窄）")
     private Long requestingOrgId;
 
     /**
-     * 默认登录科室主键（可选；{@code Practitioner.org_id}）。
+     * 工作科室主键（可选；岗位 {@code adm_pr_assign.org_id}）。
      *
-     * <p>已选时仅汇总该科下护士岗人员卡片。</p>
+     * <p>已选时仅汇总该科下护士/医技岗位人员卡片。</p>
      */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "默认登录科室主键（可选；Practitioner.org_id）")
+    @Schema(description = "工作科室主键（可选；岗位 adm_pr_assign.org_id）")
     private Long organizationId;
 }

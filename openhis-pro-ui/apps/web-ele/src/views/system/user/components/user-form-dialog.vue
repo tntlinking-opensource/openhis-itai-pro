@@ -24,6 +24,8 @@ import {
   resolveStaffScopesByRoleIdsApi,
   saveStaffApi,
   STAFF_SCOPE,
+  WORK_DEPT_CLASS_SORT,
+  workDeptClassSortsForRoleCodes,
 } from '#/api/basic/staff';
 import { getWardListApi, WARD_BED_FORM_CODE } from '#/api/basic/ward-bed';
 import {
@@ -115,9 +117,15 @@ const allRoles = ref<RoleInfo[]>([]);
 const selectedRoleIds = ref<string[]>([]);
 
 const departmentTreeOptions = ref<TreeOption[]>([]);
+/** 责任科室树原始节点，供按角色过滤工作科室（护士站 / 医技） */
+const responsibilityDeptRows = ref<ResponsibilityDept[]>([]);
 const warehouseOptions = ref<SelectOption[]>([]);
 const pharmacyOptions = ref<SelectOption[]>([]);
+/** 库房维护全量 id→名称（含药库/药房/科室药房），仅供回显补齐真名 */
+const inventoryLocationNameById = ref<Map<string, string>>(new Map());
 const wardOptions = ref<SelectOption[]>([]);
+/** 病区列表 id→名称，仅供回显补齐真名 */
+const wardLocationNameById = ref<Map<string, string>>(new Map());
 const drProfttlOptions = ref<SelectOption[]>([]);
 const registrationTypeOptions = ref<SelectOption[]>([]);
 
@@ -164,6 +172,75 @@ function toTreeOptions<T extends { children?: T[]; id: string; name: string }>(
     value: String(item.id),
     children: item.children?.length ? toTreeOptions(item.children) : undefined,
   }));
+}
+
+/** 从已选角色解析平台 code，供工作科室分类过滤 */
+function selectedRoleCodes(): string[] {
+  const codes: string[] = [];
+  for (const roleId of selectedRoleIds.value) {
+    const role = allRoles.value.find((item) => roleIdFromRole(item) === roleId);
+    const code = role?.code?.trim();
+    if (code) {
+      codes.push(code);
+    }
+  }
+  return codes;
+}
+
+/**
+ * 按已选角色过滤工作科室树。
+ * 护士只留护士站，医技只留医技科室；父节点分类不符时把命中的子节点提上来。
+ * 仅有自定义角色声明了工作科室、又没有护士/技师 code 时：候选为护士站∪医技科室。
+ */
+function buildWorkDepartmentTree(): TreeOption[] {
+  let allowed = new Set(workDeptClassSortsForRoleCodes(selectedRoleCodes()));
+  // 声明了 WORK_ORG 但角色 code 解析不出护士/技师时，回落双分类，避免树空
+  if (allowed.size === 0 && roleScopeLinked(STAFF_SCOPE.WORK_ORG)) {
+    allowed = new Set([WORK_DEPT_CLASS_SORT.NS, WORK_DEPT_CLASS_SORT.TECH]);
+  }
+  return filterWorkDepartmentNodes(responsibilityDeptRows.value, allowed);
+}
+
+/** 递归保留分类命中的科室；父级不符则提升子节点 */
+function filterWorkDepartmentNodes(
+  nodes: ResponsibilityDept[] | undefined,
+  allowed: Set<string>,
+): TreeOption[] {
+  if (!nodes?.length || allowed.size === 0) {
+    return [];
+  }
+  const result: TreeOption[] = [];
+  for (const node of nodes) {
+    const children = filterWorkDepartmentNodes(node.children, allowed);
+    const selfMatch = allowed.has(String(node.classEnum));
+    if (!selfMatch && children.length === 0) {
+      continue;
+    }
+    if (selfMatch) {
+      result.push({
+        label: node.name,
+        value: String(node.id),
+        children: children.length > 0 ? children : undefined,
+      });
+    } else {
+      result.push(...children);
+    }
+  }
+  return result;
+}
+
+/**
+ * 角色变化后丢掉不再允许的工作科室，避免护士岗残留医技科室。
+ * 在角色 `onChange` 刷新 StaffScope 后调用。
+ */
+async function pruneWorkDeptSelection() {
+  const allowedValues = collectTreeValues(buildWorkDepartmentTree());
+  const formValues = (await formApi.getValues()) as Record<string, unknown>;
+  const current = normalizeIdArray(formValues.workDeptIds);
+  const next = current.filter((id) => allowedValues.has(id));
+  if (next.length !== current.length) {
+    await formApi.setFieldValue('workDeptIds', next);
+  }
 }
 
 /**
@@ -349,7 +426,8 @@ async function refreshActiveStaffScopes(roleIds: string[]) {
     if (requestSeq !== activeStaffScopesRequestSeq) {
       return;
     }
-    activeStaffScopes.value = scopes.filter(Boolean) as StaffScopeCode[];
+    // 旧码 NURSE_ORG 归一为 WORK_ORG；再与内置模板并集，避免库内旧声明把护士/技师打成「出诊科室」
+    activeStaffScopes.value = normalizeActiveStaffScopes(normalizedRoleIds, scopes);
   } catch (error) {
     console.error('加载角色人员维护块失败，回退内置模板:', error);
     if (requestSeq !== activeStaffScopesRequestSeq) {
@@ -357,6 +435,27 @@ async function refreshActiveStaffScopes(roleIds: string[]) {
     }
     activeStaffScopes.value = resolveBuiltinStaffScopesFallback(normalizedRoleIds);
   }
+}
+
+/**
+ * 归一 StaffScope：废弃码 NURSE_ORG→WORK_ORG；其余合法码原样保留。
+ * 内置角色块以接口为准（后端已按 code 模板固定护士/技师为工作科室）。
+ */
+function normalizeActiveStaffScopes(_roleIds: string[], scopes: string[]): StaffScopeCode[] {
+  const normalized = new Set<StaffScopeCode>();
+  for (const raw of scopes) {
+    if (!raw) {
+      continue;
+    }
+    if (raw === 'NURSE_ORG') {
+      normalized.add(STAFF_SCOPE.WORK_ORG);
+      continue;
+    }
+    if ((Object.values(STAFF_SCOPE) as string[]).includes(raw)) {
+      normalized.add(raw as StaffScopeCode);
+    }
+  }
+  return [...normalized];
 }
 
 /** 已选角色是否关联某岗位块 */
@@ -408,14 +507,14 @@ function normalizeIdArray(raw: unknown): string[] {
   return raw.map((id) => preserveApiIdForRequest(id)).filter((id): id is string => !!id);
 }
 
-/** 从岗位详情列表提取 orgId 数组 */
+/** 从岗位详情列表提取 orgId 数组（保序去重，避免多角色分配重复回显） */
 function mapOrgIdsFromList(list?: { orgId?: number | string }[]): string[] {
-  return normalizeIdArray((list ?? []).map((item) => item.orgId));
+  return dedupeIds(normalizeIdArray((list ?? []).map((item) => item.orgId)));
 }
 
-/** 从岗位详情列表提取 locationId 数组 */
+/** 从岗位详情列表提取 locationId 数组（保序去重，避免多角色分配重复回显） */
 function mapLocationIdsFromList(list?: { locationId?: number | string }[]): string[] {
-  return normalizeIdArray((list ?? []).map((item) => item.locationId));
+  return dedupeIds(normalizeIdArray((list ?? []).map((item) => item.locationId)));
 }
 
 /** 收集树节点全部 value，用于判断回显 id 是否已在选项中 */
@@ -466,18 +565,29 @@ async function mergeValidDepartmentOrphansIntoTree(
   };
 }
 
-/** 为普通下拉补齐已保存但不在选项中的值 */
+/**
+ * 为普通下拉补齐已保存但不在选项中的值。
+ * values 保序去重；优先用 nameById 真名，找不到再退回「前缀（id）」。
+ */
 function mergeSelectOptionsWithMissingValues(
   options: SelectOption[],
   values: string[],
   labelPrefix: string,
+  nameById?: Map<string, string>,
 ): SelectOption[] {
   const existing = new Set(options.map((item) => item.value));
   const merged = [...options];
-  for (const value of values) {
-    if (value && !existing.has(value)) {
-      merged.push({ label: `${labelPrefix}（${value}）`, value });
+  // 已选 id 保序去重，避免同一 location 因多角色分配重复出现
+  for (const value of dedupeIds(values)) {
+    if (!value || existing.has(value)) {
+      continue;
     }
+    const knownName = nameById?.get(value)?.trim();
+    merged.push({
+      label: knownName || `${labelPrefix}（${value}）`,
+      value,
+    });
+    existing.add(value);
   }
   return merged;
 }
@@ -548,6 +658,9 @@ function buildSaveStaffParams(
   ) {
     params.nurseWardLocationList = locationListFromIds(formValues.manageWardIds);
   }
+  if (roleScopeLinked(STAFF_SCOPE.WORK_ORG) && scopeWritable(STAFF_SCOPE.WORK_ORG)) {
+    params.nurseOrgList = orgListFromIds(formValues.workDeptIds);
+  }
 
   const defaultLoginOrgId = formValues.defaultLoginOrgId;
   if (
@@ -601,6 +714,7 @@ function mergeStaffDetailIntoForm(
       mapLocationIdsFromList(detail.nurseWardLocationList).length > 0
         ? mapLocationIdsFromList(detail.nurseWardLocationList)
         : normalizeIdArray(extra.manageWardIds),
+    workDeptIds: mapOrgIdsFromList(detail.nurseOrgList),
     doctorServiceIds: normalizeIdArray(detail.doctorServiceIds ?? extra.doctorServiceIds),
     defaultLoginOrgId: detail.primaryOrgId ? String(detail.primaryOrgId) : '',
   };
@@ -688,6 +802,7 @@ const POSITION_FIELD_NAMES = [
   'manageWarehouseIds',
   'managePharmacyIds',
   'manageWardIds',
+  'workDeptIds',
 ] as const;
 
 /** 岗位多选字段二次赋值：动态 schema 挂载后须再写一遍才能回显 */
@@ -739,13 +854,20 @@ async function ensureEchoOptionsForStaffForm(formData: Record<string, unknown>) 
     warehouseOptions.value,
     manageWarehouseIds,
     '库房',
+    inventoryLocationNameById.value,
   );
   pharmacyOptions.value = mergeSelectOptionsWithMissingValues(
     pharmacyOptions.value,
     managePharmacyIds,
     '药房',
+    inventoryLocationNameById.value,
   );
-  wardOptions.value = mergeSelectOptionsWithMissingValues(wardOptions.value, manageWardIds, '病区');
+  wardOptions.value = mergeSelectOptionsWithMissingValues(
+    wardOptions.value,
+    manageWardIds,
+    '病区',
+    wardLocationNameById.value,
+  );
   registrationTypeOptions.value = mergeSelectOptionsWithMissingValues(
     registrationTypeOptions.value,
     doctorServiceIds,
@@ -762,11 +884,12 @@ function normalizeStaffFormEcho(formData: Record<string, unknown>) {
       formData.defaultLoginOrgId !== undefined && formData.defaultLoginOrgId !== null
         ? String(formData.defaultLoginOrgId)
         : '',
-    consultDeptIds: normalizeIdArray(formData.consultDeptIds),
-    manageWarehouseIds: normalizeIdArray(formData.manageWarehouseIds),
-    managePharmacyIds: normalizeIdArray(formData.managePharmacyIds),
-    manageWardIds: normalizeIdArray(formData.manageWardIds),
-    doctorServiceIds: normalizeIdArray(formData.doctorServiceIds),
+    consultDeptIds: dedupeIds(normalizeIdArray(formData.consultDeptIds)),
+    manageWarehouseIds: dedupeIds(normalizeIdArray(formData.manageWarehouseIds)),
+    managePharmacyIds: dedupeIds(normalizeIdArray(formData.managePharmacyIds)),
+    manageWardIds: dedupeIds(normalizeIdArray(formData.manageWardIds)),
+    workDeptIds: dedupeIds(normalizeIdArray(formData.workDeptIds)),
+    doctorServiceIds: dedupeIds(normalizeIdArray(formData.doctorServiceIds)),
   };
 }
 
@@ -826,25 +949,44 @@ async function loadStaffDeptTrees() {
     const data = unwrapApiList<ResponsibilityDept>(await getTreeForResponsibilityDeptApi());
     // 后端已滤科室层级；前端再挡一层非科室 type，避免脏数据进下拉
     const departmentsOnly = data.filter((item) => isDepartmentTypeEnum(item.typeEnum));
+    responsibilityDeptRows.value = departmentsOnly;
     departmentTreeOptions.value = toTreeOptions(departmentsOnly);
   } catch (error) {
     console.error('加载科室树失败:', error);
     departmentTreeOptions.value = [];
+    responsibilityDeptRows.value = [];
   }
 }
 
-/** 加载药库/药房选项 */
+/** 加载药库/药房选项，并缓存全量 id→名称供岗位回显补齐 */
 async function loadWarehouseOptions() {
   try {
     const rows = unwrapApiList<Warehouse>(await getWarehouseListApi());
+    // 全量名称表：已选 id 若不在「仅药库/仅药房」过滤结果里，仍能回显真名
+    const nameById = new Map<string, string>();
+    for (const item of rows) {
+      const id = preserveApiIdForRequest(item.id) ?? String(item.id ?? '').trim();
+      const name = String(item.name ?? '').trim();
+      if (id && name) {
+        nameById.set(id, name);
+      }
+    }
+    inventoryLocationNameById.value = nameById;
     warehouseOptions.value = rows
       .filter((item) => isWarehouseFormEnum(item.formEnum))
-      .map((item) => ({ label: item.name, value: String(item.id) }));
+      .map((item) => ({
+        label: item.name,
+        value: preserveApiIdForRequest(item.id) ?? String(item.id),
+      }));
     pharmacyOptions.value = rows
       .filter((item) => isManagedPharmacyLocationFormEnum(item.formEnum))
-      .map((item) => ({ label: item.name, value: String(item.id) }));
+      .map((item) => ({
+        label: item.name,
+        value: preserveApiIdForRequest(item.id) ?? String(item.id),
+      }));
   } catch (error) {
     console.error('加载药库/药房选项失败:', error);
+    inventoryLocationNameById.value = new Map();
     warehouseOptions.value = [];
     pharmacyOptions.value = [];
   }
@@ -867,16 +1009,32 @@ async function loadRegistrationTypeOptions() {
   }
 }
 
-/** 加载病区选项 */
+/** 加载病区选项，并缓存 id→名称供岗位回显补齐 */
 async function loadWardOptions() {
   try {
     const rows = unwrapApiList<WardBed>(await getWardListApi());
-    wardOptions.value = rows
-      .filter((item) => item.formEnum === WARD_BED_FORM_CODE.WARD)
-      .map((item) => ({ label: String(item.name ?? ''), value: String(item.id ?? '') }))
-      .filter((item) => item.value);
+    const nameById = new Map<string, string>();
+    const options: SelectOption[] = [];
+    for (const item of rows) {
+      // 岗位「管理病区」仅可选 WARD 形态；名称表同步写入便于已选 id 回显
+      if (item.formEnum !== WARD_BED_FORM_CODE.WARD) {
+        continue;
+      }
+      const id = preserveApiIdForRequest(item.id);
+      const name = String(item.name ?? '').trim();
+      if (!id) {
+        continue;
+      }
+      if (name) {
+        nameById.set(id, name);
+      }
+      options.push({ label: name || `病区（${id}）`, value: id });
+    }
+    wardLocationNameById.value = nameById;
+    wardOptions.value = options;
   } catch (error) {
     console.error('加载病区选项失败:', error);
+    wardLocationNameById.value = new Map();
     wardOptions.value = [];
   }
 }
@@ -1092,6 +1250,7 @@ function buildDefaultFormValues(extra: UserExtraProfile, roleIds: string[] = [])
     manageWarehouseIds: extra.manageWarehouseIds ?? [],
     managePharmacyIds: extra.managePharmacyIds ?? [],
     manageWardIds: extra.manageWardIds ?? [],
+    workDeptIds: [],
     doctorServiceIds: extra.doctorServiceIds ?? [],
     defaultLoginOrgId: '',
     remark: extra.remark ?? '',
@@ -1156,6 +1315,7 @@ async function loadFormData() {
         manageWarehouseIds: [],
         managePharmacyIds: [],
         manageWardIds: [],
+        workDeptIds: [],
         doctorServiceIds: [],
         signatureImage: '',
         defaultLoginOrgId: '',
@@ -1265,6 +1425,7 @@ const formConfig = reactive({
             await formApi.setFieldValue('roleIds', [...nextRoleIds]);
           }
           await nextTick();
+          await pruneWorkDeptSelection();
           await reapplyPendingStaffFormEcho();
         },
       },
@@ -1393,6 +1554,26 @@ const formConfig = reactive({
           ...USER_FORM_MULTI_SELECT_COLLAPSE_PROPS,
           options: wardOptions.value,
           disabled: !scopeWritable(STAFF_SCOPE.NURSE_WARD_LOCATION),
+          style: fullWidthStyle,
+        },
+      });
+    }
+
+    if (roleScopeLinked(STAFF_SCOPE.WORK_ORG)) {
+      positionFields.push({
+        component: 'ApiTreeSelect',
+        fieldName: 'workDeptIds',
+        label: '工作科室',
+        formItemClass: 'col-span-2',
+        componentProps: {
+          data: buildWorkDepartmentTree(),
+          multiple: true,
+          checkStrictly: true,
+          filterable: true,
+          clearable: true,
+          ...USER_FORM_MULTI_SELECT_COLLAPSE_PROPS,
+          disabled: !scopeWritable(STAFF_SCOPE.WORK_ORG),
+          placeholder: '请选择工作科室',
           style: fullWidthStyle,
         },
       });

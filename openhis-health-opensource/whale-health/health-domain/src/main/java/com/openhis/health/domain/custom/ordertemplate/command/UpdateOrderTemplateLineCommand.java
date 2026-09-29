@@ -10,7 +10,10 @@ import lombok.Setter;
 import java.math.BigDecimal;
 
 /**
- * 更新组套模板行命令（仅覆盖非空字段；不建议变更行类型与主引用）。
+ * 更新组套模板行命令。
+ *
+ * <p>剂量、频次等可空字段仍按非空覆盖；行种类与三类目录主键按维护端全量对齐整行替换，
+ * 以便已保存组套换药后写回新药品。</p>
  */
 @Getter
 @Setter
@@ -19,6 +22,22 @@ public class UpdateOrderTemplateLineCommand {
      * 组套模板行标识。
      */
     private Long lineId;
+    /**
+     * 行类型（药品/诊疗/耗材）。有值时与三类目录主键一并整行替换。
+     */
+    private String lineKindEnum;
+    /**
+     * 药品定义标识。换药时写入新主键；非药品行置空以清掉原引用。
+     */
+    private Long medicationDefinitionId;
+    /**
+     * 诊疗项目定义标识。改诊疗时写入；药品/耗材行置空。
+     */
+    private Long activityDefinitionId;
+    /**
+     * 耗材定义标识。改耗材时写入；药品/诊疗行置空。
+     */
+    private Long deviceDefinitionId;
     /**
      * 分组键（可空）。
      */

@@ -48,7 +48,14 @@ public enum PaymentChannel implements EnumInterface {
      *
      * <p>语义见 DD「住院预交金结算口径纠错」：占用个人现金户余额，不另开 HOSPITAL_DEPOSIT 主单。</p>
      */
-    DEPOSIT_OFFSET(0L, "DEPOSIT_OFFSET", "预交金冲抵", "", 9L, false);
+    DEPOSIT_OFFSET(0L, "DEPOSIT_OFFSET", "预交金冲抵", "", 9L, false),
+
+    /**
+     * 收费折扣旁证（服务端写入；金额=Σ(原价−折后)；非患者实付；不进日结自付渠道小计与 totalIncome）。
+     *
+     * <p>主单应收仍=折后合计=真收款渠道合计（DM-FIN-002 方案甲 / DM-CUS-016）。</p>
+     */
+    DISCOUNT(0L, "DISCOUNT", "收费折扣", "", 10L, false);
 
     private final Long codeSystemId;
     private final String code;

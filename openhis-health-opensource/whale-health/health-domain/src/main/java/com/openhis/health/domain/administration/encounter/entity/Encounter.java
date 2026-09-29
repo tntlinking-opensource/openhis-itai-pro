@@ -445,15 +445,21 @@ public class Encounter extends BaseAuditedEntity {
     /**
      * 撤销转科/出院过渡态：{@code ON_HOLD} → {@code IN_PROGRESS}（GAP-ATD-008）。
      *
-     * @param clearDischargeFields 为 true 时清空 {@code outWayCode}（待出院轨撤销）
+     * <p>业务口径：护士<strong>取消校对</strong>出院/转科医嘱（办理出院前）= 还原校对副作用，就诊回在科。
+     * 已办理出院的 {@code PENDING} 不在本方法范围，须走取消出院/反结另轨。</p>
+     *
+     * @param clearDischargeFields 为 true 时清空 {@code outWayCode}（待出院轨撤销）；转科轨传 false
      */
     public void revertHoldToInProgress(boolean clearDischargeFields) {
         this.assertClass(EncounterClass.IMP.getCode());
+        // 前置校验：仅待转科/待出院可回在科，防止误改待结算/已结算
         if (!EncounterStatus.ON_HOLD.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS,
                 "仅转科/出院过渡态允许撤销回在科");
         }
+        // 状态迁移：ON_HOLD → IN_PROGRESS（在科）
         this.statusEnum = EncounterStatus.IN_PROGRESS.getCode();
+        // 出院轨：清离院方式，避免读模型仍分流「待出院」
         if (clearDischargeFields) {
             this.outWayCode = null;
         }

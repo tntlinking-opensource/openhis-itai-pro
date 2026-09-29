@@ -335,12 +335,15 @@ public class CaseRecord4101AMapper {
     }
 
     /**
-     * 手术子表 → 4101A oprninfo。
+     * 手术子表 → 4101A oprninfo（与 4401 同双码纪律；空列表→{@code []}）。
+     *
+     * <p>每行国临码须非空且能解析 {@code yb_no}，否则整单失败（EX-MRMS-UP-OP-201/202）。</p>
      *
      * @param rows 手术行
      * @return oprninfo
      */
     private List<MedcasSettleListOprnInfo> buildOprninfo(List<HomepageProcedure> rows) {
+        // 无手术行：上送空数组（非 null）
         if (rows == null || rows.isEmpty()) {
             return new ArrayList<>();
         }
@@ -349,6 +352,7 @@ public class CaseRecord4101AMapper {
         Set<String> clinicCodes = new LinkedHashSet<>();
         for (HomepageProcedure row : sorted) {
             String clinic = trimToNull(row.getOprnOprtCode());
+            // 仅收集非空国临码做批量对码；空码行在下方抛 EX-202
             if (clinic != null) {
                 clinicCodes.add(clinic);
             }
@@ -358,17 +362,21 @@ public class CaseRecord4101AMapper {
         List<MedcasSettleListOprnInfo> result = new ArrayList<>();
         for (HomepageProcedure row : sorted) {
             String clinicCode = trimToNull(row.getOprnOprtCode());
-            if (clinicCode == null) {
-                continue;
-            }
-            // 出站必须医保码；无对照抛错
+            // 业务分支：组装报错 hint（码+名；皆空则序号）
             String hint = clinicCode;
-            if (trimToNull(row.getOprnOprtName()) != null) {
+            if (hint == null) {
+                hint = trimToNull(row.getOprnOprtName());
+            } else if (trimToNull(row.getOprnOprtName()) != null) {
                 hint = clinicCode + " " + row.getOprnOprtName().trim();
             }
-            String ybNo = medcasDualCodeResolveSupport.requireYbOutbound(dualByClinic, clinicCode, hint);
+            if (hint == null && row.getSortNo() != null) {
+                hint = "序号" + row.getSortNo();
+            }
+            // Gate：空码→EX-202；无 yb_no→EX-201（与 4401 同纪律）
+            String ybNo = medcasDualCodeResolveSupport.requireProcedureYbOutbound(
+                    dualByClinic, clinicCode, hint);
             MedcasSettleListOprnInfo item = new MedcasSettleListOprnInfo();
-            // 1 主要手术 / 2 其他手术
+            // 业务分支：主手术→类型 1，其余→类型 2
             if ("1".equals(trimToNull(row.getMainOprnFlag()))) {
                 item.setOprnOprtType("1");
             } else {

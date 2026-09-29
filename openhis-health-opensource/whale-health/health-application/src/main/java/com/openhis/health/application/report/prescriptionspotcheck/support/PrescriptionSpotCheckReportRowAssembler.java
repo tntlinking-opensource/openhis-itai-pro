@@ -103,7 +103,8 @@ public class PrescriptionSpotCheckReportRowAssembler {
         }
         EnrichmentContext ctx = this.buildEnrichmentContext(requestRows);
         List<PrescriptionSpotCheckWesternRowDto> rows = new ArrayList<>(requestRows.size());
-        Map<String, Integer> orderFallbackByPrescription = new HashMap<>();
+        // 同方药品顺序计数（方号 → 已分配最大序）
+        Map<String, Integer> orderByPrescription = new HashMap<>();
         // Loop：逐药品申请行映射西药列
         for (MedicationRequestListQueryModel line : requestRows) {
             // 跳过空行
@@ -121,7 +122,7 @@ public class PrescriptionSpotCheckReportRowAssembler {
                 def = ctx.medicationById.get(line.getMedicationId());
             }
             this.fillWesternDrugColumns(row, line, def, ctx);
-            row.setDrugOrder(this.resolveDrugOrder(line, orderFallbackByPrescription));
+            row.setDrugOrder(this.resolveDrugOrder(line, orderByPrescription));
             rows.add(row);
         }
         return rows;
@@ -141,7 +142,8 @@ public class PrescriptionSpotCheckReportRowAssembler {
         }
         EnrichmentContext ctx = this.buildEnrichmentContext(requestRows);
         List<PrescriptionSpotCheckHerbalRowDto> rows = new ArrayList<>(requestRows.size());
-        Map<String, Integer> orderFallbackByPrescription = new HashMap<>();
+        // 同方药品顺序计数（方号 → 已分配最大序）
+        Map<String, Integer> orderByPrescription = new HashMap<>();
         // Loop：逐药品申请行映射饮片列
         for (MedicationRequestListQueryModel line : requestRows) {
             // 跳过空行
@@ -164,7 +166,7 @@ public class PrescriptionSpotCheckReportRowAssembler {
                 def = ctx.medicationById.get(line.getMedicationId());
             }
             this.fillHerbalDrugColumns(row, line, def, ctx);
-            row.setDrugOrder(this.resolveDrugOrder(line, orderFallbackByPrescription));
+            row.setDrugOrder(this.resolveDrugOrder(line, orderByPrescription));
             rows.add(row);
         }
         return rows;
@@ -416,32 +418,29 @@ public class PrescriptionSpotCheckReportRowAssembler {
     }
 
     /**
-     * 解析药品顺序：优先 sortNumber；空则页内同方出现序。
+     * 处方抽查专用「药品顺序」：按本批同方出现序从 1 起编（每张方独立，如 1,2,1,1）。
+     * 与医嘱库 {@code sort_number} 无关，不读写该字段。
      *
-     * @param line                         药品申请
-     * @param orderFallbackByPrescription  方号 → 已分配序
-     * @return 顺序号
+     * @param line                药品申请
+     * @param orderByPrescription 方号 → 已分配最大序
+     * @return 方内顺序号；无方号则 null
      */
     private Integer resolveDrugOrder(
         MedicationRequestListQueryModel line,
-        Map<String, Integer> orderFallbackByPrescription) {
-        // 有开药顺序：直接用
-        if (line.getSortNumber() != null) {
-            return line.getSortNumber();
-        }
+        Map<String, Integer> orderByPrescription) {
         String prescriptionNo = StringUtils.trimToNull(line.getPrescriptionNo());
-        // 无方号：无法按方回落，返回 null
+        // 无方号：无法按方编号
         if (prescriptionNo == null) {
             return null;
         }
-        Integer current = orderFallbackByPrescription.get(prescriptionNo);
+        Integer current = orderByPrescription.get(prescriptionNo);
         // 同方首行：从 1 起
         if (current == null) {
-            orderFallbackByPrescription.put(prescriptionNo, 1);
+            orderByPrescription.put(prescriptionNo, 1);
             return 1;
         }
         int next = current + 1;
-        orderFallbackByPrescription.put(prescriptionNo, next);
+        orderByPrescription.put(prescriptionNo, next);
         return next;
     }
 

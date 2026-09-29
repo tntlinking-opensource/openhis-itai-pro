@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ElButton } from 'element-plus';
 
+import { INPATIENT_SURGERY_ANESTH_ENABLED } from '#/views/inpatient/surgery-anesth/inpatient-surgery-anesth.config';
+
 defineOptions({ name: 'InpatientAdviceQuickActionBar' });
 
 const props = withDefaults(
@@ -16,6 +18,7 @@ const emit = defineEmits<{
 
 export type InpatientAdviceQuickAction =
   | 'allergy'
+  | 'anesthesia'
   | 'entrust'
   | 'exam'
   | 'lab'
@@ -32,8 +35,12 @@ const QUICK_ACTION_ITEMS: Array<{ action: InpatientAdviceQuickAction; label: str
   { action: 'transfusion', label: '输血申请' },
   { action: 'pathology', label: '病理申请' },
   { action: 'surgery', label: '手术申请' },
+  { action: 'anesthesia', label: '麻醉申请' },
   { action: 'allergy', label: '过敏史' },
-];
+].filter(
+  (item) =>
+    INPATIENT_SURGERY_ANESTH_ENABLED || (item.action !== 'surgery' && item.action !== 'anesthesia'),
+);
 
 /** 底部快捷入口点击 */
 function handleClick(action: InpatientAdviceQuickAction) {

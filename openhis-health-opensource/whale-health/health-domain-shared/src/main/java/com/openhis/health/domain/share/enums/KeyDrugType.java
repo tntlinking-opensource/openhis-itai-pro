@@ -7,11 +7,12 @@ package com.openhis.health.domain.share.enums;
 import lombok.Getter;
 
 /**
- * 重点药类型（列表筛选码）：选中某类型即筛选「该布尔标识为 true」的药品；空/未知码表示不限。
+ * 重点药类型（列表筛选码）：选中某类型即筛选「该标识命中」的药品；空/未知码表示不限。
  *
- * <p>与药典 {@code basicFlag}/{@code nationalMonitorFlag}/{@code centralPurchaseFlag}/
- * {@code antibioticFlag} 一一对应，用于药品目录、库存明细与重点药品使用统计的筛选项
- * （替代原「基药是/否」）。</p>
+ * <p>布尔旗路径：药典 {@code basicFlag}/{@code nationalMonitorFlag}/{@code centralPurchaseFlag}/
+ * {@code antibioticFlag}。药品性质路径：药典 {@code pharmacologyCategoryCode}
+ * （术语 {@code medicine_properties}：麻醉/精一/精二）。用于药品目录、库存明细、重点药品使用统计、
+ * 处方点评特殊药筛选与发药报表药品性质筛选（替代原「基药是/否」）。</p>
  */
 @Getter
 public enum KeyDrugType implements EnumInterface {
@@ -26,7 +27,16 @@ public enum KeyDrugType implements EnumInterface {
     CENTRAL_PURCHASE(0L, "CENTRAL_PURCHASE", "集采药品", "筛选集采标识为是的药品", 3L),
 
     /** 抗生素（{@code antibiotic_flag = true}）。 */
-    ANTIBIOTIC(0L, "ANTIBIOTIC", "抗生素", "筛选抗生素标识为是的药品", 4L);
+    ANTIBIOTIC(0L, "ANTIBIOTIC", "抗生素", "筛选抗生素标识为是的药品", 4L),
+
+    /** 麻醉药品（{@code pharmacology_category_code = 2}，术语 medicine_properties）。 */
+    NARCOTIC(0L, "NARCOTIC", "麻醉药品", "筛选药品性质为麻醉药品的目录行", 5L),
+
+    /** 一类精神药品（{@code pharmacology_category_code = 4}）。 */
+    PSYCH_ONE(0L, "PSYCH_ONE", "一类精神药品", "筛选药品性质为一类精神药品的目录行", 6L),
+
+    /** 二类精神药品（{@code pharmacology_category_code = 5}）。 */
+    PSYCH_TWO(0L, "PSYCH_TWO", "二类精神药品", "筛选药品性质为二类精神药品的目录行", 7L);
 
     private final Long codeSystemId;
     private final String code;

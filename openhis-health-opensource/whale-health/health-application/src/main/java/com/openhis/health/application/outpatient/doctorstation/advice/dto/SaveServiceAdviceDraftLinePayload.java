@@ -33,6 +33,12 @@ public class SaveServiceAdviceDraftLinePayload {
     @Schema(description = "单位编码")
     private String unitCode;
 
+    /**
+     * 医嘱优先级 code（DM-WKF-004；检验/检查加急为 {@code EM}；空表示非急）。
+     */
+    @Schema(description = "医嘱优先级 code（加急=EM）")
+    private String priorityEnum;
+
     /** 计划执行次数（护士站拆解可执行上限；门诊/临嘱必填）。 */
     @Schema(description = "计划执行次数")
     private Integer executionCount;

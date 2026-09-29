@@ -14,6 +14,10 @@ export interface LoadOutpatientPharmacyDailySettlementPageInitResponse {
   pharmacyOptions?: ApiOptionItem[];
   /** 药师岗发药人下拉 */
   practitionerOptions?: ApiOptionItem[];
+  /** 重点药类型下拉（基药/监控/集采/抗生素）；品规销售排名筛选 */
+  keyDrugTypeOptions?: ApiOptionItem[];
+  /** 药品性质下拉（麻醉/精一/精二）；品规销售排名筛选 */
+  medicinePropertyOptions?: ApiOptionItem[];
 }
 
 export interface PreviewOutpatientPharmacyDailySettlementRequest {
@@ -46,6 +50,16 @@ export interface PharmacyDailySettlementProductRowDto {
   saleUnitPrice?: string | number;
   purchaseAmount?: string | number;
   saleAmount?: string | number;
+  /** 基药标识；品规销售排名按重点药类型筛选 */
+  basicFlag?: boolean;
+  /** 国家重点监控药品标识 */
+  nationalMonitorFlag?: boolean;
+  /** 集采药品标识 */
+  centralPurchaseFlag?: boolean;
+  /** 抗生素标识 */
+  antibioticFlag?: boolean;
+  /** 药品性质码（medicine_properties）；品规销售排名按麻/精筛选 */
+  pharmacologyCategoryCode?: string;
 }
 
 export interface PharmacyDailySettlementDispenseItemDto {

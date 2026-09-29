@@ -410,7 +410,11 @@ watch(
               </template>
             </ElTableColumn>
             <ElTableColumn prop="quantity" label="数量" width="88" />
-            <ElTableColumn prop="unitCode" label="单位" width="72" />
+            <ElTableColumn label="单位" width="72">
+              <template #default="{ row }">
+                {{ row.unitCodeText || row.unitCode || '—' }}
+              </template>
+            </ElTableColumn>
             <ElTableColumn
               prop="performLocationName"
               label="库房"

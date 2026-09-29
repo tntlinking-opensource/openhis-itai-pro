@@ -3,19 +3,26 @@ import type { NurseAdviceExecuteRow, NursePatient } from './types';
 
 import type { PatientInfoBarPayload } from '#/components/outpatient/patient-card.types';
 
-import { nextTick, ref } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 
 import { ElButton, ElTable, ElTableColumn, ElTag } from 'element-plus';
 
 import SectionTitle from '#/components/layouts/section-title.vue';
 import AdviceOrderDisplayCell from '#/components/outpatient/advice-order-display-cell.vue';
 import PatientInfoBar from '#/components/outpatient/patient-info-bar.vue';
-
-import { isNurseExecuteMedicationRow } from '../services/map-nurse-station-api';
 import {
   isNurseExecuteRowCompleted,
   resolveNurseExecuteStatusTagType,
 } from '#/utils/nurse-station/nurse-execute-status';
+import { SPECIMEN_BARCODE_SPLIT_URGENT_FROM_MERGE } from '#/utils/print/constants/specimen-barcode-merge.config';
+import {
+  clusterRowsBySpecimenMerge,
+  isLabSpecimenExecuteRow,
+  resolveSpecimenBarcodeMergeDeviceId,
+  specimenMergeOperateRowSpan,
+} from '#/utils/print/nurse-station-print-targets';
+
+import { isNurseExecuteMedicationRow } from '../services/map-nurse-station-api';
 
 defineOptions({
   name: 'NurseExecuteCenter',
@@ -28,6 +35,8 @@ const emit = defineEmits<{
   execute: [];
   /** 输液药品行：单独打印本组瓶贴 */
   printInfusionLabel: [row: NurseAdviceExecuteRow];
+  /** 医技列表：打印所选检验行（采血贴） */
+  printLabRows: [rows: NurseAdviceExecuteRow[]];
   selectionChange: [keys: string[]];
 }>();
 
@@ -43,6 +52,34 @@ interface Props {
 
 const executeTableRef = ref<InstanceType<typeof ElTable> | null>(null);
 
+/** 院点拆急：合管内加急项单独出贴 */
+const splitUrgentFromMerge = SPECIMEN_BARCODE_SPLIT_URGENT_FROM_MERGE;
+
+/** 医技列表行的合管设备主键（拆急院点：急项视为无合管） */
+function labMergeId(row: NurseAdviceExecuteRow): string {
+  return resolveSpecimenBarcodeMergeDeviceId(row.specimenTubeMergeDeviceId, row.priorityEnum);
+}
+
+/** 医技列表：检验行按合管设备聚组，供操作列合并 */
+const labPrintItems = computed(() =>
+  clusterRowsBySpecimenMerge(
+    props.executeItems.filter((row) => isLabSpecimenExecuteRow(row)),
+    labMergeId,
+  ),
+);
+
+/** 医技列表操作列：合管组只在首行留按钮 */
+function labOperateSpanMethod(data: { column: { label?: string }; rowIndex: number }) {
+  if (data.column.label !== '操作') {
+    return { rowspan: 1, colspan: 1 };
+  }
+  const span = specimenMergeOperateRowSpan(labPrintItems.value, data.rowIndex, labMergeId);
+  if (span <= 0) {
+    return { rowspan: 0, colspan: 0 };
+  }
+  return { rowspan: span, colspan: 1 };
+}
+
 const getStatusTagType = (row: NurseAdviceExecuteRow) => {
   const code = row.statusEnum;
   if (code) {
@@ -55,6 +92,13 @@ const executeOrderDisplayedContent = (item: NurseAdviceExecuteRow) => {
   const c = item.content?.trim();
   return c && c.length > 0 ? item.content : item.name;
 };
+
+/** 打印本组采血贴：合管把同设备行一起送进原分组（一组一张、名称拼接） */
+function onPrintLabRow(row: NurseAdviceExecuteRow) {
+  const mergeId = labMergeId(row);
+  const rows = mergeId ? labPrintItems.value.filter((item) => labMergeId(item) === mergeId) : [row];
+  emit('printLabRows', rows);
+}
 
 const onSelectionChange = (selection: NurseAdviceExecuteRow[]) => {
   const keys = selection.map((row) => row.key).filter((k) => k.length > 0);
@@ -309,12 +353,73 @@ defineExpose({
         </ElTableColumn>
       </ElTable>
     </div>
+
+    <div
+      class="bg-background flex max-h-[40%] min-h-0 shrink-0 flex-col overflow-hidden border-t border-[var(--el-border-color-lighter)] px-2 py-2"
+    >
+      <div class="mb-1">
+        <SectionTitle :title="`医技列表（${labPrintItems.length}）`" />
+      </div>
+      <p class="mb-1.5 text-xs leading-snug text-[var(--el-text-color-regular)]">
+        仅检验项目。合管一组一张，项目名拼在一起，张数取组内最大。{{
+          splitUrgentFromMerge ? '加急项单独出贴。' : ''
+        }}
+      </p>
+      <div
+        v-if="labPrintItems.length === 0"
+        class="text-text-sub flex min-h-[72px] items-center justify-center text-sm"
+      >
+        暂无检验项目
+      </div>
+      <ElTable
+        v-else
+        :data="labPrintItems"
+        border
+        stripe
+        max-height="220"
+        class="nurse-lab-print-table min-h-0"
+        row-key="key"
+        :span-method="labOperateSpanMethod"
+      >
+        <ElTableColumn label="检验项目" min-width="220" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ executeOrderDisplayedContent(row) }}
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="申请单号" min-width="140" align="center" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ row.applyFormNo || '—' }}
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="状态" width="90" align="center">
+          <template #default="{ row }">
+            <ElTag size="small" effect="light" :type="getStatusTagType(row)">
+              {{ row.status }}
+            </ElTag>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="操作" width="88" align="center">
+          <template #default="{ row, $index }">
+            <ElButton
+              v-if="specimenMergeOperateRowSpan(labPrintItems, $index, labMergeId) > 0"
+              type="primary"
+              link
+              size="small"
+              @click="onPrintLabRow(row)"
+            >
+              采血贴
+            </ElButton>
+          </template>
+        </ElTableColumn>
+      </ElTable>
+    </div>
   </div>
 </template>
 
 <style scoped>
 /* 与医生站医嘱 `advice/index.vue` 中 `.advice-table` 表头一致（Element Plus） */
-.nurse-execute-advice-table :deep(.el-table__header-wrapper th.el-table__cell) {
+.nurse-execute-advice-table :deep(.el-table__header-wrapper th.el-table__cell),
+.nurse-lab-print-table :deep(.el-table__header-wrapper th.el-table__cell) {
   background: #eaf4ff !important;
 }
 

@@ -5,18 +5,15 @@ import type {
   SaveInpatientDoctorStationAdviceDraftBatchResponse,
 } from '#/api/inpatient/doctor-station/inpatient-doctor-station-advice.types';
 
-import type {
-  DoctorStationAdviceDraftLineRequest,
-  DoctorStationAdviceRowDto,
-} from '#/api/doctor-station/advice.types';
+import type { DoctorStationAdviceRowDto } from '#/api/doctor-station/advice.types';
 
 import { httpSaveInpatientDoctorStationAdviceDraftBatch } from '#/api/inpatient/doctor-station/inpatient-doctor-station-advice.http';
 
-import { inpatientAdviceDraftBindHttpAdapter } from '#/views/outpatient/doctor-station/advice/services/advice-draft-bind-http-adapter';
-import { saveAdviceDraftBatchWithBindResolution } from '#/views/outpatient/doctor-station/advice/services/advice-draft-bind.service';
-
-/** 住院医生站 · 医嘱草稿暂存策略（对齐门诊 advice-draft-save.service） */
+/** 住院医生站 · 医嘱草稿暂存策略（对齐门诊：暂存不绑；BR-IP-ORD-036 开立恒空） */
 export const INPATIENT_ADVICE_DRAFT_SAVE_DIRECT_ONLY = 'DIRECT_ONLY' as const;
+/**
+ * @deprecated 历史名；住院开立不带绑定，与 DIRECT_ONLY 等价。
+ */
 export const INPATIENT_ADVICE_DRAFT_SAVE_MANUAL_USAGE_BIND = 'MANUAL_USAGE_BIND' as const;
 
 export type InpatientAdviceDraftSavePolicy =
@@ -30,7 +27,7 @@ export interface SaveInpatientAdviceDraftBatchOptions {
   existingAdviceRows?: AdviceRowItem[] | DoctorStationAdviceRowDto[];
 }
 
-/** 直接暂存：不解析 IF-IP-DOR-23 绑定 */
+/** 直接暂存：不解析 IF-IP-DOR-23 绑定（住院开立恒空） */
 export async function saveInpatientAdviceDraftBatchDirect(
   options: SaveInpatientAdviceDraftBatchOptions,
 ): Promise<SaveInpatientDoctorStationAdviceDraftBatchResponse> {
@@ -38,16 +35,11 @@ export async function saveInpatientAdviceDraftBatchDirect(
   return httpSaveInpatientDoctorStationAdviceDraftBatch({ encounterId, patientId, lines });
 }
 
-/** 手动编辑保存：新建药品/诊疗解析绑定并弹窗确认 */
+/**
+ * 编辑卡「保存」：只落主医嘱。住院开立不带绑定（BR-IP-ORD-036）；函数名保留兼容。
+ */
 export async function saveInpatientAdviceDraftBatchWithManualUsageBind(
   options: SaveInpatientAdviceDraftBatchOptions,
 ): Promise<SaveInpatientDoctorStationAdviceDraftBatchResponse> {
-  const { encounterId, patientId, lines, existingAdviceRows } = options;
-  return saveAdviceDraftBatchWithBindResolution({
-    encounterId,
-    patientId,
-    lines: lines as DoctorStationAdviceDraftLineRequest[],
-    existingAdviceRows,
-    apiAdapter: inpatientAdviceDraftBindHttpAdapter,
-  });
+  return saveInpatientAdviceDraftBatchDirect(options);
 }

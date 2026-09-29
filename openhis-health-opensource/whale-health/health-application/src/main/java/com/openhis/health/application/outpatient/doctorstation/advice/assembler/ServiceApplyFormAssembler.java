@@ -48,7 +48,10 @@ public class ServiceApplyFormAssembler {
             spec.setActivityDefinitionId(line.getActivityDefinitionId());
             spec.setQuantity(line.getQuantity());
             spec.setUnitCode(line.getUnitCode());
+            // 行级执行次数：有则优先；空则编排层回落整单值
+            spec.setExecutionCount(line.getExecutionCount());
             spec.setRemark(line.getRemark());
+            spec.setPriorityEnum(line.getPriorityEnum());
             spec.setDetailItems(toDetailItemSpecs(line.getDetailItems()));
             specs.add(spec);
         }
@@ -133,6 +136,7 @@ public class ServiceApplyFormAssembler {
             dto.setUnitCode(model.getUnitCode());
             dto.setUnitName(model.getUnitName());
             dto.setRemark(model.getRemark());
+            dto.setPriorityEnum(model.getPriorityEnum());
             dto.setDetails(toDetailSummaryDtos(model.getDetails()));
             dtos.add(dto);
         }

@@ -20,6 +20,8 @@ import com.openhis.health.application.shared.advice.AdviceSignTargetSpec;
 import com.openhis.health.application.shared.advice.SkinTestMedicationDraftSpec;
 import com.openhis.health.application.shared.advice.DoctorStationSkinTestSyncOrchestrator;
 import com.openhis.health.application.shared.advice.DoctorStationSkinTestSyncOrchestrator.ChargePolicy;
+import com.openhis.health.application.shared.advice.PacsOrderIngressOrchestrator;
+import com.openhis.health.application.shared.pricing.PendingPriceAdjustmentSignGate;
 import com.openhis.health.application.outpatient.doctorstation.advice.assembler.DoctorStationAdviceCatalogAssembler;
 import com.openhis.health.application.shared.product.DoctorStationAdviceFifoAllocationAssembler;
 import com.openhis.health.application.outpatient.doctorstation.advice.assembler.DoctorStationAdviceListAssembler;
@@ -36,9 +38,6 @@ import com.openhis.health.application.outpatient.doctorstation.advice.mapper.Doc
 import com.openhis.health.infrastructure.integration.lis.LisAdviceApplyExtension;
 import com.openhis.health.infrastructure.integration.lis.ExtensionIn.LisAdviceApplyExtensionIn;
 import com.openhis.health.infrastructure.integration.lis.dto.LisAdviceApplyDetailLine;
-import com.openhis.health.infrastructure.integration.pacs.PacsAdviceApplyExtension;
-import com.openhis.health.infrastructure.integration.pacs.ExtensionIn.PacsAdviceApplyExtensionIn;
-import com.openhis.health.infrastructure.integration.pacs.dto.PacsAdviceApplyDetailLine;
 import com.openhis.health.application.outpatient.doctorstation.advice.query.DoctorStationAdviceOrderBindQueryService;
 import com.openhis.health.application.outpatient.doctorstation.advice.request.GetDoctorStationAdviceOrderBindInfoRequest;
 import com.openhis.health.application.outpatient.doctorstation.advice.request.ListDoctorStationAdviceRequest;
@@ -179,7 +178,7 @@ public class DoctorStationAdviceAppService {
     private final DeviceRequestDomainService deviceRequestDomainService;
     private final BusinessSequenceService businessSequenceService;
     private final LisAdviceApplyExtension lisAdviceApplyExtension;
-    private final PacsAdviceApplyExtension pacsAdviceApplyExtension;
+    private final PacsOrderIngressOrchestrator pacsOrderIngressOrchestrator;
     private final CodeSystemQueryService codeSystemQueryService;
     /** 用药频次下拉：读 cus_frequency 启用态，替代术语 rate_code。 */
     private final FrequencyOptionLoader frequencyOptionLoader;
@@ -191,6 +190,8 @@ public class DoctorStationAdviceAppService {
     private final OrderRequestFifoSignContextLoader orderRequestFifoSignContextLoader;
     private final OutpatientMedicationSignChargeOrchestrator outpatientMedicationSignChargeOrchestrator;
     private final DoctorStationSkinTestSyncOrchestrator doctorStationSkinTestSyncOrchestrator;
+    /** BR-PRC-LOCK-007：pending 调价窗口禁止签发药/耗。 */
+    private final PendingPriceAdjustmentSignGate pendingPriceAdjustmentSignGate;
     /** 门诊禁开嘱托识别（BR-ORD-032；与住院嘱托双锚同源）。 */
     private final InpatientEntrustOrderGateSupport inpatientEntrustOrderGateSupport;
     private final MedicationRequestQueryService medicationRequestQueryService;
@@ -234,7 +235,10 @@ public class DoctorStationAdviceAppService {
     }
 
     /**
-     * 按诊疗定义查询可执行科室规则（执行科室/地点展示名批量解析）。
+     * 按诊疗定义查询可执行科室规则（IF-DOR-19 / DM-CUS-001 BR-ACT-EXEC-005）。
+     *
+     * <p>有配置规则时返回项目级与大类默认规则；无命中时回落一条「执行科室=就诊开立科室」，
+     * 保证开立必填且不再展开全院科室。</p>
      *
      * @param request 就诊、患者与诊疗定义门控
      * @return 规则列表（含展示名）
@@ -248,11 +252,18 @@ public class DoctorStationAdviceAppService {
         // Pre：解析诊疗大类，并按开立科室（就诊科室）拉取项目级 + 大类默认可执行科室规则
         ProductDefinitionDisplayDto activityProduct =
             loadSingleProduct(TableNameConstants.WKF_ACTIVITY_DEFINITION, request.getActivityDefinitionId());
-        List<ExecutionRuleListQueryModel> ruleModels =
+        List<ExecutionRuleListQueryModel> ruleModels = new ArrayList<>(
             activityExecutionLocationQueryService.listExecutionRulesForActivityResolution(
                 snapshot.getOrganizationId(),
                 request.getActivityDefinitionId(),
-                activityProduct.getCategoryCode());
+                activityProduct.getCategoryCode()));
+        // 未配置执行规则时执行科室取就诊开立科室，开立仍必填，不再展开全院科室
+        if (ruleModels.isEmpty() && snapshot.getOrganizationId() != null) {
+            ExecutionRuleListQueryModel orderingFallback = new ExecutionRuleListQueryModel();
+            orderingFallback.setOrganizationId(snapshot.getOrganizationId());
+            orderingFallback.setExecutionOrgId(snapshot.getOrganizationId());
+            ruleModels.add(orderingFallback);
+        }
         Set<Long> orgIds = new HashSet<>();
         Set<Long> locIds = new HashSet<>();
         for (ExecutionRuleListQueryModel row : ruleModels) {
@@ -916,6 +927,9 @@ public class DoctorStationAdviceAppService {
         }
         this.outpatientMedicationSignChargeOrchestrator.prefetchDeviceCatalogReads(
             signChargeReadCache, deviceDefinitionIdsForCharge);
+        // Gate（BR-PRC-LOCK-007）：pending 调价窗口禁止对本批药/耗签发，避免审批夹心价
+        this.pendingPriceAdjustmentSignGate.assertNoPendingForMedications(medicationDefinitionIdsForCharge);
+        this.pendingPriceAdjustmentSignGate.assertNoPendingForDevices(deviceDefinitionIdsForCharge);
         // Pre（BR-ORD-034）：跨批确认已在 IF-DOR-14 保存完成；签发相位不再抛 EX-ORD-309
         boolean confirmCrossLotSkinTest = true;
         // Pre（BR-ORD-035）：跨批次金额确认；首次签发未传则多段 FIFO 抛 EX-ORD-310
@@ -956,10 +970,11 @@ public class DoctorStationAdviceAppService {
                     request.getEncounterId(), request.getPatientId(), medicationAccountId, orgId, operatorId,
                     t.getRequestId(), fifoMedCtx, signChargeReadCache, confirmCrossLotSkinTest, confirmCrossLotPricing);
             } else if (ProductTableNameHelper.isActivity(pt)) {
-                // 诊疗：域 sign 后外呼仅占位，真实 LIS/PACS 路由待检查申请类型后替换
+                // 诊疗：域 sign 后 LIS Extension；检查类直调 PacsWorkItem
                 serviceRequestDomainService.signServiceRequest(
                     doctorStationAdviceMapper.toSignServiceRequestCommand(t.getRequestId(), operatorId));
-                dispatchLabOrImagingAdvice(request.getEncounterId(), request.getPatientId(), t.getRequestId());
+                dispatchLabOrImagingAdvice(
+                    request.getEncounterId(), request.getPatientId(), t.getRequestId(), orgId, operatorId);
                 // 诊疗申请签发完成：检查/治疗类费用行进入可预结算态。
                 chargeItemDomainService.planDraftChargeItemsAfterAdviceSigned(
                     request.getEncounterId(), TableNameConstants.WKF_SERVICE_REQUEST, t.getRequestId());
@@ -1093,6 +1108,8 @@ public class DoctorStationAdviceAppService {
                 }
                 serviceRequestDomainService.withdrawSignedServiceRequest(
                     doctorStationAdviceMapper.toWithdrawServiceRequestCommand(t.getRequestId(), operatorId));
+                // AS-PACS-INT-001 INT-02：检查工单随签退作废
+                pacsOrderIngressOrchestrator.withdrawSignedImagingServiceRequest(t.getRequestId(), operatorId);
                 // 诊疗签退：检查申请对应的可计费行收回为草稿。
                 chargeItemDomainService.rollbackPlannedChargeItemsAfterAdviceSignedOff(
                     request.getEncounterId(), TableNameConstants.WKF_SERVICE_REQUEST, t.getRequestId());
@@ -1240,9 +1257,14 @@ public class DoctorStationAdviceAppService {
     }
 
     /**
-     * IF-DOR-15：签发诊疗后分别外发 LIS / PACS（BR-REQ-008）。
+     * IF-DOR-15：签发诊疗后外发 LIS（Extension）/ 检查接单（直调 PacsWorkItem Domain）。
      */
-    private void dispatchLabOrImagingAdvice(Long encounterId, Long patientId, Long requestId) {
+    private void dispatchLabOrImagingAdvice(
+        Long encounterId,
+        Long patientId,
+        Long requestId,
+        Long organizationId,
+        Long operatorId) {
         List<ServiceRequestDetailSummaryDto> summaries = loadAdviceApplyDetailSummaries(requestId);
         LisAdviceApplyExtensionIn lisCmd = new LisAdviceApplyExtensionIn();
         lisCmd.setEncounterId(encounterId);
@@ -1251,16 +1273,13 @@ public class DoctorStationAdviceAppService {
         lisCmd.setDetails(toLisAdviceApplyDetailLines(summaries));
         lisAdviceApplyExtension.submitIfLab(lisCmd);
 
-        PacsAdviceApplyExtensionIn pacsCmd = new PacsAdviceApplyExtensionIn();
-        pacsCmd.setEncounterId(encounterId);
-        pacsCmd.setPatientId(patientId);
-        pacsCmd.setRequestId(requestId);
-        pacsCmd.setDetails(toPacsAdviceApplyDetailLines(summaries));
-        pacsAdviceApplyExtension.submitIfImaging(pacsCmd);
+        // AS-PACS-INT-001：直调 Domain 建工单（不经 PacsAdviceApplyExtension）
+        pacsOrderIngressOrchestrator.acceptSignedImagingServiceRequest(
+            encounterId, patientId, requestId, organizationId, operatorId);
     }
 
     /**
-     * 按诊疗请求 id 加载明细摘要（LIS/PACS 外发扩展共用读侧）。
+     * 按诊疗请求 id 加载明细摘要（LIS 外发扩展读侧）。
      *
      * @param requestId 诊疗请求主键
      * @return 明细摘要 DTO 列表
@@ -1288,31 +1307,6 @@ public class DoctorStationAdviceAppService {
                 continue;
             }
             LisAdviceApplyDetailLine line = new LisAdviceApplyDetailLine();
-            line.setTargetTable(summary.getTargetTable());
-            line.setTargetId(summary.getTargetId());
-            line.setTargetDisplayName(summary.getTargetDisplayName());
-            line.setRemark(summary.getRemark());
-            lines.add(line);
-        }
-        return lines;
-    }
-
-    /**
-     * 明细摘要 → PACS 外发明细行（targetTable/targetId/展示名/remark）。
-     *
-     * @param summaries 诊疗明细摘要
-     * @return PACS 扩展明细；空入参返回空列表
-     */
-    private List<PacsAdviceApplyDetailLine> toPacsAdviceApplyDetailLines(List<ServiceRequestDetailSummaryDto> summaries) {
-        if (summaries == null || summaries.isEmpty()) {
-            return List.of();
-        }
-        List<PacsAdviceApplyDetailLine> lines = new ArrayList<>();
-        for (ServiceRequestDetailSummaryDto summary : summaries) {
-            if (summary == null) {
-                continue;
-            }
-            PacsAdviceApplyDetailLine line = new PacsAdviceApplyDetailLine();
             line.setTargetTable(summary.getTargetTable());
             line.setTargetId(summary.getTargetId());
             line.setTargetDisplayName(summary.getTargetDisplayName());

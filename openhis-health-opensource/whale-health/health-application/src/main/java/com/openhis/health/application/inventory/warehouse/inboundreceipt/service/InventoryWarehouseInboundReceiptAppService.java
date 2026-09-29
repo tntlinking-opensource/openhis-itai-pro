@@ -43,7 +43,7 @@ import com.openhis.health.application.shared.tracenumber.TraceNumberBatchIdentit
 import com.openhis.health.application.shared.tracenumber.TraceNumberSupplyAgreeTraceOrchestrator;
 import com.openhis.health.application.shared.tracenumber.RecordTraceFromSupplyLineSpec;
 import com.openhis.health.application.shared.tracenumber.TraceScanCountSupport;
-import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
+import com.openhis.health.application.shared.practitioner.PractitionerRoleScopeLoader;
 import com.openhis.health.domain.administration.product.support.ProductDefinitionDisplaySupport;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.application.inventory.warehouse.support.ProductDefinitionPurchasePageLoader;

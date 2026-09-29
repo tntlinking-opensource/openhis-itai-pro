@@ -15,6 +15,7 @@ import {
   nextTick,
   onDeactivated,
   onMounted,
+  onUnmounted,
   provide,
   ref,
   watch,
@@ -48,6 +49,8 @@ import {
 import ServiceApplyDialog from '#/views/outpatient/doctor-station/service-apply/service-apply-dialog.vue';
 
 import { InpatientAdviceList } from './advice';
+import InpatientSurgeryAnesthApplyTab from './surgery-anesth/surgery-anesth-apply-tab.vue';
+import { clearInpatientAdviceClipboard } from './advice/services/inpatient-advice-clipboard';
 import InpatientDischargeAdviceDialog from './components/inpatient-discharge-advice-dialog.vue';
 import InpatientNursingAdviceDialog from './components/inpatient-nursing-advice-dialog.vue';
 import DoctorPatientList from './doctor-patient-list.vue';
@@ -69,6 +72,7 @@ import {
 } from '#/chs/composables/use-inpatient-clinical-pre-settle';
 import { useInsuranceProgressDialog } from '#/chs/composables/use-insurance-progress-dialog';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { INPATIENT_SURGERY_ANESTH_ENABLED } from '#/views/inpatient/surgery-anesth/inpatient-surgery-anesth.config';
 
 defineOptions({
   name: 'InpatientDoctorStation',
@@ -79,6 +83,8 @@ const DOCTOR_TABS = {
   MEDICAL_RECORD: '住院病历',
   DIAGNOSIS: '诊断录入',
   ORDER: '开立医嘱',
+  SURGERY: '手术',
+  ANESTHESIA: '麻醉',
   TCM: '中医处方',
   REPORT_QUERY: '报告查询',
   TEMPERATURE_SHEET: '体温单',
@@ -87,6 +93,15 @@ const DOCTOR_TABS = {
 } as const;
 
 type DoctorTab = (typeof DOCTOR_TABS)[keyof typeof DOCTOR_TABS];
+
+/** 页签：红旗院点去掉手术、麻醉 */
+const doctorTabs = computed(() => {
+  const tabs = Object.values(DOCTOR_TABS);
+  if (INPATIENT_SURGERY_ANESTH_ENABLED) {
+    return tabs;
+  }
+  return tabs.filter((tab) => tab !== DOCTOR_TABS.SURGERY && tab !== DOCTOR_TABS.ANESTHESIA);
+});
 
 /** 复用护士站模块的 Tab（入参为 patients[]） */
 const NURSE_REUSED_TABS = new Set<DoctorTab>([
@@ -156,10 +171,10 @@ const emrPatientInfo = computed(() => {
     name: p.patientName ?? '',
     gender: (p.genderEnumText ?? '').trim(),
     age,
-    phone: '',
+    phone: (p.phone ?? '').trim(),
     insurance: (p.contractDisplay ?? '').trim(),
     medicalRecordNo: (p.encounterBusNo ?? '').trim(),
-    idCard: '',
+    idCard: (p.idCard ?? '').trim(),
     deptName: (p.organizationName ?? '').trim(),
     wardName,
     bedNo,
@@ -172,6 +187,8 @@ const tabComponents = computed<Record<DoctorTab, Component>>(() => ({
   [DOCTOR_TABS.MEDICAL_RECORD]: MedicalRecordForm,
   [DOCTOR_TABS.DIAGNOSIS]: DiagnosisList,
   [DOCTOR_TABS.ORDER]: InpatientAdviceList,
+  [DOCTOR_TABS.SURGERY]: InpatientSurgeryAnesthApplyTab,
+  [DOCTOR_TABS.ANESTHESIA]: InpatientSurgeryAnesthApplyTab,
   [DOCTOR_TABS.TCM]: TcmAdvice,
   [DOCTOR_TABS.REPORT_QUERY]: ReportQuery,
   [DOCTOR_TABS.TEMPERATURE_SHEET]: NurseStationTemperatureSheet,
@@ -201,6 +218,8 @@ const doctorStationContextBindings = computed(() => {
   if (
     tab !== DOCTOR_TABS.DIAGNOSIS &&
     tab !== DOCTOR_TABS.ORDER &&
+    tab !== DOCTOR_TABS.SURGERY &&
+    tab !== DOCTOR_TABS.ANESTHESIA &&
     tab !== DOCTOR_TABS.TCM &&
     tab !== DOCTOR_TABS.REPORT_QUERY
   ) {
@@ -211,6 +230,13 @@ const doctorStationContextBindings = computed(() => {
       ...base,
       patientServiceTypeName: selectedPatient.value?.organizationName ?? '',
       stationScope: 'inpatient' as const,
+    };
+  }
+  if (tab === DOCTOR_TABS.SURGERY || tab === DOCTOR_TABS.ANESTHESIA) {
+    return {
+      ...base,
+      formKind: tab === DOCTOR_TABS.SURGERY ? 'SURGERY' : 'ANESTHESIA',
+      writeDisabled: adviceWriteDisabled.value,
     };
   }
   if (tab === DOCTOR_TABS.TCM) {
@@ -314,10 +340,19 @@ onMounted(() => {
   void loadInpatientDoctorStationList();
 });
 
-/** 离开页面（含 Tab 缓存切换）时关闭出院弹窗，避免遮罩残留 */
-onDeactivated(() => {
+/** 离开住院医生站：关弹窗，并清掉跨患者医嘱剪贴板 */
+function leaveInpatientDoctorStation() {
   dischargeDialogVisible.value = false;
   nursingDialogVisible.value = false;
+  clearInpatientAdviceClipboard();
+}
+
+onDeactivated(() => {
+  leaveInpatientDoctorStation();
+});
+
+onUnmounted(() => {
+  leaveInpatientDoctorStation();
 });
 
 /** 住院侧无门诊接诊写接口：已选患者即可继续临床操作 */
@@ -427,6 +462,7 @@ const clinicalPreSettlePrepayOffset = computed(() =>
 const handleQuickAction = async (
   action:
     | 'allergy'
+    | 'anesthesia'
     | 'entrust'
     | 'exam'
     | 'lab'
@@ -443,7 +479,8 @@ const handleQuickAction = async (
     action === 'treatment' ||
     action === 'transfusion' ||
     action === 'pathology' ||
-    action === 'surgery';
+    action === 'surgery' ||
+    action === 'anesthesia';
   if (isWriteQuickAction && adviceWriteDisabled.value) return;
   if (action === 'report') {
     if (activeTab.value === DOCTOR_TABS.MEDICAL_RECORD) {
@@ -465,13 +502,23 @@ const handleQuickAction = async (
     allergyDialogVisible.value = true;
     return;
   }
+  if (action === 'surgery' || action === 'anesthesia') {
+    if (activeTab.value === DOCTOR_TABS.MEDICAL_RECORD) {
+      const ok = await guardEmrUnsavedBeforeLeaveMedicalRecord();
+      if (!ok) return;
+    }
+    activeTab.value = action === 'surgery' ? DOCTOR_TABS.SURGERY : DOCTOR_TABS.ANESTHESIA;
+    return;
+  }
   const actionTextMap: Record<
-    Exclude<typeof action, 'allergy' | 'entrust' | 'exam' | 'lab' | 'report' | 'treatment'>,
+    Exclude<
+      typeof action,
+      'allergy' | 'anesthesia' | 'entrust' | 'exam' | 'lab' | 'report' | 'surgery' | 'treatment'
+    >,
     string
   > = {
     transfusion: '输血申请',
     pathology: '病理申请',
-    surgery: '手术申请',
   };
   ElMessage.info(`${actionTextMap[action]}功能待实现`);
 };
@@ -577,7 +624,7 @@ const handleNursing = () => {
           :patient="currentPatientInfo"
           :doctor-name="doctorDisplayName"
           :active-tab="activeTab"
-          :tabs="Object.values(DOCTOR_TABS)"
+          :tabs="doctorTabs"
           @tab-change="handleTabChange"
         >
           <template #actions>

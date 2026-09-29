@@ -523,8 +523,23 @@ function isDocumentOpen(node: EmrTemplateTreeNode): boolean {
   );
 }
 
+/** 门诊病历文书类型；侧栏固定显示类型名，不用主诉或模板名 */
+const OUTPATIENT_RECORD_TYPE_CODE = 'OUTPATIENT_RECORD';
+
+function isOutpatientRecordDoc(doc: DocumentSummaryDto): boolean {
+  return (doc.documentTypeCode ?? '').trim() === OUTPATIENT_RECORD_TYPE_CODE;
+}
+
+/** 门诊病历侧栏文案：文书类型名，缺省「门诊病历」 */
+function formatOutpatientRecordLabel(doc: DocumentSummaryDto): string {
+  const typeName = (doc.documentTypeName ?? '').trim();
+  if (typeName && !/^[A-Z][A-Z0-9_]*$/.test(typeName)) return typeName;
+  return '门诊病历';
+}
+
 /** 卡片主行：具体文书标题优先（与打印页眉一致），勿只用类型名（告知书会糊成一片） */
 function formatDocumentCardPrimary(doc: DocumentSummaryDto): string {
+  if (isOutpatientRecordDoc(doc)) return formatOutpatientRecordLabel(doc);
   const rawTitle = (doc.title ?? '').trim();
   const strippedTitle = rawTitle
     .replace(/-\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?.*$/u, '')
@@ -539,13 +554,15 @@ function formatDocumentCardPrimary(doc: DocumentSummaryDto): string {
   );
 }
 
-/** 卡片副行主诉（有类型名时才单独展示主诉） */
+/** 卡片副行主诉（门诊病历不展示） */
 function formatDocumentCardChiefComplaint(doc: DocumentSummaryDto): string {
+  if (isOutpatientRecordDoc(doc)) return '';
   return (doc.chiefComplaint ?? '').trim();
 }
 
-/** 卡片第二行：优先主诉，方便树里区分历次就诊；无主诉时回退文书标题 */
+/** 卡片第二行：门诊病历固定类型名；其余优先主诉，无主诉时回退文书标题 */
 function formatDocumentCardSubline(doc: DocumentSummaryDto): string {
+  if (isOutpatientRecordDoc(doc)) return formatOutpatientRecordLabel(doc);
   const complaint = formatDocumentCardChiefComplaint(doc);
   if (complaint) return complaint;
   return formatDocumentCardPrimary(doc);

@@ -81,6 +81,10 @@ function westernPatchFromCatalogRow(row: ProductOption): Partial<AdviceDrugItem>
   if (mc) patch.usage = mc;
   if (rc) patch.frequency = rc;
   patch.injectFlag = row.injectFlag === true;
+  const categoryCode = String(row.categoryCode ?? '').trim();
+  if (categoryCode) {
+    patch.catalogCategoryCode = categoryCode;
+  }
   if (splitName) patch.doseMainUnit = splitName;
   if (doseName) patch.doseSubUnit = doseName;
   if (ratio !== undefined && Number.isFinite(ratio)) patch.doseConvertRatio = ratio;

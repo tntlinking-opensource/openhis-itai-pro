@@ -57,7 +57,7 @@ import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestQue
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
-import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
+import com.openhis.health.application.shared.practitioner.PractitionerRoleScopeLoader;
 import com.openhis.health.application.report.nurseworkload.support.NurseWorkloadLoader;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -132,7 +132,7 @@ public class NurseWorkloadReportAppService {
     /** 就诊读侧。 */
     private final EncounterQueryService encounterQueryService;
 
-    /** 科室主数据读侧（默认登录科室下拉：启用护士站分类）。 */
+    /** 科室主数据读侧（工作科室下拉：护士站 + 医技）。 */
     private final OrganizationQueryService organizationQueryService;
 
     /** 护士岗人员加载。 */
@@ -151,7 +151,7 @@ public class NurseWorkloadReportAppService {
     private final NurseWorkloadReportMapper nurseWorkloadReportMapper;
 
     /**
-     * IF-RPT-NWL-01：页面初始化（默认门诊+当日+默认登录科室与护士下拉）。
+     * IF-RPT-NWL-01：页面初始化（默认门诊+当日+工作科室与人员下拉）。
      *
      * @param request 可选 encounterScope / organizationId（刷新科室下拉与护士下拉口径）
      * @return 初始化响应
@@ -166,29 +166,25 @@ public class NurseWorkloadReportAppService {
                 "页面配置加载失败，请稍后重试");
             // Gate：租户上下文须可用（AS-RPT-002-SDD §3.2 序号 2）
             this.requireTenantId();
-            // Pre：全院激活护士岗人员，orgId=null 表示不按岗位管辖科室收窄
-            List<Practitioner> nurses = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRole(
-                WhalePlatformRoleCodeConstants.ROLE_NURSE,
-                null);
-            // Pre：已选默认登录科室时按 Practitioner.org_id 再收窄护士下拉
-            Long defaultLoginOrgId = null;
+            // Pre：护士 + 医技；已选工作科室时按岗位 org_id 收窄
+            Long workDepartmentId = null;
             if (request != null) {
-                defaultLoginOrgId = request.getOrganizationId();
+                workDepartmentId = request.getOrganizationId();
             }
-            nurses = this.filterNursesByDefaultLoginOrg(nurses, defaultLoginOrgId);
-            // Asm：默认门诊+当日、就诊范围 / 默认登录科室 / 护士下拉（§3.2 序号 4）
+            List<Practitioner> nurses = this.listPractitionersByWorkDepartment(workDepartmentId);
+            // Asm：默认门诊+当日、就诊范围 / 工作科室 / 人员下拉
             LoadNurseWorkloadFormInitResponse response = new LoadNurseWorkloadFormInitResponse();
             LocalDate today = LocalDate.now();
             response.setDefaultEncounterScope(NurseWorkloadConstants.ENCOUNTER_SCOPE_OUTPATIENT);
             response.setDefaultDateFrom(today);
             response.setDefaultDateTo(today);
             response.setEncounterScopeOptions(this.buildEncounterScopeOptions());
-            // Pre：科室下拉随就诊范围（门诊挂号科 / 住院入院科）；入参空则默认门诊
+            // Pre：就诊范围入参空则默认门诊（工作科室下拉不随就诊域变化）
             String organizationScope = NurseWorkloadConstants.ENCOUNTER_SCOPE_OUTPATIENT;
             if (request != null && StringUtils.isNotEmpty(request.getEncounterScope())) {
                 organizationScope = request.getEncounterScope().trim();
             }
-            // Pre：默认登录科室下拉仅护士站分类（注射室/采血室/疗区护士站等）
+            // Pre：工作科室下拉 = 护士站 + 医技，不随门诊/住院收窄
             response.setOrganizationOptions(this.buildOrganizationOptions(organizationScope));
             response.setNurseOptions(this.buildNurseOptions(nurses));
             return response;
@@ -221,8 +217,8 @@ public class NurseWorkloadReportAppService {
             request.getDateTo());
         // Pre：Request → 领域 Query（§3.3 序号 2）
         NurseWorkloadPageQuery query = this.nurseWorkloadReportMapper.toNurseWorkloadPageQuery(request);
-        // Pre：默认登录科室 → 该科护士集合（科室合计）
-        this.applyDefaultLoginOrgNurseScope(query, request.getOrganizationId());
+        // Pre：工作科室 → 该科护士/医技人员集合（科室合计）
+        this.applyWorkDepartmentScope(query, request.getOrganizationId());
         // Pre：就诊 scope + SR 类目；跳过耗材 hvcm（诊疗 IF 不需要）
         this.prepareNurseWorkloadQueryScopesSafely(query, true, false);
         // Pre：按 category_enum 汇总净 COMPLETED 次数（§3.3 序号 4）
@@ -256,8 +252,8 @@ public class NurseWorkloadReportAppService {
             request.getDateTo());
         // Pre：Request → Query（含分页键；§3.4 序号 2）
         NurseWorkloadPageQuery query = this.nurseWorkloadReportMapper.toNurseWorkloadPageQuery(request);
-        // Pre：默认登录科室 → 该科护士集合；单护士明细优先
-        this.applyDefaultLoginOrgNurseScope(query, request.getOrganizationId());
+        // Pre：工作科室 → 该科护士/医技人员集合；单人明细优先
+        this.applyWorkDepartmentScope(query, request.getOrganizationId());
         // Pre：就诊 scope + SR 类目；跳过耗材 hvcm
         this.prepareNurseWorkloadQueryScopesSafely(query, true, false);
         // Pre：净 COMPLETED 明细分页，recorded_time DESC（§3.4 序号 4）
@@ -304,8 +300,8 @@ public class NurseWorkloadReportAppService {
             request.getDateTo());
         // Pre：Request → Query（§3.5 序号 2）
         NurseWorkloadPageQuery query = this.nurseWorkloadReportMapper.toNurseWorkloadPageQuery(request);
-        // Pre：默认登录科室 → 该科护士集合（科室合计）
-        this.applyDefaultLoginOrgNurseScope(query, request.getOrganizationId());
+        // Pre：工作科室 → 该科护士/医技人员集合（科室合计）
+        this.applyWorkDepartmentScope(query, request.getOrganizationId());
         // Pre：就诊 scope + 耗材 hvcm；跳过 SR 类目
         this.prepareNurseWorkloadQueryScopesSafely(query, false, true);
         // Pre：按 hvcm_flag 汇总发放数量（§3.5 序号 4）
@@ -341,8 +337,8 @@ public class NurseWorkloadReportAppService {
         query.setDateTo(request.getDateTo());
         // 显式开立科室金额收窄（若前端仍传）；科室统计主路径用 organizationId→护士集合
         query.setRequestingOrgId(request.getRequestingOrgId());
-        // Pre：默认登录科室 → 该科护士集合（卡片仅该科人员）
-        this.applyDefaultLoginOrgNurseScope(query, request.getOrganizationId());
+        // Pre：工作科室 → 该科护士/医技人员集合（卡片仅该科人员）
+        this.applyWorkDepartmentScope(query, request.getOrganizationId());
         // Pre：两侧 enrich 一次（卡片同时需要类目与 hvcm）
         this.prepareNurseWorkloadQueryScopesSafely(query, true, true);
         // Pre：全量事实行一次加载（禁止前端翻页重复扫候选集）
@@ -434,8 +430,8 @@ public class NurseWorkloadReportAppService {
             request.getDateTo());
         // Pre：Request → Query（§3.6 序号 2）
         NurseWorkloadPageQuery query = this.nurseWorkloadReportMapper.toNurseWorkloadPageQuery(request);
-        // Pre：默认登录科室 → 该科护士集合；单护士明细优先
-        this.applyDefaultLoginOrgNurseScope(query, request.getOrganizationId());
+        // Pre：工作科室 → 该科护士/医技人员集合；单人明细优先
+        this.applyWorkDepartmentScope(query, request.getOrganizationId());
         // Pre：就诊 scope + 耗材 hvcm；跳过 SR 类目
         this.prepareNurseWorkloadQueryScopesSafely(query, false, true);
         // Pre：有效发放行分页（§3.6 序号 4）
@@ -492,8 +488,8 @@ public class NurseWorkloadReportAppService {
         try {
             // Pre：导出 Query（无分页键）+ 按主 Tab 按需 enrich（§3.7 序号 2～3）
             NurseWorkloadPageQuery query = this.nurseWorkloadReportMapper.toNurseWorkloadPageQuery(request);
-            // Pre：默认登录科室 → 该科护士集合；单护士优先
-            this.applyDefaultLoginOrgNurseScope(query, request.getOrganizationId());
+            // Pre：工作科室 → 该科护士/医技人员集合；单人优先
+            this.applyWorkDepartmentScope(query, request.getOrganizationId());
             boolean needExecution = NurseWorkloadConstants.MAIN_TAB_EXECUTION.equals(request.getMainTabCode());
             this.prepareNurseWorkloadQueryScopesSafely(query, needExecution, !needExecution);
             boolean truncated;
@@ -1086,17 +1082,14 @@ public class NurseWorkloadReportAppService {
     }
 
     /**
-     * 构建默认登录科室下拉：仅启用「护士站」分类科室。
+     * 构建工作科室下拉：启用的护士站与医技科室。
      *
-     * <p>走 {@link OrganizationQueryService#listOrganizationsForNurseStation()}（{@code class_enum=NS}），
-     * 含门诊注射室、门诊采血室、疗区护士站等；与科室管理中「分类=护士站」一致。</p>
-     *
-     * @param encounterScope 门诊或住院 code（保留入参以兼容调用方；护士站列表不随就诊域收窄）
+     * @param encounterScope 门诊或住院 code（保留入参；工作科室不随就诊域收窄）
      * @return OptionDto 列表；无科室时返回空列表（非 null）
      */
     private List<OptionDto> buildOrganizationOptions(String encounterScope) {
-        // Pre：只查护士站分类，避免挂号科把注射室等挤掉
-        List<Organization> organizations = this.organizationQueryService.listOrganizationsForNurseStation();
+        // Pre：护士站 + 医技，禁止用挂号科/入院科冒充工作科室
+        List<Organization> organizations = this.organizationQueryService.listOrganizationsForWorkDepartment();
         List<OptionDto> options = new ArrayList<>();
         for (Organization organization : organizations) {
             // 无主键的科室无法作为筛选值，跳过
@@ -1349,83 +1342,90 @@ public class NurseWorkloadReportAppService {
     }
 
     /**
-     * 按默认登录科室（{@code Practitioner.org_id}）收窄护士集合写入 {@code practitionerIds}。
+     * 按工作科室（岗位 {@code adm_pr_assign.org_id}）收窄人员集合写入 {@code practitionerIds}。
      *
-     * <p>已选单护士时以 {@code practitionerId} 为准，不再叠加科室集合。
-     * {@code organizationId} 为空则不收窄。科室下无护士时写入空列表（领域侧返回空，禁止回落全院）。
-     * 科室统计路径清空 {@code requestingOrgId}，金额随执行护士归属汇总。</p>
+     * <p>已选单人时以 {@code practitionerId} 为准，不再叠加科室集合。
+     * {@code organizationId} 为空则不收窄。该科没有护士/医技岗位时写入空列表（禁止回落全院）。
+     * 科室统计路径清空 {@code requestingOrgId}，金额随执行人归属汇总。</p>
      *
      * @param query          领域读查询（就地写入）
-     * @param organizationId 默认登录科室主键；可空
+     * @param organizationId 工作科室主键；可空
      */
-    private void applyDefaultLoginOrgNurseScope(NurseWorkloadPageQuery query, Long organizationId) {
+    private void applyWorkDepartmentScope(NurseWorkloadPageQuery query, Long organizationId) {
         if (query == null) {
             return;
         }
-        // 单护士明细优先：不叠加科室 IN
+        // 单人明细优先：不叠加科室 IN
         if (query.getPractitionerId() != null) {
             return;
         }
         if (organizationId == null) {
             return;
         }
-        // Pre：解析该默认登录科室下全部护士岗人员主键
-        List<Long> nurseIds = this.resolveNurseIdsByDefaultLoginOrg(organizationId);
-        query.setPractitionerIds(nurseIds);
+        // Pre：护士岗与医技岗上挂了该工作科室的人员
+        query.setPractitionerIds(this.resolvePractitionerIdsByWorkDepartment(organizationId));
         // 科室统计不再按开立科室二次过滤金额
         query.setRequestingOrgId(null);
     }
 
     /**
-     * 解析默认登录科室下的护士岗人员主键（{@code Practitioner.org_id} = 科室）。
+     * 解析工作科室下的护士与医技人员主键。
      *
-     * <p>岗位管辖用 {@code adm_pr_assign.org_id}，与默认登录科室不同；此处禁止把科室传给
-     * {@code PractitionerRoleScopeLoader} 的 org 参数，而是先取全院护士岗再按 {@code org_id} 过滤。</p>
+     * <p>口径是岗位 {@code adm_pr_assign.org_id}，不是 {@code Practitioner.org_id}。</p>
      *
-     * @param defaultLoginOrgId 默认登录科室主键
-     * @return 护士主键列表；无命中时为空列表（非 null）
+     * @param workDepartmentId 工作科室主键
+     * @return 人员主键；无命中时为空列表（非 null）
      */
-    private List<Long> resolveNurseIdsByDefaultLoginOrg(Long defaultLoginOrgId) {
-        List<Practitioner> nurses = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRole(
-            WhalePlatformRoleCodeConstants.ROLE_NURSE,
-            null);
-        List<Practitioner> filtered = this.filterNursesByDefaultLoginOrg(nurses, defaultLoginOrgId);
-        List<Long> ids = new ArrayList<>();
-        for (Practitioner nurse : filtered) {
-            if (nurse != null && nurse.getId() != null) {
-                ids.add(nurse.getId());
-            }
-        }
-        return ids;
+    private List<Long> resolvePractitionerIdsByWorkDepartment(Long workDepartmentId) {
+        LinkedHashSet<Long> ids = new LinkedHashSet<>();
+        ids.addAll(this.practitionerRoleScopeLoader.resolvePractitionerIdsForActiveRoleFilter(
+            WhalePlatformRoleCodeConstants.ROLE_NURSE, workDepartmentId));
+        ids.addAll(this.practitionerRoleScopeLoader.resolvePractitionerIdsForActiveRoleFilter(
+            WhalePlatformRoleCodeConstants.ROLE_MEDICAL_TECH, workDepartmentId));
+        return new ArrayList<>(ids);
     }
 
     /**
-     * 按默认登录科室过滤护士实体列表。
+     * 加载工作科室下拉用的在职人员：未选科室为全部护士与医技，已选则只留挂了该科室的人。
      *
-     * @param nurses            护士岗人员
-     * @param defaultLoginOrgId 默认登录科室；空则原样返回
-     * @return 过滤后列表
+     * @param workDepartmentId 工作科室；空表示不按科室收窄
+     * @return 去重后的人员列表
      */
-    private List<Practitioner> filterNursesByDefaultLoginOrg(
-        List<Practitioner> nurses,
-        Long defaultLoginOrgId) {
-        if (nurses == null || nurses.isEmpty()) {
-            return List.of();
+    private List<Practitioner> listPractitionersByWorkDepartment(Long workDepartmentId) {
+        List<Practitioner> merged = new ArrayList<>();
+        LinkedHashSet<Long> seen = new LinkedHashSet<>();
+        this.appendRolePractitioners(merged, seen, WhalePlatformRoleCodeConstants.ROLE_NURSE, workDepartmentId);
+        this.appendRolePractitioners(merged, seen, WhalePlatformRoleCodeConstants.ROLE_MEDICAL_TECH, workDepartmentId);
+        return merged;
+    }
+
+    /**
+     * 把某一平台角色的在职人员并入列表，已出现的主键跳过。
+     *
+     * @param merged           累积列表
+     * @param seen             已写入的人员主键
+     * @param roleCode         平台角色 code
+     * @param workDepartmentId 工作科室；空则该角色全员
+     */
+    private void appendRolePractitioners(
+            List<Practitioner> merged,
+            Set<Long> seen,
+            String roleCode,
+            Long workDepartmentId) {
+        List<Practitioner> rows = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRole(
+            roleCode, workDepartmentId);
+        if (rows == null) {
+            return;
         }
-        if (defaultLoginOrgId == null) {
-            return nurses;
-        }
-        List<Practitioner> filtered = new ArrayList<>();
-        for (Practitioner nurse : nurses) {
-            if (nurse == null) {
+        for (Practitioner row : rows) {
+            if (row == null || row.getId() == null) {
                 continue;
             }
-            // 仅保留默认登录科室匹配的护士
-            if (defaultLoginOrgId.equals(nurse.getOrgId())) {
-                filtered.add(nurse);
+            // 双角色人员只出现一次
+            if (seen.add(row.getId())) {
+                merged.add(row);
             }
         }
-        return filtered;
     }
 
     /**

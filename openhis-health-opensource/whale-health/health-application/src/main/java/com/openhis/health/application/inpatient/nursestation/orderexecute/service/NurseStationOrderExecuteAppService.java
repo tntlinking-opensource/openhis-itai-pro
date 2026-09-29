@@ -432,12 +432,18 @@ public class NurseStationOrderExecuteAppService {
         // ② 启动执行
         procedureDomainService.startProcedureExecution(
             nurseStationOrderExecuteMapper.toStartProcedureExecutionCommand(procedureId, operatorId));
+        // Cmd：执行人须在 COMPLETED 前挂入（DM-CLN-004 §6.1.3 PREPARATION/IN_PROGRESS）
+        if (Boolean.TRUE.equals(item.getSurgeryAnesthExecuteFlag())) {
+            // 手术/麻醉弹窗：多角色拷贝，不登记 PRIMARY
+            this.registerSurgeryAnesthPerformers(item, orderCtx, procedureId, operatorId, actualTime);
+        } else {
+            // 普通医嘱执行：登记当前医务人员为主执行人
+            procedureExecutionPerformerOrchestrator.registerPrimaryPerformer(
+                procedureId, performerId, operatorId, actualTime);
+        }
         // ③ 完成执行：recorded_time=actualTime（展示）；occurrence 已在 create 写入 planTime（逻辑）
         procedureDomainService.completeProcedureRecord(
-            nurseStationOrderExecuteMapper.toCompleteProcedureRecordCommand(procedureId, operatorId, actualTime));
-        // Cmd：登记主执行人（与 Procedure 1:1 写入 cln_procedure_performer）。
-        procedureExecutionPerformerOrchestrator.registerPrimaryPerformer(
-            procedureId, performerId, operatorId, actualTime);
+            nurseStationOrderExecuteMapper.toCompleteProcedureRecordCommand(procedureId, operatorId, actualTime, item));
         Long orgId = context.encounterOrgIds.get(order.getEncounterId());
         // ④ 主医嘱联动：药嘱 FIFO 分段新建 Dispense+Charge；诊嘱新建 Charge（长临同构，BR-IP-EXE-016/018）
         if (ReadModelOrderTypeConstants.MED_REQUEST.equals(item.getOrderType())) {
@@ -499,7 +505,9 @@ public class NurseStationOrderExecuteAppService {
                 this.resolveFirstPlanTimeOnOpenedDay(med),
                 packageBatch,
                 packageUnitCode,
-                medicationProduct);
+                medicationProduct,
+                med.getQuantitySchedule(),
+                this.resolveQuantityScheduleSlotIndex(med, item.getPlanTime()));
         String unitCode = billable.getUnitCode();
         ChargeItem template = this.findChargeTemplate(context, order.getEncounterId(),
             TableNameConstants.MED_MEDICATION_REQUEST, med.getId());
@@ -714,12 +722,12 @@ public class NurseStationOrderExecuteAppService {
         // 绑定诊疗也需完整三态，与主医嘱 Procedure 独立
         procedureDomainService.startProcedureExecution(
             nurseStationOrderExecuteMapper.toStartProcedureExecutionCommand(bindProcedureId, operatorId));
-        procedureDomainService.completeProcedureRecord(
-            nurseStationOrderExecuteMapper.toCompleteProcedureRecordCommand(
-                bindProcedureId, operatorId, actualTime));
-        // Cmd：绑定诊疗 Procedure 同样登记主执行人。
+        // Cmd：绑定诊疗执行人须在完成前挂入（DM-CLN-004 §6.1.3）
         procedureExecutionPerformerOrchestrator.registerPrimaryPerformer(
             bindProcedureId, performerId, operatorId, actualTime);
+        procedureDomainService.completeProcedureRecord(
+            nurseStationOrderExecuteMapper.toCompleteProcedureRecordCommand(
+                bindProcedureId, operatorId, actualTime, null));
         // ③ 新建待结算 Charge，service=派生 Request，product=ActivityDefinition
         ChargeItemDefinition priceLine = this.requirePriceLineForExecution(
             context,
@@ -1124,6 +1132,37 @@ public class NurseStationOrderExecuteAppService {
     }
 
     /**
+     * 解析 planTime 在当日频次点中的 0-based 下标（供 quantity_schedule 取段；BR-IP-EXE-040）。
+     *
+     * @param med      药品明细
+     * @param planTime 本槽
+     * @return 下标；无法解析返回 -1
+     */
+    private int resolveQuantityScheduleSlotIndex(
+        MedicationRequestListQueryModel med,
+        LocalDateTime planTime) {
+        if (med == null || planTime == null || StringUtils.isEmpty(med.getRateCode())) {
+            return -1;
+        }
+        if (StringUtils.isBlank(med.getQuantitySchedule())) {
+            return -1;
+        }
+        LocalDateTime dayStart = planTime.toLocalDate().atStartOfDay();
+        LocalDateTime dayEnd = planTime.toLocalDate().atTime(23, 59, 59);
+        try {
+            List<FrequencyExecutionTimePointQueryModel> points =
+                frequencyQueryService.computeExecutionTimePoints(med.getRateCode(), dayStart, dayEnd);
+            List<LocalDateTime> ordered =
+                InpatientMedicationRequestExecutionMeasureHelper.collectOrderedExecutionAts(points);
+            return InpatientMedicationRequestExecutionMeasureHelper.resolveZeroBasedSlotIndexInOrderedDay(
+                ordered, planTime);
+        } catch (BusinessException ex) {
+            // 频次不可用：跳过 schedule，回落常规量
+            return -1;
+        }
+    }
+
+    /**
      * 解析停嘱日末槽 planTime（药品；与列表同源）。
      *
      * @param med 药品明细
@@ -1306,7 +1345,9 @@ public class NurseStationOrderExecuteAppService {
                     firstPlanTime,
                     packageBatch,
                     packageUnitCode,
-                    product);
+                    product,
+                    med.getQuantitySchedule(),
+                    this.resolveQuantityScheduleSlotIndex(med, item.getPlanTime()));
             line.setBusinessQuantity(billable.getQuantity());
             line.setUnitCode(billable.getUnitCode());
             lines.add(line);
@@ -2251,6 +2292,56 @@ public class NurseStationOrderExecuteAppService {
             orderCtx.svcDetail.getCategoryEnum(),
             InpatientNurseStationConstants.EX_IP_EXE_306,
             InpatientNurseStationConstants.MSG_NURSING_LEVEL_NOT_EXECUTABLE);
+    }
+
+    /**
+     * 手术/麻醉执行弹窗：在 complete 前自 SR 横表拷贝医师角色 + 弹窗配合护士写入 performer（BR-IP-SAE-004/005）。
+     *
+     * <p>须在 {@code IN_PROGRESS} 态调用（create→start 之后、complete 之前）。</p>
+     *
+     * @param item          写槽位（含弹窗 nurseId）
+     * @param orderCtx      预加载诊嘱明细
+     * @param procedureId   执行记录主键
+     * @param operatorId    操作人
+     * @param executionTime 执行时刻（performer startTime）
+     */
+    private void registerSurgeryAnesthPerformers(
+        NurseStationOrderExecuteWriteSlotDto item,
+        OrderExecutionContext orderCtx,
+        Long procedureId,
+        Long operatorId,
+        LocalDateTime executionTime) {
+        ServiceRequestListModel svc = null;
+        // 预加载上下文可空：无 svc 时仅挂弹窗 nurseId
+        if (orderCtx != null) {
+            svc = orderCtx.svcDetail;
+        }
+        Long surgeonId = null;
+        Long firstAssistantId = null;
+        Long secondAssistantId = null;
+        Long anesthetistId = null;
+        Long nurseId = null;
+        // 自申请横表带出拟手术/麻醉人员（空 id 后续跳过）
+        if (svc != null) {
+            surgeonId = svc.getSurgeonId();
+            firstAssistantId = svc.getFirstAssistantId();
+            secondAssistantId = svc.getSecondAssistantId();
+            anesthetistId = svc.getAnesthetistId();
+            nurseId = svc.getNurseId();
+        }
+        // 弹窗配合护士可覆盖申请 nurse_id（BR-IP-SAE-005）
+        if (item != null && item.getNurseId() != null) {
+            nurseId = item.getNurseId();
+        }
+        procedureExecutionPerformerOrchestrator.registerSurgeryAnesthPerformers(
+            procedureId,
+            operatorId,
+            executionTime,
+            surgeonId,
+            firstAssistantId,
+            secondAssistantId,
+            anesthetistId,
+            nurseId);
     }
 
     /**

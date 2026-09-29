@@ -6,6 +6,7 @@ package com.openhis.health.domain.workflow.activitydefinition.service;
 
 import java.util.Objects;
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
+import com.openhis.health.domain.share.constants.BuiltInActivityDefinitionConstants;
 import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -50,6 +51,8 @@ import lombok.RequiredArgsConstructor;
  * 诊疗项目定义写侧领域服务。
  *
  * <p>边界：本服务仅对 ActivityDefinition 聚合内写模型落库与事件发布负责；收费定价事实、医保网关交互等跨域事务由应用服务编排。</p>
+ *
+ * <p>产品内置项（{@link BuiltInActivityDefinitionConstants}）：禁止删除/停用、改名、改 {@code type_enum}/类目。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -77,6 +80,9 @@ public class ActivityDefinitionDomainService {
         Map<ActivityDefinition, List<CreateActivityDefinitionCommand.ActivityDefinitionChildItemCommand>> childrenByDefinition = new HashMap<>();
 
         for (CreateActivityDefinitionCommand.CreateActivityDefinitionItemCommand item : items) {
+            // Gate：产品内置名已存在则禁止再建（按名解析须唯一）
+            this.assertCreateBuiltInNameAllowed(item.getName());
+
             ActivityDefinition definition = new ActivityDefinition();
 
             // 业务编码由领域层采番，禁止外部注入（B.10.9）；冲突时自动跳号。
@@ -174,6 +180,9 @@ public class ActivityDefinitionDomainService {
             }
 
             ActivityDefinition definition = this.loadActivityDefinition(item.getId());
+            // Gate：产品内置项禁止改名/改类型/改类目；非内置禁止抢占内置名
+            this.assertBuiltInIdentityUpdateAllowed(
+                definition, item.getName(), item.getCategoryCode(), item.getTypeEnum());
             List<String> changedFields = new ArrayList<>();
 
             // 逐字段更新：命令字段为空时不覆盖历史值（与“可编辑字段集合”语义一致）。
@@ -431,6 +440,8 @@ public class ActivityDefinitionDomainService {
         }
 
         for (ActivityDefinition definition : definitions) {
+            // Gate：产品内置诊疗项目禁止停用
+            this.assertBuiltInNotRemovable(definition, "停用");
             definition.retire();
         }
 
@@ -462,6 +473,8 @@ public class ActivityDefinitionDomainService {
         }
         Long operatorId = command.getOperatorId();
         for (ActivityDefinition definition : definitions) {
+            // Gate：产品内置诊疗项目禁止删除
+            this.assertBuiltInNotRemovable(definition, "删除");
             definition.markDeleted(operatorId);
         }
         activityDefinitionRepository.saveAll(definitions);
@@ -579,6 +592,9 @@ public class ActivityDefinitionDomainService {
 
                 // busNo 未命中存量记录时走新建路径，由领域层生成业务编码。
                 if (target == null) {
+                    // Gate：产品内置名已存在则禁止再建
+                    this.assertCreateBuiltInNameAllowed(row.getName());
+
                     ActivityDefinition created = new ActivityDefinition();
                     created.setBusNo(this.allocateUniqueBusNo());
                     created.setCategoryCode(row.getCategoryCode());
@@ -613,6 +629,9 @@ public class ActivityDefinitionDomainService {
                     // 子项写入依赖聚合根主键，落库后再构建并保存。
                 } else {
                     ActivityDefinition updated = target;
+                    // Gate：产品内置项禁止改名/改类型/改类目；导入同口径
+                    this.assertBuiltInIdentityUpdateAllowed(
+                        updated, row.getName(), row.getCategoryCode(), row.getTypeEnum());
                     updated.setCategoryCode(row.getCategoryCode());
                     updated.setName(row.getName());
                     updated.setPackageUnitCode(row.getPackageUnitCode());
@@ -757,6 +776,88 @@ public class ActivityDefinitionDomainService {
     private ActivityDefinition loadActivityDefinition(Long id) {
         return activityDefinitionRepository.findById(id).orElseThrow(
             () -> new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_NOT_FOUND, "诊疗项目定义不存在"));
+    }
+
+    /**
+     * 新建门禁：产品内置名称若已存在未删行，禁止再建（按名解析须唯一）。
+     *
+     * @param name 拟创建名称
+     */
+    private void assertCreateBuiltInNameAllowed(String name) {
+        String trimmed = trimToNull(name);
+        if (trimmed == null || !BuiltInActivityDefinitionConstants.isBuiltInName(trimmed)) {
+            return;
+        }
+        // 内置名已落库则拒绝再建，避免「名称不唯一」拖垮皮试/嘱托等链路
+        if (activityDefinitionRepository.existsByNameAndIsDeletedFalse(trimmed)) {
+            throw new BusinessException(
+                ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT,
+                "系统内置诊疗项目「" + trimmed + "」已存在，禁止重复创建");
+        }
+    }
+
+    /**
+     * 维护/导入门禁：内置项禁止改名、改类型、改类目；非内置禁止改名为内置保留名。
+     *
+     * @param existing         当前聚合根
+     * @param nextName         命令拟写名称（null 表示不改）
+     * @param nextCategoryCode 命令拟写类目（null 表示不改）
+     * @param nextTypeEnum     命令拟写类型（null 表示不改）
+     */
+    private void assertBuiltInIdentityUpdateAllowed(
+        ActivityDefinition existing,
+        String nextName,
+        String nextCategoryCode,
+        String nextTypeEnum) {
+        String currentName = trimToNull(existing.getName());
+        String trimmedNextName = trimToNull(nextName);
+
+        if (!BuiltInActivityDefinitionConstants.isBuiltInName(currentName)) {
+            // 非内置：禁止抢占内置保留名
+            if (trimmedNextName != null
+                && BuiltInActivityDefinitionConstants.isBuiltInName(trimmedNextName)
+                && !trimmedNextName.equals(currentName)) {
+                throw new BusinessException(
+                    ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT,
+                    "「" + trimmedNextName + "」为系统内置诊疗项目名称，禁止占用");
+            }
+            return;
+        }
+
+        // 内置：名称不可变
+        if (trimmedNextName != null && !trimmedNextName.equals(currentName)) {
+            throw new BusinessException(
+                ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT,
+                "系统内置诊疗项目「" + currentName + "」禁止改名");
+        }
+        // 内置：类型不可变
+        if (nextTypeEnum != null && !Objects.equals(existing.getTypeEnum(), nextTypeEnum)) {
+            throw new BusinessException(
+                ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT,
+                "系统内置诊疗项目「" + currentName + "」禁止修改类型");
+        }
+        // 内置：类目不可变（嘱托 category=52 等与写死链路绑定）
+        if (nextCategoryCode != null && !Objects.equals(existing.getCategoryCode(), nextCategoryCode)) {
+            throw new BusinessException(
+                ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT,
+                "系统内置诊疗项目「" + currentName + "」禁止修改类目");
+        }
+    }
+
+    /**
+     * 删除/停用门禁：产品内置诊疗项目不可移除。
+     *
+     * @param definition 待删或待停用聚合根
+     * @param actionLabel 动作文案（删除/停用）
+     */
+    private void assertBuiltInNotRemovable(ActivityDefinition definition, String actionLabel) {
+        String name = trimToNull(definition.getName());
+        if (!BuiltInActivityDefinitionConstants.isBuiltInName(name)) {
+            return;
+        }
+        throw new BusinessException(
+            ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT,
+            "系统内置诊疗项目「" + name + "」禁止" + actionLabel);
     }
 
     /**

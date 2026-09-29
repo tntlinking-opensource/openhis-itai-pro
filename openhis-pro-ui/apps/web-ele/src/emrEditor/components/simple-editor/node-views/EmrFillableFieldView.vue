@@ -80,11 +80,14 @@ const focused = ref(false);
 
 const wrapperClass = computed(() => {
   const base = fillableNodeExtraClass(props.node, kind.value);
+  // 聚焦输入时不要用 attrs 空/非空改外壳 class，否则 Vue 重绘空 span 把光标打回槽首
+  const emptyClass = focused.value ? '' : isEmpty.value ? 'emr-fillable--empty' : '';
+  const reqEmpty = focused.value ? '' : isRequiredEmpty.value ? 'emr-fillable--required-empty' : '';
   const state = [
     base,
-    isEmpty.value ? 'emr-fillable--empty' : '',
+    emptyClass,
     focused.value ? 'emr-fillable--active is-active' : '',
-    isRequiredEmpty.value ? 'emr-fillable--required-empty' : '',
+    reqEmpty,
     !editable.value ? 'emr-fillable--readonly' : '',
   ]
     .filter(Boolean)
@@ -99,27 +102,48 @@ function syncTextFieldFromAttrs() {
     if (!el || props.editor.view?.composing) return;
     const next = valueStr.value;
     const dom = readContentEditablePlainText(el);
-    if (dom === next) return;
-    // 聚焦输入中 attrs 常落后 DOM 一拍，勿用旧值覆盖（符号/快打会被吃掉）
-    if (document.activeElement === el) return;
     const pinned = peekPinnedIslandCaret(el);
-    const caret = pinned ?? -1;
+    if (document.activeElement === el) {
+      // 输入中 attrs 常落后 DOM；仅当 NodeView 把槽清空时才用 pin 写回。
+      // DOM 已对齐时不要拽光标，否则插入诊断后会钉死在旧偏移。
+      if (dom !== next && pinned != null) {
+        el.textContent = next;
+        setContentEditableCaretOffset(el, Math.min(pinned, next.length));
+      }
+      return;
+    }
+    if (dom === next) return;
     el.textContent = next;
-    if (pinned != null && caret >= 0) {
-      setContentEditableCaretOffset(el, Math.min(caret, next.length));
+    if (pinned != null) {
+      setContentEditableCaretOffset(el, Math.min(pinned, next.length));
     }
   });
+}
+
+function restoreLatestPinnedCaret() {
+  const now = textFieldRef.value;
+  if (!now) return;
+  const pinned = peekPinnedIslandCaret(now);
+  if (pinned == null) return;
+  setContentEditableCaretOffset(now, Math.min(pinned, readContentEditablePlainText(now).length));
 }
 
 /** 输入回写 attrs.value（剥掉历史 ZWSP，避免落库） */
 function onTextFieldInput() {
   const el = textFieldRef.value;
   if (!el) return;
-  // 短钉光标：分页若刚好重挂岛屿垫片，用当前偏移恢复，避免飞文末
+  const next = stripFillablePlaceholders(readContentEditablePlainText(el));
+  // 程序写 textContent（插入诊断）也会冒泡 input；attrs 已对齐时不要把 pin 盖成 0
+  if (next === valueStr.value) return;
   const caret = contentEditableCaretOffset(el);
-  if (caret >= 0) pinIslandCaret(el, caret, 500);
+  if (caret >= 0) pinIslandCaret(el, caret, 400);
   else clearPinnedIslandCaret(el);
-  props.updateAttributes({ value: stripFillablePlaceholders(readContentEditablePlainText(el)) });
+  props.updateAttributes({ value: next });
+  // attrs 回写会让 Vue 重绘空 contenteditable；必须读最新 pin，禁止闭包里的旧偏移把光标拽回去
+  nextTick(() => {
+    restoreLatestPinnedCaret();
+    requestAnimationFrame(() => restoreLatestPinnedCaret());
+  });
 }
 
 /** 粘贴纯文本 */
@@ -270,14 +294,30 @@ function onTextFieldFocus() {
   focused.value = true;
 }
 
+/** 字立刻回写（保存点在工具栏）；active 等一帧，避免 PM 抢焦把占位叠回光标上 */
 function onTextFieldBlur() {
-  focused.value = false;
-  // 点工具栏「保存」时焦点已离开，须在 blur 当帧把 DOM 字写入 attrs
   onTextFieldInput();
+  requestAnimationFrame(() => {
+    focused.value = document.activeElement === textFieldRef.value;
+  });
+}
+
+/** v-once 冻住 contenteditable；只读打开后再复用必须按 caps 写回 DOM */
+function syncIslandDomEditable() {
+  const el = textFieldRef.value;
+  if (!el) return;
+  const next = domEditable.value;
+  if (el.isContentEditable === next) return;
+  el.contentEditable = next ? 'true' : 'false';
 }
 
 onMounted(() => {
   syncTextFieldFromAttrs();
+  syncIslandDomEditable();
+});
+
+watch(domEditable, () => {
+  syncIslandDomEditable();
 });
 
 onBeforeUnmount(() => {
@@ -307,11 +347,15 @@ watch(valueStr, () => {
     <span
       v-else
       class="emr-fillable-field__shell"
-      :class="{ 'emr-fillable-field__shell--plain': kind === 'metadata' }"
+      :class="{
+        'emr-fillable-field__shell--plain': kind === 'metadata',
+        'emr-fillable-field__shell--active-empty': focused,
+      }"
       @mousedown="onShellMouseDown"
     >
       <span
         ref="textFieldRef"
+        v-once
         role="textbox"
         class="emr-inline-text__field emr-fillable-field__input"
         tabindex="0"
@@ -388,32 +432,22 @@ watch(valueStr, () => {
   pointer-events: none;
 }
 
-/* 空槽聚焦：去掉占位，用 CSS 假光标（不写 DOM，避免 NodeView 重建） */
-.emr-fillable-field__input:focus:empty::before,
-.emr-fillable-field__input:focus-visible:empty::before {
-  content: none;
+/*
+ * 空槽点进去必须让开占位。不要只靠 :focus:empty：
+ * 点选常把 PM 光标留在 atom 上，contenteditable 未 :focus，光标会叠在「请在这里填写…」上。
+ * 外壳 mousedown 已打 focused，用 shell--active-empty 藏占位并画假光标（不写 DOM）。
+ */
+.emr-fillable-field__shell--active-empty .emr-fillable-field__input::before,
+.emr-fillable-field__input:focus::before,
+.emr-fillable-field__input:focus-visible::before {
+  content: none !important;
 }
 
+.emr-fillable-field__shell--active-empty .emr-fillable-field__input:empty,
 .emr-fillable-field__input:focus:empty,
 .emr-fillable-field__input:focus-visible:empty {
   min-width: 1ch;
-}
-
-.emr-fillable-field__input:focus:empty::after,
-.emr-fillable-field__input:focus-visible:empty::after {
-  content: '';
-  display: inline-block;
-  width: 1px;
-  height: 1.05em;
-  background: #111827;
-  vertical-align: text-bottom;
-  animation: emr-fillable-caret-blink 1s step-end infinite;
-}
-
-@keyframes emr-fillable-caret-blink {
-  50% {
-    opacity: 0;
-  }
+  caret-color: #111827;
 }
 
 .emr-fillable-field__readonly-text {

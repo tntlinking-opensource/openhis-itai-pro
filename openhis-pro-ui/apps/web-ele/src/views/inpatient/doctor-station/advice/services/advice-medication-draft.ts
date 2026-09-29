@@ -9,6 +9,8 @@ import {
   parseProductTableNameFromSelectedId,
 } from './advice-row';
 import {
+  resolveFirstDosePersistPayload,
+  resolveDoseQuantitySchedulePersistPayload,
   resolveLongTermMedicationQuantityPayload,
   resolveMedicationDraftDosePayload,
 } from './medication-unit-bands';
@@ -61,6 +63,33 @@ function buildMedicationDraftLine(
   const rawSpeed = String(item.speedCode ?? '').trim();
   const speedCode = item.injectFlag === true || rawSpeed ? rawSpeed : '';
   const { dose, doseUnitCode } = resolveMedicationDraftDosePayload(item);
+  // 首日：界面计量 → 落库最小单位；长期无值显式 null 清空；有值却换算失败则拒绝保存
+  const firstDosePersist = longTerm ? resolveFirstDosePersistPayload(item) : undefined;
+  const firstDoseDisplayRaw = Number(item.firstDose);
+  const hasFirstDoseDisplay =
+    longTerm && Number.isFinite(firstDoseDisplayRaw) && firstDoseDisplayRaw > 0;
+  if (hasFirstDoseDisplay && !firstDosePersist) {
+    throw new Error('首日用量无法换算为最小单位，请重新选择药品后再保存');
+  }
+  // 分次用量不一致：长期西药多框 → doseSchedule/quantitySchedule；关开关显式 null 清空
+  const schedulePersist =
+    longTerm && item.unevenDoseEnabled
+      ? resolveDoseQuantitySchedulePersistPayload(item)
+      : undefined;
+  if (longTerm && item.unevenDoseEnabled && !schedulePersist) {
+    throw new Error('请按频次填全各次剂量，或取消「变动剂量」');
+  }
+  // 有 schedule：dose/quantity 仍写序列首项（列必填）；读侧有序列则按段取量，不按单值算全日每次量
+  let persistDose = dose;
+  let persistDoseUnitCode = doseUnitCode;
+  let persistQty = qty;
+  let persistUnitCode = unitCode;
+  if (schedulePersist) {
+    persistDose = schedulePersist.firstDoseQty;
+    persistDoseUnitCode = schedulePersist.doseUnitCode;
+    persistQty = schedulePersist.firstQuantity;
+    persistUnitCode = schedulePersist.unitCode;
+  }
   const daysRaw = Number(item.medicationDays ?? Number.NaN);
   const dispensePerDuration =
     !longTerm && Number.isFinite(daysRaw) && daysRaw > 0 ? Math.trunc(daysRaw) : undefined;
@@ -75,26 +104,38 @@ function buildMedicationDraftLine(
   const remark = String(item.remark ?? '').trim();
 
   const medicationPayload: InpatientDoctorStationAdviceDraftLineRequest['medicationPayload'] = {
-    quantity: qty,
-    unitCode,
+    quantity: persistQty,
+    unitCode: persistUnitCode,
     skinTestFlag: Boolean(item.skinTest),
     // 始终传备注（含空串），UPDATE 时可清空
     remark,
     ...(therapyEnum ? { therapyEnum } : {}),
     ...(defId ? { medicationDefinitionId: defId } : {}),
-    ...(dose === undefined ? {} : { dose }),
-    ...(doseUnitCode ? { doseUnitCode } : {}),
-    ...(longTerm &&
-    item.firstDose !== undefined &&
-    item.firstDose !== null &&
-    Number(item.firstDose) > 0
-      ? {
-          firstDose: Number(item.firstDose),
-          firstDoseUnitCode:
-            String(
-              item.firstDoseUnitCode ?? item.totalAmountUnit ?? item.doseSubUnit ?? '',
-            ).trim() || undefined,
-        }
+    ...(persistDose === undefined ? {} : { dose: persistDose }),
+    ...(persistDoseUnitCode ? { doseUnitCode: persistDoseUnitCode } : {}),
+    ...(longTerm
+      ? firstDosePersist
+        ? {
+            firstDose: firstDosePersist.firstDose,
+            firstDoseUnitCode: firstDosePersist.firstDoseUnitCode,
+          }
+        : {
+            // 显式 null：后端 syncFirstDose 覆盖清空（仅无首日量时）
+            firstDose: null,
+            firstDoseUnitCode: null,
+          }
+      : {}),
+    ...(longTerm
+      ? schedulePersist
+        ? {
+            doseSchedule: schedulePersist.doseSchedule,
+            quantitySchedule: schedulePersist.quantitySchedule,
+          }
+        : {
+            // 显式 null：关闭「用量不一致」后清空列
+            doseSchedule: null,
+            quantitySchedule: null,
+          }
       : {}),
     ...(dispensePerDuration === undefined ? {} : { dispensePerDuration }),
     ...(methodCode ? { methodCode } : {}),
@@ -153,6 +194,7 @@ function buildServiceDraftLine(
     ...(rateCode ? { rateCode } : {}),
     ...(!longTerm ? { executionCount } : {}),
     ...(entrustContent ? { entrustContent } : {}),
+    priorityEnum: String(item.priorityEnum ?? '').trim() || '',
   };
   return {
     lineOp: op,

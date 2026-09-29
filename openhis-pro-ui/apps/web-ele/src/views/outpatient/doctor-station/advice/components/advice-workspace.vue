@@ -592,7 +592,7 @@ defineExpose({
       @saved="handleSaveAsOrderTemplateSaved"
     />
 
-    <!-- MANUAL_USAGE_BIND 策略依赖：编辑卡保存时弹出用法/诊疗绑定确认 -->
+    <!-- 签发前绑定确认弹窗挂载点（resolveAndPersistAdviceDraftBindsAtSign） -->
     <AdviceDraftBindDialog />
 
     <OrderTemplateApplyConfirmDialog />

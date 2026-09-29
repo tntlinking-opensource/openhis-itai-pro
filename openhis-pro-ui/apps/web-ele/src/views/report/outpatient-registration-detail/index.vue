@@ -45,6 +45,7 @@ import { downloadBinaryExportFile } from '#/utils/export/download-binary-export'
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
+  collectPagedReportRows,
   isReportRefundBySignedFields,
   mapReportPrintRow,
   REPORT_QUERY_CONTROL,
@@ -273,22 +274,50 @@ function resolveReportPrintCode() {
 }
 
 /** 将当前 Tab 表格行映射为打印单元格文案。 */
-function mapCurrentPrintRows(): Record<string, string>[] {
+function mapCurrentPrintRows(
+  summarySource = summaryRows.value,
+  detailSource = detailRows.value,
+): Record<string, string>[] {
   const fields = reportPrintFieldsOf(printColumnCatalog.value);
   if (isSummaryTab.value) {
-    return summaryRows.value.map((row) =>
+    return summarySource.map((row) =>
       mapReportPrintRow(row as unknown as Record<string, unknown>, fields, {
         netRegistrationCount: (value) => formatCountCell(value),
         registrationFeeAmount: (value) => formatMoneyCell(value),
       }),
     );
   }
-  return detailRows.value.map((row) =>
+  return detailSource.map((row) =>
     mapReportPrintRow(row as unknown as Record<string, unknown>, fields, {
       statusEnum_enumText: (_value, raw) => String(raw.statusEnum_enumText ?? raw.statusEnum ?? ''),
       registrationFeeAmount: (value) => formatMoneyCell(value),
     }),
   );
+}
+
+/** 跨页打印：汇总已一次返回；明细按筛选分页拉全量。 */
+async function fetchAllPrintRows() {
+  if (isSummaryTab.value) {
+    return { rows: mapCurrentPrintRows(), truncated: false };
+  }
+  const filters = buildFilterPayload();
+  if (!filters) {
+    return { rows: [], truncated: false };
+  }
+  const collected = await collectPagedReportRows({
+    fetchPage: async (pageNo, pageSize) => {
+      const page = await pageOutpatientRegistrationDetailReportDetailApi({
+        ...filters,
+        pageNo,
+        pageSize,
+      });
+      return { rows: page.content ?? [], total: Number(page.totalCount ?? 0) };
+    },
+  });
+  return {
+    rows: mapCurrentPrintRows(summaryRows.value, collected.rows),
+    truncated: collected.truncated,
+  };
 }
 
 const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrintCurrentPage } =
@@ -297,6 +326,11 @@ const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrint
     getColumnCatalog: () => printColumnCatalog.value,
     getReportTitle: () => PAGE_TITLE,
     getPrintRows: () => mapCurrentPrintRows(),
+    fetchAllPrintRows,
+    hasPrintableData: () =>
+      isSummaryTab.value
+        ? summaryRows.value.length > 0
+        : total.value > 0 || detailRows.value.length > 0,
   });
 
 const tableLoading = computed(
@@ -819,6 +853,7 @@ onMounted(async () => {
       ref="printFieldDialogRef"
       :report-code="resolveReportPrintCode()"
       :column-catalog="printColumnCatalog"
+      show-print-scope
     />
   </Page>
 </template>

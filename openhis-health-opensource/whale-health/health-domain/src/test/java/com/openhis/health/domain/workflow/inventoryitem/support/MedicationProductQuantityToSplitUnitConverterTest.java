@@ -71,4 +71,22 @@ class MedicationProductQuantityToSplitUnitConverterTest {
 
         assertEquals(0, new BigDecimal("20").compareTo(splitQty));
     }
+
+    /**
+     * 剂量（计量）单位：dose_unit_ratio=12 表示 1 支=12ml；首日 12ml 须落到 1 拆零，禁止误乘成 144。
+     */
+    @Test
+    void doseUnitDividesByDoseUnitRatioNotMultiply() {
+        MedicationProductUnitConversionSource product = new MedicationProductUnitConversionSource();
+        product.setSplitUnitCode("branch");
+        product.setDoseUnitCode("ml");
+        product.setDoseUnitRatio(new BigDecimal("12"));
+        product.setPackageUnitCode("bottle");
+        product.setPackageUnitRatio(BigDecimal.ONE);
+
+        BigDecimal splitQty = MedicationProductQuantityToSplitUnitConverter.medicationQuantityToSplitUnit(
+            product, "ml", new BigDecimal("12"));
+
+        assertEquals(0, BigDecimal.ONE.compareTo(splitQty));
+    }
 }

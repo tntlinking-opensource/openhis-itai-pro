@@ -54,6 +54,8 @@ public class DoctorStationSkinTestSyncOrchestrator {
     private final ServiceRequestQueryService serviceRequestQueryService;
     /** 诊疗申请写侧领域服务（草稿创建/修改/签退）。 */
     private final ServiceRequestDomainService serviceRequestDomainService;
+    /** 检查工单接单编排（皮试检查 companion 签退时同步作废 PacsWorkItem）。 */
+    private final PacsOrderIngressOrchestrator pacsOrderIngressOrchestrator;
     /** 费用行写侧领域服务（门诊皮试操作费挂费/作废）。 */
     private final ChargeItemDomainService chargeItemDomainService;
     /** 临床目录定价解析（皮试检查零售价）。 */
@@ -241,6 +243,7 @@ public class DoctorStationSkinTestSyncOrchestrator {
             }
             serviceRequestDomainService.withdrawSignedServiceRequest(
                 ServiceAdviceCommandAssembler.toWithdrawServiceRequestCommand(companion.getId(), operatorId));
+            pacsOrderIngressOrchestrator.withdrawSignedImagingServiceRequest(companion.getId(), operatorId);
         }
     }
 

@@ -38,8 +38,14 @@ public class LoadKeyMedicationUsageReportPageInitResponse {
     private List<OptionDto> encounterClassOptions;
 
     /**
-     * 重点药类型选项（基药/监控/集采/抗生素）。
+     * 重点药类型选项（基药/监控/集采/抗生素；与药品性质分框）。
      */
     @Schema(description = "重点药类型选项")
     private List<OptionDto> keyDrugTypeOptions;
+
+    /**
+     * 药品性质选项（麻醉/精一/精二；与重点药类型分框）。
+     */
+    @Schema(description = "药品性质选项")
+    private List<OptionDto> medicinePropertyOptions;
 }

@@ -4,7 +4,7 @@
  */
 package com.openhis.health.application.report.registrationdetail.service;
 
-import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
+import com.openhis.health.application.shared.practitioner.PractitionerRoleScopeLoader;
 import com.openhis.health.application.report.registrationdetail.dto.OutpatientRegistrationDetailRowDto;
 import com.openhis.health.application.report.registrationdetail.dto.OutpatientRegistrationDetailSummaryRowDto;
 import com.openhis.health.application.report.registrationdetail.mapper.OutpatientRegistrationDetailReportMapper;

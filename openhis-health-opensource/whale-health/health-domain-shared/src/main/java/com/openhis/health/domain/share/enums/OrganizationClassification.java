@@ -27,7 +27,11 @@ public enum OrganizationClassification implements EnumInterface {
     /** 其他（OrganizationClassification，编码 {@code OTHER}）。 */
     OTHER(0L, "OTHER", "其他", "", 9L),
     /** 医技（OrganizationClassification，编码 {@code TECH}）。 */
-    TECH(0L, "TECH", "医技", "", 10L);
+    TECH(0L, "TECH", "医技", "", 10L),
+    /** 急诊（OrganizationClassification，编码 {@code EMERGENCY}）：急诊科业务，在急诊系统执行，不进护士站/医技工作站。 */
+    EMERGENCY(0L, "EMERGENCY", "急诊", "", 11L),
+    /** 体检（OrganizationClassification，编码 {@code PEIS}）：体检科业务，在体检系统执行，不进护士站/医技工作站。 */
+    PEIS(0L, "PEIS", "体检", "", 12L);
 
     private final Long codeSystemId;
     private final String code;

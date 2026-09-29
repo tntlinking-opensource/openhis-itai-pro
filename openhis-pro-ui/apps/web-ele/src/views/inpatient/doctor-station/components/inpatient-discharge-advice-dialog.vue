@@ -100,7 +100,7 @@ function resolveSourceLocationId(): string | undefined {
   return preserveApiIdForRequest(props.patient?.wardId);
 }
 
-/** 提交开立出院医嘱 */
+/** 提交开立出院医嘱（保存并签发） */
 async function handleSubmit() {
   const patient = props.patient;
   if (!patient) {
@@ -131,7 +131,7 @@ async function handleSubmit() {
       ElMessage.error(String(res.message || '').trim() || '开立出院医嘱失败');
       return;
     }
-    ElMessage.success(String(res.message || '').trim() || '出院医嘱已开立');
+    ElMessage.success(String(res.message || '').trim() || '出院医嘱已开立并签发');
     visible.value = false;
     emit('success');
   } catch (error: unknown) {
@@ -215,7 +215,7 @@ function handleCancel() {
     <template #footer>
       <ElButton :disabled="dialogLoading" @click="handleCancel">取消</ElButton>
       <ElButton type="primary" :loading="submitRequest.loading.value" @click="handleSubmit">
-        提交
+        保存并签发
       </ElButton>
     </template>
   </AppDialog>

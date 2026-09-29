@@ -21,6 +21,8 @@ import com.openhis.health.infrastructure.integration.noop.IntegrationAfterCommit
 import com.openhis.health.domain.mrms.caserecord.service.CaseRecordDomainService;
 import com.openhis.health.application.shared.advice.DoctorStationSkinTestSyncOrchestrator;
 import com.openhis.health.application.shared.advice.DoctorStationSkinTestSyncOrchestrator.ChargePolicy;
+import com.openhis.health.application.shared.advice.PacsOrderIngressOrchestrator;
+import com.openhis.health.application.shared.pricing.PendingPriceAdjustmentSignGate;
 import com.openhis.health.application.outpatient.doctorstation.advice.assembler.ServiceApplyFormAssembler;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.InpatientDoctorStationAdviceCatalogRowDto;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.CancelStopLongTermAdviceLineRequest;
@@ -35,13 +37,11 @@ import com.openhis.health.application.inpatient.doctorstation.advice.mapper.Inpa
 import com.openhis.health.application.shared.advice.InpatientAdviceRevokeGate;
 import com.openhis.health.application.shared.advice.InpatientEntrustOrderGateSupport;
 import com.openhis.health.application.shared.advice.InpatientMedicationAdviceGroupRateGate;
+import com.openhis.health.application.shared.advice.InpatientMedicationDoseQuantityScheduleGate;
 import com.openhis.health.application.shared.advice.InpatientNursingOrderGate;
 import com.openhis.health.infrastructure.integration.lis.LisAdviceApplyExtension;
 import com.openhis.health.infrastructure.integration.lis.ExtensionIn.LisAdviceApplyExtensionIn;
 import com.openhis.health.infrastructure.integration.lis.dto.LisAdviceApplyDetailLine;
-import com.openhis.health.infrastructure.integration.pacs.PacsAdviceApplyExtension;
-import com.openhis.health.infrastructure.integration.pacs.ExtensionIn.PacsAdviceApplyExtensionIn;
-import com.openhis.health.infrastructure.integration.pacs.dto.PacsAdviceApplyDetailLine;
 import com.openhis.health.application.inpatient.doctorstation.advice.query.InpatientDoctorStationAdviceOrderBindQueryService;
 import com.openhis.health.application.inpatient.doctorstation.advice.request.AppendSkinTestCompanionForLongTermMedicationRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.request.CancelStopLongTermInpatientDoctorStationAdviceRequest;
@@ -98,6 +98,7 @@ import com.openhis.health.domain.custom.activityexecutionlocation.service.Activi
 import com.openhis.health.domain.custom.encounterhistory.service.EncounterHistoryDomainService;
 import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestDetailQueryModel;
+import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestDomainService;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
@@ -176,7 +177,7 @@ public class InpatientDoctorStationAdviceAppService {
     private final InpatientTransferDischargeHoldOrchestrator transferDischargeHoldOrchestrationSupport;
     private final BusinessSequenceService businessSequenceService;
     private final LisAdviceApplyExtension lisAdviceApplyExtension;
-    private final PacsAdviceApplyExtension pacsAdviceApplyExtension;
+    private final PacsOrderIngressOrchestrator pacsOrderIngressOrchestrator;
     private final CodeSystemQueryService codeSystemQueryService;
     /** 用药频次下拉：读 cus_frequency 启用态。 */
     private final FrequencyOptionLoader frequencyOptionLoader;
@@ -195,6 +196,8 @@ public class InpatientDoctorStationAdviceAppService {
     private final SpecimenDefinitionQueryService specimenDefinitionQueryService;
     /** BR-IP-ORD-024：皮试药联动 doctor-prescription 皮试检查 SR（住院不挂费）。 */
     private final DoctorStationSkinTestSyncOrchestrator doctorStationSkinTestSyncOrchestrator;
+    /** BR-PRC-LOCK-007：pending 调价窗口禁止签发药品。 */
+    private final PendingPriceAdjustmentSignGate pendingPriceAdjustmentSignGate;
     /** IF-IP-DOR-16：签退前执行/发药/费用门控（EX-IP-ORD-103）。 */
     private final InpatientAdviceRevokeGate adviceRevokeGate;
     /** BR-IP-ORD-026：护理级别仅长期、同就诊唯一有效。 */
@@ -203,6 +206,8 @@ public class InpatientDoctorStationAdviceAppService {
     private final InpatientEntrustOrderGateSupport inpatientEntrustOrderGateSupport;
     /** BR-IP-ORD-033：同组成组药品频次须一致。 */
     private final InpatientMedicationAdviceGroupRateGate inpatientMedicationAdviceGroupRateGate;
+    /** BR-IP-ORD-037：分次用量不一致段数/therapy Gate（EX-IP-ORD-310）。 */
+    private final InpatientMedicationDoseQuantityScheduleGate inpatientMedicationDoseQuantityScheduleGate;
     private final CaseRecordDomainService caseRecordDomainService;
     /**
      * IF-IP-DOR-22：分页查询患者住院医嘱（单接口分 Tab：当前医嘱 / 历史医嘱；全类型统一列表）。
@@ -284,6 +289,8 @@ public class InpatientDoctorStationAdviceAppService {
         requireInpatientSnapshot(request.getEncounterId(), request.getPatientId(), false);
         InitInpatientDoctorStationAdviceResponse resp = new InitInpatientDoctorStationAdviceResponse();
         resp.setMedicationRateOptions(frequencyOptionLoader.loadActiveRateOptions());
+        // Pre：分次用量不一致展开框数与 Gate 段数同源（BR-IP-ORD-037）
+        resp.setDayTimesCountByRateCode(frequencyOptionLoader.buildDayTimesSegmentCountMap());
         resp.setMedicationRouteOptions(codeSystemQueryService.getOptionListByCodeSystemName(TerminologyCodeSystemNameConstants.METHOD_CODE));
         // Pre：输液滴速术语（与列表 speedName 同源 code_system=speed_code）
         resp.setMedicationSpeedOptions(codeSystemQueryService.getOptionListByCodeSystemName(
@@ -298,9 +305,10 @@ public class InpatientDoctorStationAdviceAppService {
     }
 
     /**
+     * 按诊疗定义查询可执行科室规则（住院 IF-DOR-19 / DM-CUS-001 BR-ACT-EXEC-005）。
      *
-     * <p>只读接口：按活动定义 id 拉取全院执行科室/机构规则，并批量回填展示名称；
-     * 不含库存 Gate，供开立诊疗前选择执行地点。</p>
+     * <p>有配置规则时返回项目级与大类默认规则；无命中时回落一条「执行科室=就诊开立科室」，
+     * 保证开立必填且不再展开全院科室。</p>
      *
      * @param request 就诊上下文与 {@code activityDefinitionId}
      * @return 可执行科室规则行列表
@@ -313,11 +321,18 @@ public class InpatientDoctorStationAdviceAppService {
         // Pre：解析诊疗大类，并按开立科室（就诊科室）拉取项目级 + 大类默认可执行科室规则
         ProductDefinitionDisplayDto activityProduct =
             loadSingleProduct(TableNameConstants.WKF_ACTIVITY_DEFINITION, request.getActivityDefinitionId());
-        List<ExecutionRuleListQueryModel> ruleModels =
+        List<ExecutionRuleListQueryModel> ruleModels = new ArrayList<>(
             activityExecutionLocationQueryService.listExecutionRulesForActivityResolution(
                 snapshot.getOrganizationId(),
                 request.getActivityDefinitionId(),
-                activityProduct.getCategoryCode());
+                activityProduct.getCategoryCode()));
+        // 未配置执行规则时执行科室取就诊开立科室，开立仍必填，不再展开全院科室
+        if (ruleModels.isEmpty() && snapshot.getOrganizationId() != null) {
+            ExecutionRuleListQueryModel orderingFallback = new ExecutionRuleListQueryModel();
+            orderingFallback.setOrganizationId(snapshot.getOrganizationId());
+            orderingFallback.setExecutionOrgId(snapshot.getOrganizationId());
+            ruleModels.add(orderingFallback);
+        }
         Set<Long> orgIds = new HashSet<>();
         Set<Long> locIds = new HashSet<>();
         for (ExecutionRuleListQueryModel row : ruleModels) {
@@ -489,22 +504,25 @@ public class InpatientDoctorStationAdviceAppService {
     }
 
     /**
-     * IF-IP-DOR-23：暂存前解析变更行中药品/诊疗的直接绑定项（纯读；住院不自动带耗材）。
+     * IF-IP-DOR 同构读口：暂存前绑定解析（纯读；**BR-IP-ORD-036** 住院开立恒空）。
+     *
+     * <p>与门诊 IF-DOR-23 差异：本接口恒返回空 {@code bindItems}（诊疗/耗材/合管均不带）。
+     * 未合管模板由护士执行 **BR-IP-EXE-013** 挂载；已合管 activity 开立与执行均不带。</p>
      *
      * @param request 就诊、患者与暂存变更行
-     * @return 绑定明细及触发源 based_on 锚点（不含器材定义目标）
+     * @return 恒为空绑定列表
      */
     public ResolveInpatientDoctorStationAdviceDraftBindsResponse resolveInpatientDoctorStationAdviceDraftBinds(
         ResolveInpatientDoctorStationAdviceDraftBindsRequest request
     ) {
-        // Gate：住院就诊上下文与患者一致
+        // Gate：住院就诊上下文与患者一致（与暂存写路径同门控，防跨就诊窥探）
         InpatientEncounterContextQueryModel snapshot =
             requireInpatientSnapshot(request.getEncounterId(), request.getPatientId(), false);
-        // Pre：住院开立不带合管/耗材；同批仅保留非耗材模板绑定
+        // Pre：BR-IP-ORD-036 — listDraftBindItems 恒空（organizationId 透传仅保签名）
         List<DoctorStationAdviceDraftBindItemDto> bindItems =
             inpatientDoctorStationAdviceOrderBindQueryService.listDraftBindItems(
                 request.getLines(), snapshot.getOrganizationId());
-        // Asm：返回绑定列表，派生行落库由前端在 IF-IP-DOR-14 前处理
+        // Asm：前端适配器亦短路为空，不弹绑定确认、不落派生行
         ResolveInpatientDoctorStationAdviceDraftBindsResponse resp =
             new ResolveInpatientDoctorStationAdviceDraftBindsResponse();
         resp.setBindItems(bindItems);
@@ -530,6 +548,8 @@ public class InpatientDoctorStationAdviceAppService {
         Long orgId = snapshot.getOrganizationId();
         // Gate：同 group_id 药品频次须一致（BR-IP-ORD-033），再落库避免主药 QD、溶媒 ST 异频并组
         this.assertMedicationDraftBatchGroupRates(request.getLines());
+        // Gate：分次 schedule 段数/therapy（BR-IP-ORD-037 → EX-IP-ORD-310）
+        this.assertMedicationDraftBatchDoseQuantitySchedules(request.getLines());
         List<Long> newMedIds = new ArrayList<>();
         // Cmd：按行 CREATE/UPDATE/DELETE 分轨，长临均仅维护 Request
         for (InpatientDoctorStationAdviceDraftLineRequest line : request.getLines()) {
@@ -573,6 +593,27 @@ public class InpatientDoctorStationAdviceAppService {
         List<InpatientDoctorStationAdviceResourceKeyDto> signTargets =
             this.fromSignTargetSpecs(doctorStationSkinTestSyncOrchestrator
                 .expandSignTargetsWithLinkedSkinTestServiceRequests(this.toSignTargetSpecs(request.getSignTargets())));
+        // Pre：本批药品定义 id，供 pending 调价互斥（BR-PRC-LOCK-007）
+        List<Long> signingMedicationRequestIds = new ArrayList<>();
+        for (InpatientDoctorStationAdviceResourceKeyDto target : signTargets) {
+            String pt = ProductTableNameHelper.normalize(target.getProductTableName());
+            if (ProductTableNameHelper.isMedication(pt) && target.getRequestId() != null) {
+                signingMedicationRequestIds.add(target.getRequestId());
+            }
+        }
+        if (!signingMedicationRequestIds.isEmpty()) {
+            Set<Long> medicationDefinitionIds = new LinkedHashSet<>();
+            List<MedicationRequestListQueryModel> medRows =
+                this.medicationRequestQueryService.listMedicationRequestListModelsByIds(signingMedicationRequestIds);
+            for (MedicationRequestListQueryModel row : medRows) {
+                if (row == null || row.getMedicationId() == null) {
+                    continue;
+                }
+                medicationDefinitionIds.add(row.getMedicationId());
+            }
+            // Gate（BR-PRC-LOCK-007）：pending 调价窗口禁止签发
+            this.pendingPriceAdjustmentSignGate.assertNoPendingForMedications(medicationDefinitionIds);
+        }
         // Cmd：长临均 sign 请求，不在签发相位建发放/费用
         for (InpatientDoctorStationAdviceResourceKeyDto target : signTargets) {
             String pt = ProductTableNameHelper.normalize(target.getProductTableName());
@@ -596,6 +637,7 @@ public class InpatientDoctorStationAdviceAppService {
      * IF-IP-DOR-16：批次签退已签发医嘱。
      *
      * <p>写接口：住院长临药品均仅 signOff 请求；诊疗 withdrawSigned（BR-IP-ORD-009）。</p>
+     * <p>出院类签退后同事务软删（BR-IP-ORD-014）：出院内容不可行内修订，医生须右上角重开。</p>
      *
      * @param request 签退目标列表与就诊上下文
      * @return 成功标记
@@ -661,11 +703,16 @@ public class InpatientDoctorStationAdviceAppService {
                 }
                 serviceRequestDomainService.withdrawSignedServiceRequest(
                     inpatientDoctorStationAdviceMapper.toWithdrawServiceRequestCommand(target.getRequestId(), operatorId));
+                // AS-PACS-INT-001 INT-02：检查工单随签退作废
+                pacsOrderIngressOrchestrator.withdrawSignedImagingServiceRequest(target.getRequestId(), operatorId);
                 transferDischargeHoldOrchestrationSupport.tryRevertHoldAfterServiceRequestReverted(
                     target.getRequestId(),
                     operatorId,
                     revertedAt,
                     ErrorCodeConstants.ENCOUNTER_INVALID_STATUS);
+                // Cmd（BR-IP-ORD-014）：出院签退后直接软删，禁止留不可编辑草稿
+                transferDischargeHoldOrchestrationSupport.softDeleteDischargeAdviceAfterRevertedToDraft(
+                    target.getRequestId(), operatorId);
             } else {
                 throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, DoctorStationAdviceConstants.MSG_UNSUPPORTED_PRODUCT_TABLE_PREFIX + target.getProductTableName());
             }
@@ -959,6 +1006,14 @@ public class InpatientDoctorStationAdviceAppService {
                 ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT,
                 DoctorStationAdviceConstants.MSG_CHANGE_DOSE_MEDICATION_MISMATCH);
         }
+        // Gate：改量新嘱分次 schedule 段数/单位（BR-IP-ORD-037 → EX-IP-ORD-310）
+        SaveInpatientMedicationAdviceDraftLinePayload changeDosePayload = request.getMedicationPayload();
+        inpatientMedicationDoseQuantityScheduleGate.assertDraftLineConsistent(
+            TherapyType.LONG_TERM.getCode(),
+            changeDosePayload.getRateCode(),
+            changeDosePayload.getDoseSchedule(),
+            changeDosePayload.getQuantitySchedule(),
+            changeDosePayload.getDoseUnitCode());
         // Cmd：在用则同事务停嘱
         if (verified) {
             medicationRequestDomainService.stopLongTermMedicationOrder(
@@ -1047,26 +1102,35 @@ public class InpatientDoctorStationAdviceAppService {
     }
 
     /**
+     * IF-IP-DOR-21：开立出院医嘱并同事务签发。
      *
-     * <p>写接口：创建出院类 ServiceRequest 并记录就诊历程出院里程碑；
-     * 同一 App 事务内完成，重复转科/出院申请会被拒绝。</p>
+     * <p>写接口：创建出院类 ServiceRequest + 离院里程碑后立即 {@code signServiceRequest}（DRAFT→ACTIVE），
+     * 供护士站未校对列表消费；出院内容不可行内修订，护士退回/医生签退后由编排软删，医生须再次调用本 IF。</p>
+     * <p>同一 App 事务内完成；重复转科/出院申请会被拒绝。</p>
      *
      * @param request 出院医嘱内容与就诊上下文
-     * @return 新建的诊疗申请 id 与就诊历程 id
+     * @return 新建的诊疗申请 id 与就诊历程 id（已签发）
      * @throws BusinessException 重复出院/转科申请或门控失败
      */
     public CreateDischargeInpatientDoctorStationAdviceResponse createDischargeInpatientDoctorStationAdvice(
         CreateDischargeInpatientDoctorStationAdviceRequest request
     ) {
+        // Gate：住院 IMP 可写态 + 操作人
         requireInpatientSnapshot(request.getEncounterId(), request.getPatientId(), true);
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, DoctorStationAdviceConstants.MSG_OPERATOR_NOT_RESOLVED);
+        // Pre：同就诊不得并存未完成转科/出院申请（BR-SRQ-010）
         if (Boolean.TRUE.equals(serviceRequestQueryService.checkDuplicateTransferOrDischargeRequest(request.getEncounterId()))) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, DoctorStationAdviceConstants.MSG_DUPLICATE_TRANSFER_OR_DISCHARGE_REQUEST);
         }
+        // Cmd：创建出院草稿 SR（category=34）
         Long serviceRequestId = serviceRequestDomainService.createDischargeRequest(
             inpatientDoctorStationAdviceMapper.toCreateDischargeRequestCommand(request, operatorId));
+        // Cmd：同事务写离院里程碑（out_way_code 锚定 request_id）
         Long encounterHistoryId = encounterHistoryDomainService.recordDischargeMilestone(
             inpatientDoctorStationAdviceMapper.toRecordDischargeMilestoneCommand(serviceRequestId, request, operatorId));
+        // Cmd：开立即签发（BR-IP-ORD-014）：草稿不落地待办，直接 ACTIVE 进护士未校对
+        serviceRequestDomainService.signServiceRequest(
+            inpatientDoctorStationAdviceMapper.toSignServiceRequestCommand(serviceRequestId, operatorId));
         Long encounterId = request.getEncounterId();
         IntegrationAfterCommitSupport.runAfterCommit(() ->
                 encounterQueryService.findOptionalEncounterEntityById(encounterId).ifPresent(encounter -> {
@@ -1079,6 +1143,7 @@ public class InpatientDoctorStationAdviceAppService {
                                 operatorId);
                     }
                 }));
+        // Asm：回传已签发的出院申请与里程碑主键
         return inpatientDoctorStationAdviceMapper.toCreateDischargeResponse(serviceRequestId, encounterHistoryId);
     }
 
@@ -1257,6 +1322,13 @@ public class InpatientDoctorStationAdviceAppService {
 
     /**
      * 暂存批次中的 DELETE 行：软删请求草稿（长临均不在暂存挂费）。
+     *
+     * <p>诊疗删除前须先尝试 {@code tryRevertHoldAfterServiceRequestReverted}（GAP-ATD-008）：
+     * 取消校对出院后医生删草稿时，若就诊仍挂 {@code ON_HOLD}，须在软删前还原在科，否则读侧不可见无法再编排。</p>
+     *
+     * @param request    批次父请求（就诊/患者）
+     * @param line       单行 DELETE（须含 requestId）
+     * @param operatorId 操作人
      */
     private void handleDeleteLine(
         SaveInpatientDoctorStationAdviceDraftBatchRequest request,
@@ -1264,6 +1336,7 @@ public class InpatientDoctorStationAdviceAppService {
         Long operatorId
     ) {
         String pt = ProductTableNameHelper.normalize(line.getProductTableName());
+        // Gate：DELETE 必须带 requestId，禁止空锚点软删
         if (line.getRequestId() == null) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, DoctorStationAdviceConstants.MSG_DELETE_LINE_REQUEST_ID_REQUIRED);
         }
@@ -1274,9 +1347,17 @@ public class InpatientDoctorStationAdviceAppService {
             medicationRequestDomainService.removeMedicationOrderDraft(
                 inpatientDoctorStationAdviceMapper.toRemoveMedicationOrderDraftCommand(line.getRequestId(), operatorId));
         } else if (ProductTableNameHelper.isActivity(pt)) {
+            // Pre：删草稿前先尝试回滚转科/出院 ON_HOLD（软删后读侧不可见，无法再编排）
+            transferDischargeHoldOrchestrationSupport.tryRevertHoldAfterServiceRequestReverted(
+                line.getRequestId(),
+                operatorId,
+                LocalDateTime.now(),
+                ErrorCodeConstants.ENCOUNTER_INVALID_STATUS);
+            // Cmd：软删诊疗草稿主档与明细
             serviceRequestDomainService.removeServiceRequestDraft(
                 inpatientDoctorStationAdviceMapper.toRemoveServiceRequestDraftCommand(line.getRequestId(), operatorId));
         } else {
+            // Gate：住院医生站禁止耗材及其它非药/诊表名
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, DoctorStationAdviceConstants.MSG_UNSUPPORTED_PRODUCT_TABLE_PREFIX + line.getProductTableName());
         }
     }
@@ -1299,7 +1380,7 @@ public class InpatientDoctorStationAdviceAppService {
     }
 
     /**
-     * 签发单个诊疗目标：域服务 sign 后触发 LIS/PACS 占位（不升位费用）。
+     * 签发单个诊疗目标：域服务 sign 后触发 LIS Extension / PACS 直调接单（不升位费用）。
      */
     private void signServiceTarget(
         SignInpatientDoctorStationAdviceBatchRequest request,
@@ -1321,7 +1402,12 @@ public class InpatientDoctorStationAdviceAppService {
             DoctorStationAdviceConstants.MSG_NURSING_LEVEL_STOP_BEFORE_NEW);
         serviceRequestDomainService.signServiceRequest(
             inpatientDoctorStationAdviceMapper.toSignServiceRequestCommand(target.getRequestId(), operatorId));
-        dispatchLabOrImagingAdvice(request.getEncounterId(), request.getPatientId(), target.getRequestId());
+        dispatchLabOrImagingAdvice(
+            request.getEncounterId(),
+            request.getPatientId(),
+            target.getRequestId(),
+            serviceRow.getOrgId(),
+            operatorId);
     }
 
     /**
@@ -1405,6 +1491,57 @@ public class InpatientDoctorStationAdviceAppService {
         }
         inpatientMedicationAdviceGroupRateGate.assertDraftBatchConsistent(
             batchRateByRequestId, batchGroupByRequestId, createGroupRates, deleteRequestIds);
+    }
+
+    /**
+     * IF-IP-DOR-14 Gate：逐行断言分次 schedule 合法（BR-IP-ORD-037 → EX-IP-ORD-310）。
+     *
+     * @param lines 草稿批次行；可空
+     */
+    private void assertMedicationDraftBatchDoseQuantitySchedules(
+        List<InpatientDoctorStationAdviceDraftLineRequest> lines) {
+        // 空批无需校验
+        if (lines == null || lines.isEmpty()) {
+            return;
+        }
+        for (InpatientDoctorStationAdviceDraftLineRequest line : lines) {
+            if (line == null) {
+                continue;
+            }
+            String op = trimToEmpty(line.getLineOp()).toUpperCase(java.util.Locale.ROOT);
+            // DELETE 不携带载荷校验
+            if (DoctorStationAdviceConstants.LINE_OP_DELETE.equals(op)) {
+                continue;
+            }
+            SaveInpatientMedicationAdviceDraftLinePayload med = line.getMedicationPayload();
+            // 诊疗行无 schedule
+            if (med == null) {
+                continue;
+            }
+            inpatientMedicationDoseQuantityScheduleGate.assertDraftLineConsistent(
+                this.resolveDraftLineTherapyTypeCode(line),
+                med.getRateCode(),
+                med.getDoseSchedule(),
+                med.getQuantitySchedule(),
+                med.getDoseUnitCode());
+        }
+    }
+
+    /**
+     * 解析草稿行 therapy code（与 Mapper {@code resolveTherapyTypeCode} 同口径兜底）。
+     *
+     * @param line 草稿行
+     * @return therapy code；缺省临时
+     */
+    private String resolveDraftLineTherapyTypeCode(InpatientDoctorStationAdviceDraftLineRequest line) {
+        if (line == null) {
+            return TherapyType.TEMPORARY.getCode();
+        }
+        String therapy = trimToEmpty(line.getTherapyTypeCode());
+        if (!therapy.isEmpty()) {
+            return therapy;
+        }
+        return TherapyType.TEMPORARY.getCode();
     }
 
     /**
@@ -1621,13 +1758,20 @@ public class InpatientDoctorStationAdviceAppService {
     }
 
     /**
-     * 签署检验/检查医嘱后按类别分流提交 LIS/PACS 外发申请（扩展点 no-op 安全）。
+     * 签署检验/检查医嘱后：LIS 走 Extension；检查走 PacsOrderIngressOrchestrator 直调 Domain。
      *
      * @param encounterId 就诊
      * @param patientId   患者
      * @param requestId   服务申请主键
+     * @param organizationId 回落执行科室
+     * @param operatorId 操作人
      */
-    private void dispatchLabOrImagingAdvice(Long encounterId, Long patientId, Long requestId) {
+    private void dispatchLabOrImagingAdvice(
+        Long encounterId,
+        Long patientId,
+        Long requestId,
+        Long organizationId,
+        Long operatorId) {
         Map<Long, List<ServiceRequestDetailListModel>> detailMap =
             serviceRequestDetailListAssembler.mapDetailListModelsByServiceRequestIds(List.of(requestId));
         List<ServiceRequestDetailSummaryDto> summaries = serviceApplyFormAssembler.toDetailSummaryDtos(
@@ -1639,12 +1783,8 @@ public class InpatientDoctorStationAdviceAppService {
         lisCmd.setDetails(toLisAdviceApplyDetailLines(summaries));
         lisAdviceApplyExtension.submitIfLab(lisCmd);
 
-        PacsAdviceApplyExtensionIn pacsCmd = new PacsAdviceApplyExtensionIn();
-        pacsCmd.setEncounterId(encounterId);
-        pacsCmd.setPatientId(patientId);
-        pacsCmd.setRequestId(requestId);
-        pacsCmd.setDetails(toPacsAdviceApplyDetailLines(summaries));
-        pacsAdviceApplyExtension.submitIfImaging(pacsCmd);
+        pacsOrderIngressOrchestrator.acceptSignedImagingServiceRequest(
+            encounterId, patientId, requestId, organizationId, operatorId);
     }
 
     /**
@@ -1663,31 +1803,6 @@ public class InpatientDoctorStationAdviceAppService {
                 continue;
             }
             LisAdviceApplyDetailLine line = new LisAdviceApplyDetailLine();
-            line.setTargetTable(summary.getTargetTable());
-            line.setTargetId(summary.getTargetId());
-            line.setTargetDisplayName(summary.getTargetDisplayName());
-            line.setRemark(summary.getRemark());
-            lines.add(line);
-        }
-        return lines;
-    }
-
-    /**
-     * 将申请明细摘要映射为 PACS 外发行（targetTable/targetId/展示名/remark）。
-     *
-     * @param summaries 服务申请明细摘要
-     * @return PACS 明细行；空输入返回不可变空列表
-     */
-    private List<PacsAdviceApplyDetailLine> toPacsAdviceApplyDetailLines(List<ServiceRequestDetailSummaryDto> summaries) {
-        if (summaries == null || summaries.isEmpty()) {
-            return List.of();
-        }
-        List<PacsAdviceApplyDetailLine> lines = new ArrayList<>();
-        for (ServiceRequestDetailSummaryDto summary : summaries) {
-            if (summary == null) {
-                continue;
-            }
-            PacsAdviceApplyDetailLine line = new PacsAdviceApplyDetailLine();
             line.setTargetTable(summary.getTargetTable());
             line.setTargetId(summary.getTargetId());
             line.setTargetDisplayName(summary.getTargetDisplayName());

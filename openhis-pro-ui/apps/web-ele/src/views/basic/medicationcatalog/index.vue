@@ -56,6 +56,7 @@ const queryParams = ref({
   categoryCode: '',
   /** 重点药类型；空字符串表示「全部」 */
   keyDrugType: '' as string,
+  medicinePropertyCode: '' as string,
   /** 启用状态；空字符串表示「全部」 */
   statusEnum: '' as string,
 });
@@ -314,6 +315,20 @@ const formItems = computed<FormItemConfig[]>(() => [
   },
   {
     type: 'select',
+    prop: 'medicinePropertyCode',
+    label: '药品性质',
+    placeholder: '全部',
+    clearable: true,
+    multiple: false,
+    options: [
+      { label: '全部', value: '' },
+      { label: '麻醉药品', value: 'NARCOTIC' },
+      { label: '一类精神药品', value: 'PSYCH_ONE' },
+      { label: '二类精神药品', value: 'PSYCH_TWO' },
+    ],
+  },
+  {
+    type: 'select',
     prop: 'statusEnum',
     label: '启用状态',
     placeholder: '全部',
@@ -378,6 +393,7 @@ const handleQuery = async (params: Record<string, unknown>) => {
       keyword: queryParams.value.keyword || undefined,
       categoryCode: normalizeCategoryCodeForApi(queryParams.value.categoryCode),
       keyDrugType: normalizeKeyDrugTypeForApi(queryParams.value.keyDrugType),
+      medicinePropertyCode: normalizeKeyDrugTypeForApi(queryParams.value.medicinePropertyCode),
       statusEnum: normalizeStatusEnumForApi(queryParams.value.statusEnum),
     });
 
@@ -401,6 +417,8 @@ const handleReset = () => {
     keyword: '',
     categoryCode: '',
     keyDrugType: '',
+    medicinePropertyCode: '',
+    statusEnum: '',
   };
   handleQuery(queryParams.value);
 };
@@ -490,6 +508,7 @@ const handleExportCatalog = async () => {
       keyword: queryParams.value.keyword || undefined,
       categoryCode: queryParams.value.categoryCode || undefined,
       keyDrugType: normalizeKeyDrugTypeForApi(queryParams.value.keyDrugType),
+      medicinePropertyCode: normalizeKeyDrugTypeForApi(queryParams.value.medicinePropertyCode),
       statusEnum: normalizeStatusEnumForApi(queryParams.value.statusEnum),
       exportColumns: MEDICATION_CATALOG_EXPORT_COLUMNS,
     });

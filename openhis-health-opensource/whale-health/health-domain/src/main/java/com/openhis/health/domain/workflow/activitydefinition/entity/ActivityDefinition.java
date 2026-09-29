@@ -142,7 +142,7 @@ public class ActivityDefinition extends BaseAuditedEntity {
     @Column(name = "children_json")
     private String childrenJson;
 
-    /** 子项标记（需与子项子表事实一致）。 */
+    /** 子项标记（是否已绑定套餐子项；需与子项子表有效行一致，BR-ACTDEF-006）。 */
     @Column(name = "children_flag")
     private Boolean childrenFlag;
 

@@ -6,7 +6,7 @@ import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';
-import { TableHeader, TableRow } from '@tiptap/extension-table';
+import { TableRow } from '@tiptap/extension-table';
 import Underline from '@tiptap/extension-underline';
 import TaskItem from '@tiptap/extension-task-item';
 import TaskList from '@tiptap/extension-task-list';
@@ -29,7 +29,7 @@ import { EmrSelectField } from './extensions/emr-select-field';
 import { EmrStyledHorizontalRule } from './extensions/emr-styled-horizontal-rule';
 import { EmrTableNavigation } from './extensions/emr-table-navigation';
 import { EmrTextField } from './extensions/emr-text-field';
-import { EmrTable, EmrTableCell } from './extensions/emr-table';
+import { EmrTable, EmrTableCell, EmrTableHeader } from './extensions/emr-table';
 import { EmrToc } from './extensions/emr-toc';
 import { EmrWordlikePaste } from './extensions/emr-wordlike-paste';
 import { EmrFillableFieldKit } from '../../fillable-field';
@@ -64,9 +64,13 @@ export function getSimpleEditorExtensions(options?: { placeholder?: string }): E
     TextStyle,
     FontFamily.configure({ types: ['textStyle'] }),
     FontSize.configure({ types: ['textStyle'] }),
-    EmrTable.configure({ resizable: true, lastColumnResizable: true }),
+    EmrTable.configure({
+      resizable: true,
+      // 末列可拖；表宽由 CSS/协议锁 100%，不会把纸撑破
+      lastColumnResizable: true,
+    }),
     TableRow,
-    TableHeader,
+    EmrTableHeader,
     EmrTableCell,
     EmrBlockLayout,
     EmrFindReplace,

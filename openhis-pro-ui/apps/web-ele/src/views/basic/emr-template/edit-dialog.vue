@@ -4,7 +4,7 @@ import type { JSONContent } from '@tiptap/core';
 import type { FormItemOption } from '@vben-core/table-layout-ui';
 
 import type { TemplateContentDto, TemplateDto } from '#/api/emr/template';
-import type { GenerateDocumentPdfParams } from '#/api/emr/document';
+import type { EmrPrintPaperPayload, GenerateDocumentPdfParams } from '#/api/emr/document';
 
 import { getOrganizationApiByLoginUser } from '#/api/core/auth';
 import { generateDocumentPdfApi } from '#/api/emr/document';
@@ -163,35 +163,61 @@ async function handlePrintPreview() {
   }
   pdfLoading.value = true;
   try {
-    const orgName = resolvePrintHospitalName();
-    const metadata: Record<string, string> = {};
-    if (orgName) {
-      // 院名字段在模板里多为 orgName；兼容 hospitalName
-      metadata.orgName = orgName;
-      metadata.hospitalName = orgName;
-    }
-    const pm = editorRef.value?.getEditor?.()?.view?.dom;
-    const screenMetrics = pm instanceof HTMLElement ? collectScreenPrintMetricsFromDom(pm) : null;
-    const params: GenerateDocumentPdfParams = {
-      content: applyPreviewMetadataToContent(content, metadata),
-      previewMode: true,
-      documentTitle: (form.name.trim() || '模板').trim(),
-      documentTypeName: documentTypeName.value || undefined,
-      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-      printConfig: buildEmrPrintConfigPayload(pageMargins.value, pageChrome.value, {
-        isOutpatientRecord: form.documentTypeCode.trim() === 'OUTPATIENT_RECORD',
-        screenMetrics,
-      }),
-    };
-    const result = await generateDocumentPdfApi(params);
-    if (!result?.pdfBase64?.trim()) {
-      ElMessage.warning('未生成 PDF 内容');
-      return;
-    }
+    const result = await requestTemplatePdf(content);
+    if (!result) return;
     pdfPreviewTitle.value = `${form.name.trim() || '模板'} · 预览`;
     pdfPreviewBase64.value = result.pdfBase64;
     pdfPreviewPageCount.value = result.pageCount;
     pdfPreviewVisible.value = true;
+  } catch {
+    // 拦截器已提示
+  } finally {
+    pdfLoading.value = false;
+  }
+}
+
+/** 按当前模板正文生成 PDF；paper 来自预览弹窗 */
+async function requestTemplatePdf(content: JSONContent, paper?: EmrPrintPaperPayload) {
+  const orgName = resolvePrintHospitalName();
+  const metadata: Record<string, string> = {};
+  if (orgName) {
+    // 院名字段在模板里多为 orgName；兼容 hospitalName
+    metadata.orgName = orgName;
+    metadata.hospitalName = orgName;
+  }
+  const pm = editorRef.value?.getEditor?.()?.view?.dom;
+  const screenMetrics = pm instanceof HTMLElement ? collectScreenPrintMetricsFromDom(pm) : null;
+  const params: GenerateDocumentPdfParams = {
+    content: applyPreviewMetadataToContent(content, metadata),
+    previewMode: true,
+    documentTitle: (form.name.trim() || '模板').trim(),
+    documentTypeName: documentTypeName.value || undefined,
+    metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+    printConfig: buildEmrPrintConfigPayload(pageMargins.value, pageChrome.value, {
+      isOutpatientRecord: form.documentTypeCode.trim() === 'OUTPATIENT_RECORD',
+      screenMetrics,
+      paper,
+    }),
+  };
+  const result = await generateDocumentPdfApi(params);
+  if (!result?.pdfBase64?.trim()) {
+    ElMessage.warning('未生成 PDF 内容');
+    return null;
+  }
+  return result;
+}
+
+/** 预览弹窗改纸张：重出 PDF，不改模板编辑器纸面 */
+async function onPreviewPaperChange(paper: EmrPrintPaperPayload) {
+  if (pdfLoading.value) return;
+  const content = editorRef.value?.getJSON?.() ?? docJson.value;
+  if (!content) return;
+  pdfLoading.value = true;
+  try {
+    const result = await requestTemplatePdf(content, paper);
+    if (!result) return;
+    pdfPreviewBase64.value = result.pdfBase64;
+    pdfPreviewPageCount.value = result.pageCount;
   } catch {
     // 拦截器已提示
   } finally {
@@ -696,6 +722,8 @@ defineExpose({
     :pdf-base64="pdfPreviewBase64"
     :page-count="pdfPreviewPageCount"
     :title="pdfPreviewTitle"
+    :loading="pdfLoading"
+    @paper-change="onPreviewPaperChange"
   />
 </template>
 

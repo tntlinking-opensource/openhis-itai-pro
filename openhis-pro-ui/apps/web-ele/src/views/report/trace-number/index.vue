@@ -51,6 +51,7 @@ import {
   ReportPrintFieldDialog,
   ReportQueryBar,
   ReportTableScroll,
+  collectPagedReportRows,
   mapReportPrintRow,
   reportPrintFieldsOf,
   useReportListPrint,
@@ -248,30 +249,47 @@ const { run: runExport, loading: exportLoading } = useRequest(exportTraceNumberR
   manual: true,
 });
 
+/** 将追溯码行映射为打印单元格。 */
+function mapTracePrintRows(source: TraceNumberReportRowDto[]) {
+  return source.map((r) =>
+    mapReportPrintRow(r as unknown as Record<string, unknown>, reportPrintFieldsOf(PRINT_COLUMNS), {
+      traceNo: (v) => formatText(v as null | string),
+      currentLocationNames: (v) => formatText(v as null | string),
+      medicationCode: (v) => formatText(v as null | string),
+      medicationName: (v) => formatText(v as null | string),
+      specificationText: (v) => formatText(v as null | string),
+      lotNumber: (v) => formatText(v as null | string),
+      inHospitalStatusLabel: (v) => formatText(v as null | string),
+      remainingSplitQuantity: (v) => formatQuantity(v as number | string | undefined),
+      traceUnitCode: (v) => formatText(v as null | string),
+      lastFlowAt: (v) => formatDateTime(v as string | undefined),
+    }),
+  );
+}
+
+/** 跨页打印：按当前筛选分页拉全量，不改列表。 */
+async function fetchAllPrintRows() {
+  const collected = await collectPagedReportRows({
+    fetchPage: async (pageNo, pageSize) => {
+      const page = await pageTraceNumberReportApi({
+        ...buildPageRequest(),
+        pageNo,
+        pageSize,
+      });
+      return { rows: page.records ?? [], total: Number(page.total ?? 0) };
+    },
+  });
+  return { rows: mapTracePrintRows(collected.rows), truncated: collected.truncated };
+}
+
 const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrintCurrentPage } =
   useReportListPrint({
     getReportCode: () => PRINT_REPORT_CODE,
     getColumnCatalog: () => PRINT_COLUMNS,
     getReportTitle: () => PAGE_TITLE,
-    getPrintRows: () =>
-      tableData.value.map((r) =>
-        mapReportPrintRow(
-          r as unknown as Record<string, unknown>,
-          reportPrintFieldsOf(PRINT_COLUMNS),
-          {
-            traceNo: (v) => formatText(v as null | string),
-            currentLocationNames: (v) => formatText(v as null | string),
-            medicationCode: (v) => formatText(v as null | string),
-            medicationName: (v) => formatText(v as null | string),
-            specificationText: (v) => formatText(v as null | string),
-            lotNumber: (v) => formatText(v as null | string),
-            inHospitalStatusLabel: (v) => formatText(v as null | string),
-            remainingSplitQuantity: (v) => formatQuantity(v as number | string | undefined),
-            traceUnitCode: (v) => formatText(v as null | string),
-            lastFlowAt: (v) => formatDateTime(v as string | undefined),
-          },
-        ),
-      ),
+    getPrintRows: () => mapTracePrintRows(tableData.value),
+    fetchAllPrintRows,
+    hasPrintableData: () => total.value > 0 || tableData.value.length > 0,
   });
 
 const tableLoading = computed(
@@ -698,6 +716,7 @@ onMounted(async () => {
       ref="printFieldDialogRef"
       :report-code="PRINT_REPORT_CODE"
       :column-catalog="PRINT_COLUMNS"
+      show-print-scope
     />
   </Page>
 </template>

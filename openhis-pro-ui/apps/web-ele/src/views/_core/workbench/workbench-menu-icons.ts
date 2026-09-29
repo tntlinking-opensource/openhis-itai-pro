@@ -33,6 +33,7 @@ export const WORKBENCH_MENU_ICONS: Record<string, string> = {
   Medicine: 'lucide:pill',
   MedicineReturnIp: 'lucide:rotate-ccw',
   MedicineReturnOp: 'lucide:truck',
+  MedicalTechWorkstation: 'lucide:microscope',
   menu_management: 'lucide:menu',
   OpFeeDetail: 'lucide:receipt',
   OpPharmacyDailySettlement: 'lucide:calendar-check',

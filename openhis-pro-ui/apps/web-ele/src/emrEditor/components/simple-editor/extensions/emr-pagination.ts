@@ -21,7 +21,6 @@ import {
   setContentEditableCaretOffset,
 } from '../inline-contenteditable-caret';
 import {
-  emrPageLayoutPlanKey,
   clampSoftSpacersInPlan,
   planEmrPageLayout,
   type EmrPageItem,
@@ -106,12 +105,23 @@ function readVarPx(host: HTMLElement, varName: string): number {
   return readCssLengthPx(host, value);
 }
 
-function readEditorCornerMarginMm(pm: HTMLElement, edge: 'bottom' | 'top'): number {
+function readEditorCornerMarginMm(
+  pm: HTMLElement,
+  edge: 'bottom' | 'left' | 'right' | 'top',
+): number {
   const root = pm.closest('.simple-editor');
-  if (!(root instanceof HTMLElement)) return edge === 'top' ? 25.4 : 25.4;
-  const varName = edge === 'top' ? '--simple-editor-corner-top' : '--simple-editor-corner-bottom';
+  const fallback = edge === 'left' || edge === 'right' ? 15 : 25.4;
+  if (!(root instanceof HTMLElement)) return fallback;
+  const varName =
+    edge === 'top'
+      ? '--simple-editor-corner-top'
+      : edge === 'bottom'
+        ? '--simple-editor-corner-bottom'
+        : edge === 'left'
+          ? '--simple-editor-corner-left'
+          : '--simple-editor-corner-right';
   const raw = getComputedStyle(root).getPropertyValue(varName).trim();
-  return parseCssLengthToMm(raw, 25.4);
+  return parseCssLengthToMm(raw, fallback);
 }
 
 function mmToPx(mm: number): number {
@@ -267,8 +277,12 @@ function readPageMetrics(pm: HTMLElement, chrome?: EmrPageChrome): EmrPageMetric
 function applyMeasuredPaddingToEditorDom(pm: HTMLElement, metrics: EmrPageMetrics) {
   const top = `${Math.round(metrics.paddingTopPx)}px`;
   const bottom = `${Math.round(metrics.paddingBottomPx)}px`;
+  const left = `${Math.round(mmToPx(readEditorCornerMarginMm(pm, 'left')))}px`;
+  const right = `${Math.round(mmToPx(readEditorCornerMarginMm(pm, 'right')))}px`;
   if (pm.style.paddingTop !== top) pm.style.paddingTop = top;
   if (pm.style.paddingBottom !== bottom) pm.style.paddingBottom = bottom;
+  if (pm.style.paddingLeft !== left) pm.style.paddingLeft = left;
+  if (pm.style.paddingRight !== right) pm.style.paddingRight = right;
 }
 
 /** 表格等不可从中间切开的块：整段推页（table 在 splitBlock 内单独按行处理） */
@@ -282,6 +296,46 @@ function tableRowColCount(row: PMNode): number {
     n += Math.max(1, Number(cell.attrs.colspan) || 1);
   });
   return Math.max(1, n);
+}
+
+/** 整表列数（取各行 colspan 合计的最大），垫片行须按此跨满，不能只用续行列数 */
+function tableColCountAtPos(doc: PMNode, pos: number, fallbackRow: PMNode): number {
+  const $pos = doc.resolve(Math.max(0, Math.min(pos, doc.content.size)));
+  for (let d = $pos.depth; d > 0; d--) {
+    const node = $pos.node(d);
+    if (node.type.name !== 'table') continue;
+    let max = 1;
+    node.forEach((row) => {
+      if (row.type.name === 'tableRow') max = Math.max(max, tableRowColCount(row));
+    });
+    return max;
+  }
+  return tableRowColCount(fallbackRow);
+}
+
+/**
+ * PM widget 常把垫片 <tr> 画进续行内部；提到 tbody 里作为续行兄弟，才能按 colSpan 撑满表宽（B06）。
+ */
+function hoistTableRowSoftBreakNow(tr: HTMLTableRowElement) {
+  const parent = tr.parentElement;
+  if (!parent || !tr.isConnected) return;
+  // 已在 tbody/table 下则不要每轮 layout 挪 DOM，输入时会抖
+  if (parent.tagName === 'TBODY' || parent.tagName === 'THEAD' || parent.tagName === 'TABLE') {
+    return;
+  }
+  if (parent.tagName === 'TR') {
+    parent.parentElement?.insertBefore(tr, parent);
+    return;
+  }
+  const cell = parent.closest('td, th');
+  const row = cell?.parentElement;
+  if (row?.tagName === 'TR') {
+    row.parentElement?.insertBefore(tr, row);
+  }
+}
+
+function hoistTableRowSoftBreak(tr: HTMLTableRowElement) {
+  queueMicrotask(() => hoistTableRowSoftBreakNow(tr));
 }
 
 /**
@@ -375,20 +429,44 @@ const SOFT_SPACER_DOM_SELECTOR = `.emr-page-soft-break, ${EMR_ISLAND_SOFT_BREAK_
  * 测高时不摘垫片，避免输入过程中「先塌再撑」窜行；占用高度需扣掉垫片。
  * 同一 <tr> 内多格各挂一份等高垫片时只计一次，避免重复扣高。
  */
-function sumSoftSpacerHeightsInYRange(root: HTMLElement, startY: number, endY: number): number {
-  if (endY <= startY + 0.5) return 0;
-  let sum = 0;
+type SpacerRectHit = { height: number; top: number };
+
+/** 单次 layout 内复用测高，避免每个块/每条行缝都 querySelectorAll */
+let spacerRectCache: WeakMap<HTMLElement, SpacerRectHit[]> | null = null;
+
+function beginLayoutSpacerCache() {
+  spacerRectCache = new WeakMap();
+}
+
+function endLayoutSpacerCache() {
+  spacerRectCache = null;
+}
+
+function spacerRectsIn(root: HTMLElement): SpacerRectHit[] {
+  const hit = spacerRectCache?.get(root);
+  if (hit) return hit;
   const countedTr = new Set<Element>();
+  const rects: SpacerRectHit[] = [];
   for (const el of root.querySelectorAll(SOFT_SPACER_DOM_SELECTOR)) {
     if (!(el instanceof HTMLElement)) continue;
-    const rect = el.getBoundingClientRect();
-    if (rect.top < startY - 0.5 || rect.top >= endY - 0.5) continue;
     const tr = el.closest('tr');
     if (tr) {
       if (countedTr.has(tr)) continue;
       countedTr.add(tr);
     }
-    sum += rect.height;
+    const rect = el.getBoundingClientRect();
+    rects.push({ top: rect.top, height: rect.height });
+  }
+  spacerRectCache?.set(root, rects);
+  return rects;
+}
+
+function sumSoftSpacerHeightsInYRange(root: HTMLElement, startY: number, endY: number): number {
+  if (endY <= startY + 0.5) return 0;
+  let sum = 0;
+  for (const hit of spacerRectsIn(root)) {
+    if (hit.top < startY - 0.5 || hit.top >= endY - 0.5) continue;
+    sum += hit.height;
   }
   return sum;
 }
@@ -483,7 +561,29 @@ function resolveInlineAtomPos(
 }
 
 /** 段落内视觉行（跳过 soft-break / 岛屿换页垫片） */
+function textNodeIsIslandInput(tn: Text): boolean {
+  return Boolean(tn.parentElement?.closest(EMR_ISLAND_INPUT_SELECTOR));
+}
+
 function collectVisualLines(dom: HTMLElement): EmrVisualLine[] {
+  // 单行块：一次 getClientRects 即可，不必对每个字符二分测高
+  const probe = document.createRange();
+  probe.selectNodeContents(dom);
+  let minTop = Infinity;
+  let maxTop = -Infinity;
+  let maxBottom = 0;
+  let minLeft = Infinity;
+  for (const rect of probe.getClientRects()) {
+    if (rect.height < 1) continue;
+    minTop = Math.min(minTop, rect.top);
+    maxTop = Math.max(maxTop, rect.top);
+    maxBottom = Math.max(maxBottom, rect.bottom);
+    minLeft = Math.min(minLeft, rect.left);
+  }
+  if (Number.isFinite(minTop) && maxTop - minTop < 2) {
+    return [{ top: minTop, bottom: maxBottom, left: minLeft }];
+  }
+
   const lines: EmrVisualLine[] = [];
   const range = document.createRange();
   const walker = document.createTreeWalker(dom, NodeFilter.SHOW_TEXT);
@@ -501,6 +601,7 @@ function collectVisualLines(dom: HTMLElement): EmrVisualLine[] {
       continue;
     }
     const tn = textNode as Text;
+    const inIsland = textNodeIsIslandInput(tn);
     range.selectNodeContents(tn);
     for (const rect of range.getClientRects()) {
       if (rect.height < 1) continue;
@@ -510,7 +611,7 @@ function collectVisualLines(dom: HTMLElement): EmrVisualLine[] {
         if (rect.left < last.left - 0.5) {
           last.left = rect.left;
           last.textNode = tn;
-          last.textNodeOffset = textNodeOffsetForLineRect(tn, rect);
+          last.textNodeOffset = inIsland ? textNodeOffsetForLineRect(tn, rect) : 0;
         }
         continue;
       }
@@ -519,7 +620,7 @@ function collectVisualLines(dom: HTMLElement): EmrVisualLine[] {
         bottom: rect.bottom,
         left: rect.left,
         textNode: tn,
-        textNodeOffset: textNodeOffsetForLineRect(tn, rect),
+        textNodeOffset: inIsland ? textNodeOffsetForLineRect(tn, rect) : 0,
       });
     }
     textNode = walker.nextNode();
@@ -642,11 +743,32 @@ function splitBlockToLineItems(
   );
 }
 
+type BlockMeasureCacheEntry = {
+  items: EmrPageItem[];
+  occupied: number;
+  pos: number;
+  size: number;
+  type: string;
+};
+
+function remapCachedBlockItems(items: readonly EmrPageItem[], dPos: number): EmrPageItem[] {
+  if (dPos === 0) return items.map((it) => ({ ...it }));
+  return items.map((it) => ({
+    ...it,
+    anchorPos: it.anchorPos + dPos,
+    pos: it.pos + dPos,
+  }));
+}
+
 /**
  * 顶层块按 DOM 流式占位计高；textblock 再按行切开。
  * 相邻块 top 差 = 真实占位（含 margin 折叠），与 plan 坐标系一致。
+ * cache：未改尺寸的块复用上次行切，避免 9 页病程每字全量 getClientRects。
  */
-function collectPageItems(view: EditorView): EmrPageItem[] {
+function collectPageItems(
+  view: EditorView,
+  cache?: { current: BlockMeasureCacheEntry[] },
+): EmrPageItem[] {
   const pm = view.dom;
   if (!(pm instanceof HTMLElement)) return [];
 
@@ -661,11 +783,27 @@ function collectPageItems(view: EditorView): EmrPageItem[] {
   const contentTop =
     pm.getBoundingClientRect().top + (Number.parseFloat(getComputedStyle(pm).paddingTop) || 0);
 
+  const prev = cache?.current ?? [];
+  const canAlign = prev.length === blocks.length;
+  const nextCache: BlockMeasureCacheEntry[] = [];
   const items: EmrPageItem[] = [];
   for (let i = 0; i < blocks.length; i++) {
     const cur = blocks[i]!;
     if (cur.node.type.name === 'emrPageBreak') {
-      items.push({ anchorPos: cur.pos, compactHeightPx: 0, kind: 'break', pos: cur.pos });
+      const br: EmrPageItem = {
+        anchorPos: cur.pos,
+        compactHeightPx: 0,
+        kind: 'break',
+        pos: cur.pos,
+      };
+      items.push(br);
+      nextCache.push({
+        items: [br],
+        occupied: 0,
+        pos: cur.pos,
+        size: cur.node.nodeSize,
+        type: cur.node.type.name,
+      });
       continue;
     }
     const next = blocks[i + 1];
@@ -684,8 +822,29 @@ function collectPageItems(view: EditorView): EmrPageItem[] {
       occupied -= Number.parseFloat(getComputedStyle(next.dom).marginTop) || 0;
     }
     occupied = Math.max(1, occupied);
-    items.push(...splitBlockToLineItems(view, cur.node, cur.pos, cur.dom, occupied));
+
+    const prevBlock = canAlign ? prev[i] : undefined;
+    let blockItems: EmrPageItem[];
+    if (
+      prevBlock &&
+      prevBlock.type === cur.node.type.name &&
+      prevBlock.size === cur.node.nodeSize &&
+      Math.abs(prevBlock.occupied - occupied) < 2
+    ) {
+      blockItems = remapCachedBlockItems(prevBlock.items, cur.pos - prevBlock.pos);
+    } else {
+      blockItems = splitBlockToLineItems(view, cur.node, cur.pos, cur.dom, occupied);
+    }
+    items.push(...blockItems);
+    nextCache.push({
+      items: blockItems,
+      occupied,
+      pos: cur.pos,
+      size: cur.node.nodeSize,
+      type: cur.node.type.name,
+    });
   }
+  if (cache) cache.current = nextCache;
   return items;
 }
 
@@ -734,7 +893,10 @@ function ensureBand(page: HTMLElement, className: string): HTMLElement {
 }
 
 function syncPaperCount(layer: HTMLElement, pageCount: number) {
-  const desired = Math.max(1, pageCount);
+  // Infinity/NaN 或 vis-line 误切会申请出成千上万张纸，插入诊断时直接卡死
+  const MAX_EMR_PAPER_PAGES = 40;
+  const raw = Number.isFinite(pageCount) ? pageCount : 1;
+  const desired = Math.max(1, Math.min(MAX_EMR_PAPER_PAGES, Math.floor(raw)));
   while (layer.childElementCount > desired) {
     layer.lastElementChild?.remove();
   }
@@ -896,15 +1058,55 @@ function stabilizeSoftSpacers(
   prev: readonly EmrSoftSpacer[],
 ): EmrSoftSpacer[] {
   if (prev.length === 0) return next.map((s) => ({ ...s }));
+  // 输入会平移 pos，不能再用绝对 pos 对齐；文档垫片按出现顺序、岛屿垫片按文本偏移
+  const prevDoc = prev.filter((p) => p.islandTextOffset == null);
+  const prevIsland = prev.filter((p) => p.islandTextOffset != null);
+  let docI = 0;
   return next.map((s) => {
-    const old = prev.find(
-      (p) => p.pos === s.pos && (p.islandTextOffset ?? null) === (s.islandTextOffset ?? null),
-    );
+    let old: EmrSoftSpacer | undefined;
+    if (s.islandTextOffset != null) {
+      old = prevIsland.find((p) => p.islandTextOffset === s.islandTextOffset);
+    } else {
+      old = prevDoc[docI];
+      docI += 1;
+    }
     if (!old) return { ...s };
     if (Math.abs(old.heightPx - s.heightPx) < SOFT_SPACER_STABILITY_PX) {
       return { ...s, heightPx: old.heightPx };
     }
     return { ...s };
+  });
+}
+
+function mappedWidgetPositions(view: EditorView): number[] {
+  const set = paginationKey.getState(view.state);
+  if (!set) return [];
+  return set.find().map((d) => d.from);
+}
+
+function docSpacersSitOnMappedWidgets(plan: EmrPageLayoutPlan, mapped: number[]): boolean {
+  const docs = plan.softSpacers.filter((s) => s.islandTextOffset == null);
+  if (docs.length !== mapped.length) return false;
+  if (docs.length === 0) return true;
+  const mappedSet = new Set(mapped);
+  return docs.every((s) => mappedSet.has(s.pos));
+}
+
+/** 忽略「输入导致的 pos 平移」；换页点真变了才重挂 decoration */
+function layoutApplySignature(plan: EmrPageLayoutPlan, mappedAligned: boolean): string {
+  const r2 = (n: number) => Math.round(n / 2) * 2;
+  return JSON.stringify({
+    p: plan.pageCount,
+    b: plan.breakBoxes.map((box) => [
+      r2(box.heightPx),
+      r2(box.marginTopPx),
+      r2(box.marginBottomPx),
+    ]),
+    s: plan.softSpacers.map((s) =>
+      s.islandTextOffset != null
+        ? ['i', Math.round(s.heightPx), s.islandTextOffset]
+        : ['d', Math.round(s.heightPx), mappedAligned ? 0 : s.pos],
+    ),
   });
 }
 
@@ -920,16 +1122,17 @@ function buildSoftDecorations(
       spacer.pos,
       () => {
         if (isTableRow && at) {
-          // 行间无边框垫片：落在 tbody 里、续行 <tr> 之前（Decoration 管理，非手改 DOM）
+          // 行间无边框垫片：目标是 tbody 里、续行之前；widget 若挂进续行再 hoist（B06）
           const tr = document.createElement('tr');
           tr.className = 'emr-page-soft-break emr-table-row-soft-break';
           tr.setAttribute('aria-hidden', 'true');
           tr.setAttribute('data-emr-table-row-soft', '1');
           tr.contentEditable = 'false';
           const td = document.createElement('td');
-          td.colSpan = tableRowColCount(at);
+          td.colSpan = tableColCountAtPos(doc, spacer.pos, at);
           td.style.cssText = [
             `height:${Math.max(1, Math.round(spacer.heightPx))}px`,
+            'width:100%',
             'padding:0',
             'border:none',
             'background:transparent',
@@ -938,6 +1141,7 @@ function buildSoftDecorations(
             'pointer-events:none',
           ].join(';');
           tr.append(td);
+          hoistTableRowSoftBreak(tr);
           return tr;
         }
         const el = document.createElement('span');
@@ -978,10 +1182,12 @@ function captureFocusedIslandCaret(pm: HTMLElement): { el: HTMLElement; offset: 
     if (focused instanceof HTMLElement) island = focused;
   }
   if (!island || !pm.contains(island)) return null;
+  // 优先读当前选区：插入诊断后 pin 还在时，方向键已经挪开也不能再被 pin 拽回去
+  const live = contentEditableCaretOffset(island);
+  if (live >= 0) return { el: island, offset: live };
   const pinned = peekPinnedIslandCaret(island);
-  const offset = pinned ?? contentEditableCaretOffset(island);
-  if (offset < 0) return null;
-  return { el: island, offset };
+  if (pinned == null) return null;
+  return { el: island, offset: pinned };
 }
 
 /** 把跨页垫片画进 atom 填写岛屿（自由文本等多行内容） */
@@ -1106,13 +1312,17 @@ export const EmrPagination = Extension.create({
           let scheduleTimer = 0;
           let lastKey = '';
           let lastAppliedSpacers: EmrSoftSpacer[] = [];
+          let lastAppliedPageCount = -1;
           let layouting = false;
-          let layoutPassesLeft = 0;
+          let chainedPasses = 0;
+          let layoutCount = 0;
           let lastDispatchedChrome: EmrMeasuredChromeMeta | null = null;
           let lastAppliedPaddingTopPx = -1;
           let lastAppliedPaddingBottomPx = -1;
+          const blockMeasureCache: { current: BlockMeasureCacheEntry[] } = { current: [] };
           const storeInit = editor.storage.emrPagination as EmrPaginationStorage | undefined;
           let lastRelayoutNonce = storeInit?.relayoutNonce ?? 0;
+          const MAX_CHAINED_REMEASURE = 3;
 
           const onWindowResize = () => schedule({ immediate: true });
           window.addEventListener('resize', onWindowResize);
@@ -1122,13 +1332,18 @@ export const EmrPagination = Extension.create({
             if (editorView.composing) return;
             if (isFillableImeActive(editor)) return;
             if (layouting) return;
-            if (layoutPassesLeft <= 0) return;
 
             layouting = true;
-            layoutPassesLeft -= 1;
+            layoutCount += 1;
+            let needRemeasure = false;
+            beginLayoutSpacerCache();
             try {
               const pm = editorView.dom;
               if (!(pm instanceof HTMLElement)) return;
+              // widget 可能仍挂在续行内；先提升再测高，避免窄垫片行干扰行距扣减
+              for (const el of pm.querySelectorAll('tr.emr-table-row-soft-break')) {
+                if (el instanceof HTMLTableRowElement) hoistTableRowSoftBreakNow(el);
+              }
 
               const layer = ensurePaperLayer(pm);
               const store = editor.storage.emrPagination as EmrPaginationStorage;
@@ -1180,7 +1395,7 @@ export const EmrPagination = Extension.create({
 
               // 必须先写回 padding 再测高：collect 用 CSS paddingTop 当 contentTop，
               // 与 plan 的 metrics.paddingTopPx 必须同一套，否则会提前换页。
-              const items = collectPageItems(editorView);
+              const items = collectPageItems(editorView, blockMeasureCache);
               let plan = planEmrPageLayout(items, metrics);
 
               if (layer) {
@@ -1201,7 +1416,10 @@ export const EmrPagination = Extension.create({
                   Math.abs(metrics.paddingTopPx - metricsBeforeChrome.paddingTopPx) > 0.5 ||
                   Math.abs(metrics.paddingBottomPx - metricsBeforeChrome.paddingBottomPx) > 0.5;
                 if (chromePaddingGrew) {
-                  plan = planEmrPageLayout(collectPageItems(editorView), metrics);
+                  plan = planEmrPageLayout(
+                    collectPageItems(editorView, blockMeasureCache),
+                    metrics,
+                  );
                   syncPaperCount(layer, plan.pageCount);
                   syncPaperChrome(layer, plan.pageCount, chrome, context, editingBand);
                 }
@@ -1212,38 +1430,64 @@ export const EmrPagination = Extension.create({
                 ...clamped,
                 softSpacers: stabilizeSoftSpacers(clamped.softSpacers, lastAppliedSpacers),
               };
-              const key = emrPageLayoutPlanKey(finalPlan);
+              const mappedAligned = docSpacersSitOnMappedWidgets(
+                finalPlan,
+                mappedWidgetPositions(editorView),
+              );
+              const key = layoutApplySignature(finalPlan, mappedAligned);
               const planChanged = key !== lastKey;
               const paddingChanged =
                 Math.abs(metrics.paddingTopPx - lastAppliedPaddingTopPx) > 0.5 ||
                 Math.abs(metrics.paddingBottomPx - lastAppliedPaddingBottomPx) > 0.5;
-              // 禁止「有岛屿垫片就每字重挂」：plan key 已含 islandTextOffset，不变则不动 DOM，
-              // 否则 clear+重插会丢选区，重测光标常落到文末（输入/删除都窜尾）。
+              // 禁止「有岛屿垫片就每字重挂」：输入只平移 pos 时 decoration 已 map，勿重建 widget。
               pm.style.setProperty('--emr-page-count', String(finalPlan.pageCount));
               if (planChanged || paddingChanged) {
+                const firstOrShapeChanged =
+                  lastKey === '' ||
+                  lastAppliedSpacers.length !== finalPlan.softSpacers.length ||
+                  lastAppliedPageCount !== finalPlan.pageCount ||
+                  paddingChanged;
                 lastKey = key;
                 lastAppliedSpacers = finalPlan.softSpacers.map((s) => ({ ...s }));
+                lastAppliedPageCount = finalPlan.pageCount;
                 lastAppliedPaddingTopPx = metrics.paddingTopPx;
                 lastAppliedPaddingBottomPx = metrics.paddingBottomPx;
                 applyBreakBoxes(editorView, finalPlan);
                 dispatchSoftSpacers(editorView, finalPlan);
+                // 仅首次上垫片/数量变化再测；每字连环 rAF 是输入卡顿和抖动的主因
+                if (firstOrShapeChanged) needRemeasure = true;
               }
 
               if (chromeMeasured && measuredChromeChanged(lastDispatchedChrome, chromeMeasured)) {
                 lastDispatchedChrome = { ...lastDispatchedChrome, ...chromeMeasured };
-                layoutPassesLeft = Math.max(layoutPassesLeft, 1);
+                needRemeasure = true;
                 const tr = editorView.state.tr
                   .setMeta('addToHistory', false)
                   .setMeta(EMR_MEASURED_CHROME_META, chromeMeasured);
                 editorView.dispatch(tr);
               }
             } finally {
+              endLayoutSpacerCache();
               layouting = false;
+              if (
+                !editorView.isDestroyed &&
+                needRemeasure &&
+                chainedPasses < MAX_CHAINED_REMEASURE
+              ) {
+                chainedPasses += 1;
+                if (raf) cancelAnimationFrame(raf);
+                raf = requestAnimationFrame(() => {
+                  raf = 0;
+                  layout();
+                });
+              } else if (!needRemeasure) {
+                chainedPasses = 0;
+              }
             }
           };
 
           const schedule = (opts?: { immediate?: boolean }) => {
-            layoutPassesLeft = 3;
+            chainedPasses = 0;
             if (raf) cancelAnimationFrame(raf);
             raf = 0;
             if (scheduleTimer) {
@@ -1303,6 +1547,8 @@ export const EmrPagination = Extension.create({
               });
             });
             return {
+              layoutCount,
+              chainedPasses,
               pageCount: plan?.pageCount ?? null,
               softSpacers: (plan?.softSpacers ?? []).map((sp) => ({
                 pos: sp.pos,
@@ -1318,6 +1564,17 @@ export const EmrPagination = Extension.create({
               softBreakDom: pm.querySelectorAll('.emr-page-soft-break').length,
               tableRowSoftDom: pm.querySelectorAll('[data-emr-table-row-soft]').length,
               tableCellSoftDom: pm.querySelectorAll('[data-emr-table-cell-soft]').length,
+              tableRowSoftGeom: [...pm.querySelectorAll('[data-emr-table-row-soft]')].map((el) => {
+                const r = el.getBoundingClientRect();
+                const table = el.closest('table');
+                const tr = table?.getBoundingClientRect();
+                return {
+                  w: Math.round(r.width),
+                  h: Math.round(r.height),
+                  tableW: tr ? Math.round(tr.width) : null,
+                  parent: el.parentElement?.tagName ?? null,
+                };
+              }),
               lastApplied: lastAppliedSpacers.map((sp) => ({
                 pos: sp.pos,
                 h: Math.round(sp.heightPx),
@@ -1337,6 +1594,7 @@ export const EmrPagination = Extension.create({
               if (store && store.relayoutNonce !== lastRelayoutNonce) {
                 lastRelayoutNonce = store.relayoutNonce;
                 lastKey = '';
+                blockMeasureCache.current = [];
                 schedule({ immediate: true });
                 return;
               }

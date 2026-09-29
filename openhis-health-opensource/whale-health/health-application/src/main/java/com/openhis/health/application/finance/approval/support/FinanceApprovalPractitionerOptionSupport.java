@@ -24,7 +24,7 @@ import java.util.List;
  * 财务审批 init：制单人/审批人下拉装配。
  *
  * <p>制单人：在职医务人员全量（首版不按岗位收窄）；审批人：持有
- * {@link WhalePlatformRoleCodeConstants#ROLE_FINANCE_APPROVER} 登录角色且绑定在职医务人员。</p>
+ * {@link WhalePlatformRoleCodeConstants#ROLE_ACCOUNTANT} 且绑定在职医务人员。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -46,14 +46,15 @@ public class FinanceApprovalPractitionerOptionSupport {
     }
 
     /**
-     * 审批人下拉：仅 {@code ROLE_FINANCE_APPROVER} 登录角色对应用户绑定的在职医务人员。
+     * 审批人下拉：财务登录角色绑定的在职医务人员。
      *
-     * @return Option；无角色或无绑定时为空列表
+     * @return Option；未绑定人员时为空列表
      */
     public List<OptionDto> listApproverOptions() {
         List<Long> userIds =
-            this.userAppService.listActiveUserIdsByRoleCode(WhalePlatformRoleCodeConstants.ROLE_FINANCE_APPROVER);
-        if (userIds.isEmpty()) {
+            this.userAppService.listActiveUserIdsByRoleCode(WhalePlatformRoleCodeConstants.ROLE_ACCOUNTANT);
+        // 财务未绑定在职人员时下拉为空，不回落到已废弃的财务审批角色
+        if (userIds == null || userIds.isEmpty()) {
             return new ArrayList<>();
         }
         List<Practitioner> practitioners = this.practitionerQueryService.listActivePractitionersByBoundUserIds(userIds);

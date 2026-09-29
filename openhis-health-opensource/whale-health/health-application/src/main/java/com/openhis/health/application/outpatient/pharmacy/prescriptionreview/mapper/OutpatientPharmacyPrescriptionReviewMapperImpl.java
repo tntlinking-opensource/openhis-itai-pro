@@ -48,21 +48,27 @@ public class OutpatientPharmacyPrescriptionReviewMapperImpl implements Outpatien
     /**
      * 装配页初始化响应。
      *
-     * @param statusOptions     点评状态下拉；调用方保证非空
-     * @param reasonableOptions 是否合理下拉；调用方保证非空
-     * @param defaultFrom       默认点评日起
-     * @param defaultTo         默认点评日止
+     * @param statusOptions           点评状态下拉；调用方保证非空
+     * @param reasonableOptions       是否合理下拉；调用方保证非空
+     * @param keyDrugTypeOptions      重点药类型下拉；调用方保证非空
+     * @param medicinePropertyOptions 药品性质下拉；调用方保证非空
+     * @param defaultFrom             默认点评日起
+     * @param defaultTo               默认点评日止
      * @return 初始化响应
      */
     @Override
     public LoadPageInitResponse toLoadPageInitResponse(
         List<OptionDto> statusOptions,
         List<OptionDto> reasonableOptions,
+        List<OptionDto> keyDrugTypeOptions,
+        List<OptionDto> medicinePropertyOptions,
         String defaultFrom,
         String defaultTo) {
         LoadPageInitResponse response = new LoadPageInitResponse();
         response.setStatusOptions(statusOptions);
         response.setReasonableOptions(reasonableOptions);
+        response.setKeyDrugTypeOptions(keyDrugTypeOptions);
+        response.setMedicinePropertyOptions(medicinePropertyOptions);
         response.setDefaultReviewedDateFrom(defaultFrom);
         response.setDefaultReviewedDateTo(defaultTo);
         return response;

@@ -17,6 +17,7 @@ import {
   mergePackageSplitIntoSpec,
 } from '#/utils/doctor-station/package-split-ratio-display';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { SERVICE_CATEGORY_DISCHARGE } from '#/utils/print/constants/service-request-category-codes';
 
 /** 表格行：与 AdviceOrderDisplayCell 及校对页列展示对齐 */
 export interface NurseStationOrderAuditTableRow {
@@ -146,7 +147,7 @@ function isNursingLevelAuditDto(dto: Pick<NurseStationOrderAuditRowDto, 'categor
   return String(dto.categoryEnum ?? '').trim() === '26';
 }
 
-/** 剂量/数量：长期「一次一片，每日三片」；中药方展示各味单次量 + 付数 */
+/** 剂量/数量：长期「一次一片，每日三片，首日…」；中药方展示各味单次量 + 付数 */
 function buildAuditDosageDisplay(dto: NurseStationOrderAuditRowDto): string {
   // 护理级别无剂量/频次展示，内容列只留级别名称
   if (isNursingLevelAuditDto(dto)) {
@@ -161,7 +162,7 @@ function buildAuditDosageDisplay(dto: NurseStationOrderAuditRowDto): string {
     }
     return singleDose || fuText || '—';
   }
-  // 长期药：单次量 + 日总量（频次在用法行）
+  // 长期药：单次量 + 日总量 + 可选首日用量（频次在用法行）
   const therapy = String(dto.therapyEnum ?? '')
     .trim()
     .toUpperCase();
@@ -169,6 +170,9 @@ function buildAuditDosageDisplay(dto: NurseStationOrderAuditRowDto): string {
     const longTermLine = formatLongTermMedicationDoseLine({
       dosageDisplay: dto.dosageDisplay,
       dailyDoseDisplay: dto.dailyDoseDisplay,
+      firstDose: dto.firstDose,
+      firstDoseUnitCode: dto.firstDoseUnitCode,
+      firstDoseUnitName: dto.firstDoseUnitName,
     });
     if (longTermLine) return longTermLine;
   }
@@ -185,9 +189,14 @@ function mapAuditLineRequestIds(
   return mapped.length > 0 ? mapped : undefined;
 }
 
-/** 用法、频次、滴速、备注拼成扩展行；护理级别不拼用法频次 */
+/** 用法、频次、滴速、备注拼成扩展行；护理级别不拼用法频次；出院行拼计划出院时间 */
 function buildAuditExtensionLine(dto: NurseStationOrderAuditRowDto): string {
   const parts: string[] = [];
+  // 出院医嘱：扩展行优先展示医生填写的计划出院时间与原因（BR-IP-AUD-006）
+  const dischargeParts = buildDischargeAuditExtensionParts(dto);
+  for (const part of dischargeParts) {
+    parts.push(part);
+  }
   const usage = String(dto.usageDisplay ?? '').trim();
   const freq = String(dto.frequencyDisplay ?? '').trim();
   const speed = String(dto.speedDisplay ?? '').trim();
@@ -207,6 +216,44 @@ function buildAuditExtensionLine(dto: NurseStationOrderAuditRowDto): string {
     parts.push(`备注：${remark}`);
   }
   return parts.join('；');
+}
+
+/**
+ * 出院医嘱校对列表扩展片段：计划出院时间、原因。
+ *
+ * @param dto 校对列表行
+ * @returns 非空片段；非出院行返回空数组
+ */
+function buildDischargeAuditExtensionParts(dto: NurseStationOrderAuditRowDto): string[] {
+  if (String(dto.categoryEnum ?? '').trim() !== SERVICE_CATEGORY_DISCHARGE) {
+    return [];
+  }
+  const parts: string[] = [];
+  const plannedRaw = String(dto.plannedDischargeTime ?? '').trim();
+  if (plannedRaw) {
+    const plannedDisplay = formatAuditTimeMinute(plannedRaw) || plannedRaw;
+    parts.push(`出院时间：${plannedDisplay}`);
+  }
+  const reason = String(dto.reasonText ?? '').trim();
+  if (reason) {
+    parts.push(`原因：${reason}`);
+  }
+  return parts;
+}
+
+/**
+ * 校对列表时间展示到分钟（YYYY-MM-DD HH:mm）。
+ *
+ * @param raw 后端时间串
+ * @returns 截到分钟的展示；无法解析时回落 formatDateTime
+ */
+function formatAuditTimeMinute(raw: string): string {
+  const full = formatDateTime(raw);
+  const matched = String(full ?? '').match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/);
+  if (matched) {
+    return matched[1]!;
+  }
+  return String(full ?? '').trim();
 }
 
 /** 列表行 DTO → 表格行（未成组合并） */
@@ -282,6 +329,9 @@ function auditDtoToDrugGroupItem(dto: NurseStationOrderAuditRowDto): DrugGroupDi
       ? formatLongTermMedicationDoseLine({
           dosageDisplay: dto.dosageDisplay,
           dailyDoseDisplay: dto.dailyDoseDisplay,
+          firstDose: dto.firstDose,
+          firstDoseUnitCode: dto.firstDoseUnitCode,
+          firstDoseUnitName: dto.firstDoseUnitName,
         })
       : '';
   const doseText = longTermDoseLine || String(dto.dosageDisplay ?? '').trim();

@@ -154,5 +154,16 @@ public interface CustomConstants {
 
         /** 租户选项缺失时默认医嘱定价来源（批号价，IF-PRC-01 非阻断）。 */
         String ORDER_PRICING_SOURCE_DEFAULT = "LOT_NUMBER";
+
+        /**
+         * 未签发草稿新鲜窗口（小时）：开立时刻落在此窗口内的 DRAFT 仅提示开立医生自行删除，不自动废弃。
+         * <p>取 48：覆盖隔日门诊/交班后再处理草稿；过短易误伤仍在用草稿。</p>
+         */
+        int UNSIGNED_DRAFT_FRESH_HOURS = 48;
+
+        /**
+         * 在途预检原因：新鲜窗口内仍存在未签发 DRAFT（须医生自行删除，不可确认绕过）。
+         */
+        String IN_TRANSIT_REASON_FRESH_UNSIGNED_DRAFT = "FRESH_UNSIGNED_ORDER_DRAFT";
     }
 }

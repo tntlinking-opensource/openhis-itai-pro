@@ -46,17 +46,15 @@ public class NurseStationAutoRollEncounterProcessor {
     /**
      * 处理单个在院 encounter 的滚费（床位配置 + 护理分支）。
      *
-     * @param ctx         滚费就诊上下文
-     * @param billDate    业务日
-     * @param operatorId  任务操作人
-     * @param performerId 主执行人（责任护士）
+     * @param ctx               滚费就诊上下文
+     * @param billDate          业务日
+     * @param primaryNurseId    责任护士（配置未配计费人、护理分支的回落；禁止写死种子 admin）
      * @return 本 encounter 计数
      */
     public AutoRollEncounterProcessResult processEncounter(
         InpatientAutoRollEncounterQueryModel ctx,
         LocalDate billDate,
-        Long operatorId,
-        Long performerId) {
+        Long primaryNurseId) {
         AutoRollEncounterProcessResult result = new AutoRollEncounterProcessResult();
         if (ctx == null || ctx.getEncounterId() == null) {
             return result;
@@ -118,13 +116,20 @@ public class NurseStationAutoRollEncounterProcessor {
                 rule.getQuantityValue(),
                 priceLine.getUnitCode(),
                 rule.getBusinessTime());
-            // 配置计费人优先；存量空则回落责任护士/任务操作人（BR-IP-ARG-019）
-            Long bedPerformerId = rule.getBillingPractitionerId();
-            if (bedPerformerId == null) {
-                bedPerformerId = performerId;
+            // 配置计费人优先；存量空仅回落责任护士（BR-IP-ARG-019；禁止种子 admin）
+            Long billingPractitionerId = rule.getBillingPractitionerId();
+            if (billingPractitionerId == null) {
+                billingPractitionerId = primaryNurseId;
             }
-            // Charge.performer_id 取自 operatorId，故计费人同时写入两边
-            if (this.postAutoRollLine(line, bedPerformerId, bedPerformerId, result)) {
+            if (billingPractitionerId == null) {
+                log.warn(
+                    "住院滚费跳过：配置无计费人且无责任护士 ruleId={} encounterId={}",
+                    rule.getId(),
+                    ctx.getEncounterId());
+                result.setFailedCount(result.getFailedCount() + 1);
+                continue;
+            }
+            if (this.postAutoRollLine(line, billingPractitionerId, result)) {
                 result.setProcessedEncounter(true);
             }
         }
@@ -156,6 +161,12 @@ public class NurseStationAutoRollEncounterProcessor {
                         ctx.getOrganizationId());
                     if (!priceLine.isResolved()) {
                         result.setFailedCount(result.getFailedCount() + 1);
+                    } else if (primaryNurseId == null) {
+                        log.warn(
+                            "住院滚费护理跳过：无责任护士 encounterId={} serviceRequestId={}",
+                            ctx.getEncounterId(),
+                            nursingServiceRequestId);
+                        result.setFailedCount(result.getFailedCount() + 1);
                     } else {
                         AutoRollLineContext line = this.buildExecutionLineContext(
                             ctx,
@@ -166,8 +177,8 @@ public class NurseStationAutoRollEncounterProcessor {
                             nursingQty,
                             nursingModel.getUnitCode(),
                             null);
-                        // 护理分支：时刻写死日末；计费人仍用责任护士/任务操作人
-                        if (this.postAutoRollLine(line, operatorId, performerId, result)) {
+                        // 护理分支：时刻写死日末；计费人=责任护士（BR-IP-ARG-019）
+                        if (this.postAutoRollLine(line, primaryNurseId, result)) {
                             result.setProcessedEncounter(true);
                         }
                     }
@@ -245,19 +256,17 @@ public class NurseStationAutoRollEncounterProcessor {
     /**
      * 单条滚费执行落账。
      *
-     * @param line        执行行
-     * @param operatorId  操作人
-     * @param performerId 主执行人
-     * @param result      累计计数器
+     * @param line                  执行行
+     * @param billingPractitionerId 计费人（操作人/执行人/审计 created_by 同源）
+     * @param result                累计计数器
      * @return 新建 Charge 成功时 true
      */
     private boolean postAutoRollLine(
         AutoRollLineContext line,
-        Long operatorId,
-        Long performerId,
+        Long billingPractitionerId,
         AutoRollEncounterProcessResult result) {
         InpatientAutoRollOrderExecutionOrchestrator.Outcome outcome =
-            nurseStationAutoRollLinePoster.postLine(line, operatorId, performerId);
+            nurseStationAutoRollLinePoster.postLine(line, billingPractitionerId);
         if (outcome == InpatientAutoRollOrderExecutionOrchestrator.Outcome.CREATED) {
             result.setCreatedChargeItemCount(result.getCreatedChargeItemCount() + 1);
             return true;
@@ -267,11 +276,12 @@ public class NurseStationAutoRollEncounterProcessor {
             return false;
         }
         log.warn(
-            "住院滚费落账失败 encounterId={} serviceRequestId={} chargeDefinitionId={} billDate={}",
+            "住院滚费落账失败 encounterId={} serviceRequestId={} chargeDefinitionId={} billDate={} billingPractitionerId={}",
             line.getEncounterId(),
             line.getServiceRequestId(),
             line.getChargeDefinitionId(),
-            line.getBillDate());
+            line.getBillDate(),
+            billingPractitionerId);
         result.setFailedCount(result.getFailedCount() + 1);
         return false;
     }

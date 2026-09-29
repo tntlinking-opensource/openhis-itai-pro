@@ -29,11 +29,29 @@ public class ProcedurePerformCountGate {
     /**
      * 断言净执行次数未达计划上限；已达则抛业务异常（禁止静默 skip）。
      *
+     * <p>护士站路径：仅统计 {@code org_id} 为空的执行记录（与医技侧隔离）。</p>
+     *
      * @param requestId    请求主键
      * @param requestTable 请求表持久化名
      * @param plannedCount 计划执行次数
      */
     public void assertPerformCountBelowPlanned(Long requestId, String requestTable, int plannedCount) {
+        this.assertPerformCountBelowPlanned(requestId, requestTable, plannedCount, null);
+    }
+
+    /**
+     * 断言指定执行科室侧净次数未达计划上限。
+     *
+     * @param requestId       请求主键
+     * @param requestTable    请求表持久化名
+     * @param plannedCount    计划执行次数
+     * @param executionOrgId  执行科室；{@code null}=护士侧（仅计 org_id 空行）；非空=仅计该科 Procedure
+     */
+    public void assertPerformCountBelowPlanned(
+        Long requestId,
+        String requestTable,
+        int plannedCount,
+        Long executionOrgId) {
         if (requestId == null || requestTable == null) {
             throw new BusinessException(ErrorCodeConstants.PROCEDURE_INVALID_ARGUMENT, "执行次数门控缺少请求锚点");
         }
@@ -41,7 +59,7 @@ public class ProcedurePerformCountGate {
             throw new BusinessException(ErrorCodeConstants.PROCEDURE_RULE_CONFLICT, "计划执行次数无效");
         }
         this.lockRequestRow(requestId, requestTable);
-        int net = this.countNetCompletedProcedures(requestId, requestTable);
+        int net = this.countNetCompletedProcedures(requestId, requestTable, executionOrgId);
         if (net >= plannedCount) {
             throw new BusinessException(ErrorCodeConstants.PROCEDURE_RULE_CONFLICT, "计划执行次数已满，请刷新后重试");
         }
@@ -69,17 +87,22 @@ public class ProcedurePerformCountGate {
     }
 
     /**
-     * 净已完成执行次数 = completed 条数 − 取消执行条数。
+     * 净已完成执行次数 = completed 条数 − 取消执行条数（按执行科室侧过滤）。
      *
-     * @param requestId    医嘱主键
-     * @param requestTable 请求表名
+     * @param requestId       医嘱主键
+     * @param requestTable    请求表名
+     * @param executionOrgId  {@code null}=仅 org_id 空；非空=仅该 org_id
      * @return 可用于与 plannedCount 比较的净次数
      */
-    private int countNetCompletedProcedures(Long requestId, String requestTable) {
+    private int countNetCompletedProcedures(Long requestId, String requestTable, Long executionOrgId) {
         int completed = 0;
         int cancelCount = 0;
         for (ProcedureRecordQueryModel row : procedureQueryService.getProcedureRecords(requestId, requestTable)) {
             if (row == null) {
+                continue;
+            }
+            // 护士侧：只计历史/护士写入（org_id 空）；医技侧：只计登录 TECH 科
+            if (!this.matchesExecutionOrgSide(row.getOrgId(), executionOrgId)) {
                 continue;
             }
             if (EventStatus.COMPLETED.getCode().equals(row.getStatusEnum())) {
@@ -90,5 +113,19 @@ public class ProcedurePerformCountGate {
             }
         }
         return completed - cancelCount;
+    }
+
+    /**
+     * 判断 Procedure 是否属于指定执行科室侧。
+     *
+     * @param procedureOrgId  Procedure.org_id
+     * @param executionOrgId  门控侧科室；null=护士侧
+     * @return 匹配时 true
+     */
+    private boolean matchesExecutionOrgSide(Long procedureOrgId, Long executionOrgId) {
+        if (executionOrgId == null) {
+            return procedureOrgId == null;
+        }
+        return executionOrgId.equals(procedureOrgId);
     }
 }

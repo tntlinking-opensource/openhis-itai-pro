@@ -81,6 +81,11 @@ public interface InpatientNurseStationConstants {
      */
     String EX_IP_ATD_308 = "EX-IP-ATD-308";
 
+    /**
+     * 出院门禁：医技相关费用未确费（BR-IP-ATD-011⑤，协同 DD 软落地）。
+     */
+    String EX_IP_ATD_309 = "EX-IP-ATD-309";
+
     /** 清床：未结算（IF-IP-NUR-ATD-06）。 */
     String EX_IP_ATD_401 = "EX-IP-ATD-401";
 
@@ -336,6 +341,15 @@ public interface InpatientNurseStationConstants {
     /** 就诊待结算禁止执行/不执行（IF-IP-EXE-02/04）。 */
     String EX_IP_EXE_307 = "EX-IP-EXE-307";
 
+    /** 非手术/麻醉类目误调执行弹窗（IF-IP-SAE-01/02 · BR-IP-SAE-001）。 */
+    String EX_IP_SAE_201 = "EX-IP-SAE-201";
+
+    /** 槽位不可执行或已执行（IF-IP-SAE-02；语义对齐 EXE 槽位拒绝）。 */
+    String EX_IP_SAE_202 = "EX-IP-SAE-202";
+
+    /** 麻醉结束早于开始（IF-IP-SAE-02 · EX-IP-SAE-203）。 */
+    String EX_IP_SAE_203 = "EX-IP-SAE-203";
+
     /** 护理级别医嘱仅允许校对，不允许护士站执行或不执行登记。 */
     String MSG_NURSING_LEVEL_NOT_EXECUTABLE = "护理级别医嘱仅允许校对，不允许护士站执行";
 
@@ -537,6 +551,12 @@ public interface InpatientNurseStationConstants {
      */
     String COST_DETAIL_GENERATE_SOURCE_NURSE_OFFSET_DISPLAY = "护士冲销";
 
+    /**
+     * 费用明细「来源」列：医技划价冲销行展示文案
+     *（{@code generate_source} 仍为 {@code medical-tech-pricing}，仅展示覆盖）。
+     */
+    String COST_DETAIL_GENERATE_SOURCE_MEDICAL_TECH_OFFSET_DISPLAY = "医技冲销";
+
     /** 汇总展开明细活动展示：取消执行（BR-IP-CDT-018）。 */
     String COST_DETAIL_ACTIVITY_TYPE_CANCEL_EXECUTE_DISPLAY = "取消执行";
 
@@ -697,6 +717,11 @@ public interface InpatientNurseStationConstants {
 
     /** 取消执行：就诊待结算（IF-IP-CXL-01）。 */
     String EX_IP_CXL_206 = "EX-IP-CXL-206";
+
+    /**
+     * 取消执行：历史 TECH 同态码（BR-IP-CXL-017）；软落地后<strong>不再抛出</strong>，常量保留供文档对照。
+     */
+    String EX_IP_CXL_207 = "EX-IP-CXL-207";
 
     /** 取消执行成功默认提示（IF-IP-CXL-01）。 */
     String ORDER_CANCEL_EXECUTE_SUCCESS_MESSAGE = "取消执行成功";

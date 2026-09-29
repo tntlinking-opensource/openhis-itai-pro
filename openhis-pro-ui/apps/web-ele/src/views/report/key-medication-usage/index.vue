@@ -62,12 +62,14 @@ interface QueryState {
   dateTo: string;
   encounterClassCodes: string[];
   keyDrugTypeCodes: string[];
+  medicinePropertyCodes: string[];
 }
 
 const PAGE_TITLE = '重点药品使用统计';
 
 const encounterClassOptions = ref<ApiOptionItem[]>([]);
 const keyDrugTypeOptions = ref<ApiOptionItem[]>([]);
+const medicinePropertyOptions = ref<ApiOptionItem[]>([]);
 const summaryRows = ref<KeyMedicationUsageSummaryRowDto[]>([]);
 const totalEncounterNetCount = ref(0);
 const totalSaleAmount = ref<number | string>(0);
@@ -77,6 +79,7 @@ const queryParams = reactive<QueryState>({
   dateTo: '',
   encounterClassCodes: [],
   keyDrugTypeCodes: [],
+  medicinePropertyCodes: [],
 });
 
 const dateRangeShortcuts = buildReportDateRangeShortcuts();
@@ -123,6 +126,7 @@ const { run: runInit, loading: initLoading } = useRequest(loadKeyMedicationUsage
   onSuccess: (data) => {
     encounterClassOptions.value = optionDtosToSelectItems(data?.encounterClassOptions);
     keyDrugTypeOptions.value = optionDtosToSelectItems(data?.keyDrugTypeOptions);
+    medicinePropertyOptions.value = optionDtosToSelectItems(data?.medicinePropertyOptions);
     // 仅首次 init 写默认窗；用户改日期后不再被 init 回写
     if (!defaultDatesApplied) {
       const from = normalizeReportDateRangeYmd(data?.defaultDateFrom);
@@ -186,6 +190,8 @@ const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrint
     getColumnCatalog: () => printColumnCatalog.value,
     getReportTitle: () => PAGE_TITLE,
     getPrintRows: () => mapCurrentPrintRows(),
+    fetchAllPrintRows: async () => ({ rows: mapCurrentPrintRows(), truncated: false }),
+    hasPrintableData: () => summaryRows.value.length > 0,
   });
 
 const tableLoading = computed(
@@ -201,6 +207,7 @@ function buildQueryBody() {
     dateTo: string;
     encounterClassCodes?: string[];
     keyDrugTypeCodes?: string[];
+    medicinePropertyCodes?: string[];
   } = {
     dateFrom: queryParams.dateFrom,
     dateTo: queryParams.dateTo,
@@ -209,9 +216,13 @@ function buildQueryBody() {
   if (queryParams.encounterClassCodes.length > 0) {
     body.encounterClassCodes = [...queryParams.encounterClassCodes];
   }
-  // 未选药品类型 = 后端按全部四类重点药拆行
+  // 未选重点药类型 = 不按四旗收窄
   if (queryParams.keyDrugTypeCodes.length > 0) {
     body.keyDrugTypeCodes = [...queryParams.keyDrugTypeCodes];
+  }
+  // 未选药品性质 = 不按麻/精收窄；两框皆空 = 矩阵七行
+  if (queryParams.medicinePropertyCodes.length > 0) {
+    body.medicinePropertyCodes = [...queryParams.medicinePropertyCodes];
   }
   return body;
 }
@@ -251,6 +262,7 @@ async function handleQuery() {
 async function handleReset() {
   queryParams.encounterClassCodes = [];
   queryParams.keyDrugTypeCodes = [];
+  queryParams.medicinePropertyCodes = [];
   defaultDatesApplied = false;
   await runInit();
   handleQuery();
@@ -411,7 +423,7 @@ onMounted(async () => {
                 />
               </ElSelect>
             </ElFormItem>
-            <ElFormItem label="药品类型">
+            <ElFormItem label="重点药类型">
               <ElSelect
                 v-model="queryParams.keyDrugTypeCodes"
                 multiple
@@ -423,6 +435,24 @@ onMounted(async () => {
               >
                 <ElOption
                   v-for="item in keyDrugTypeOptions"
+                  :key="String(item.value)"
+                  :label="String(item.label ?? '')"
+                  :value="String(item.value ?? '')"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="药品性质">
+              <ElSelect
+                v-model="queryParams.medicinePropertyCodes"
+                multiple
+                clearable
+                collapse-tags
+                collapse-tags-tooltip
+                placeholder="全部"
+                :class="REPORT_QUERY_CONTROL"
+              >
+                <ElOption
+                  v-for="item in medicinePropertyOptions"
                   :key="String(item.value)"
                   :label="String(item.label ?? '')"
                   :value="String(item.value ?? '')"
@@ -537,7 +567,12 @@ onMounted(async () => {
       </template>
     </ReportListPageLayout>
 
-    <ReportPrintFieldDialog ref="printFieldDialogRef" />
+    <ReportPrintFieldDialog
+      ref="printFieldDialogRef"
+      report-code="report-key-medication-usage"
+      :column-catalog="printColumnCatalog"
+      show-print-scope
+    />
   </Page>
 </template>
 

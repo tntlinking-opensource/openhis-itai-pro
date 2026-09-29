@@ -114,4 +114,19 @@ public interface TerminologyCodeSystemNameConstants {
      * 处方类别代码（国家标准术语 355，{@code med_medication_request.rx_type_code}）。
      */
     String RX_TYPE_CODE = "rx_type_code";
+
+    /**
+     * 手术级别代码（医保平台术语 {@code oprn_oprt_lv_code}；AS-IP-DOR-012 IF-IP-SUR-01）。
+     */
+    String OPRN_OPRT_LV_CODE = "oprn_oprt_lv_code";
+
+    /**
+     * 手术切口愈合等级代码（医保平台术语 {@code sinc_heal_lv_code}；申请侧切口类别下拉同源种子）。
+     */
+    String SINC_HEAL_LV_CODE = "sinc_heal_lv_code";
+
+    /**
+     * 麻醉-方法代码（医保平台术语 {@code anst_mtd_code}；AS-IP-DOR-012 IF-IP-SUR-01）。
+     */
+    String ANST_MTD_CODE = "anst_mtd_code";
 }

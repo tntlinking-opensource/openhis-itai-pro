@@ -4,14 +4,17 @@
  */
 package com.openhis.health.application.mrms.caserecord.homepage.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openhis.health.application.mrms.caserecord.homepage.dto.CaseRecordDetailDto;
 import com.openhis.health.application.mrms.caserecord.homepage.dto.CaseRecordListItemDto;
 import com.openhis.health.application.mrms.caserecord.homepage.dto.HomepageDto;
 import com.openhis.health.application.mrms.caserecord.homepage.dto.HomepagePageDto;
 import com.openhis.health.application.mrms.caserecord.homepage.dto.PdfGenerateResultDto;
+import com.openhis.health.application.mrms.caserecord.homepage.dto.ProcedureLineDto;
 import com.openhis.health.application.mrms.caserecord.homepage.mapper.CaseRecordDetailMapper;
 import com.openhis.health.application.mrms.caserecord.homepage.mapper.CaseRecordListMapper;
 import com.openhis.health.application.mrms.caserecord.homepage.mapper.HomepageMapper;
+import com.openhis.health.application.mrms.caserecord.homepage.request.CreateHomepageEditApplicationRequest;
 import com.openhis.health.application.mrms.caserecord.homepage.request.GenerateHomepagePdfRequest;
 import com.openhis.health.application.mrms.caserecord.homepage.request.GetByEncounterIdRequest;
 import com.openhis.health.application.mrms.caserecord.homepage.request.LoadPageRequest;
@@ -20,6 +23,7 @@ import com.openhis.health.application.mrms.caserecord.homepage.request.ReceiveHo
 import com.openhis.health.application.mrms.caserecord.homepage.request.RefreshAutoFillRequest;
 import com.openhis.health.application.mrms.caserecord.homepage.request.ReturnToDoctorRequest;
 import com.openhis.health.application.mrms.caserecord.homepage.request.SaveHomepageRequest;
+import com.openhis.health.application.mrms.caserecord.homepage.request.SubmitHomepageArchiveRequest;
 import com.openhis.health.application.mrms.caserecord.homepage.request.SubmitHomepageRequest;
 import com.openhis.health.application.mrms.caserecord.homepage.support.HomepageOpenPdfRenderer;
 import com.openhis.health.application.mrms.caserecord.homepage.support.HospitalTcmInfoEnabledResolver;
@@ -41,7 +45,6 @@ import com.openhis.health.domain.administration.patient.entity.Patient;
 import com.openhis.health.domain.administration.patient.service.PatientQueryService;
 import com.openhis.health.domain.mrms.caserecord.command.RefreshAutoFillCommand;
 import com.openhis.health.domain.mrms.caserecord.command.SubmitCaseRecordCommand;
-import com.openhis.health.domain.mrms.caserecord.command.TransitionCaseRecordCommand;
 import com.openhis.health.domain.mrms.caserecord.entity.CaseRecord;
 import com.openhis.health.domain.mrms.caserecord.entity.CaseRecordHomepage;
 import com.openhis.health.domain.mrms.caserecord.entity.HomepageDiagnosis;
@@ -50,15 +53,17 @@ import com.openhis.health.domain.mrms.caserecord.queries.model.CaseRecordListIte
 import com.openhis.health.domain.mrms.caserecord.service.CaseRecordDomainService;
 import com.openhis.health.domain.mrms.caserecord.service.CaseRecordHomepageDomainService;
 import com.openhis.health.domain.mrms.caserecord.service.CaseRecordQueryService;
+import com.openhis.health.domain.mrms.homepageedit.command.CreateHomepageEditApplicationCommand;
+import com.openhis.health.domain.mrms.homepageedit.entity.HomepageEditApplication;
+import com.openhis.health.domain.mrms.homepageedit.service.HomepageEditApplicationDomainService;
 import com.openhis.health.domain.mrms.caserecord.vo.FeeSummarySnapshot;
 import com.openhis.health.domain.share.constants.InpatientRegistrationConstants;
 import com.openhis.health.domain.share.constants.MrmsConstants;
 import com.openhis.health.domain.share.constants.MrmsErrorCodes;
 import com.openhis.health.domain.share.enums.CaseRecordStatus;
-import com.openhis.health.domain.share.enums.CaseRecordTransitionAction;
-import com.openhis.health.domain.share.enums.WorkflowRole;
 import com.openhis.health.domain.share.utils.InpatientStayDaysCalculator;
 import com.openhis.whale.core.application.dto.PagedResult;
+import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -114,6 +119,12 @@ public class MrmsCaseRecordHomepageAppService {
     /** 医保结算上下文（列表回填 psn_no）。 */
     private final InsuranceEncounterLoader insuranceEncounterLoader;
     private final AccountQueryService accountQueryService;
+
+    /** 首页编辑申请写侧（增量：创建编辑申请）。 */
+    private final HomepageEditApplicationDomainService homepageEditApplicationDomainService;
+
+    /** JSON 序列化（编辑快照）。 */
+    private final ObjectMapper objectMapper;
 
     /**
      * 分页检索病案列表（首页工作台 / 质控等工作台共用）。
@@ -518,7 +529,7 @@ public class MrmsCaseRecordHomepageAppService {
     }
 
     /**
-     * 打开页是否软刷 HIS 分区：医生可编辑态（draft/returned）且首页未冻结。
+     * 打开页是否软刷 HIS 分区：医生可编辑态（DRAFT）且首页未冻结。
      *
      * @param record   病案主档
      * @param homepage 首页快照
@@ -530,8 +541,8 @@ public class MrmsCaseRecordHomepageAppService {
             return false;
         }
         CaseRecordStatus status = record.getStatusEnum();
-        // 仅草稿/退回允许打开时写回自动取值字段
-        return status == CaseRecordStatus.DRAFT || status == CaseRecordStatus.RETURNED;
+        // 仅草稿允许打开时写回自动取值字段
+        return status == CaseRecordStatus.DRAFT;
     }
 
     /**
@@ -559,9 +570,10 @@ public class MrmsCaseRecordHomepageAppService {
     }
 
     /**
-     * 保存首页标量与诊断/手术子表。
+     * 保存首页标量与诊断/手术子表（AS-MRMS-HP-001 IF-MRMS-HP-PR-04）。
      *
-     * <p>无 {@code caseRecordId} 时须有 {@code encounterId}，先 bootstrap 再保存。</p>
+     * <p>无 {@code caseRecordId} 时须有 {@code encounterId}，先 bootstrap 再保存。
+     * 手术子表全量对齐；主手术至多一条（EX-MRMS-HP-PR-203）；不写回临床 Procedure。</p>
      *
      * @param request 保存请求
      * @return 保存后的首页 DTO
@@ -570,6 +582,7 @@ public class MrmsCaseRecordHomepageAppService {
     public HomepageDto saveHomepage(SaveHomepageRequest request) {
         // Gate：无主档主键时必须带就诊主键以便建档
         if (request.getCaseRecordId() == null) {
+            // 业务分支：缺就诊主键则无法幂等建档
             if (request.getEncounterId() == null) {
                 throw new ValidationException("病案主档主键为空时就诊主键不能为空");
             }
@@ -577,6 +590,8 @@ public class MrmsCaseRecordHomepageAppService {
             Long bootstrappedId = this.bootstrapByEncounterId(request.getEncounterId());
             request.setCaseRecordId(bootstrappedId);
         }
+        // Gate：主手术标志至多一条，避免 4401 main_oprn_flag 歧义
+        this.assertAtMostOneMainProcedure(request.getProcedures());
         Long operatorId = operatorResolver.requireOperatorId();
         // Pre：HTTP 请求转领域保存命令
         // Cmd：领域校验可编辑态并持久化首页与子表
@@ -598,6 +613,34 @@ public class MrmsCaseRecordHomepageAppService {
         // Asm：回填中医信息开关（与 loadPage 同口径）
         this.overlayTcmInfoEnabledOnHomepageDto(dto);
         return dto;
+    }
+
+    /**
+     * 校验手术行主手术标志至多一条（AS-MRMS-HP-001 EX-MRMS-HP-PR-203）。
+     *
+     * @param procedures 手术行；可空
+     */
+    private void assertAtMostOneMainProcedure(List<ProcedureLineDto> procedures) {
+        // 无手术行无需校验主手术个数
+        if (procedures == null || procedures.isEmpty()) {
+            return;
+        }
+        int mainCount = 0;
+        for (ProcedureLineDto line : procedures) {
+            // 跳过空槽，避免 NPE
+            if (line == null) {
+                continue;
+            }
+            // 业务分支：main_oprn_flag=1 计为主手术
+            if ("1".equals(trimToNull(line.getMainOprnFlag()))) {
+                mainCount++;
+            }
+        }
+        // 超过一条主手术则拒绝保存
+        if (mainCount > 1) {
+            throw new BusinessException(
+                    MrmsErrorCodes.HOMEPAGE_PROCEDURE_MAIN_DUPLICATE, "请保留一条主手术");
+        }
     }
 
     /**
@@ -689,7 +732,7 @@ public class MrmsCaseRecordHomepageAppService {
     }
 
     /**
-     * 住院医师提交首页至病案室（draft → submitted）。
+     * 住院医师提交首页至病案室（DRAFT → PENDING_ARCHIVE；历史口径曾称 submitted）。
      *
      * @param request 提交请求
      * @return 提交后主档详情
@@ -711,55 +754,25 @@ public class MrmsCaseRecordHomepageAppService {
     }
 
     /**
-     * 病案室接收已提交病案（submitted → received）。
+     * 病案室接收（已拆出：主档不再走收案态）。
      *
      * @param request 接收请求
-     * @return 接收后主档详情
+     * @return 不返回
      */
     @Transactional(rollbackFor = Exception.class)
     public CaseRecordDetailDto receive(ReceiveHomepageRequest request) {
-        // Gate：病案主键必填
-        if (request.getCaseRecordId() == null) {
-            throw new ValidationException("病案主档主键不能为空");
-        }
-        // Pre：组装病案室接收迁移命令
-        TransitionCaseRecordCommand command = new TransitionCaseRecordCommand();
-        command.setCaseRecordId(request.getCaseRecordId());
-        command.setAction(CaseRecordTransitionAction.RECEIVE);
-        command.setRole(WorkflowRole.RECORD_ROOM);
-        command.setOperatorId(operatorResolver.requireOperatorId());
-        // Cmd：领域状态机迁移
-        CaseRecord record = caseRecordDomainService.transition(command);
-        // Asm：映射主档详情
-        return caseRecordDetailMapper.toDetail(record);
+        throw new ValidationException("收案流转已从主档拆出；请使用归档审批（待归档→已归档）");
     }
 
     /**
-     * 病案室退回医生修改（submitted/received → draft）。
+     * 病案室退回（已拆出：归档驳回请用 rejectArchive）。
      *
      * @param request 含退回原因
-     * @return 退回后主档详情
+     * @return 不返回
      */
     @Transactional(rollbackFor = Exception.class)
     public CaseRecordDetailDto returnToDoctor(ReturnToDoctorRequest request) {
-        // Gate：病案主键与退回原因必填
-        if (request.getCaseRecordId() == null) {
-            throw new ValidationException("病案主档主键不能为空");
-        }
-        if (trimToNull(request.getReturnReason()) == null) {
-            throw new ValidationException("退回原因不能为空");
-        }
-        // Pre：组装退回迁移命令
-        TransitionCaseRecordCommand command = new TransitionCaseRecordCommand();
-        command.setCaseRecordId(request.getCaseRecordId());
-        command.setAction(CaseRecordTransitionAction.RETURN);
-        command.setRole(WorkflowRole.RECORD_ROOM);
-        command.setReturnReason(request.getReturnReason());
-        command.setOperatorId(operatorResolver.requireOperatorId());
-        // Cmd：领域状态机迁移并记录退回原因
-        CaseRecord record = caseRecordDomainService.transition(command);
-        // Asm：映射主档详情
-        return caseRecordDetailMapper.toDetail(record);
+        throw new ValidationException("退回流转已从主档拆出；归档驳回请走归档审批驳回");
     }
 
     /**
@@ -1128,5 +1141,86 @@ public class MrmsCaseRecordHomepageAppService {
         // Cmd：幂等建档（新建含 autoFill）
         return caseRecordDomainService.bootstrapIfAbsent(
                 tenantId, context.getPatientId(), encounterId, operatorId);
+    }
+
+    /**
+     * 提交病案首页归档审批：DRAFT → PENDING_ARCHIVE（IF-MRMS-HP-ARC-03）。
+     *
+     * <p><strong>增量方法</strong>：不修改既有 {@link #submit}/{@link #receive}/{@link #returnToDoctor}。</p>
+     *
+     * @param request 含 caseRecordId
+     * @return 提交后主档详情
+     */
+    public CaseRecordDetailDto submitArchive(SubmitHomepageArchiveRequest request) {
+        // Gate：病案主键必填
+        if (request == null || request.getCaseRecordId() == null) {
+            throw new ValidationException("病案主档主键不能为空");
+        }
+        // Pre：组装提交归档命令
+        SubmitCaseRecordCommand command = new SubmitCaseRecordCommand();
+        command.setCaseRecordId(request.getCaseRecordId());
+        command.setOperatorId(operatorResolver.requireOperatorId());
+        // Cmd：权威入口 submitArchive（与旧 submit 委托同源，对外新契约）
+        CaseRecord record = caseRecordDomainService.submitArchive(command);
+        // Asm：映射主档详情
+        return caseRecordDetailMapper.toDetail(record);
+    }
+
+    /**
+     * 对已归档病案创建首页编辑申请（IF-MRMS-HP-ARC-04）。
+     *
+     * @param request 病案主键 + 申请原因
+     * @return 新建申请主键
+     */
+    public Long createHomepageEditApplication(CreateHomepageEditApplicationRequest request) {
+        // Gate：主键与原因
+        if (request == null || request.getCaseRecordId() == null) {
+            throw new ValidationException("病案主档主键不能为空");
+        }
+        String reason = trimToNull(request.getApplyReason());
+        if (reason == null) {
+            throw new ValidationException("申请原因不能为空");
+        }
+        Long operatorId = operatorResolver.requireOperatorId();
+        Long tenantId = operatorResolver.requireTenantId();
+        CaseRecord record = caseRecordDomainService.requireById(request.getCaseRecordId());
+        // Gate：仅已归档
+        if (record.getStatusEnum() != CaseRecordStatus.ARCHIVED) {
+            throw new ValidationException("仅已归档病案可申请编辑首页");
+        }
+        CaseRecordHomepage homepage =
+                caseRecordHomepageDomainService.requireExistingByCaseRecordId(record.getId());
+        // Pre：序列化首页快照为工作稿 JSON
+        String snapshotJson;
+        try {
+            SaveHomepageRequest snapshot = objectMapper.convertValue(
+                    homepageMapper.toDto(
+                            homepage,
+                            caseRecordHomepageDomainService.listDiagnoses(record.getId()),
+                            caseRecordHomepageDomainService.listProcedures(record.getId()),
+                            record.getEncounterId()),
+                    SaveHomepageRequest.class);
+            snapshot.setCaseRecordId(record.getId());
+            snapshotJson = objectMapper.writeValueAsString(snapshot);
+        } catch (Exception ex) {
+            throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "首页编辑快照序列化失败");
+        }
+        CreateHomepageEditApplicationCommand command = new CreateHomepageEditApplicationCommand();
+        command.setTenantId(tenantId);
+        command.setCaseRecordId(record.getId());
+        command.setEncounterId(record.getEncounterId());
+        command.setApplyReason(reason);
+        Integer fromVersion = homepage.getVersionNo();
+        if (fromVersion == null) {
+            fromVersion = 1;
+        }
+        command.setFromVersion(fromVersion);
+        command.setContentJson(snapshotJson);
+        command.setApplicantId(operatorId);
+        command.setOperatorId(operatorId);
+        // Cmd：创建 drafting 申请
+        HomepageEditApplication entity = homepageEditApplicationDomainService.create(command);
+        // Asm：返回申请主键
+        return entity.getId();
     }
 }

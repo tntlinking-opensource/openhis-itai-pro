@@ -45,6 +45,8 @@ public interface TableNameConstants {
     String ADM_DEVICE = "adm_device";
     /** 标本合管配置表名。 */
     String CUS_SPECIMEN_TUBE_MERGE = "cus_specimen_tube_merge";
+    /** 收费折扣配置表名（DM-CUS-016）。 */
+    String CUS_CHARGE_DISCOUNT_CONFIG = "cus_charge_discount_config";
     /** 收费明细自动生成规则表名（滚费床位长期医嘱 based_on 锚点，AS-IP-NUR-013 BR-IP-ARG-019）。 */
     String CUS_CHARGE_ITEM_AUTO_GEN = "cus_charge_item_auto_gen";
     /** 体检就诊扩展表名（历史团检套餐锚点，方案 A 前）。 */

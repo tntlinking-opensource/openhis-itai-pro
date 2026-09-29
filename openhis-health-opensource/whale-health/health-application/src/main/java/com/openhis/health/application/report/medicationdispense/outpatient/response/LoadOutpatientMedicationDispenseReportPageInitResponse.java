@@ -58,4 +58,10 @@ public class LoadOutpatientMedicationDispenseReportPageInitResponse {
     /** 开立/领用科室下拉（随来源解释）。 */
     @Schema(description = "开立/领用科室选项")
     private List<OptionDto> organizationOptions;
+
+    /**
+     * 药品性质下拉（仅麻醉 / 一类精神 / 二类精神；value=KeyDrugType code）。
+     */
+    @Schema(description = "药品性质下拉（麻醉/精一/精二）")
+    private List<OptionDto> medicinePropertyOptions;
 }

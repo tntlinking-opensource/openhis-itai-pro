@@ -445,6 +445,9 @@ public class EncounterContextQueryService {
             if (patient != null) {
                 model.setPatientName(patient.getName());
                 model.setGenderEnum(patient.getGenderEnum());
+                // 信息条回显：与门诊上下文同轴投影手机号/身份证
+                model.setPhone(patient.getPhone());
+                model.setIdCard(patient.getIdCard());
                 if (patient.getBirthDate() != null) {
                     model.setBirthDate(patient.getBirthDate().atStartOfDay());
                     Date birthDate = Date.from(

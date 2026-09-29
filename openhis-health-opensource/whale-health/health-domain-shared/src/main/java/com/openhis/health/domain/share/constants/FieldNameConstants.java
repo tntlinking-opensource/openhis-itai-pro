@@ -315,6 +315,14 @@ public interface FieldNameConstants {
      * 首次剂量单位编码。
      */
     String FIRST_DOSE_UNIT_CODE = "firstDoseUnitCode";
+    /**
+     * 分次剂量序列（药品申请 {@code dose_schedule}；BR-MRQ-035）。
+     */
+    String DOSE_SCHEDULE = "doseSchedule";
+    /**
+     * 分次用量序列（药品申请 {@code quantity_schedule}；BR-MRQ-035）。
+     */
+    String QUANTITY_SCHEDULE = "quantitySchedule";
 /** FieldName 共享常量：enum，值 {@code genderEnum}。 */
     String GENDER_ENUM = "genderEnum";
 /** FieldName 共享常量：enum text，值 {@code genderEnumText}。 */
@@ -423,6 +431,10 @@ public interface FieldNameConstants {
      * 耗材定义标识（发放聚合等设备侧字段名）。
      */
     String DEVICE_DEF_ID = "deviceDefId";
+    /**
+     * 活动定义主键（服务申请 {@code activity_id}）。
+     */
+    String ACTIVITY_ID = "activityId";
     /**
      * 耗材分类字典 code（快照静表 {@code device_category_code} 等）。
      */
@@ -594,6 +606,8 @@ public interface FieldNameConstants {
 
     /** 收费明细产品来源表（{@code adm_charge_item.product_table}，JPA {@code productTable}）。 */
     String PRODUCT_TABLE = "productTable";
+    /** 折扣率字段名（收费折扣配置 {@code discount_rate}）。 */
+    String DISCOUNT_RATE = "discountRate";
 
     /** 收费明细产品主键（{@code adm_charge_item.product_id}，JPA {@code productId}）。 */
     String PRODUCT_ID = "productId";

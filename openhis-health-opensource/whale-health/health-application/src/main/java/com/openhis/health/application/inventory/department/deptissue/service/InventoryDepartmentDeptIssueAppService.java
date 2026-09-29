@@ -31,7 +31,7 @@ import com.openhis.health.domain.administration.practitioner.service.Practitione
 import com.openhis.health.application.shared.tracenumber.TraceNumberSupplyAgreeTraceOrchestrator;
 import com.openhis.health.application.shared.tracenumber.RecordTraceFromSupplyLineSpec;
 import com.openhis.health.domain.administration.product.support.ProductDefinitionDisplaySupport;
-import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
+import com.openhis.health.application.shared.practitioner.PractitionerRoleScopeLoader;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionSelectionTerminologyMaps;
@@ -792,8 +792,9 @@ public class InventoryDepartmentDeptIssueAppService {
             }
             Map<Long, Map<String, BigDecimal>> availableQtyByItemIdAndNormLot = new HashMap<>();
             if (!pageItemIds.isEmpty()) {
+                // Pre：库房账面量回填（不过期、不剔锁定；药库/药房/科室同口径）
                 List<InventoryCatalogAvailabilityRowModel> availRows =
-                    this.inventoryItemQueryService.findAvailableCatalogRowsForOrder(
+                    this.inventoryItemQueryService.findWarehouseOperableCatalogRowsForOrder(
                         itemTable, pageItemIds, List.of(request.getPurposeLocationId()));
                 for (InventoryCatalogAvailabilityRowModel ar : availRows) {
                     if (ar == null || ar.getItemId() == null || ar.getQuantity() == null) {
@@ -1374,8 +1375,9 @@ public class InventoryDepartmentDeptIssueAppService {
             if (itemIds.isEmpty()) {
                 continue;
             }
+            // Pre：库房账面量回填（不过期、不剔锁定；药库/药房/科室同口径）
             List<InventoryCatalogAvailabilityRowModel> rows =
-                this.inventoryItemQueryService.findAvailableCatalogRowsForOrder(
+                this.inventoryItemQueryService.findWarehouseOperableCatalogRowsForOrder(
                     itemTable, new ArrayList<>(itemIds), locationIds);
             Map<Long, Map<String, BigDecimal>> availableByItemLot = new HashMap<>();
             Map<Long, BigDecimal> availableByItemId = new HashMap<>();

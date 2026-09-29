@@ -1,3 +1,4 @@
 com.openhis.health.infrastructure.integration.noop.config.IntegrationSpiAutoConfiguration
 com.openhis.health.infrastructure.integration.config.IntegrationSupportAutoConfiguration
 com.openhis.health.infrastructure.platform.config.HealthPlatformAutoConfiguration
+com.openhis.health.adapter.pacs.config.PacsAdapterAutoConfiguration

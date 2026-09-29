@@ -45,8 +45,14 @@ public class PageInventoryDetailCurrentRequest extends AbstractHealthPageRequest
      * 重点药类型筛选（{@link com.openhis.health.domain.share.enums.KeyDrugType#getCode()}）；
      * 仅收窄药品行；空/{@code null} 不限。
      */
-    @Schema(description = "重点药类型：BASIC/NATIONAL_MONITOR/CENTRAL_PURCHASE；null 不限（仅药品）")
+    @Schema(description = "重点药类型：BASIC/NATIONAL_MONITOR/CENTRAL_PURCHASE/ANTIBIOTIC；null 不限（仅药品）")
     private String keyDrugType;
+
+    /**
+     * 药品性质筛选（NARCOTIC/PSYCH_ONE/PSYCH_TWO）；与重点药类型分框，同时非空时 AND。
+     */
+    @Schema(description = "药品性质：NARCOTIC/PSYCH_ONE/PSYCH_TWO；null 不限（仅药品）")
+    private String medicinePropertyCode;
 
     /** 库存范围：true 数量等于0，false 数量大于0，null 不限。 */
     @Schema(description = "库存范围：true 数量等于0，false 数量大于0，null 不限")

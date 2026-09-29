@@ -38,7 +38,7 @@ export async function archiveInpatientClinicalCaseApi(params: ArchiveInpatientCl
   );
 }
 
-/** 解档病例：解锁 LOCKED 文书（仅 ROLE_MRMS_ADMIN；病案主档已归档时后端拒绝） */
+/** 解档病例：ARCHIVED → DRAFT（仅 ROLE_MRMS_ADMIN；病案主档已归档时后端拒绝） */
 
 export async function unarchiveInpatientClinicalCaseApi(
   params: ArchiveInpatientClinicalCaseParams,

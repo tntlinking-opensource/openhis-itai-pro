@@ -148,6 +148,10 @@ public class NurseStationCostDetailReadAssembler {
             if (this.isAutoRollOrderExecuteCharge(charge, autoRollServiceRequestIds)) {
                 line.setGenerateSourceDisplay(
                     InpatientNurseStationConstants.COST_DETAIL_ACTIVITY_TYPE_AUTO_ROLL_DISPLAY);
+            } else if (this.isMedicalTechPricingOffsetCharge(charge)) {
+                // 医技划价冲销行：generate_source 仍为 medical-tech-pricing，来源列覆盖为「医技冲销」
+                line.setGenerateSourceDisplay(
+                    InpatientNurseStationConstants.COST_DETAIL_GENERATE_SOURCE_MEDICAL_TECH_OFFSET_DISPLAY);
             } else if (this.isNursePricingOffsetCharge(charge)) {
                 // 护士划价冲销行：generate_source 仍为 nurse-pricing，来源列覆盖为「护士冲销」
                 line.setGenerateSourceDisplay(
@@ -190,6 +194,40 @@ public class NurseStationCostDetailReadAssembler {
             return false;
         }
         return autoRollServiceRequestIds.contains(charge.getServiceId());
+    }
+
+    /**
+     * 判定医技划价冲销留痕行。
+     *
+     * <p>{@code generate_source} 仍为 {@code medical-tech-pricing}；以退费态、{@code refund_id}
+     * 或数量/金额为负识别负向冲销行，供来源列展示「医技冲销」。</p>
+     *
+     * @param charge 收费明细
+     * @return true 时来源展示覆盖为医技冲销
+     */
+    private boolean isMedicalTechPricingOffsetCharge(ChargeItem charge) {
+        if (charge == null) {
+            return false;
+        }
+        if (!GenerateSource.MEDICAL_TECH_PRICING.getCode().equals(charge.getGenerateSourceEnum())) {
+            return false;
+        }
+        if (ChargeItemStatus.REFUNDING.getCode().equals(charge.getStatusEnum())
+            || ChargeItemStatus.REFUNDED.getCode().equals(charge.getStatusEnum())) {
+            return true;
+        }
+        if (charge.getRefundId() != null) {
+            return true;
+        }
+        BigDecimal quantityValue = charge.getQuantityValue();
+        if (quantityValue != null && quantityValue.signum() < 0) {
+            return true;
+        }
+        BigDecimal totalPrice = charge.getTotalPrice();
+        if (totalPrice != null && totalPrice.signum() < 0) {
+            return true;
+        }
+        return false;
     }
 
     /**

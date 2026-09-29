@@ -10,13 +10,16 @@ import {
 } from '#/utils/service-apply-display';
 import { SERVICE_APPLY_CATEGORY_BY_KIND } from './service-apply.constants';
 
-import { isAdviceRowBoundConsumableFromService } from '../advice/services/advice-row';
+import {
+  isAdviceRowBoundActivityFromService,
+  isAdviceRowBoundConsumableFromService,
+} from '../advice/services/advice-row';
 
 /** 同一申请单号下的医嘱行（仅 UI 聚组，不扩展后端字段） */
 export interface ServiceApplyDocumentGroup {
   applyFormNo: string;
   lines: AdviceRowItem[];
-  /** 诊疗 requestId → 绑定耗材行（派生 DeviceRequest，无 AR 号） */
+  /** 诊疗 requestId → 绑定子行（耗材 + 合管采血费等派生） */
   boundConsumablesByRequestId: Map<string, AdviceRowItem[]>;
 }
 
@@ -70,7 +73,12 @@ export function isServiceApplyBoundConsumableRow(row: AdviceRowItem): boolean {
   return isAdviceRowBoundConsumableFromService(row);
 }
 
-/** 申请单诊疗行 requestId → 绑定耗材子行 */
+/** 是否为诊疗绑定带出的采血费等派生诊疗行 */
+export function isServiceApplyBoundActivityRow(row: AdviceRowItem): boolean {
+  return isAdviceRowBoundActivityFromService(row);
+}
+
+/** 申请单诊疗行 requestId → 绑定耗材/采血费子行 */
 export function buildServiceApplyBoundConsumablesByRequestId(
   serviceLines: readonly AdviceRowItem[],
   allRows: readonly AdviceRowItem[],
@@ -80,7 +88,8 @@ export function buildServiceApplyBoundConsumablesByRequestId(
   );
   const map = new Map<string, AdviceRowItem[]>();
   for (const row of allRows) {
-    if (!isServiceApplyBoundConsumableRow(row)) {
+    // 耗材 + 合管采血费均挂在检验行下展示
+    if (!isServiceApplyBoundConsumableRow(row) && !isServiceApplyBoundActivityRow(row)) {
       continue;
     }
     const anchorId = normalizeAdviceRequestId(row.basedOnServiceRequestId);

@@ -88,4 +88,10 @@ public class PreSettleOutpatientChargesResponse {
     /** 自费汇总 */
     @Schema(description = "自费汇总")
     private OpSelfPayRollupDto selfPayRollup;
+
+    /**
+     * 本批优惠合计（原价−折后）；门控关闭或无打折时为 0（BR-OPC-029）。
+     */
+    @Schema(description = "本批优惠合计")
+    private BigDecimal discountAmountTotal;
 }

@@ -64,6 +64,7 @@ import {
   ReportPageFooter,
   ReportPrintFieldDialog,
   ReportQueryBar,
+  collectPagedReportRows,
   reportPrintFieldsOf,
   ReportTableScroll,
   resolveReportDetailRowClassName,
@@ -101,12 +102,15 @@ interface QueryState {
   feeNatureContractNo?: string;
   /** 患者=开立科室；领用=领用科室 */
   organizationId?: string;
+  /** 药品性质 KeyDrugType；空=不限 */
+  keyDrugType?: string;
 }
 
 const props = defineProps<Props>();
 
 const pharmacyOptions = ref<ApiOptionItem[]>([]);
 const categoryOptions = ref<ApiOptionItem[]>([]);
+const medicinePropertyOptions = ref<ApiOptionItem[]>([]);
 const practitionerOptions = ref<ApiOptionItem[]>([]);
 const recordTypeOptions = ref<ApiOptionItem[]>([]);
 const summaryDimensionOptions = ref<ApiOptionItem[]>([]);
@@ -328,11 +332,10 @@ function mapSummaryPrintRows(): Record<string, string>[] {
 }
 
 /** 将当前页明细行映射为打印单元格。 */
-function mapDetailPrintRows(): Record<string, string>[] {
+function mapDetailPrintRows(source = detailRows.value): Record<string, string>[] {
   const catalog = printColumnCatalog.value;
   const fields = reportPrintFieldsOf(catalog);
-  // 只打当前明细页行
-  return detailRows.value.map((row) =>
+  return source.map((row) =>
     mapReportPrintRow(
       {
         ...row,
@@ -363,7 +366,34 @@ const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrint
     getColumnCatalog: () => printColumnCatalog.value,
     getReportTitle: () => printReportTitle.value,
     getPrintRows: () => (isSummaryTab.value ? mapSummaryPrintRows() : mapDetailPrintRows()),
+    fetchAllPrintRows: fetchAllDispensePrintRows,
+    hasPrintableData: () =>
+      isSummaryTab.value
+        ? summaryRows.value.length > 0
+        : total.value > 0 || detailRows.value.length > 0,
   });
+
+/** 跨页打印：汇总已一次返回；明细按当前筛选分页拉全量。 */
+async function fetchAllDispensePrintRows() {
+  if (isSummaryTab.value) {
+    return { rows: mapSummaryPrintRows(), truncated: false };
+  }
+  const filters = buildFilterPayload();
+  if (!filters) {
+    return { rows: [], truncated: false };
+  }
+  const collected = await collectPagedReportRows({
+    fetchPage: async (pageNo, pageSize) => {
+      const page = await pageMedicationDispenseReportDetailApi(props.scope, {
+        ...filters,
+        pageNo,
+        pageSize,
+      });
+      return { rows: page.content ?? [], total: Number(page.totalCount ?? 0) };
+    },
+  });
+  return { rows: mapDetailPrintRows(collected.rows), truncated: collected.truncated };
+}
 
 const { run: runInit, loading: initLoading } = useRequest(
   () => loadMedicationDispenseReportPageInitApi(props.scope),
@@ -372,6 +402,7 @@ const { run: runInit, loading: initLoading } = useRequest(
     onSuccess: (data) => {
       pharmacyOptions.value = optionDtosToSelectItems(data?.pharmacyOptions);
       categoryOptions.value = optionDtosToSelectItems(data?.categoryOptions);
+      medicinePropertyOptions.value = optionDtosToSelectItems(data?.medicinePropertyOptions);
       practitionerOptions.value = optionDtosToSelectItems(data?.practitionerOptions);
       recordTypeOptions.value = optionDtosToSelectItems(data?.recordTypeOptions);
       summaryDimensionOptions.value = optionDtosToSelectItems(data?.summaryDimensionOptions);
@@ -622,6 +653,7 @@ function buildFilterPayload() {
     sourceCode: queryParams.sourceCode || SOURCE_CODE_PATIENT_DISPENSE,
     feeNatureContractNo: queryParams.feeNatureContractNo || undefined,
     organizationId: preserveApiIdForRequest(queryParams.organizationId),
+    keyDrugType: queryParams.keyDrugType || undefined,
   };
 }
 
@@ -699,6 +731,7 @@ async function handleReset() {
   queryParams.recordTypeCode = undefined;
   queryParams.pharmacyLocationId = undefined;
   queryParams.medicationCategoryCodes = [];
+  queryParams.keyDrugType = undefined;
   queryParams.dispenserPractitionerId = undefined;
   queryParams.drugKeyword = '';
   queryParams.patientKeyword = '';
@@ -836,6 +869,23 @@ onMounted(async () => {
               >
                 <ElOption
                   v-for="item in toSelectOptions(categoryOptions)"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="药品性质">
+              <ElSelect
+                v-model="queryParams.keyDrugType"
+                clearable
+                filterable
+                placeholder="全部"
+                :class="REPORT_QUERY_CONTROL"
+                @change="handleQuery"
+              >
+                <ElOption
+                  v-for="item in toSelectOptions(medicinePropertyOptions)"
                   :key="item.value"
                   :label="item.label"
                   :value="item.value"
@@ -1302,6 +1352,7 @@ onMounted(async () => {
       ref="printFieldDialogRef"
       :report-code="printReportCode"
       :column-catalog="printColumnCatalog"
+      show-print-scope
     />
   </Page>
 </template>

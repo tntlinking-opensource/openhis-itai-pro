@@ -74,15 +74,17 @@ public class KeyMedicationUsageReportAppService {
             LocalDate defaultFrom = today.minusMonths(KeyMedicationUsageReportConstants.DEFAULT_LOOKBACK_MONTHS);
             String defaultFromText = defaultFrom.format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
             String defaultToText = today.format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
-            // Pre：就诊类型 / 重点药类型选项（枚举展示，不查库）
+            // Pre：就诊类型 / 重点药类型 / 药品性质选项（两框分列，不查库）
             List<OptionDto> encounterClassOptions = this.querySupport.buildEncounterClassOptions();
             List<OptionDto> keyDrugTypeOptions = this.querySupport.buildKeyDrugTypeOptions();
+            List<OptionDto> medicinePropertyOptions = this.querySupport.buildMedicinePropertyOptions();
             // Asm：默认近一个月闭区间 + 下拉（BR-RPT-KDU-001）
             return this.mapper.toLoadPageInitResponse(
                 defaultFromText,
                 defaultToText,
                 encounterClassOptions,
-                keyDrugTypeOptions);
+                keyDrugTypeOptions,
+                medicinePropertyOptions);
         } catch (BusinessException businessException) {
             // Gate：业务异常原样上抛，避免二次包装丢码
             throw businessException;
@@ -122,7 +124,9 @@ public class KeyMedicationUsageReportAppService {
             List<EncounterClass> encounterClasses =
                 this.querySupport.resolveEncounterClasses(safeRequest.getEncounterClassCodes());
             List<KeyDrugType> keyDrugTypes =
-                this.querySupport.resolveKeyDrugTypes(safeRequest.getKeyDrugTypeCodes());
+                this.querySupport.resolveKeyDrugTypes(
+                    safeRequest.getKeyDrugTypeCodes(),
+                    safeRequest.getMedicinePropertyCodes());
             // Pre：AMB/IMP 各类型行 + 组内 TOTAL（含使用占比）
             List<KeyMedicationUsageSummaryRowDto> rows = this.querySupport.summarizeMatrixRows(
                 dateWindow[0],
@@ -173,7 +177,9 @@ public class KeyMedicationUsageReportAppService {
             List<EncounterClass> encounterClasses =
                 this.querySupport.resolveEncounterClasses(safeRequest.getEncounterClassCodes());
             List<KeyDrugType> keyDrugTypes =
-                this.querySupport.resolveKeyDrugTypes(safeRequest.getKeyDrugTypeCodes());
+                this.querySupport.resolveKeyDrugTypes(
+                    safeRequest.getKeyDrugTypeCodes(),
+                    safeRequest.getMedicinePropertyCodes());
             // Pre：复用汇总行（含各组 TOTAL；BR-RPT-KDU-007）
             List<KeyMedicationUsageSummaryRowDto> rows = this.querySupport.summarizeMatrixRows(
                 dateWindow[0],

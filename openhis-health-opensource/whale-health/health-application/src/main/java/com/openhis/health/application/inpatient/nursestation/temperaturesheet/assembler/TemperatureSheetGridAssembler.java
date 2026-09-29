@@ -15,19 +15,25 @@ import com.openhis.health.application.inpatient.nursestation.temperaturesheet.su
 import com.openhis.health.domain.diagnosis.vitalsign.queries.model.VitalSignDetailRowQueryModel;
 import com.openhis.health.domain.diagnosis.vitalsign.queries.model.VitalSignHeaderQueryModel;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
+import com.openhis.health.domain.share.constants.VitalSignConstants;
+import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
  * 体温单日×6 槽宽表与派生元数据装配（IF-IP-TMP-02 · SDD §3.2 步骤 7～8）。
+ *
+ * <p>读侧网格：就近落入同一图表槽的多条主表按 {@code detailItems.item_code} 合并，
+ * 禁止整头只留最晚一条。{@link #assembleFillSlots} 仍按主表逐条回显，不参与该合并。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -84,10 +90,11 @@ public class TemperatureSheetGridAssembler {
             TemperatureSheetGridRowDto row = new TemperatureSheetGridRowDto();
             row.setRecordDate(cursor);
             List<TemperatureSheetGridSlotCellDto> slotCells = new ArrayList<>();
-            // 图表仍 6 列：同日就近落在该时次的记录取最晚一条
+            // 图表仍 6 列：同日就近落入该槽的主表按体征项合并，避免血压-only 整格冲掉体温/脉搏
             for (String timeSlot : TemperatureSheetRecordedAtResolver.TIME_SLOTS) {
-                VitalSignHeaderQueryModel header = resolveLatestHeaderInChartSlot(cursor, timeSlot, headers);
-                slotCells.add(buildSlotCell(timeSlot, header, detailsByHeaderId));
+                List<VitalSignHeaderQueryModel> slotHeaders =
+                    listHeadersInChartSlot(cursor, timeSlot, headers);
+                slotCells.add(buildMergedSlotCell(timeSlot, slotHeaders, detailsByHeaderId));
             }
             row.setSlotCells(slotCells);
             rows.add(row);
@@ -171,25 +178,26 @@ public class TemperatureSheetGridAssembler {
     }
 
     /**
-     * 取指定日、就近落在该图表槽的最晚一条体征头。
+     * 收集指定日、就近落入该图表槽的全部体征头（30 分界与 {@link TemperatureSheetRecordedAtResolver} 一致）。
      *
      * @param recordDate 业务日
      * @param chartSlot  图表槽
      * @param headers    体征头列表
-     * @return 最晚一条；无则 null
+     * @return 落入该槽的主表；无则空列表
      */
-    private VitalSignHeaderQueryModel resolveLatestHeaderInChartSlot(
+    private List<VitalSignHeaderQueryModel> listHeadersInChartSlot(
         LocalDate recordDate,
         String chartSlot,
         List<VitalSignHeaderQueryModel> headers) {
-        VitalSignHeaderQueryModel latest = null;
-        if (headers == null) {
-            return null;
+        List<VitalSignHeaderQueryModel> slotHeaders = new ArrayList<>();
+        if (headers == null || recordDate == null || chartSlot == null) {
+            return slotHeaders;
         }
         for (VitalSignHeaderQueryModel header : headers) {
             if (header == null || header.getRecordedAt() == null) {
                 continue;
             }
+            // 只收当日记录，跨日不并入本槽
             if (!recordDate.equals(header.getRecordedAt().toLocalDate())) {
                 continue;
             }
@@ -197,11 +205,9 @@ public class TemperatureSheetGridAssembler {
             if (!chartSlot.equals(resolvedSlot)) {
                 continue;
             }
-            if (latest == null || header.getRecordedAt().isAfter(latest.getRecordedAt())) {
-                latest = header;
-            }
+            slotHeaders.add(header);
         }
-        return latest;
+        return slotHeaders;
     }
 
     /**
@@ -230,29 +236,103 @@ public class TemperatureSheetGridAssembler {
     }
 
     /**
-     * 构建体温单网格单时段单元格：关联体征头与明细项。
+     * 将同图表槽的多条主表按 {@code item_code} 合并为一个展示格。
      *
-     * @param timeSlot           时段标签
-     * @param header             该时段体征头（可 null）
+     * <p>按 {@code recordedAt} 升序后写覆盖同码且有值的项；不同码并集。
+     * 特殊事件等非生命体征项同样按 code 保留，避免被仅含血压的较晚头整格冲掉。
+     * {@code recordTime}/{@code vitalSignId} 优先取贡献了体温或脉搏/心率的较晚一条，否则取最晚一条。</p>
+     *
+     * @param timeSlot           图表槽
+     * @param slotHeaders        已落入该槽的主表（可空）
      * @param detailsByHeaderId  headerId → 明细行
-     * @return 网格单元格 DTO
+     * @return 网格单元格；无主表时仅带槽 code
      */
-    private TemperatureSheetGridSlotCellDto buildSlotCell(
+    private TemperatureSheetGridSlotCellDto buildMergedSlotCell(
         String timeSlot,
-        VitalSignHeaderQueryModel header,
+        List<VitalSignHeaderQueryModel> slotHeaders,
         Map<Long, List<VitalSignDetailRowQueryModel>> detailsByHeaderId) {
         TemperatureSheetGridSlotCellDto cell = new TemperatureSheetGridSlotCellDto();
         cell.setTimeSlot(timeSlot);
-        if (header == null) {
+        if (slotHeaders == null || slotHeaders.isEmpty()) {
             return cell;
         }
-        cell.setVitalSignId(header.getId());
-        // 带出真实时分，前端描点按 30 分界就近落格，不依赖本槽 code
-        cell.setRecordTime(temperatureSheetRecordedAtResolver.formatRecordTimeHm(header.getRecordedAt()));
-        cell.setDetailItems(TemperatureSheetDetailItemHelper.toItemDtos(
-            detailsByHeaderId.get(header.getId()),
-            header.getRemark()));
+        List<VitalSignHeaderQueryModel> ordered = new ArrayList<>(slotHeaders);
+        ordered.sort(Comparator.comparing(VitalSignHeaderQueryModel::getRecordedAt));
+        Map<String, TemperatureSheetDetailItemDto> mergedByCode = new LinkedHashMap<>();
+        VitalSignHeaderQueryModel curveHeader = null;
+        VitalSignHeaderQueryModel latestHeader = null;
+        for (VitalSignHeaderQueryModel header : ordered) {
+            latestHeader = header;
+            List<TemperatureSheetDetailItemDto> items = TemperatureSheetDetailItemHelper.toItemDtos(
+                detailsByHeaderId.get(header.getId()),
+                header.getRemark());
+            boolean contributedCurve = false;
+            for (TemperatureSheetDetailItemDto item : items) {
+                // 空值不覆盖同码已有值；标记类特殊事件 itemValue 可空，存在即有效
+                if (!hasMergeableDetailValue(item)) {
+                    continue;
+                }
+                String itemCode = item.getItemCode().trim();
+                mergedByCode.put(itemCode, item);
+                if (isCurveVitalItemCode(itemCode) && StringUtils.trimToNull(item.getItemValue()) != null) {
+                    contributedCurve = true;
+                }
+            }
+            // 升序遍历：后出现的曲线头覆盖前者，得到较晚一条体温/脉搏/心率来源
+            if (contributedCurve) {
+                curveHeader = header;
+            }
+        }
+        VitalSignHeaderQueryModel identityHeader = latestHeader;
+        if (curveHeader != null) {
+            identityHeader = curveHeader;
+        }
+        if (identityHeader == null) {
+            return cell;
+        }
+        cell.setVitalSignId(identityHeader.getId());
+        // 带出曲线来源（或最晚一条）的真实时分，前端再按 30 分界就近落格
+        cell.setRecordTime(temperatureSheetRecordedAtResolver.formatRecordTimeHm(identityHeader.getRecordedAt()));
+        if (!mergedByCode.isEmpty()) {
+            cell.setDetailItems(new ArrayList<>(mergedByCode.values()));
+        }
         return cell;
+    }
+
+    /**
+     * 判断明细项是否参与同槽合并（有测量值、备注，或为标记类特殊事件）。
+     *
+     * @param item 明细项
+     * @return 可并入展示格时为 true
+     */
+    private boolean hasMergeableDetailValue(TemperatureSheetDetailItemDto item) {
+        if (item == null || StringUtils.trimToNull(item.getItemCode()) == null) {
+            return false;
+        }
+        if (StringUtils.trimToNull(item.getItemValue()) != null) {
+            return true;
+        }
+        if (StringUtils.trimToNull(item.getRemark()) != null) {
+            return true;
+        }
+        String termCode = StringUtils.trimToNull(item.getTermCode());
+        return TerminologyCodeSystemNameConstants.SPECIAL_EVENT_CODE.equals(termCode);
+    }
+
+    /**
+     * 是否为曲线描点依赖的体温、脉搏或心率。
+     *
+     * @param itemCode 字典项 code
+     * @return 是曲线项时为 true
+     */
+    private boolean isCurveVitalItemCode(String itemCode) {
+        if (VitalSignConstants.TEMP.equals(itemCode)) {
+            return true;
+        }
+        if (VitalSignConstants.PULSE.equals(itemCode)) {
+            return true;
+        }
+        return VitalSignConstants.HR.equals(itemCode);
     }
 
     /**

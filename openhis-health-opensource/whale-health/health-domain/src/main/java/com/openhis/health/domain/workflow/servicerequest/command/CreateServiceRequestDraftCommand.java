@@ -9,6 +9,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -38,6 +39,10 @@ public class CreateServiceRequestDraftCommand extends BatchCommand<CreateService
         private Integer executionCount;
         /** 医嘱类别持久化码（长期/临时等）。 */
         private String categoryEnum;
+        /**
+         * 优先级持久化码（DM-WKF-004 PriorityLevel；检验/检查加急为 {@code EM}；空表示非急）。
+         */
+        private String priorityEnum;
         /** 治疗类别持久化码（治疗/检查等）。 */
         private String therapyEnum;
         /** 开嘱人 practitioner 主键（通常由外层 {@link #operatorId} 覆盖，兼容显式传入）。 */
@@ -77,6 +82,50 @@ public class CreateServiceRequestDraftCommand extends BatchCommand<CreateService
          * 来源锚点主键（与 {@link #basedOnTable} 成对）。
          */
         private Long basedOnId;
+        /**
+         * 主手术标志；申请预填，执行可改。
+         */
+        private Boolean mainProcedureFlag;
+        /**
+         * 手术级别字典码（医师申请）。
+         */
+        private String procedureLevelCode;
+        /**
+         * 切口类别字典码（医师申请可预填）。
+         */
+        private String incisionTypeCode;
+        /**
+         * 麻醉方法字典码（医师申请可预填）。
+         */
+        private String anesthesiaMethodCode;
+        /**
+         * 手术时间（医师申请可填；执行护士可改）。
+         */
+        private LocalDateTime procedureTime;
+        /**
+         * 主刀医师。
+         */
+        private Long surgeonId;
+        /**
+         * 一助。
+         */
+        private Long firstAssistantId;
+        /**
+         * 二助。
+         */
+        private Long secondAssistantId;
+        /**
+         * 配合护士。
+         */
+        private Long nurseId;
+        /**
+         * 麻醉医师。
+         */
+        private Long anesthetistId;
+        /**
+         * 嵌套麻醉申请单号。
+         */
+        private String nestedAnesthesiaPrescriptionNo;
     }
 
     /** 明细行子命令（每行一个 target_table + target_id 引用）。 */

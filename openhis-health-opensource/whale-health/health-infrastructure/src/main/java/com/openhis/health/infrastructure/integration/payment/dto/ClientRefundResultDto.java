@@ -27,6 +27,9 @@ public class ClientRefundResultDto {
     private String respCode;
     /** 可读描述。 */
     private String respMsg;
-    /** 退货金额（元，scale=2）。 */
+    /**
+     * Win 退货金额（元，结算刻度 2 位）。
+     * 渠道患者实付口径（BPC {@code paid_amt_fen} 优先）；与 HIS 下单冲账金额分账，互不覆盖。
+     */
     private BigDecimal refundAmountYuan;
 }

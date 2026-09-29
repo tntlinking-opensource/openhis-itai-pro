@@ -98,7 +98,7 @@ const DOC_TYPE_OPTIONS: Array<{
     value: 'specimen_barcode',
     label: '采血贴',
     singlePatient: false,
-    description: '按检验医嘱逐张打印采血贴',
+    description: '按检验医嘱开立数量打对应贴数（如 2次→2 张）',
   },
   {
     value: 'long_order',

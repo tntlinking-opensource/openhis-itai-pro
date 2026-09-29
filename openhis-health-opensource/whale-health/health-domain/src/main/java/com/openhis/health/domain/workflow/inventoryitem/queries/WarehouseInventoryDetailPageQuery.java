@@ -46,10 +46,15 @@ public class WarehouseInventoryDetailPageQuery extends AbstractPageQuery {
     private List<Integer> chrgitmLvList;
 
     /**
-     * 重点药类型 code（见 {@code KeyDrugType}）；非空时仅保留命中药品定义的库存行（耗材排除）。
+     * 重点药类型 code（见 {@code KeyDrugType} 四旗）；非空时仅保留命中药品定义的库存行（耗材排除）。
      * <p>定义主键由应用层 {@code InventoryCatalogFilter} 预解析写入 {@link #resolvedMedicationDefinitionIds}。</p>
      */
     private String keyDrugType;
+
+    /**
+     * 药品性质 code（NARCOTIC/PSYCH_ONE/PSYCH_TWO）；与 {@link #keyDrugType} 分字段，同时非空时 AND 求交。
+     */
+    private String medicinePropertyCode;
 
     /** 供应状态持久化码多选，取值域为 {@code PublicationStatus#getCode()}。 */
     private List<String> inventoryStatusEnums;

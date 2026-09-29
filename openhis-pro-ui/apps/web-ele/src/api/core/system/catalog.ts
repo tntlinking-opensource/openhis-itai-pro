@@ -14,8 +14,10 @@ export interface PageMedicationCatalogParams {
   pageSize?: number;
   name?: string;
   categoryCode?: string;
-  /** 重点药类型（KeyDrugType code）；undefined 表示不限 */
+  /** 重点药类型（四旗 KeyDrugType code）；undefined 表示不限 */
   keyDrugType?: string;
+  /** 药品性质（NARCOTIC/PSYCH_ONE/PSYCH_TWO）；undefined 表示不限 */
+  medicinePropertyCode?: string;
 }
 
 /**
@@ -261,8 +263,10 @@ export async function downloadMedicationCatalogImportTemplateApi(): Promise<Medi
 export interface ExportMedicationCatalogParams {
   keyword?: string;
   categoryCode?: string;
-  /** 重点药类型（KeyDrugType code）；undefined 表示不限 */
+  /** 重点药类型（四旗 KeyDrugType code）；undefined 表示不限 */
   keyDrugType?: string;
+  /** 药品性质（NARCOTIC/PSYCH_ONE/PSYCH_TWO）；undefined 表示不限 */
+  medicinePropertyCode?: string;
   /** 导入模板表头序（编号 + COLUMN_HEADERS）；后端按中文表头匹配 */
   exportColumns?: ExcelExportColumnPayload[];
 }
@@ -324,6 +328,9 @@ export async function exportDeviceCatalogApi(
 export interface ExportServiceCatalogParams {
   keyword?: string;
   categoryCode?: string;
+  statusEnum?: string;
+  /** 是否已绑定套餐子项；不传表示不限 */
+  childrenFlag?: boolean;
   /** 导入模板表头序（编号 + COLUMN_HEADERS）；后端按中文表头匹配 */
   exportColumns?: ExcelExportColumnPayload[];
 }
@@ -479,6 +486,9 @@ export interface PageServiceCatalogParams {
   pageSize?: number;
   name?: string;
   categoryCode?: string;
+  statusEnum?: string;
+  /** 是否已绑定套餐子项；不传表示不限 */
+  childrenFlag?: boolean;
   /**
    * 是否包含已被套餐引用的子诊疗。
    * - 目录维护 / 子项选择器：true（或不传，后端目录 IF 默认 true）
@@ -488,12 +498,26 @@ export interface PageServiceCatalogParams {
 }
 
 /**
- * 诊疗项
+ * 诊疗项（列表/详情共用字段子集；详情另含 children、editability* 等）
  */
 export interface ServiceCatalogItem {
   id?: string;
+  busNo?: string;
   name?: string;
   categoryCode?: string;
+  categoryCode_dictText?: string;
+  packageUnitCode?: string;
+  packageUnitCode_dictText?: string;
+  defEncounterUnitCode?: string;
+  defEncounterUnitCode_dictText?: string;
+  retailPrice?: number | string;
+  statusEnum?: number;
+  statusEnum_enumText?: string;
+  /**
+   * 是否已绑定套餐子项（对齐 `wkf_activity_definition.children_flag`）。
+   * 列表为 Boolean；详情为 0/1 整型。
+   */
+  childrenFlag?: boolean | number;
   [key: string]: unknown;
 }
 
@@ -1199,6 +1223,8 @@ export interface ProcedureCatalogItem {
   clinicCode?: string;
   ybMatchFlag?: number | boolean;
   statusEnum?: string;
+  /** 国临术式挂靠的诊疗项目主键 */
+  activityDefinitionId?: string;
   [key: string]: unknown;
 }
 

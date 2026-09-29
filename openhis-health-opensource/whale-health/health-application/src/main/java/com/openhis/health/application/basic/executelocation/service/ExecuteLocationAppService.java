@@ -23,6 +23,7 @@ import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
+import com.openhis.health.domain.share.enums.OrganizationClassification;
 import com.openhis.health.domain.share.enums.OrganizationType;
 import com.openhis.health.domain.custom.activityexecutionlocation.command.CreateExecutionRuleCommand;
 import com.openhis.health.domain.custom.activityexecutionlocation.command.DeleteExecutionRuleCommand;
@@ -50,6 +51,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -65,6 +68,8 @@ import java.util.Set;
  *   <li>{@link ProductDefinitionDisplayTerminologyAssembler}：列表 enrich 诊疗项目名称</li>
  * </ul>
  *
+ * <p>分类门禁（DM-CUS-001 BR-ACT-EXEC-004）：左树开立科室仅门诊/住院；规则行执行科室仅护士站/医技。</p>
+ *
  * <p>接入方式：由 {@code AppServiceControllerRegistrar} 注册为
  * {@code POST /api/app/executeLocation/{methodName}}。</p>
  */
@@ -72,6 +77,16 @@ import java.util.Set;
 @Service
 @RequiredArgsConstructor
 public class ExecuteLocationAppService {
+
+    /** 开立科室允许的机构分类：门诊、住院。药房、护士站、医技等不得作左树锚点。 */
+    private static final Set<OrganizationClassification> ORDERING_DEPARTMENT_CLASSES = Set.of(
+        OrganizationClassification.CLINIC,
+        OrganizationClassification.INPATIENT);
+
+    /** 执行科室允许的机构分类：护士站、医技。临床开立科室不能再被选成执行目的地。 */
+    private static final Set<OrganizationClassification> EXECUTION_DEPARTMENT_CLASSES = Set.of(
+        OrganizationClassification.NS,
+        OrganizationClassification.TECH);
 
     /** 执行规则请求/读模型与 DTO、领域命令映射。 */
     private final ExecuteLocationMapper executeLocationMapper;
@@ -99,7 +114,7 @@ public class ExecuteLocationAppService {
      */
     public ExecuteLocationInitDto init() {
         // Gate：只读页初始化，不写库
-        // Pre：开立科室用完整机构树（左侧导航）；执行科室仅 DEPARTMENT，排除医院根
+        // Pre：开立科室树仅门诊/住院科室（上级节点保留以便成树）；执行科室仅护士站与医技科室
         // Asm：映射页初始化响应
         ExecuteLocationInitDto dto = new ExecuteLocationInitDto();
         dto.setOrganizationOptions(this.buildOrganizationOptions());
@@ -161,6 +176,8 @@ public class ExecuteLocationAppService {
         if (organization == null) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "开立科室不存在");
         }
+        // 左侧只服务门诊、住院科室；其它分类即使库里有历史规则也不在本页列出
+        this.assertOrderingDepartment(organization);
         // Pre：拉取该开立科室下全部规则并在内存分页
         List<ExecutionRuleListQueryModel> rows = activityExecutionLocationQueryService.listExecutionRulesByOrganization(
             request.getOrganizationId(),
@@ -355,6 +372,7 @@ public class ExecuteLocationAppService {
         if (orderingOrg == null) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "开立科室不存在");
         }
+        this.assertOrderingDepartment(orderingOrg);
         if (executionOrgId == null) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "执行科室ID不能为空");
         }
@@ -362,10 +380,7 @@ public class ExecuteLocationAppService {
         if (executionOrg == null) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "执行科室不存在");
         }
-        // 医院根节点不是科室，禁止写入执行科室
-        if (!OrganizationType.DEPARTMENT.getCode().equals(executionOrg.getTypeEnum())) {
-            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "执行科室须为科室节点，不能选择医院");
-        }
+        this.assertExecutionDepartment(executionOrg);
         if (StringUtils.isNotEmpty(startTime) && StringUtils.isNotEmpty(endTime)) {
             java.time.LocalTime start = executeLocationMapper.parseTime(startTime);
             java.time.LocalTime end = executeLocationMapper.parseTime(endTime);
@@ -437,13 +452,18 @@ public class ExecuteLocationAppService {
     }
 
     /**
-     * 将扁平组织机构列表组装为树形 {@link OptionDto}（含医院根，供左侧开立科室导航）。
+     * 将机构列表组装为左侧开立科室树：仅门诊、住院科室，医院等上级保留以便挂树。
      *
      * @return 树根选项列表
      */
     private List<OptionDto> buildOrganizationOptions() {
         List<Organization> organizations = organizationQueryService.getOrganizationDictTree();
         if (organizations == null || organizations.isEmpty()) {
+            return Collections.emptyList();
+        }
+        // 左侧只保留门诊、住院科室；医院等上级留下，否则树挂不上
+        organizations = this.retainOrderingDepartmentTree(organizations);
+        if (organizations.isEmpty()) {
             return Collections.emptyList();
         }
         Map<Long, List<Organization>> childrenByParentId = new HashMap<>();
@@ -471,7 +491,61 @@ public class ExecuteLocationAppService {
     }
 
     /**
-     * 构建执行科室下拉：仅启用科室节点，排除医院根（与责任科室下拉同口径）。
+     * 开立科室树裁剪：保留门诊/住院科室，以及能把它们挂起来的医院/上级节点。
+     *
+     * @param organizations 全量机构树平铺
+     * @return 裁剪后的平铺列表；无命中科室时为空列表
+     */
+    private List<Organization> retainOrderingDepartmentTree(List<Organization> organizations) {
+        if (organizations == null || organizations.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, Organization> byId = new LinkedHashMap<>();
+        for (Organization organization : organizations) {
+            if (organization == null || organization.getId() == null) {
+                continue;
+            }
+            byId.put(organization.getId(), organization);
+        }
+        LinkedHashSet<Long> keepIds = new LinkedHashSet<>();
+        // 先收门诊/住院叶科室
+        for (Organization organization : byId.values()) {
+            // 只收门诊、住院科室；医院根靠下面补祖先
+            if (this.isOrderingDepartment(organization)) {
+                keepIds.add(organization.getId());
+            }
+        }
+        if (keepIds.isEmpty()) {
+            return List.of();
+        }
+        // 再沿 parentId 向上补医院等祖先，否则左树挂不上
+        List<Long> frontier = new ArrayList<>(keepIds);
+        int index = 0;
+        while (index < frontier.size()) {
+            Long id = frontier.get(index);
+            index++;
+            Organization current = byId.get(id);
+            if (current == null || current.getParentId() == null) {
+                continue;
+            }
+            Long parentId = current.getParentId();
+            if (keepIds.add(parentId)) {
+                frontier.add(parentId);
+            }
+        }
+        List<Organization> retained = new ArrayList<>();
+        for (Organization organization : organizations) {
+            if (organization != null
+                && organization.getId() != null
+                && keepIds.contains(organization.getId())) {
+                retained.add(organization);
+            }
+        }
+        return retained;
+    }
+
+    /**
+     * 构建执行科室下拉：仅护士站、医技科室。
      *
      * @return 扁平科室选项列表
      */
@@ -484,6 +558,10 @@ public class ExecuteLocationAppService {
         long sort = 0L;
         for (Organization organization : departments) {
             if (organization == null || organization.getId() == null) {
+                continue;
+            }
+            // 临床开立科室、药房等不能当执行目的地
+            if (!EXECUTION_DEPARTMENT_CLASSES.contains(organization.getClassEnum())) {
                 continue;
             }
             sort++;
@@ -543,5 +621,49 @@ public class ExecuteLocationAppService {
             return null;
         }
         return String.valueOf(item.getProductDefinitionId());
+    }
+
+    /**
+     * 开立锚点：科室节点且分类为门诊或住院。
+     *
+     * @param organization 机构节点
+     * @return 可作为执行规则左树锚点时为 true
+     */
+    private boolean isOrderingDepartment(Organization organization) {
+        if (!OrganizationType.DEPARTMENT.getCode().equals(organization.getTypeEnum())) {
+            return false;
+        }
+        return ORDERING_DEPARTMENT_CLASSES.contains(organization.getClassEnum());
+    }
+
+    /**
+     * 开立科室只允许门诊、住院分类的科室节点，避免护士站或医技出现在左侧锚点。
+     *
+     * @param organization 开立科室
+     * @throws BusinessException 不是科室节点或分类不是门诊/住院时
+     */
+    private void assertOrderingDepartment(Organization organization) {
+        if (organization == null || !this.isOrderingDepartment(organization)) {
+            throw new BusinessException(
+                ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT,
+                "开立科室须为门诊或住院科室");
+        }
+    }
+
+    /**
+     * 执行科室只允许护士站、医技分类的科室节点。
+     *
+     * @param organization 执行科室
+     * @throws BusinessException 不是科室节点或分类不是护士站/医技时
+     */
+    private void assertExecutionDepartment(Organization organization) {
+        if (organization == null
+            || !OrganizationType.DEPARTMENT.getCode().equals(organization.getTypeEnum())
+            || organization.getClassEnum() == null
+            || !EXECUTION_DEPARTMENT_CLASSES.contains(organization.getClassEnum())) {
+            throw new BusinessException(
+                ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT,
+                "执行科室须为护士站或医技科室");
+        }
     }
 }

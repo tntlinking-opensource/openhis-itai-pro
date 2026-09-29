@@ -618,6 +618,51 @@ public class ProcedureQueryService {
     }
 
     /**
+     * 按执行记录主键集合批量查询执行人（病案首页手术带入等，避免 N+1）。
+     *
+     * <p>对齐 DM-CLN-004 §6.2.8a / DM-MRMS-001-SDD §5.4。</p>
+     *
+     * @param procedureIds 执行记录主键集合
+     * @return procedureId → 执行人列表；无命中者不入图
+     */
+    public Map<Long, List<ProcedurePerformerQueryModel>> mapPerformersByProcedureIds(Collection<Long> procedureIds) {
+        Map<Long, List<ProcedurePerformerQueryModel>> result = new LinkedHashMap<>();
+        // Pre：空集合直接返回，避免无效仓储调用
+        if (procedureIds == null || procedureIds.isEmpty()) {
+            return result;
+        }
+        List<Long> ids = new ArrayList<>();
+        for (Long id : procedureIds) {
+            if (id != null) {
+                ids.add(id);
+            }
+        }
+        if (ids.isEmpty()) {
+            return result;
+        }
+        // Cmd：一次按 IN 装载全部执行人行
+        for (ProcedurePerformer entity : performerRepository.findAllByProcedureIdIn(ids)) {
+            if (entity == null || entity.getProcedureId() == null) {
+                continue;
+            }
+            ProcedurePerformerQueryModel model = new ProcedurePerformerQueryModel();
+            model.setId(entity.getId());
+            model.setProcedureId(entity.getProcedureId());
+            model.setPractitionerId(entity.getPractitionerId());
+            model.setFunctionCode(entity.getFunctionCode());
+            model.setStartTime(entity.getStartTime());
+            model.setEndTime(entity.getEndTime());
+            List<ProcedurePerformerQueryModel> bucket = result.get(entity.getProcedureId());
+            if (bucket == null) {
+                bucket = new ArrayList<>();
+                result.put(entity.getProcedureId(), bucket);
+            }
+            bucket.add(model);
+        }
+        return result;
+    }
+
+    /**
      * 执行记录可完成性校验。
      *
      * @param procedureId 执行记录主键
@@ -895,6 +940,14 @@ public class ProcedureQueryService {
         model.setOccurrenceTime(entity.getOccurrenceTime());
         model.setRecorderId(entity.getRecorderId());
         model.setResultText(entity.getResultText());
+        model.setOrgId(entity.getOrgId());
+        model.setProcedureTime(entity.getProcedureTime());
+        model.setAnesthesiaStartTime(entity.getAnesthesiaStartTime());
+        model.setAnesthesiaEndTime(entity.getAnesthesiaEndTime());
+        model.setIncisionTypeCode(entity.getIncisionTypeCode());
+        model.setSendLabFlag(entity.getSendLabFlag());
+        model.setSpecimen(entity.getSpecimen());
+        model.setNote(entity.getNote());
         return model;
     }
 

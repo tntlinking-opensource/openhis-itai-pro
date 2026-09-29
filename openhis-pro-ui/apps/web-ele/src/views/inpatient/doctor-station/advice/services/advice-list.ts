@@ -9,6 +9,7 @@ import type {
   DoctorStationAdviceCatalogRowDto,
   DoctorStationAdviceRowDto,
 } from '#/api/doctor-station/advice.types';
+import type { InpatientDoctorStationAdviceRowDto } from '#/api/inpatient/doctor-station/inpatient-doctor-station-advice.types';
 import type { DrugGroupDisplayItem, DrugGroupKey } from '#/utils/doctor-station/drug-group-table';
 
 import { formatDateTime } from '@vben/utils';
@@ -28,6 +29,7 @@ import {
   mergePackageSplitIntoSpec,
 } from '#/utils/doctor-station/package-split-ratio-display';
 import { convertProductUnitPriceForDisplay } from '#/utils/doctor-station/product-unit-band-price';
+import { SERVICE_CATEGORY_DISCHARGE } from '#/utils/print/constants/service-request-category-codes';
 import { sumMoneyThenCalc } from '#/utils/format/money-scale';
 import { buildServiceApplyFormExtensionText } from '#/utils/service-apply-display';
 import { resolveServiceApplyFormNo } from '#/utils/service-apply-form-group-display';
@@ -100,7 +102,12 @@ function buildAdviceContentTitle(dto: DoctorStationAdviceRowDto): string {
 
 function buildAdviceDosageSummaryLine(dto: DoctorStationAdviceRowDto): string {
   const longTerm = isInpatientLongTermMedicationTherapy(dto.therapyTypeCode);
-  // 长期药：一次一片，每日三片（频次在用法行）
+  const firstDoseParts = {
+    firstDose: dto.firstDose,
+    firstDoseUnitCode: dto.firstDoseUnitCode,
+    firstDoseUnitName: dto.firstDoseUnitName,
+  };
+  // 长期药：一次一片，每日三片，首日…（频次在用法行）
   if (longTerm) {
     const longTermLine = formatLongTermMedicationDoseLine({
       dosageDisplay: dto.dosageDisplay,
@@ -111,6 +118,7 @@ function buildAdviceDosageSummaryLine(dto: DoctorStationAdviceRowDto): string {
       splitDose: dto.splitDose,
       splitDoseUnitCode: dto.splitDoseUnitCode,
       splitDoseUnitName: dto.splitDoseUnitName,
+      ...firstDoseParts,
     });
     if (longTermLine) return longTermLine;
   }
@@ -127,6 +135,7 @@ function buildAdviceDosageSummaryLine(dto: DoctorStationAdviceRowDto): string {
     unitName: dto.unitName,
     includeTotal: !longTerm,
     resolveTotalUnitLabel: resolveAdviceQuantityUnitLabel,
+    ...firstDoseParts,
   });
 }
 
@@ -187,12 +196,17 @@ function isNursingLevelAdviceDto(dto: DoctorStationAdviceRowDto): boolean {
   return catalogCat === INPATIENT_NURSING_LEVEL_CATEGORY_CODE;
 }
 
-/** 医嘱内容 extension：申请单样本/部位/备注 + 用法频次天数 */
+/** 医嘱内容 extension：申请单样本/部位/备注 + 用法频次天数；出院行拼计划出院时间等 */
 function buildAdviceListExtensionLine(dto: DoctorStationAdviceRowDto): string {
   // 护理级别无频次展示（BR-IP-ORD-026；列表仅展示级别名称）
   const usageLine = isNursingLevelAdviceDto(dto) ? '' : buildAdviceMethodRateDurationLine(dto);
   const oralLine = buildOralPackageRemainExtensionLine(dto);
   const extras: string[] = [];
+  // 出院医嘱：扩展行展示出院方式/计划出院时间/原因（BR-IP-ORD-017；不写 contentSummary）
+  const dischargeParts = buildDischargeAdviceExtensionParts(dto);
+  for (const part of dischargeParts) {
+    extras.push(part);
+  }
   if (usageLine) extras.push(usageLine);
   if (oralLine) extras.push(oralLine);
   return buildServiceApplyFormExtensionText(
@@ -202,6 +216,35 @@ function buildAdviceListExtensionLine(dto: DoctorStationAdviceRowDto): string {
     },
     extras,
   );
+}
+
+/**
+ * 出院医嘱列表扩展片段：出院方式、计划出院时间、原因（专用字段，禁止拼进 contentSummary）。
+ *
+ * @param dto 医嘱列表行（住院含 plannedDischargeTime 等）
+ * @returns 非空片段；非出院行返回空数组
+ */
+function buildDischargeAdviceExtensionParts(dto: DoctorStationAdviceRowDto): string[] {
+  const serviceCat = String(dto.serviceCategoryEnum ?? '').trim();
+  if (serviceCat !== SERVICE_CATEGORY_DISCHARGE) {
+    return [];
+  }
+  const ip = dto as InpatientDoctorStationAdviceRowDto;
+  const parts: string[] = [];
+  const outWay = String(ip.outWayName ?? '').trim();
+  if (outWay) {
+    parts.push(outWay);
+  }
+  const plannedRaw = String(ip.plannedDischargeTime ?? '').trim();
+  if (plannedRaw) {
+    const plannedDisplay = formatAdviceListTimeMinute(plannedRaw) || plannedRaw;
+    parts.push(`出院时间：${plannedDisplay}`);
+  }
+  const reason = String(ip.reasonText ?? '').trim();
+  if (reason) {
+    parts.push(`原因：${reason}`);
+  }
+  return parts;
 }
 
 /**
@@ -333,6 +376,7 @@ export function mapAdviceListRowDto(dto: DoctorStationAdviceRowDto): AdviceRowIt
     orderingDoctor,
     skinTestText: skinTestDisplayText(dto),
     skinTestOutcomeCode: String(dto.skinTestOutcomeCode ?? '').trim() || undefined,
+    basedOnMedicationRequestId: String(dto.basedOnMedicationRequestId ?? '').trim() || undefined,
     needAppendSkinTestFlag: Boolean(dto.needAppendSkinTestFlag),
     dosageText: dosageLine || undefined,
     oralPackageBatchInventoryApplied: Boolean(
@@ -367,6 +411,9 @@ export function mapAdviceListRowDto(dto: DoctorStationAdviceRowDto): AdviceRowIt
     listDoseUnitCode: String(dto.doseUnitCode ?? '').trim() || undefined,
     listFirstDose: positiveListNumber(dto.firstDose),
     listFirstDoseUnitCode: String(dto.firstDoseUnitCode ?? '').trim() || undefined,
+    listFirstDoseUnitName: String(dto.firstDoseUnitName ?? '').trim() || undefined,
+    listDoseSchedule: String(dto.doseSchedule ?? '').trim() || undefined,
+    listQuantitySchedule: String(dto.quantitySchedule ?? '').trim() || undefined,
     listUnitCode: String(dto.unitCode ?? '').trim() || undefined,
     listUnitName: String(dto.unitName ?? '').trim() || undefined,
     dispensePerDuration: (() => {
@@ -393,6 +440,7 @@ export function mapAdviceListRowDto(dto: DoctorStationAdviceRowDto): AdviceRowIt
     serviceRequestDetails: dto.serviceRequestDetails ?? undefined,
     serviceCategoryEnum: String(dto.serviceCategoryEnum ?? '').trim() || undefined,
     catalogCategoryCode: String(dto.catalogCategoryCode ?? '').trim() || undefined,
+    priorityEnum: String(dto.priorityEnum ?? '').trim() || undefined,
     ...(dto.chrgitmLv !== null && dto.chrgitmLv !== undefined && String(dto.chrgitmLv).trim() !== ''
       ? { chrgitmLv: dto.chrgitmLv }
       : {}),
@@ -695,7 +743,7 @@ function doctorStationAdviceRowDtoToDrugGroupItem(
   dto: DoctorStationAdviceRowDto,
 ): DrugGroupDisplayItem {
   const longTerm = isInpatientLongTermMedicationTherapy(dto.therapyTypeCode);
-  // 长期成组：剂量位「一次一片，每日三片」
+  // 长期成组：剂量位「一次一片，每日三片，首日…」
   const longTermDoseLine = longTerm
     ? formatLongTermMedicationDoseLine({
         dosageDisplay: dto.dosageDisplay,
@@ -706,6 +754,9 @@ function doctorStationAdviceRowDtoToDrugGroupItem(
         splitDose: dto.splitDose,
         splitDoseUnitCode: dto.splitDoseUnitCode,
         splitDoseUnitName: dto.splitDoseUnitName,
+        firstDose: dto.firstDose,
+        firstDoseUnitCode: dto.firstDoseUnitCode,
+        firstDoseUnitName: dto.firstDoseUnitName,
       })
     : '';
   const dosageDisplay = longTermDoseLine || String(dto.dosageDisplay ?? '').trim() || undefined;

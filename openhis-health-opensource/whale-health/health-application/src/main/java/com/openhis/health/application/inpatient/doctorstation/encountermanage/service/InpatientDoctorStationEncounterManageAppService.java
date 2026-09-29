@@ -280,9 +280,10 @@ public class InpatientDoctorStationEncounterManageAppService {
         Map<Long, String> pinyinByPatientId = new HashMap<>();
         Map<Long, String> wubiByPatientId = new HashMap<>();
         Map<Long, String> idCardByPatientId = new HashMap<>();
+        Map<Long, String> phoneByPatientId = new HashMap<>();
         for (Long patientId : patientIds) {
             PatientDetailQueryModel detail = patientQueryService.loadPatientDetail(patientId);
-            // 患者扩展档缺失时跳过，检索码/身份证保持 null。
+            // 患者扩展档缺失时跳过，检索码/身份证/电话保持 null。
             if (detail == null || detail.getPatient() == null) {
                 continue;
             }
@@ -291,6 +292,10 @@ public class InpatientDoctorStationEncounterManageAppService {
             // Pre：读模型未投影证件号，按当前页患者主键回填完整号（与护士站队列同口径，不脱敏）。
             if (!StringUtils.isEmpty(detail.getPatient().getIdCard())) {
                 idCardByPatientId.put(patientId, detail.getPatient().getIdCard().trim());
+            }
+            // Pre：读模型未投影联系电话，按当前页患者主键回填（与护士站队列同口径）。
+            if (!StringUtils.isEmpty(detail.getPatient().getPhone())) {
+                phoneByPatientId.put(patientId, detail.getPatient().getPhone().trim());
             }
         }
         Map<Long, Map<String, String>> houseNameByBusNoByWardId = new HashMap<>();
@@ -322,6 +327,7 @@ public class InpatientDoctorStationEncounterManageAppService {
                 enrichment.setPinyinCode(pinyinByPatientId.get(row.getPatientId()));
                 enrichment.setWubiCode(wubiByPatientId.get(row.getPatientId()));
                 enrichment.setIdCard(idCardByPatientId.get(row.getPatientId()));
+                enrichment.setPhone(phoneByPatientId.get(row.getPatientId()));
             }
             enrichment.setInsutype(insutypeByEncounterId.get(row.getEncounterId()));
             result.put(row.getEncounterId(), enrichment);

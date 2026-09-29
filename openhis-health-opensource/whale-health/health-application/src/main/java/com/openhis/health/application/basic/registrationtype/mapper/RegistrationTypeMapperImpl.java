@@ -14,7 +14,7 @@ import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 /**
- * {@link RegistrationTypeMapper} 默认实现：类型码缺省为 {@code "1"}，布尔启用标志与前端整型互转。
+ * {@link RegistrationTypeMapper} 默认实现：类型码缺省为 {@code "1"}；布尔启用标志与前端整型互转。
  */
 @Component
 public class RegistrationTypeMapperImpl implements RegistrationTypeMapper {
@@ -25,7 +25,7 @@ public class RegistrationTypeMapperImpl implements RegistrationTypeMapper {
      * 将医疗服务实体转为挂号类型 DTO；实体为 {@code null} 时返回 {@code null}。
      *
      * @param entity 医疗服务聚合
-     * @return DTO
+     * @return DTO（金额/名称摘要由 AppService enrich）
      */
     @Override
     public RegistrationTypeDto toDto(HealthcareService entity) {
@@ -35,7 +35,7 @@ public class RegistrationTypeMapperImpl implements RegistrationTypeMapper {
         RegistrationTypeDto dto = new RegistrationTypeDto();
         dto.setId(entity.getId());
         dto.setName(entity.getName());
-        dto.setYbNo(entity.getYbNo());
+        dto.setActivityIds(entity.getActivityIds());
         dto.setBusNo(entity.getBusNo());
         if (Boolean.TRUE.equals(entity.getActiveFlag())) {
             dto.setActiveFlag(1);
@@ -66,7 +66,7 @@ public class RegistrationTypeMapperImpl implements RegistrationTypeMapper {
         item.setTypeCode(resolveTypeCode(request.getTypeCode()));
         item.setCategoryCode(null);
         item.setOfferedOrgId(null);
-        item.setYbNo(request.getYbNo());
+        item.setActivityIds(request.getActivityIds());
         cmd.setItem(item);
         return cmd;
     }
@@ -88,17 +88,18 @@ public class RegistrationTypeMapperImpl implements RegistrationTypeMapper {
         ModifyHealthcareServiceCommand.Item item = new ModifyHealthcareServiceCommand.Item();
         item.setServiceId(request.getId());
         item.setName(request.getName());
+        // 编辑时不改 type/category：传实体现值由 App 填入命令，避免 ACTIVE 误触 BR-HCS-008
         item.setTypeCode(resolveTypeCode(request.getTypeCode()));
         item.setCategoryCode(null);
         item.setOfferedOrgId(null);
-        item.setYbNo(request.getYbNo());
+        item.setActivityIds(request.getActivityIds());
         item.setChangedFields(null);
         cmd.setItem(item);
         return cmd;
     }
 
     /**
-     * 挂号类型编码归一：空白则回落默认编码 {@code 1}（与类常量 DEFAULT_REGISTRATION_TYPE_CODE 一致）。
+     * 挂号类型编码归一：空白则回落默认编码 {@code 1}。
      *
      * @param typeCode 请求中的类型码
      * @return 非空类型码

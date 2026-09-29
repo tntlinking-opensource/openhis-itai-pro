@@ -39,7 +39,7 @@ export function useNurseStationPatientData() {
   const patients = ref<PatientItem[]>([]);
   const keyword = ref('');
   const statusFilter = ref<PatientStatusFilter>('all');
-  /** 入科状态筛选（本地过滤；后端列表状态筛选已废止；默认在科）。 */
+  /** 入科状态筛选（默认在科；切换会重拉队列，待入科避开 houseId 占床收窄）。 */
   const admissionFilter = ref<PatientAdmissionFilter>('in-ward');
   const selectedRegionIds = ref<string[]>([]);
   const selectedWardIds = ref<string[]>([]);
@@ -102,10 +102,21 @@ export function useNurseStationPatientData() {
     });
   });
 
-  /** 解析队列请求的地理范围：单选病房优先，其次单选病区。 */
+  /**
+   * 解析队列请求的地理范围：单选病房优先，其次单选病区。
+   * 待入科未分床：禁止传 houseId（后端按占床收窄会丢掉 REGISTERED），升到所属病区或管辖并集。
+   */
   function resolveQueueLocationParams(): { houseId?: string; wardId?: string } {
-    if (selectedWardIds.value.length === 1) {
+    const pendingAdmission = admissionFilter.value === 'pending-admission';
+    if (!pendingAdmission && selectedWardIds.value.length === 1) {
       return { houseId: selectedWardIds.value[0] };
+    }
+    if (pendingAdmission && selectedWardIds.value.length === 1) {
+      const house = wardOptions.value.find((item) => item.id === selectedWardIds.value[0]);
+      const regionId = (house?.regionId ?? '').trim();
+      if (regionId) {
+        return { wardId: regionId };
+      }
     }
     if (selectedWardIds.value.length === 0 && selectedRegionIds.value.length === 1) {
       return { wardId: selectedRegionIds.value[0] };
@@ -221,9 +232,13 @@ export function useNurseStationPatientData() {
     void loadPatientQueue();
   }
 
-  /** 入科状态筛选变更（本地过滤，不重拉队列）。 */
+  /**
+   * 入科状态筛选变更后重拉队列。
+   * 待入科须避开 houseId 占床收窄（见 resolveQueueLocationParams），不能只做本地过滤。
+   */
   function changeAdmissionFilter(value: PatientAdmissionFilter) {
     admissionFilter.value = value;
+    void loadPatientQueue();
   }
 
   /** 病区勾选变更。 */

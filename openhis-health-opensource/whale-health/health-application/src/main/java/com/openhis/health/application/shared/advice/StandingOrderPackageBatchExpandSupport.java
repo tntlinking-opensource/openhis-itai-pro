@@ -15,10 +15,13 @@ import java.util.Set;
 /**
  * 住院长嘱「不可拆 · 一盒一点」包装批次切分（列表读路径；写路径另按整包装量落账）。
  *
- * <p>在<strong>已应用首日/首次槽裁剪与首次槽换量</strong>之后，按槽拆零量顺序累加；累加值须
- * <strong>刚好等于</strong>一包装拆零量才切一盒。筛选截止时刻落在第 N 盒时，仅回传第 1～N 盒的
- * <strong>盒首锚点</strong>（每盒一个 planTime，形态对齐临嘱单点），<strong>禁止</strong>再展盒内全部频次点。
- * 单槽超量或累加无法刚好整除时，调用方须降级为可拆展开；
+ * <p>在<strong>已应用首日/首次槽裁剪与首次槽换量</strong>之后，按槽拆零量顺序累加；
+ * 累加值<strong>≥</strong>一包装拆零量即切一盒（ceil 封盒，余量结转下一盒；对齐 **BR-IP-EXE-038**
+ * 「领一整盒、按临床量扣剩余」——剂量×频次不必整除包装比，如 3 片×BID / 盒 100 片）。
+ * 筛选截止时刻落在第 N 盒时，仅回传第 1～N 盒的<strong>盒首锚点</strong>（每盒一个 planTime，
+ * 形态对齐临嘱单点），<strong>禁止</strong>再展盒内全部频次点。
+ * <strong>仅</strong>单槽超量（单次临床拆零 &gt; 一包装）时 FALLBACK 降级可拆；
+ * <strong>禁止</strong>因「累加无法刚好整除」把盒内日频次点再拆出来。
  * <strong>停嘱/探测硬顶截断未凑满当前盒</strong>时<strong>不</strong>降级可拆，仅回传已凑满盒的盒首（无则空）。</p>
  */
 public final class StandingOrderPackageBatchExpandSupport {
@@ -34,7 +37,7 @@ public final class StandingOrderPackageBatchExpandSupport {
         SUCCESS,
         /** 截止时刻落入尚未凑满的当前盒，或已越过第 N 盒末但下一盒未展开，调用方须继续向后展开频次点。 */
         NEED_MORE,
-        /** 无法刚好整除或入参不足；调用方应按可拆口径展开。 */
+        /** 单槽超量或入参不足；调用方应按可拆口径展开（非整除不再走本态）。 */
         FALLBACK
     }
 
@@ -103,7 +106,9 @@ public final class StandingOrderPackageBatchExpandSupport {
      *
      * <p>规则：</p>
      * <ul>
-     *   <li>累加拆零量须刚好等于 {@code packageSplitQuantity} 才关闭一盒；一旦 {@code cum + qty > package} 则 FALLBACK</li>
+     *   <li>累加拆零量<strong>≥</strong>{@code packageSplitQuantity} 即关闭一盒（ceil）；超出部分结转下一盒累计，
+     *       避免「3 片×日二次 / 盒 100」等非整除场景 FALLBACK 成全日频次点</li>
+     *   <li>单槽拆零量 &gt; 一包装 → FALLBACK（一盒装不下单次临床量）</li>
      *   <li>N = 最大满足「该盒首槽 planTime ≤ deadline」的完整盒序号</li>
      *   <li>SUCCESS 仅回传各盒<strong>首槽</strong>时刻（一盒一点），不回传盒内其余频次点</li>
      *   <li>若截止时刻已落入尚未凑满的当前盒：可继续展开则 NEED_MORE；已达停嘱等硬上界则
@@ -148,23 +153,21 @@ public final class StandingOrderPackageBatchExpandSupport {
                 return CutResult.fallback();
             }
             if (slotSplit == null || slotSplit.compareTo(BigDecimal.ZERO) <= 0) {
-                // 槽量非法：无法按包装整除切盒，线下自行处理
+                // 槽量非法：无法切盒，线下自行处理
                 return CutResult.fallback();
             }
-            // 单槽已超过一包装，或累加将越过包装且不能刚好落在包装边界 → 不可拆切盒失败
+            // 单槽已超过一包装：一盒装不下该次临床量 → 降级可拆（BR-IP-EXE-035⑥）
             if (slotSplit.compareTo(packageSplitQuantity) > 0) {
                 return CutResult.fallback();
             }
-            BigDecimal nextCumulative = cumulative.add(slotSplit);
-            if (nextCumulative.compareTo(packageSplitQuantity) > 0) {
-                return CutResult.fallback();
-            }
-            cumulative = nextCumulative;
+            // ceil 封盒：累加满一包装即关盒；余量结转，禁止因非整除 FALLBACK 成日点
+            cumulative = cumulative.add(slotSplit);
             currentBatch.add(index);
-            if (cumulative.compareTo(packageSplitQuantity) == 0) {
+            while (cumulative.compareTo(packageSplitQuantity) >= 0 && !currentBatch.isEmpty()) {
+                // 关盒后清空当前槽列表；余量留在 cumulative 供下一盒累加
                 completeBatches.add(new ArrayList<>(currentBatch));
                 currentBatch = new ArrayList<>();
-                cumulative = BigDecimal.ZERO;
+                cumulative = cumulative.subtract(packageSplitQuantity);
             }
         }
 

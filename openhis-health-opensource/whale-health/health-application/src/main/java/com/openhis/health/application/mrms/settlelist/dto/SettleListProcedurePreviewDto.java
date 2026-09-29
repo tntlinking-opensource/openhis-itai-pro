@@ -75,6 +75,18 @@ public class SettleListProcedurePreviewDto {
     @Schema(description = "术者姓名")
     private String operDrName;
 
+    /** 一助姓名。 */
+    @Schema(description = "一助姓名")
+    private String asit1Name;
+
+    /** 二助姓名。 */
+    @Schema(description = "二助姓名")
+    private String asit2Name;
+
+    /** 配合护士姓名。 */
+    @Schema(description = "配合护士姓名")
+    private String nurseName;
+
     /** 麻醉医师姓名。 */
     @Schema(description = "麻醉医师姓名")
     private String anstDrName;

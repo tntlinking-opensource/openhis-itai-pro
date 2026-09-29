@@ -4,7 +4,7 @@
  */
 package com.openhis.health.application.outpatient.pharmacy.dailysettlement.service;
 
-import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
+import com.openhis.health.application.shared.practitioner.PractitionerRoleScopeLoader;
 import com.openhis.health.application.outpatient.pharmacy.dailysettlement.mapper.OutpatientPharmacyDailySettlementMapper;
 import com.openhis.health.application.outpatient.pharmacy.dailysettlement.request.LoadOutpatientPharmacyDailySettlementPageInitRequest;
 import com.openhis.health.application.outpatient.pharmacy.dailysettlement.request.PageOutpatientPharmacyDailySettlementHistoryRequest;
@@ -19,11 +19,11 @@ import com.openhis.health.application.outpatient.pharmacy.dailysettlement.respon
 import com.openhis.health.application.outpatient.pharmacy.dailysettlement.response.WithdrawOutpatientPharmacyDailySettlementResponse;
 import com.openhis.health.application.shared.financial.DailySettlementOrgLocationScopeSupport;
 import com.openhis.health.application.shared.financial.cashiersettlement.CashierSettlementPartyNamesEnricher;
-import com.openhis.health.application.finance.pharmacydailysettlement.dto.PharmacyDailySettlementCategoryRowDto;
-import com.openhis.health.application.finance.pharmacydailysettlement.dto.PharmacyDailySettlementDispenseItemDto;
-import com.openhis.health.application.finance.pharmacydailysettlement.dto.PharmacyDailySettlementProductRowDto;
-import com.openhis.health.application.finance.pharmacydailysettlement.support.PharmacyDailySettlementPreviewAssembler;
-import com.openhis.health.application.finance.pharmacydailysettlement.support.PharmacyDailySettlementPricingSupport;
+import com.openhis.health.application.shared.pharmacydailysettlement.PharmacyDailySettlementCategoryRowDto;
+import com.openhis.health.application.shared.pharmacydailysettlement.PharmacyDailySettlementDispenseItemDto;
+import com.openhis.health.application.shared.pharmacydailysettlement.PharmacyDailySettlementProductRowDto;
+import com.openhis.health.application.shared.pharmacydailysettlement.PharmacyDailySettlementPreviewAssembler;
+import com.openhis.health.application.shared.pharmacydailysettlement.PharmacyDailySettlementPricingSupport;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.application.shared.validator.CurrentManagedLocationIdsResolver;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
@@ -72,7 +72,7 @@ import java.util.Set;
  *
  * <p>职责边界：</p>
  * <ul>
- *   <li>Gate：登录、日期窗、单药房必填、岗位管辖药房（{@link CurrentManagedLocationIdsResolver}）、漏交硬栏。</li>
+ *   <li>Gate：登录、药师岗提交/撤回、日期窗、单药房必填、岗位管辖药房（{@link CurrentManagedLocationIdsResolver}）、漏交硬栏。</li>
  *   <li>Pre：未挂载发药候选、窗内发药人自动带出、主区汇总读侧。</li>
  *   <li>Cmd：提交/撤回交账并挂载/清挂载 dispense。</li>
  *   <li>Asm：经 {@link OutpatientPharmacyDailySettlementMapper} 与 {@link PharmacyDailySettlementPreviewAssembler} 装配；
@@ -114,7 +114,7 @@ public class OutpatientPharmacyDailySettlementAppService {
     /** 当前登录医务人员。 */
     private final CurrentPractitionerResolver currentPractitionerResolver;
 
-    /** 岗位人员预解析（撤回会计权限）。 */
+    /** 岗位人员预解析（提交/撤回须药师岗）。 */
     private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
 
     /** Request/Response 映射。 */
@@ -153,6 +153,11 @@ public class OutpatientPharmacyDailySettlementAppService {
         List<OptionDto> pharmacyOptions = this.pharmacyDailySettlementPreviewAssembler.toPharmacyOptions(pharmacies);
         // Pre：药师岗全员下拉（与收费日结财务岗同构，可多选软筛）
         List<OptionDto> practitionerOptions = this.buildPharmacistOptions();
+        // Pre：重点药类型 + 药品性质下拉（分框；品规销售排名筛选，与 AS-RPT-011 同构）
+        List<OptionDto> keyDrugTypeOptions =
+            this.pharmacyDailySettlementPreviewAssembler.buildKeyDrugTypeOptions();
+        List<OptionDto> medicinePropertyOptions =
+            this.pharmacyDailySettlementPreviewAssembler.buildMedicinePropertyOptions();
         String defaultDateFrom = defaultFrom.format(GeneralSharedConstants.DATE_TIME_FORMATTER);
         String defaultDateTo = defaultTo.format(GeneralSharedConstants.DATE_TIME_FORMATTER);
         // Asm：只读初始化
@@ -160,7 +165,9 @@ public class OutpatientPharmacyDailySettlementAppService {
             defaultDateFrom,
             defaultDateTo,
             pharmacyOptions,
-            practitionerOptions);
+            practitionerOptions,
+            keyDrugTypeOptions,
+            medicinePropertyOptions);
     }
 
     /**
@@ -255,7 +262,7 @@ public class OutpatientPharmacyDailySettlementAppService {
      *
      * @param request 与预览相同业务窗、药房与勾选发药行
      * @return 交账头标识、单号与挂载条数
-     * @throws BusinessException 参数非法、漏交硬栏或并发冲突
+     * @throws BusinessException 非药师、参数非法、漏交硬栏或并发冲突
      */
     public SubmitOutpatientPharmacyDailySettlementResponse submitOutpatientPharmacyDailySettlement(
         SubmitOutpatientPharmacyDailySettlementRequest request) {
@@ -266,6 +273,12 @@ public class OutpatientPharmacyDailySettlementAppService {
         Long submitterId = this.currentPractitionerResolver.requirePractitionerId(
             OutpatientPharmacyDailySettlementConstants.EX_OP_PDC_102,
             "当前账号未绑定医务人员，无法提交交账");
+        // Gate：交账提交只认药师岗；审批/驳回在交账审批，不在这里
+        if (!this.holdsPharmacistRole(submitterId)) {
+            throw new BusinessException(
+                OutpatientPharmacyDailySettlementConstants.EX_OP_PDC_102,
+                "仅药师可提交交账");
+        }
         this.assertDateRangeValid(request.getDateFrom(), request.getDateTo());
         // Gate：药房必填且须在岗位管辖范围内（BR-OP-PDC-009）
         this.assertManagedPharmacyLocation(request.getLocationId());
@@ -359,7 +372,7 @@ public class OutpatientPharmacyDailySettlementAppService {
         }
         // Gate：交账头药房须在岗位管辖范围内（禁止撤回他库交账）
         this.assertManagedPharmacyLocation(settlement.getLocationId());
-        // Gate：仅待审可撤回；须为提交人或会计
+        // Gate：仅待审可撤回；须为药师岗
         this.assertWithdrawPermission(settlement);
         WithdrawCashierSettlementCommand command = new WithdrawCashierSettlementCommand();
         command.setSettlementId(request.getSettlementId());
@@ -594,51 +607,48 @@ public class OutpatientPharmacyDailySettlementAppService {
     }
 
     /**
-     * 撤回权限 Gate：提交人或会计；且头表须为 SUBMITTED。
+     * 撤回权限 Gate：须为药师岗，且头表须为 SUBMITTED。
      *
      * @param settlement 交账头
      */
     private void assertWithdrawPermission(CashierSettlement settlement) {
+        // 无头不能撤回
         if (settlement == null) {
             throw new BusinessException(
                 OutpatientPharmacyDailySettlementConstants.EX_OP_PDC_401,
                 "交账记录不存在");
         }
+        // 已审或已撤回不可再撤，只允许待审
         if (!CashierSettlementStatus.isSubmitted(settlement.getStatusEnum())) {
             throw new BusinessException(
                 OutpatientPharmacyDailySettlementConstants.EX_OP_PDC_401,
                 "仅待审交账可撤回");
         }
         Long currentPractitionerId = this.currentPractitionerResolver.findPractitionerIdOrNull();
-        Long submitterId = settlement.getSubmitterId();
-        if (currentPractitionerId != null && currentPractitionerId.equals(submitterId)) {
-            return;
-        }
-        if (currentPractitionerId != null && this.isFinancialDelegateEnabled(currentPractitionerId)) {
+        // 撤回只认药师岗，不认提交人、财务或管理员
+        if (this.holdsPharmacistRole(currentPractitionerId)) {
             return;
         }
         throw new BusinessException(
             OutpatientPharmacyDailySettlementConstants.EX_OP_PDC_401,
-            "仅提交人或会计可撤回该交账");
+            "仅药师可撤回该交账");
     }
 
     /**
-     * 当前操作员是否具备会计/管理员岗位（可代撤回）。
+     * 当前医务人员是否挂了激活的药师岗（{@code ROLE_PHARMACIST} / {@code adm_pr_assign}）。
      *
-     * @param currentPractitionerId 当前 Practitioner 主键
-     * @return 具备时为 true
+     * @param practitionerId 当前经办人 Practitioner 主键
+     * @return 是药师时为 true
      */
-    private boolean isFinancialDelegateEnabled(Long currentPractitionerId) {
-        Set<Long> accountantIds = this.practitionerRoleScopeLoader.resolvePractitionerIdsForActivePlatformRole(
-            WhalePlatformRoleCodeConstants.ROLE_ACCOUNTANT,
-            null);
-        if (accountantIds.contains(currentPractitionerId)) {
-            return true;
+    private boolean holdsPharmacistRole(Long practitionerId) {
+        // 未绑定医务人员没有岗位，不能当药师交账
+        if (practitionerId == null) {
+            return false;
         }
-        Set<Long> adminIds = this.practitionerRoleScopeLoader.resolvePractitionerIdsForActivePlatformRole(
-            WhalePlatformRoleCodeConstants.ROLE_ADMIN,
+        Set<Long> pharmacistIds = this.practitionerRoleScopeLoader.resolvePractitionerIdsForActivePlatformRole(
+            WhalePlatformRoleCodeConstants.ROLE_PHARMACIST,
             null);
-        return adminIds.contains(currentPractitionerId);
+        return pharmacistIds.contains(practitionerId);
     }
 
     /**

@@ -6,6 +6,8 @@ import { buildWesternProductSelectPatch, pickCatalogChrgitmLvPatch } from './adv
 import { isInpatientLongTermMedicationTherapy } from './advice-row';
 import {
   hydrateAdviceRowDoseFromBackend,
+  hydrateDoseScheduleSlots,
+  hydrateFirstDoseDisplayQty,
   resolveAdviceLineUnitPrice,
 } from './medication-unit-bands';
 
@@ -14,6 +16,7 @@ type AdviceDrugItemSeed = Partial<AdviceDrugItem> & {
   listDoseUnitCode?: string;
   listFirstDose?: number;
   listFirstDoseUnitCode?: string;
+  listDoseSchedule?: string;
   firstDose?: number;
   firstDoseUnitCode?: string;
 };
@@ -79,12 +82,18 @@ export function buildAdviceDrugItemSeedFromListRow(row: AdviceRowItem): AdviceDr
     medicationRequestId: String(row.requestId ?? '').trim() || undefined,
     catalogCategoryCode:
       String(row.catalogCategoryCode ?? row.serviceCategoryEnum ?? '').trim() || undefined,
+    priorityEnum: String(row.priorityEnum ?? '').trim() || undefined,
     entrustContent: String(row.entrustContent ?? '').trim() || undefined,
     remark: String(row.remark ?? '').trim() || undefined,
     listDose: row.listDose,
     listDoseUnitCode: row.listDoseUnitCode,
+    // 分次用量不一致：列表 doseSchedule → merge 后展开多框（BR-IP-ORD-037）
+    listDoseSchedule: String(row.listDoseSchedule ?? '').trim() || undefined,
+    // 种子暂存库内最小单位量；merge 目录后再 hydrate 成计量展示
     firstDose: row.listFirstDose,
     firstDoseUnitCode: row.listFirstDoseUnitCode,
+    listFirstDose: row.listFirstDose,
+    listFirstDoseUnitCode: row.listFirstDoseUnitCode,
     ...(isService
       ? {
           serviceQuantity: qty ?? 1,
@@ -150,6 +159,7 @@ export function mergeCatalogIntoAdviceDrugItemForEdit(
     performOrgId: seed.performOrgId,
     performOrgName: seed.performOrgName,
     catalogCategoryCode: seed.catalogCategoryCode,
+    priorityEnum: seed.priorityEnum,
     entrustContent: seed.entrustContent,
     remark: seed.remark,
   };
@@ -170,6 +180,7 @@ export function mergeCatalogIntoAdviceDrugItemForEdit(
       selectedDrugPrice: catalog.price ?? seed.selectedDrugPrice ?? '',
       catalogCategoryCode:
         String(catalog.categoryCode ?? seed.catalogCategoryCode ?? '').trim() || undefined,
+      priorityEnum: String(seed.priorityEnum ?? '').trim() || undefined,
       ...(uCode
         ? {
             totalAmountUnit: uCode,
@@ -207,32 +218,49 @@ export function mergeCatalogIntoAdviceDrugItemForEdit(
     { totalUnitDefaultKind },
   );
 
+  const unitBands = catalog.unitBands ?? catalogPatch.unitBands;
   const doseHydrated = hydrateAdviceRowDoseFromBackend({
     dose: seed.listDose,
     doseUnitCode: seed.listDoseUnitCode,
     doseUnitName: seed.doseSubUnit,
-    unitBands: catalog.unitBands ?? catalogPatch.unitBands,
+    unitBands,
   });
 
   const totalUnit = String(seed.totalAmountUnit ?? '').trim() || catalogPatch.totalAmountUnit;
   let selectedDrugPrice = catalogPatch.selectedDrugPrice ?? catalog.price ?? seed.selectedDrugPrice;
   if (totalUnit) {
     const linePrice = resolveAdviceLineUnitPrice({
-      bands: catalog.unitBands ?? catalogPatch.unitBands,
+      bands: unitBands,
       catalogUnitPrice: catalogPatch.catalogUnitPrice ?? catalog.catalogUnitPrice,
       totalAmountUnit: totalUnit,
     });
     if (linePrice !== undefined) selectedDrugPrice = linePrice;
   }
 
+  // 库内首日=最小单位 → 编辑卡按计量单位展示（同写剂量）
+  const persistedFirstDose = seed.firstDose ?? seed.listFirstDose;
+  const persistedFirstDoseUnit = seed.firstDoseUnitCode ?? seed.listFirstDoseUnitCode;
+  const firstDoseDisplay = hydrateFirstDoseDisplayQty({
+    firstDose: persistedFirstDose,
+    firstDoseUnitCode: persistedFirstDoseUnit,
+    doseBandConvertK: doseHydrated.doseBandConvertK,
+    unitBands,
+  });
+  // 分次 schedule → 多剂量框（计量串原样还原；BR-IP-ORD-037）
+  const scheduleHydrated = hydrateDoseScheduleSlots({
+    doseSchedule: seed.listDoseSchedule ?? (seed as { doseSchedule?: string }).doseSchedule,
+  });
+
   return {
     ...catalogPatch,
     ...doseHydrated,
     ...base,
     ...preserved,
-    // 列表回填首日用量（仅长期药编辑卡使用）
-    firstDose: seed.firstDose ?? seed.listFirstDose,
-    firstDoseUnitCode: seed.firstDoseUnitCode ?? seed.listFirstDoseUnitCode,
+    firstDose: firstDoseDisplay,
+    // 编辑卡内存不持落库单位；保存时再换算最小单位
+    firstDoseUnitCode: undefined,
+    unevenDoseEnabled: scheduleHydrated.unevenDoseEnabled,
+    doseScheduleSlots: scheduleHydrated.doseScheduleSlots,
     totalAmountUnit: totalUnit,
     selectedDrugPrice,
   };

@@ -92,7 +92,8 @@ public class WebConfig implements WebMvcConfigurer {
                     "/api/app/auth/stopImpersonating",
                     "/api/app/auth/getAvailableTenants",  // 获取租户列表不需要租户ID
                     "/api/app/auth/selectTenant",       // 选择租户写入会话，本身不依赖已有租户
-                    "/api/app/tenant/**"                // 租户管理：列表/创建/更新/删除租户不依赖当前租户上下文
+                    "/api/app/tenant/**",               // 租户管理：列表/创建/更新/删除租户不依赖当前租户上下文
+                    "/api/integration/pacs-imaging/**"  // Orthanc C-STORE 回调：Controller 自行设租户
                 )
                 .order(3);
 
@@ -110,7 +111,8 @@ public class WebConfig implements WebMvcConfigurer {
                     "/api/app/auth/stopImpersonating",
                     "/api/app/auth/getAvailableTenants",
                     "/api/app/auth/selectTenant",
-                    "/api/app/tenant/**"
+                    "/api/app/tenant/**",
+                    "/api/integration/pacs-imaging/**"
                 )
                 .order(4);
 
@@ -128,7 +130,8 @@ public class WebConfig implements WebMvcConfigurer {
                     "/api/app/auth/stopImpersonating",
                     "/api/app/auth/getAvailableTenants",
                     "/api/app/auth/selectTenant",
-                    "/api/app/tenant/**"
+                    "/api/app/tenant/**",
+                    "/api/integration/pacs-imaging/**"
                 )
                 .order(5);
 

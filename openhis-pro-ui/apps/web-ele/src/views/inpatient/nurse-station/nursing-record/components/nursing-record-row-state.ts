@@ -34,6 +34,20 @@ export function isNursingRecordRowEmpty(row: NursingRecordRow): boolean {
   return CONTENT_FIELD_KEYS.every((key) => !`${row[key] ?? ''}`.trim());
 }
 
+/**
+ * 是否允许删除该行。
+ * 额外行、已落库行、已填写的骨架槽可删；空白骨架槽保留，避免纸质单行数被抽掉。
+ */
+export function canDeleteNursingRecordRow(row: NursingRecordViewRow): boolean {
+  if (row.rowType === 'extra') {
+    return true;
+  }
+  if (`${row.vitalSignId ?? ''}`.trim()) {
+    return true;
+  }
+  return !isNursingRecordRowEmpty(row);
+}
+
 /** 计算纸质单行视觉态：未保存优先，其次空槽与已填。 */
 export function getNursingRecordRowVisualState(
   row: NursingRecordViewRow,

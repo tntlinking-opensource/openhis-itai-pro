@@ -139,7 +139,7 @@ public class InpatientEmrListItemDto {
     private String orderUploadStatusCode;
 
     /**
-     * 病例是否已归档（就诊下存在 LOCKED 文书）；归档后临床入口只读。
+     * 病例是否已归档（就诊下存在 PENDING_ARCHIVE/ARCHIVED 文书）；归档后临床入口只读。
      */
     private boolean clinicalArchived;
 }

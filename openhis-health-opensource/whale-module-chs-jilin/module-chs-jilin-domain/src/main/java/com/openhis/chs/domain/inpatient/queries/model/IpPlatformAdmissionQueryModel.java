@@ -16,4 +16,6 @@ public class IpPlatformAdmissionQueryModel {
     private Long contractId;
     private String mdtrtId;
     private Boolean platformAdmitted;
+    /** 参保地医保区划（来自住院预结算快照）。 */
+    private String insuplcAdmdvs;
 }

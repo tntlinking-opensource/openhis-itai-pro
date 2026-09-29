@@ -1,0 +1,102 @@
+{
+  "type": "table",
+  "attrs": {
+    "name": "patientBar",
+    "id": null
+  },
+  "content": [
+    {
+      "type": "tableRow",
+      "content": [
+        {
+          "type": "tableCell",
+          "attrs": {
+            "colspan": 1,
+            "rowspan": 1,
+            "colwidth": null,
+            "align": null,
+            "name": "formValue"
+          },
+          "content": [
+            {
+              "type": "paragraph",
+              "attrs": {
+                "lineHeight": null,
+                "name": null,
+                "textIndent": null,
+                "paragraphMarginTop": null,
+                "paragraphMarginBottom": null,
+                "textAlign": "left"
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "marks": [
+                    {
+                      "type": "bold"
+                    }
+                  ],
+                  "text": "科室："
+                },
+                {
+                  "type": "emrMetadataChip",
+                  "attrs": {
+                    "slotId": "f-doc-0-0-0-0-1",
+                    "fieldKey": "deptName",
+                    "label": "科室",
+                    "value": "住院内科",
+                    "editable": false
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "tableCell",
+          "attrs": {
+            "colspan": 1,
+            "rowspan": 1,
+            "colwidth": null,
+            "align": null,
+            "name": "formValue"
+          },
+          "content": [
+            {
+              "type": "paragraph",
+              "attrs": {
+                "lineHeight": null,
+                "name": null,
+                "textIndent": null,
+                "paragraphMarginTop": null,
+                "paragraphMarginBottom": null,
+                "textAlign": "left"
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "marks": [
+                    {
+                      "type": "bold"
+                    }
+                  ],
+                  "text": "床号："
+                },
+                {
+                  "type": "emrMetadataChip",
+                  "attrs": {
+                    "slotId": "f-doc-0-0-1-0-1",
+                    "fieldKey": "bedNo",
+                    "label": "床号",
+                    "value": "",
+                    "editable": false
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

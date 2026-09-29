@@ -479,6 +479,7 @@ export interface RegistrationReceiptChargeLineDto {
 
 /** 挂号小票 slip（printRegisterTicket 返回） */
 export interface RegistrationSlipDto {
+  /** 医保个账余额（扣款后展示文案） */
   accountBalanceText?: string;
   accountPayText?: string;
   ageText?: string;

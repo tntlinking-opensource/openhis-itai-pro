@@ -141,7 +141,7 @@ public class ServiceApplyFormOrchestrator {
      * @param encounterDiagnosisIds  整单绑定就诊诊断有序 ids 串；可空，非空时写入该单全部 {@code ServiceRequest.encounter_diagnosis_ids}
      * @param previousPrescriptionNo 编辑时旧申请单号；新建可空
      * @param lines                  明细行
-     * @param executionCount         整单执行次数；空或 ≤0 时回落为 1，写入该单全部行
+     * @param executionCount         整单执行次数回落值；行未传时使用；空或 ≤0 时回落为 1
      * @param operatorId             操作人
      * @param chargeDraftCreator     费用草稿创建回调；门诊注入实现，住院传 {@code null}（IF-IP-DOR-23 不挂 ChargeItem）
      * @return 新号与新建 requestId 列表
@@ -166,8 +166,8 @@ public class ServiceApplyFormOrchestrator {
         if (orgId == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "整单执行科室不能为空");
         }
-        // Pre：整单执行次数统一写入各行；空或非法回落 1。
-        Integer resolvedExecutionCount = resolveApplyFormExecutionCount(executionCount);
+        // Pre：整单执行次数仅作行级回落；空或非法回落 1。
+        Integer resolvedFormExecutionCount = resolveApplyFormExecutionCount(executionCount);
         // Pre：解析类别；编辑时须先删旧 DRAFT 行（含 Detail 与未计费费用）。
         String resolvedCategory = resolveApplyFormCategoryCode(categoryEnum);
         if (isNotEmpty(previousPrescriptionNo)) {
@@ -183,9 +183,11 @@ public class ServiceApplyFormOrchestrator {
         for (ServiceApplyFormLineSpec line : lines) {
             validateApplyFormLine(resolvedCategory, line);
             ProductDefinitionDisplayDto productRow = loadActivityProduct(line.getActivityDefinitionId());
+            // Pre：本行执行次数优先；空则回落整单值（兼容旧客户端整单共用）
+            Integer lineExecutionCount = resolveLineExecutionCount(line.getExecutionCount(), resolvedFormExecutionCount);
             CreateServiceRequestDraftCommand cmd = buildCreateCommand(
                 encounterId, patientId, orgId, encounterDiagnosisIds,
-                prescriptionNo, resolvedCategory, line, resolvedExecutionCount, operatorId, sortNumber++, productRow);
+                prescriptionNo, resolvedCategory, line, lineExecutionCount, operatorId, sortNumber++, productRow);
             Long requestId = serviceRequestDomainService.createServiceRequestDraft(cmd);
             requestIds.add(requestId);
             if (chargeDraftCreator != null) {
@@ -310,6 +312,7 @@ public class ServiceApplyFormOrchestrator {
                 lineDto.setUnitName(ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(
                     unitLabelByCode, row.getUnitCode(), product));
                 lineDto.setRemark(row.getRemark());
+                lineDto.setPriorityEnum(row.getPriorityEnum());
                 lineDto.setDetails(toDetailSummaryModels(detailsByRequestId.get(row.getId())));
                 lineDtos.add(lineDto);
             }
@@ -549,7 +552,7 @@ public class ServiceApplyFormOrchestrator {
      * @param prescriptionNo         新 AR 申请单号
      * @param categoryCode           已解析类别 code
      * @param line                   明细行 Spec
-     * @param executionCount         已解析的整单执行次数（≥1）
+     * @param executionCount         已解析的本行执行次数（≥1）
      * @param operatorId             操作人
      * @param sortNumber             组内排序号
      * @param productRow             活动对应产品定义（单位校验用）
@@ -578,7 +581,7 @@ public class ServiceApplyFormOrchestrator {
         item.setQuantity(line.getQuantity());
         item.setUnitCode(ServiceAdviceDraftCommandHelper.requireUnitCode(
             line.getUnitCode(), null, productRow));
-        // Cmd：整单执行次数写入各行（护士站可执行次数上限）。
+        // Cmd：本行执行次数写入 ServiceRequest（护士站可执行次数上限）。
         item.setExecutionCount(executionCount);
         item.setCategoryEnum(categoryCode);
         item.setTherapyEnum(TherapyType.TEMPORARY.getCode());
@@ -590,13 +593,15 @@ public class ServiceApplyFormOrchestrator {
         item.setNote(line.getRemark());
         // Cmd：整单诊断绑定与 IF-DOR-14 诊疗草稿同源；可空表示不绑定。
         item.setEncounterDiagnosisIds(encounterDiagnosisIds);
+        // Cmd：按项目加急（EM）；空则非急
+        item.setPriorityEnum(line.getPriorityEnum());
         item.setDetailItems(mapDetailCommands(line.getDetailItems()));
         cmd.setItem(item);
         return cmd;
     }
 
     /**
-     * 解析整单执行次数：空或 ≤0 回落为 1。
+     * 解析整单执行次数回落值：空或 ≤0 回落为 1。
      *
      * @param executionCount 请求入参；可空
      * @return ≥1 的执行次数
@@ -606,6 +611,20 @@ public class ServiceApplyFormOrchestrator {
             return GeneralSharedConstants.ONE;
         }
         return executionCount;
+    }
+
+    /**
+     * 解析本行执行次数：行级优先；空或非法时回落整单值。
+     *
+     * @param lineExecutionCount 行入参；可空
+     * @param formExecutionCount 已解析的整单回落值（≥1）
+     * @return ≥1 的本行执行次数
+     */
+    private static Integer resolveLineExecutionCount(Integer lineExecutionCount, Integer formExecutionCount) {
+        if (lineExecutionCount != null && lineExecutionCount > 0) {
+            return lineExecutionCount;
+        }
+        return formExecutionCount;
     }
 
     /**

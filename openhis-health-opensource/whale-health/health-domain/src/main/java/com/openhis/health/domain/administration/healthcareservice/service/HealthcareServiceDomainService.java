@@ -62,7 +62,9 @@ public class HealthcareServiceDomainService {
             row.setTypeCode(item.getTypeCode());
             row.setCategoryCode(item.getCategoryCode());
             row.setOfferedOrgId(item.getOfferedOrgId());
-            row.setYbNo(item.getYbNo());
+            // Gate：诊查费绑定串格式（空=零元可绑；非空须正整数 CSV）
+            row.assertActivityIdsBindingAllowed(item.getActivityIds());
+            row.setActivityIds(this.normalizeActivityIdsCsv(item.getActivityIds()));
             row.initDraft();
             toSave.add(row);
         }
@@ -91,8 +93,9 @@ public class HealthcareServiceDomainService {
         List<HealthcareService> toSave = new ArrayList<>();
         for (PublishHealthcareServiceCommand.Item item : items) {
             HealthcareService row = require(map, item.getServiceId());
-            // 校验当前状态允许发布（仅草稿可发布），并执行状态迁移至 ACTIVE。
+            // 校验当前状态允许发布（仅草稿可发布），并再次校验诊查费绑定串格式。
             row.assertPublishAllowed();
+            row.assertActivityIdsBindingAllowed(row.getActivityIds());
             row.transitToActive();
             toSave.add(row);
         }
@@ -106,12 +109,12 @@ public class HealthcareServiceDomainService {
     }
 
     /**
-     * 修改医疗服务信息：更新名称、类型、分类、所属机构，并发布服务修改事件。
+     * 修改医疗服务信息：更新名称、类型、分类、所属机构、诊查费绑定，并发布服务修改事件。
      *
-     * <p>草稿和已发布状态的服务均可修改。</p>
+     * <p>草稿和已发布状态的服务均可修改；ACTIVE 态禁止改类别/类型（BR-HCS-008）。</p>
      *
      * @param cmd 修改医疗服务命令
-     * @throws BusinessException 服务不存在或当前状态不允许修改
+     * @throws BusinessException 服务不存在、状态不允许或绑定串非法
      */
     public void modifyService(ModifyHealthcareServiceCommand cmd) {
         List<ModifyHealthcareServiceCommand.Item> items = cmd.resolveItems();
@@ -120,13 +123,15 @@ public class HealthcareServiceDomainService {
         List<HealthcareService> toSave = new ArrayList<>();
         for (ModifyHealthcareServiceCommand.Item item : items) {
             HealthcareService row = require(map, item.getServiceId());
-            // 校验当前状态允许修改（草稿或已发布态），并更新各字段。
+            // 校验可改态、ACTIVE 类别/类型不可变、诊查费绑定串格式。
             row.assertModifiable();
+            row.assertActiveImmutableCategoryAndType(item.getCategoryCode(), item.getTypeCode());
+            row.assertActivityIdsBindingAllowed(item.getActivityIds());
             row.setName(item.getName());
             row.setTypeCode(item.getTypeCode());
             row.setCategoryCode(item.getCategoryCode());
             row.setOfferedOrgId(item.getOfferedOrgId());
-            row.setYbNo(item.getYbNo());
+            row.setActivityIds(this.normalizeActivityIdsCsv(item.getActivityIds()));
             toSave.add(row);
         }
         // 先批量落库，确保字段变更持久化后再发布事件（B.14 硬门禁）。
@@ -217,6 +222,33 @@ public class HealthcareServiceDomainService {
         for (AbolishHealthcareServiceCommand.Item item : items) {
             domainEventPublisher.publish(new HealthcareServiceAbolishedEvent(item.getServiceId(), item.getReason()));
         }
+    }
+
+    /**
+     * 归一诊查费绑定 CSV：空白→null；否则 trim 各段后以逗号拼接。
+     *
+     * @param activityIdsCsv 原始绑定串
+     * @return 归一后的 CSV 或 null
+     */
+    private String normalizeActivityIdsCsv(String activityIdsCsv) {
+        if (activityIdsCsv == null || activityIdsCsv.isBlank()) {
+            return null;
+        }
+        String[] tokens = activityIdsCsv.split(",");
+        StringBuilder sb = new StringBuilder();
+        for (String raw : tokens) {
+            if (raw == null || raw.isBlank()) {
+                continue;
+            }
+            if (sb.length() > 0) {
+                sb.append(',');
+            }
+            sb.append(raw.trim());
+        }
+        if (sb.length() == 0) {
+            return null;
+        }
+        return sb.toString();
     }
 
     /**

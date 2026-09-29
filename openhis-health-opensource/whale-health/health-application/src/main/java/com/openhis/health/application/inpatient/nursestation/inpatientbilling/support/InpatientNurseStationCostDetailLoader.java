@@ -69,14 +69,15 @@ public class InpatientNurseStationCostDetailLoader {
         List<ChargeItem> candidates = this.chargeItemQueryService.listChargeItemsByEncounterId(cmd);
         Map<Long, LocalDateTime> netProcedureRecordedById =
             this.procedureQueryService.mapNetCompletedRecordedTimeByEncounterId(cmd.getEncounterId());
-        // Pre：护士划价诊疗按 Request 取 recorded；耗材按发放展示时刻（与 IF-IP-PRC-05/07 同轴）
+        // Pre：护士/医技划价诊疗按 Request 取 recorded；耗材按发放展示时刻（与 IF-IP-PRC-05/07 同轴）
         Set<Long> nursePricingServiceReqIds = new HashSet<>();
         Set<Long> nursePricingDeviceReqIds = new HashSet<>();
         for (ChargeItem chargeItem : candidates) {
             if (chargeItem == null) {
                 continue;
             }
-            if (!GenerateSource.NURSE_PRICING.getCode().equals(chargeItem.getGenerateSourceEnum())) {
+            if (!GenerateSource.NURSE_PRICING.getCode().equals(chargeItem.getGenerateSourceEnum())
+                && !GenerateSource.MEDICAL_TECH_PRICING.getCode().equals(chargeItem.getGenerateSourceEnum())) {
                 continue;
             }
             if (chargeItem.getServiceId() == null) {
@@ -162,8 +163,9 @@ public class InpatientNurseStationCostDetailLoader {
             }
             return Optional.of(chargeItem.getOccurrenceTime());
         }
-        // 护士划价耗材：无 Procedure，客户轴 = 发放/拣配展示时刻
-        if (GenerateSource.NURSE_PRICING.getCode().equals(chargeItem.getGenerateSourceEnum())
+        // 护士/医技划价耗材：无 Procedure，客户轴 = 发放/拣配展示时刻
+        if ((GenerateSource.NURSE_PRICING.getCode().equals(chargeItem.getGenerateSourceEnum())
+                || GenerateSource.MEDICAL_TECH_PRICING.getCode().equals(chargeItem.getGenerateSourceEnum()))
             && TableNameConstants.WKF_DEVICE_REQUEST.equals(chargeItem.getServiceTable())) {
             if (deviceDisplayTimeByReqId != null && chargeItem.getServiceId() != null) {
                 LocalDateTime dispenseDisplay = deviceDisplayTimeByReqId.get(chargeItem.getServiceId());

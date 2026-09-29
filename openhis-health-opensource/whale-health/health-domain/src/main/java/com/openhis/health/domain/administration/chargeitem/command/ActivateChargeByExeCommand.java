@@ -29,7 +29,5 @@ public class ActivateChargeByExeCommand extends BatchCommand<ActivateChargeByExe
         private Long procedureId;
         /** 执行发生时刻。 */
         private LocalDateTime performedAt;
-        /** 执行人主键。 */
-        private Long performerId;
     }
 }

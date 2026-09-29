@@ -54,7 +54,10 @@ public class SaveStaffRequest {
     /** 可操作药房/科室药房（{@code PHARMACIST} → {@code adm_pr_assign.location_id}，{@code adm_location.form_enum} 为 PHARMACY 或 DEPARTMENT_PHARMACY）。 */
     private List<StaffOrgLocationItemDto> pharmacyLocationList;
 
-    /** 护士管理科室（{@code NURSE}，按 org）。 */
+    /**
+     * 工作科室（界面称「工作科室」）。
+     * 护士角色仅护士站，医技角色仅医技科室；与管理病区无关。
+     */
     private List<StaffOrgLocationItemDto> nurseOrgList;
 
     /** 管理病区（{@code NURSE}，按 location）。 */

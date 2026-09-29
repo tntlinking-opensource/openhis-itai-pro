@@ -194,6 +194,17 @@ public class OrderTemplate extends BaseAuditedEntity {
     }
 
     /**
+     * 重新启用（RETIRED → ACTIVE），恢复检索与套用。
+     */
+    public void reactivate() {
+        this.assertEditable();
+        if (!OrderTemplateStatus.RETIRED.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_INVALID_STATUS, "仅停用状态可重新启用");
+        }
+        this.statusEnum = OrderTemplateStatus.ACTIVE.getCode();
+    }
+
+    /**
      * 逻辑删除头（BR-OTL-007）。
      */
     public void markDeleted() {
@@ -230,6 +241,11 @@ public class OrderTemplate extends BaseAuditedEntity {
         if (OrderTemplateSource.FROM_ADVICE.getCode().equals(this.templateSourceEnum)
             && OrderTemplateKind.PRICING.getCode().equals(this.templateKindEnum)) {
             throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT, "医嘱模板不支持划价组套种类");
+        }
+        // 申请单组套只在维护页编制，不从医嘱另存
+        if (OrderTemplateSource.FROM_ADVICE.getCode().equals(this.templateSourceEnum)
+            && OrderTemplateKind.SERVICE_APPLY.getCode().equals(this.templateKindEnum)) {
+            throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT, "医嘱模板不支持申请单组套种类");
         }
     }
 

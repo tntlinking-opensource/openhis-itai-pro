@@ -316,8 +316,9 @@ public class DocInventoryItemSnapshotQueryService {
             if (query.getChrgitmLvs() != null && !query.getChrgitmLvs().isEmpty()) {
                 predicates.add(root.get(FieldNameConstants.CHRGITM_LV).in(query.getChrgitmLvs()));
             }
-            // 重点药类型：静表无药典标识列，按应用层预解析的药品定义主键收窄（耗材排除）
-            if (StringUtils.isNotEmpty(query.getKeyDrugType())) {
+            // 重点药类型 / 药品性质：静表无药典标识列，按应用层预解析的药品定义主键收窄（耗材排除）
+            if (StringUtils.isNotEmpty(query.getKeyDrugType())
+                || StringUtils.isNotEmpty(query.getMedicinePropertyCode())) {
                 List<Long> medIds = query.getResolvedMedicationDefinitionIds();
                 if (medIds == null || medIds.isEmpty()) {
                     // 无命中定义时强制空结果，避免漏筛成全量

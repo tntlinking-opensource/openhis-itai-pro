@@ -75,6 +75,69 @@ public class FrequencyOptionLoader {
     }
 
     /**
+     * 构建 rateCode → day_times 非空段数（任意周期；供分次用量不一致 UI/Gate）。
+     *
+     * @return 码 → 段数；无 day_times 的码不出现
+     */
+    public Map<String, Integer> buildDayTimesSegmentCountMap() {
+        List<Frequency> rows = this.loadActiveFrequenciesCached();
+        Map<String, Integer> countByCode = new HashMap<>();
+        for (Frequency row : rows) {
+            if (row == null || StringUtils.isEmpty(row.getRateCode())) {
+                continue;
+            }
+            Integer count = this.countDayTimesNonEmptySegments(row.getDayTimes());
+            if (count == null || count <= 0) {
+                continue;
+            }
+            countByCode.put(row.getRateCode().trim(), count);
+        }
+        return countByCode;
+    }
+
+    /**
+     * 解析 rateCode 对应 {@code day_times} 非空段数（任意周期；供分次用量 schedule 段数 Gate）。
+     *
+     * <p>与「用量不一致」UI 展开框数同源：有几个非空日内时刻就几个剂量框。
+     * 与 {@link #buildTimesPerDayMap()} 不同：本方法不限制日周期/日间隔。</p>
+     *
+     * @param rateCode 频次 code；空则 null
+     * @return 非空段数；无启用频次或 day_times 空则 null
+     */
+    public Integer resolveDayTimesSegmentCount(String rateCode) {
+        if (StringUtils.isEmpty(rateCode)) {
+            return null;
+        }
+        String trimmed = rateCode.trim();
+        Map<String, Integer> map = this.buildDayTimesSegmentCountMap();
+        return map.get(trimmed);
+    }
+
+    /**
+     * 统计 {@code day_times} 逗号分隔非空段数。
+     *
+     * @param dayTimes 日内时刻串；可空
+     * @return 段数；无法解析时 null
+     */
+    private Integer countDayTimesNonEmptySegments(String dayTimes) {
+        String trimmed = StringUtils.trimToNull(dayTimes);
+        if (trimmed == null) {
+            return null;
+        }
+        int count = 0;
+        String[] segments = trimmed.split(GeneralSharedConstants.COMMA);
+        for (String segment : segments) {
+            if (StringUtils.isNotEmpty(StringUtils.trimToEmpty(segment))) {
+                count++;
+            }
+        }
+        if (count <= 0) {
+            return null;
+        }
+        return count;
+    }
+
+    /**
      * 构建 rateCode → 每日执行次数（仅日周期且日步进为 1；由 {@code day_times} 段数解析）。
      *
      * <p>供长期药「每日三片」日剂量展示；周周期 / 隔日 / 按需 / 固定次数不入图。</p>

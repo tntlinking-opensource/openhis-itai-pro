@@ -7,12 +7,13 @@ import type { ServiceApplyKind } from '#/views/outpatient/doctor-station/service
 
 import {
   httpInitInpatientDoctorStationAdvice,
+  httpListInpatientActivityExecutionLocations,
   httpPageInpatientDoctorStationAdviceCatalog,
   httpSaveInpatientDoctorStationServiceApplyForm,
 } from '#/api/inpatient/doctor-station/inpatient-doctor-station-advice.http';
 import { fetchEncounterDiagnosisDisplayList } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis.service';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-import { loadAllDepartmentPerformOrgOptions } from '#/views/doctor-station/advice-shared/perform-org-options.service';
+import { unionPerformOrgOptions } from '#/views/doctor-station/advice-shared/perform-org-options.service';
 import {
   SERVICE_APPLY_ACTIVITY_TABLE,
   SERVICE_APPLY_CATALOG_PAGE_SIZE,
@@ -92,26 +93,59 @@ export async function loadServiceApplyCatalog(params: {
   return { rows, totalCount };
 }
 
-/** 申请单执行科室为整单全局字段，下拉始终全院科室（与门诊一致，不按单项目规则收窄） */
-export async function loadServiceApplyOrgOptions(_params?: {
+/** 申请单执行科室：有规则用规则，没规则由接口回落开立科室。 */
+export async function loadServiceApplyOrgOptions(params?: {
   activityDefinitionId: string;
   encounterId: string;
   patientId: string;
 }): Promise<
   import('#/views/outpatient/doctor-station/service-apply/service-apply.service').ServiceApplyOrgOption[]
 > {
-  return loadAllDepartmentPerformOrgOptions();
+  const activityDefinitionId = String(params?.activityDefinitionId ?? '').trim();
+  const encounterId = String(params?.encounterId ?? '').trim();
+  const patientId = String(params?.patientId ?? '').trim();
+  if (!activityDefinitionId || !encounterId || !patientId) {
+    return [];
+  }
+  return mergeServiceApplyOrgOptions({
+    activityDefinitionIds: [activityDefinitionId],
+    encounterId,
+    patientId,
+  });
 }
 
-/** 整单执行科室下拉：全局选一个，清单内全部项目共用该科室（与门诊一致） */
-export async function mergeServiceApplyOrgOptions(_params?: {
+/** 整单执行科室：各项目规则并行取并集；都没配时接口回落开立科室。 */
+export async function mergeServiceApplyOrgOptions(params?: {
   activityDefinitionIds: string[];
   encounterId: string;
   patientId: string;
 }): Promise<
   import('#/views/outpatient/doctor-station/service-apply/service-apply.service').ServiceApplyOrgOption[]
 > {
-  return loadAllDepartmentPerformOrgOptions();
+  const encounterId = String(params?.encounterId ?? '').trim();
+  const patientId = String(params?.patientId ?? '').trim();
+  const activityDefinitionIds = params?.activityDefinitionIds ?? [];
+  if (!encounterId || !patientId || activityDefinitionIds.length === 0) {
+    return [];
+  }
+  const uniqueIds = [
+    ...new Set(
+      activityDefinitionIds
+        .map((rawId) => String(rawId ?? '').trim())
+        .filter((id) => id.length > 0),
+    ),
+  ];
+  // 并行拉各项目规则，避免整单多项目时串行 N 次
+  const responses = await Promise.all(
+    uniqueIds.map((activityDefinitionId) =>
+      httpListInpatientActivityExecutionLocations({
+        encounterId,
+        patientId,
+        activityDefinitionId,
+      }),
+    ),
+  );
+  return unionPerformOrgOptions(responses.map((res) => res.rules));
 }
 
 /** 保存住院申请单（整张），返回新 AR 号与 requestIds */

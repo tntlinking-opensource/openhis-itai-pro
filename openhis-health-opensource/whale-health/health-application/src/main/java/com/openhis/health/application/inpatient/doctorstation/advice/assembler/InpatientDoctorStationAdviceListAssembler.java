@@ -822,6 +822,15 @@ public class InpatientDoctorStationAdviceListAssembler {
             line.setFirstDoseUnitCode(medDetail.getFirstDoseUnitCode());
             line.setFirstDoseUnitName(ProductDefinitionCatalogUnitBandsAssembler.resolveDoseUnitDisplayName(
                 doseUnitLabelByCode, medDetail.getFirstDoseUnitCode(), medProduct));
+            // 分次 schedule 回显：有值时剂量列走序列展示（BR-IP-ORD-037）
+            line.setDoseSchedule(medDetail.getDoseSchedule());
+            line.setQuantitySchedule(medDetail.getQuantitySchedule());
+            if (StringUtils.isNotEmpty(medDetail.getDoseSchedule())) {
+                String scheduleUnitName = ProductDefinitionCatalogUnitBandsAssembler.resolveDoseUnitDisplayName(
+                    doseUnitLabelByCode, medDetail.getDoseUnitCode(), medProduct);
+                line.setDosageDisplay(this.buildDoseScheduleDisplay(
+                    medDetail.getDoseSchedule(), scheduleUnitName));
+            }
             line.setMethodCode(medDetail.getMethodCode());
             line.setMethodName(OrderCatalogDisplayAssembler.resolveCategoryDisplay(methodLabelByCode, medDetail.getMethodCode()));
             line.setRateCode(medDetail.getRateCode());
@@ -922,7 +931,7 @@ public class InpatientDoctorStationAdviceListAssembler {
             line.setTherapyTypeCode(order.getTherapyEnum());
         }
         fillTherapyDisplay(line);
-        // 长期药日剂量：单次拆零量 × 每日次数 →「每日三片」
+        // 长期药日剂量：有 schedule 各段求和，否则单次拆零量 × 每日次数 →「每日三片」
         fillMedicationDailyDoseDisplay(line, timesPerDayByRateCode);
         // 包装装量后缀：1片x100（前端与规格拼成 5mg1片x100）
         fillMedicationPackageSplitRatio(line, productByKey, productTable, medDefId);
@@ -1277,6 +1286,36 @@ public class InpatientDoctorStationAdviceListAssembler {
     }
 
     /**
+     * 分次剂量序列展示：各段拼单位，如 {@code 2mg,1mg}（BR-IP-ORD-037）。
+     *
+     * @param doseSchedule 计量逗号串；非空
+     * @param unitName     剂量单位展示名；可空
+     * @return 序列展示文案
+     */
+    private String buildDoseScheduleDisplay(String doseSchedule, String unitName) {
+        String[] parts = doseSchedule.split(",");
+        StringBuilder sb = new StringBuilder();
+        String unit = StringUtils.trimToEmpty(unitName);
+        for (int i = 0; i < parts.length; i++) {
+            String seg = StringUtils.trimToEmpty(parts[i]);
+            if (seg.isEmpty()) {
+                continue;
+            }
+            if (sb.length() > 0) {
+                sb.append(',');
+            }
+            sb.append(seg);
+            if (!unit.isEmpty()) {
+                sb.append(unit);
+            }
+        }
+        if (sb.length() == 0) {
+            return null;
+        }
+        return sb.toString();
+    }
+
+    /**
      * 回填药品包装装量后缀：目录包装相对拆零倍数 →「1片x100」（与规格拼成 5mg1片x100）。
      *
      * @param line          列表行
@@ -1307,7 +1346,10 @@ public class InpatientDoctorStationAdviceListAssembler {
     /**
      * 长期药回填日剂量友好文案（每日三片）；临时/出院带药不填。
      *
-     * @param line                   已填 dose/splitDose/rateCode/therapyTypeCode 的列表行
+     * <p>有 {@code quantitySchedule}/{@code doseSchedule} 时按各段求和（禁止首项×次数；
+     * BR-IP-ORD-037⑨ / BR-IP-EXE-040）。</p>
+     *
+     * @param line                   已填 dose/splitDose/rateCode/therapyTypeCode/schedule 的列表行
      * @param timesPerDayByRateCode  频次码 → 每日次数
      */
     private void fillMedicationDailyDoseDisplay(
@@ -1333,8 +1375,20 @@ public class InpatientDoctorStationAdviceListAssembler {
                 perDoseUnit = line.getDoseUnitName();
             }
         }
+        // 拆零日总量单位：优先列表 unitName，否则拆零结构化单位
+        String quantityUnitName = line.getUnitName();
+        if (StringUtils.isEmpty(quantityUnitName)) {
+            quantityUnitName = line.getSplitDoseUnitName();
+        }
         line.setDailyDoseDisplay(
-            MedicationDailyDoseDisplayAssembler.buildDailyDoseDisplay(perDoseQty, perDoseUnit, timesPerDay));
+            MedicationDailyDoseDisplayAssembler.buildDailyDoseDisplayPreferringSchedule(
+                line.getQuantitySchedule(),
+                quantityUnitName,
+                line.getDoseSchedule(),
+                line.getDoseUnitName(),
+                perDoseQty,
+                perDoseUnit,
+                timesPerDay));
     }
 
     /**

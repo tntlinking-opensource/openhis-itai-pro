@@ -28,8 +28,8 @@ export const INPATIENT_NURSING_LEVEL_RATE_LABEL = '每日一次';
 /** 嘱托诊疗类目（ServiceRequest.category_enum / 活动定义 category_code，AS-IP-DOR-003 BR-IP-ORD-028） */
 export const INPATIENT_ENTRUST_CATEGORY_CODE = '52';
 
-/** 嘱托目录固定项名称（精确匹配，BR-IP-ORD-028①） */
-export const INPATIENT_ENTRUST_ACTIVITY_NAME = '嘱托';
+/** 嘱托目录固定项名称（精确匹配，BR-IP-ORD-028①；产品内置） */
+export { BUILT_IN_ACTIVITY_NAME_ENTRUST as INPATIENT_ENTRUST_ACTIVITY_NAME } from '#/constants/domain/built-in-activity-definition';
 
 /** 嘱托目录检索：仅 wkf_activity_definition（快捷按钮开立时定位固定项） */
 export const INPATIENT_ENTRUST_CATALOG_TABLE_NAMES = ['wkf_activity_definition'] as const;

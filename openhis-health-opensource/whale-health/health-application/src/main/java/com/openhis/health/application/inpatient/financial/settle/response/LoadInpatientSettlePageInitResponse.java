@@ -38,4 +38,10 @@ public class LoadInpatientSettlePageInitResponse {
     /** 默认费用呈现模式 code。 */
     @Schema(description = "默认费用呈现模式 code")
     private String defaultPresentationMode;
+
+    /**
+     * 本院是否启用收费折扣能力（BR-IP-STL-020）；false 时结算 UI 无折扣率/折扣列。
+     */
+    @Schema(description = "是否启用收费折扣")
+    private Boolean discountFeatureEnabled;
 }

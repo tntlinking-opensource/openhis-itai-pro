@@ -271,6 +271,8 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
         cmd.setDoseUnitCode(line.getMedicationPayload().getDoseUnitCode());
         // 首日用量仅长期可写；临时/出院带药强制清空（BR-IP-ORD-030 / BR-MRQ-010）
         this.applyFirstDoseToCreateCommand(cmd, line);
+        // 分次 schedule 仅长期可写；非长期强制清空（BR-IP-ORD-037 / BR-MRQ-035）
+        this.applyDoseQuantityScheduleToCreateCommand(cmd, line);
         cmd.setDispensePerDuration(line.getMedicationPayload().getDispensePerDuration());
         cmd.setSkinTestFlag(line.getMedicationPayload().getSkinTestFlag());
         cmd.setEncounterDiagnosisIds(line.getMedicationPayload().getEncounterDiagnosisIds());
@@ -297,6 +299,25 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
         // 非长期：显式清空，防止前端误传
         cmd.setFirstDose(null);
         cmd.setFirstDoseUnitCode(null);
+    }
+
+    /**
+     * 按 therapy 写入或清空分次用量序列（创建草稿；BR-IP-ORD-037）。
+     *
+     * @param cmd  创建命令
+     * @param line 草稿行
+     */
+    private void applyDoseQuantityScheduleToCreateCommand(
+        CreateMedicationOrderDraftCommand cmd,
+        InpatientDoctorStationAdviceDraftLineRequest line) {
+        if (TherapyType.LONG_TERM.getCode().equals(this.resolveTherapyTypeCode(line))) {
+            cmd.setDoseSchedule(line.getMedicationPayload().getDoseSchedule());
+            cmd.setQuantitySchedule(line.getMedicationPayload().getQuantitySchedule());
+            return;
+        }
+        // 非长期：显式清空，防止前端误传
+        cmd.setDoseSchedule(null);
+        cmd.setQuantitySchedule(null);
     }
 
     /**
@@ -331,6 +352,8 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
         cmd.setDoseUnitCode(line.getMedicationPayload().getDoseUnitCode());
         // 首日用量仅长期可写；非长期清空（BR-IP-ORD-030）
         this.applyFirstDoseToChangeCommand(cmd, line);
+        // 分次 schedule 仅长期可写；非长期清空（BR-IP-ORD-037）
+        this.applyDoseQuantityScheduleToChangeCommand(cmd, line);
         cmd.setDispensePerDuration(line.getMedicationPayload().getDispensePerDuration());
         cmd.setSkinTestFlag(line.getMedicationPayload().getSkinTestFlag());
         cmd.setEncounterDiagnosisIds(line.getMedicationPayload().getEncounterDiagnosisIds());
@@ -343,12 +366,16 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
     /**
      * 按 therapy 写入或清空首日用量（修改草稿）。
      *
+     * <p>置 {@code syncFirstDose=true}，使域层接受 null 清空（医生删掉首日用量后暂存须落空）。</p>
+     *
      * @param cmd  修改命令
      * @param line 草稿行
      */
     private void applyFirstDoseToChangeCommand(
         ChangeMedicationOrderDraftCommand cmd,
         InpatientDoctorStationAdviceDraftLineRequest line) {
+        // Pre：本路径始终同步首日量；非长期强制清空，长期可写可空
+        cmd.setSyncFirstDose(true);
         if (TherapyType.LONG_TERM.getCode().equals(this.resolveTherapyTypeCode(line))) {
             cmd.setFirstDose(line.getMedicationPayload().getFirstDose());
             cmd.setFirstDoseUnitCode(line.getMedicationPayload().getFirstDoseUnitCode());
@@ -356,6 +383,28 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
         }
         cmd.setFirstDose(null);
         cmd.setFirstDoseUnitCode(null);
+    }
+
+    /**
+     * 按 therapy 写入或清空分次用量序列（修改草稿；BR-IP-ORD-037）。
+     *
+     * <p>置 {@code syncDoseQuantitySchedule=true}，使域层接受 null 清空（关闭「用量不一致」后暂存须落空）。</p>
+     *
+     * @param cmd  修改命令
+     * @param line 草稿行
+     */
+    private void applyDoseQuantityScheduleToChangeCommand(
+        ChangeMedicationOrderDraftCommand cmd,
+        InpatientDoctorStationAdviceDraftLineRequest line) {
+        // Pre：本路径始终同步分次序列；非长期强制清空，长期可写可空
+        cmd.setSyncDoseQuantitySchedule(true);
+        if (TherapyType.LONG_TERM.getCode().equals(this.resolveTherapyTypeCode(line))) {
+            cmd.setDoseSchedule(line.getMedicationPayload().getDoseSchedule());
+            cmd.setQuantitySchedule(line.getMedicationPayload().getQuantitySchedule());
+            return;
+        }
+        cmd.setDoseSchedule(null);
+        cmd.setQuantitySchedule(null);
     }
 
     /**
@@ -718,6 +767,9 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
         // 改量恒为长期：允许首日量
         cmd.setFirstDose(payload.getFirstDose());
         cmd.setFirstDoseUnitCode(payload.getFirstDoseUnitCode());
+        // 改量恒为长期：透传分次 schedule（可空；BR-IP-ORD-037）
+        cmd.setDoseSchedule(payload.getDoseSchedule());
+        cmd.setQuantitySchedule(payload.getQuantitySchedule());
         cmd.setDispensePerDuration(payload.getDispensePerDuration());
         cmd.setSkinTestFlag(payload.getSkinTestFlag());
         cmd.setEncounterDiagnosisIds(payload.getEncounterDiagnosisIds());
@@ -902,7 +954,8 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
         resp.setServiceRequestId(serviceRequestId);
         resp.setEncounterHistoryId(encounterHistoryId);
         resp.setSuccess(Boolean.TRUE);
-        resp.setMessage(DoctorStationAdviceConstants.RESPONSE_MESSAGE_OK);
+        // 开立即签发：前端成功提示与列表 ACTIVE 口径一致
+        resp.setMessage(DoctorStationAdviceConstants.MSG_DISCHARGE_ADVICE_CREATED_AND_SIGNED);
         return resp;
     }
 

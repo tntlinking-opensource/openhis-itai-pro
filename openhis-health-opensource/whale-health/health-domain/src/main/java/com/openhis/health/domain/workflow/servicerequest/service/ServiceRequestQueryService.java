@@ -26,6 +26,8 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -1319,6 +1321,19 @@ public class ServiceRequestQueryService {
         model.setId(request.getId());
         model.setStatusEnum(request.getStatusEnum());
         model.setCategoryEnum(request.getCategoryEnum());
+        model.setPrescriptionNo(request.getPrescriptionNo());
+        model.setMainProcedureFlag(request.getMainProcedureFlag());
+        model.setProcedureLevelCode(request.getProcedureLevelCode());
+        model.setIncisionTypeCode(request.getIncisionTypeCode());
+        model.setAnesthesiaMethodCode(request.getAnesthesiaMethodCode());
+        model.setProcedureTime(request.getProcedureTime());
+        model.setRemark(request.getRemark());
+        model.setSurgeonId(request.getSurgeonId());
+        model.setFirstAssistantId(request.getFirstAssistantId());
+        model.setSecondAssistantId(request.getSecondAssistantId());
+        model.setNurseId(request.getNurseId());
+        model.setAnesthetistId(request.getAnesthetistId());
+        model.setNestedAnesthesiaPrescriptionNo(request.getNestedAnesthesiaPrescriptionNo());
         return model;
     }
 
@@ -1338,6 +1353,7 @@ public class ServiceRequestQueryService {
         model.setRefundServiceId(request.getRefundServiceId());
         model.setActivityId(request.getActivityId());
         model.setCategoryEnum(request.getCategoryEnum());
+        model.setPriorityEnum(request.getPriorityEnum());
         model.setGenerateSourceEnum(request.getGenerateSourceEnum());
         model.setReasonText(request.getReasonText());
         model.setOccurrenceStartTime(request.getOccurrenceStartTime());
@@ -1366,6 +1382,17 @@ public class ServiceRequestQueryService {
         model.setStopCheckTime(request.getStopCheckTime());
         model.setEncounterDiagnosisIds(request.getEncounterDiagnosisIds());
         model.setPrescriptionNo(request.getPrescriptionNo());
+        model.setMainProcedureFlag(request.getMainProcedureFlag());
+        model.setProcedureLevelCode(request.getProcedureLevelCode());
+        model.setIncisionTypeCode(request.getIncisionTypeCode());
+        model.setAnesthesiaMethodCode(request.getAnesthesiaMethodCode());
+        model.setProcedureTime(request.getProcedureTime());
+        model.setSurgeonId(request.getSurgeonId());
+        model.setFirstAssistantId(request.getFirstAssistantId());
+        model.setSecondAssistantId(request.getSecondAssistantId());
+        model.setNurseId(request.getNurseId());
+        model.setAnesthetistId(request.getAnesthetistId());
+        model.setNestedAnesthesiaPrescriptionNo(request.getNestedAnesthesiaPrescriptionNo());
         return model;
     }
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Editor, JSONContent } from '@tiptap/core';
 
-import type { EmrEditorCaps } from './use-emr-editor-caps';
+import { type EmrEditorCaps, syncFillableIslandContentEditable } from './use-emr-editor-caps';
 
 import {
   EMR_DIAGNOSIS_METADATA_FIELD_KEYS,
@@ -62,6 +62,7 @@ import { EditorContent, useEditor } from '@tiptap/vue-3';
 import dayjs from 'dayjs';
 import {
   ElButton,
+  ElDialog,
   ElDropdown,
   ElDropdownItem,
   ElDropdownMenu,
@@ -87,6 +88,8 @@ import {
 import { type EmrDataElementWidget } from './data-element-types';
 import {
   defaultEmrEditorDoc,
+  DEFAULT_EDITOR_PAGE_MARGINS,
+  describeEditorPageMargins,
   EDITOR_FONT_FAMILY_OPTIONS,
   EDITOR_FONT_SIZE_OPTIONS,
   EDITOR_LINE_HEIGHT_OPTIONS,
@@ -94,8 +97,16 @@ import {
   EDITOR_PAPER_SIZE_PRESETS,
   EDITOR_PARAGRAPH_SPACING_OPTIONS,
   EDITOR_TEXT_INDENT_OPTIONS,
+  formatEditorMarginCm,
+  matchEditorPageMarginPreset,
+  type EditorPageMargins,
   type EditorPaperOrientation,
 } from './editor-defaults';
+import {
+  clampCellMinHeightMm,
+  EMR_MIN_CELL_HEIGHT_MM,
+  pageContentHeightMm,
+} from './extensions/emr-table-layout';
 import {
   applyEmrPageChromeBandDomStyle,
   applyChromeSelectionTextStyle,
@@ -237,8 +248,89 @@ const emit = defineEmits<{
   'update:pageChrome': [EmrPageChrome];
 }>();
 
+function normalizeEditorPageMargins(raw?: {
+  bottom?: string;
+  left?: string;
+  right?: string;
+  top?: string;
+}): EditorPageMargins {
+  return {
+    top: raw?.top?.trim() || DEFAULT_EDITOR_PAGE_MARGINS.top,
+    right: raw?.right?.trim() || DEFAULT_EDITOR_PAGE_MARGINS.right,
+    bottom: raw?.bottom?.trim() || DEFAULT_EDITOR_PAGE_MARGINS.bottom,
+    left: raw?.left?.trim() || DEFAULT_EDITOR_PAGE_MARGINS.left,
+  };
+}
+
+/** 屏上页边距真源：先写本地立刻改纸面，再同步宿主 v-model */
+const localPageMargins = ref<EditorPageMargins>(normalizeEditorPageMargins(props.pageMargins));
+const marginCustomVisible = ref(false);
+const customMarginCm = ref({ bottom: 1.5, left: 1.5, right: 1.5, top: 1.5 });
+
+const currentMarginPresetKey = computed(() => matchEditorPageMarginPreset(localPageMargins.value));
+
+function pageMarginThumbStyle(value: EditorPageMargins): Record<string, string> {
+  const parse = (raw: string, fallback: number) => {
+    const m = raw.trim().match(/^([\d.]+)\s*mm$/i);
+    const n = m ? Number(m[1]) : fallback;
+    return Number.isFinite(n) ? n : fallback;
+  };
+  const top = parse(value.top, 15);
+  const right = parse(value.right, 15);
+  const bottom = parse(value.bottom, 15);
+  const left = parse(value.left, 15);
+  return {
+    paddingTop: `${Math.max(8, (top / 297) * 100).toFixed(1)}%`,
+    paddingRight: `${Math.max(8, (right / 210) * 100).toFixed(1)}%`,
+    paddingBottom: `${Math.max(8, (bottom / 297) * 100).toFixed(1)}%`,
+    paddingLeft: `${Math.max(8, (left / 210) * 100).toFixed(1)}%`,
+  };
+}
+
+function commitPageMargins(next: EditorPageMargins) {
+  if (!canChangeLayout.value) return;
+  localPageMargins.value = { ...next };
+  emit('update:pageMargins', { ...next });
+  emit('change');
+  autoSave?.markDirty();
+  void nextTick(() => {
+    const ed = editor.value;
+    if (!ed || ed.isDestroyed) return;
+    requestEmrPaginationRelayout(ed);
+  });
+}
+
 function applyPageMarginPreset(preset: (typeof EDITOR_PAGE_MARGIN_PRESETS)[number]) {
-  emit('update:pageMargins', { ...preset.value });
+  commitPageMargins({ ...preset.value });
+}
+
+function onPageMarginCommand(command: string | number | object) {
+  if (command === 'custom') {
+    const cur = localPageMargins.value;
+    customMarginCm.value = {
+      top: Number(formatEditorMarginCm(parseCssLengthMm(cur.top, 15))),
+      right: Number(formatEditorMarginCm(parseCssLengthMm(cur.right, 15))),
+      bottom: Number(formatEditorMarginCm(parseCssLengthMm(cur.bottom, 15))),
+      left: Number(formatEditorMarginCm(parseCssLengthMm(cur.left, 15))),
+    };
+    marginCustomVisible.value = true;
+    return;
+  }
+  const key = String(command);
+  const preset = EDITOR_PAGE_MARGIN_PRESETS.find((p) => p.key === key);
+  if (preset) applyPageMarginPreset(preset);
+}
+
+function applyCustomPageMargins() {
+  const clampCm = (n: number) => Math.min(8, Math.max(0.5, Math.round(n * 100) / 100));
+  const toMm = (cm: number) => `${Math.round(clampCm(cm) * 10 * 10) / 10}mm`;
+  commitPageMargins({
+    top: toMm(customMarginCm.value.top),
+    right: toMm(customMarginCm.value.right),
+    bottom: toMm(customMarginCm.value.bottom),
+    left: toMm(customMarginCm.value.left),
+  });
+  marginCustomVisible.value = false;
 }
 
 /** 当前纸张规格（屏上预览；正式 PDF 仍走 PrintConfig） */
@@ -252,6 +344,10 @@ const paperSizeLabel = computed(() => {
   const hit = EDITOR_PAPER_SIZE_PRESETS.find((p) => p.key === paperSizeKey.value);
   return hit?.key ?? 'A4';
 });
+
+const paperOrientationLabel = computed(() =>
+  paperOrientation.value === 'landscape' ? '横向' : '纵向',
+);
 
 /** 解析当前纸宽/纸高（横向时对调） */
 function resolvePaperCssSize(): { height: string; width: string } {
@@ -391,7 +487,10 @@ function commitPageChrome(next: EmrPageChrome) {
   syncPageChromeToEditor();
 }
 
-function closeCtxMenu() {
+function closeCtxMenu(event?: Event) {
+  if (event?.target instanceof Element && event.target.closest('.simple-editor__ctx-menu')) {
+    return;
+  }
   ctxMenu.value.visible = false;
 }
 
@@ -432,6 +531,13 @@ function onEditorContextMenu(event: MouseEvent) {
       ed.chain().setNodeSelection(imgPos).run();
     } catch {
       /* 选区失败仍可用 imagePos 做右键操作 */
+    }
+  } else if (inTable) {
+    // 点在表内时把选区落到点击格，后续插行/行高才对得上右键那一行
+    try {
+      ed.chain().setTextSelection(pos).run();
+    } catch {
+      /* 选区失败仍按点击位置出表菜单 */
     }
   }
   ctxMenu.value = {
@@ -742,8 +848,8 @@ function syncChromeEditBandLayout() {
   const band = chromeEditingBand.value;
   if (!host || !band) return;
   const hPx = measureChromeBandShellHeightPx(host);
-  const m = props.pageMargins;
-  const baseMm = band === 'header' ? parseCssLengthMm(m?.top, 15) : parseCssLengthMm(m?.bottom, 15);
+  const m = localPageMargins.value;
+  const baseMm = band === 'header' ? parseCssLengthMm(m.top, 15) : parseCssLengthMm(m.bottom, 15);
   const basePx = (baseMm * 96) / 25.4;
   // 不低于工具栏页边距，避免编辑时正文上移、退出后又拉开
   const usePx = Math.max(Math.ceil(hPx), Math.ceil(basePx));
@@ -1064,8 +1170,8 @@ function exitChromeEdit() {
     const contentMm = pxToMm(measureChromeBandShellHeightPx(host));
     const baseMm =
       band === 'header'
-        ? parseCssLengthMm(props.pageMargins?.top, 15)
-        : parseCssLengthMm(props.pageMargins?.bottom, 15);
+        ? parseCssLengthMm(localPageMargins.value.top, 15)
+        : parseCssLengthMm(localPageMargins.value.bottom, 15);
     heightMm = Math.max(contentMm, baseMm);
     // 立刻退出 contentEditable，避免等重绘前抢焦点
     host.contentEditable = 'false';
@@ -1875,32 +1981,23 @@ function parseCssLengthMm(raw: string | undefined, fallback: number): number {
 }
 
 const pageMarginStyle = computed(() => {
-  const m = props.pageMargins;
+  const m = localPageMargins.value;
   const paper = resolvePaperCssSize();
   const vars: Record<string, string> = {
     '--simple-editor-a4-w': paper.width,
     '--simple-editor-a4-min-h': paper.height,
+    '--simple-editor-corner-top': m.top,
+    '--simple-editor-margin-top': m.top,
+    '--simple-editor-corner-right': m.right,
+    '--simple-editor-margin-right': m.right,
+    '--simple-editor-corner-bottom': m.bottom,
+    '--simple-editor-margin-bottom': m.bottom,
+    '--simple-editor-corner-left': m.left,
+    '--simple-editor-margin-left': m.left,
   };
-  // 角标位置 = 工具栏页边距，固定不随页眉增高移动
-  if (m?.top) {
-    vars['--simple-editor-corner-top'] = m.top;
-    vars['--simple-editor-margin-top'] = m.top;
-  }
-  if (m?.right) {
-    vars['--simple-editor-corner-right'] = m.right;
-    vars['--simple-editor-margin-right'] = m.right;
-  }
-  if (m?.bottom) {
-    vars['--simple-editor-corner-bottom'] = m.bottom;
-    vars['--simple-editor-margin-bottom'] = m.bottom;
-  }
-  if (m?.left) {
-    vars['--simple-editor-corner-left'] = m.left;
-    vars['--simple-editor-margin-left'] = m.left;
-  }
 
-  const topBase = parseCssLengthMm(m?.top, 15);
-  const bottomBase = parseCssLengthMm(m?.bottom, 15);
+  const topBase = parseCssLengthMm(m.top, 15);
+  const bottomBase = parseCssLengthMm(m.bottom, 15);
   if (localPageChrome.value.header.enabled) {
     const headerMm = resolveScreenChromeBandPaddingMm(localPageChrome.value.header, topBase);
     vars['--simple-editor-margin-top'] = `${headerMm}mm`;
@@ -2170,13 +2267,25 @@ watch(
 
 watch(
   () => props.pageMargins,
-  () => {
+  (v) => {
+    localPageMargins.value = normalizeEditorPageMargins(v);
     const ed = editor.value;
     if (!ed || ed.isDestroyed) return;
     requestEmrPaginationRelayout(ed);
   },
   { deep: true },
 );
+
+/** 根编辑器可写后，把填写岛 contenteditable 从 v-once 冻结值写回 */
+function syncEditorIslandEditable(ed: Editor | undefined = editor.value) {
+  if (!ed || ed.isDestroyed) return;
+  const writable = !props.readOnly;
+  syncFillableIslandContentEditable(ed.view.dom, writable);
+  void nextTick(() => {
+    if (ed.isDestroyed) return;
+    syncFillableIslandContentEditable(ed.view.dom, !props.readOnly);
+  });
+}
 
 watch(
   () => props.modelValue,
@@ -2214,6 +2323,8 @@ watch(
     if (props.surface === 'document') {
       applyMetadataValuesToDocNodes(ed, mergedMetaValues.value, true);
     }
+    // 换稿常复用 NodeView；v-once 岛可能仍停在打开历史时的 contenteditable=false
+    syncEditorIslandEditable(ed);
     scheduleSettledPaginationRelayout();
   },
 );
@@ -2225,6 +2336,7 @@ watch(
     if (!ed || ed.isDestroyed) return;
     ed.setEditable(!ro);
     toolbarRevision.value += 1;
+    syncEditorIslandEditable(ed);
     // 只读切换会换 NodeView 壳，高度变化后须重排（查看页常见）
     scheduleSettledPaginationRelayout();
   },
@@ -2483,6 +2595,85 @@ const isInTable = computed(() => {
   }
   return false;
 });
+
+/** 当前选区所在 tableRow，以及行内第一个格子的文档位置 */
+function currentTableRow() {
+  const ed = editor.value;
+  if (!ed) return null;
+  const $from = ed.state.selection.$from;
+  for (let d = $from.depth; d > 0; d--) {
+    const node = $from.node(d);
+    if (node.type.name === 'tableRow') {
+      return { node, start: $from.start(d) };
+    }
+  }
+  return null;
+}
+
+/** 一行里已写 minHeightMm 的最大值（视觉行高跟最高格走） */
+function readRowMinHeightMm(row: {
+  child: (i: number) => { attrs: Record<string, unknown> };
+  childCount: number;
+}) {
+  let maxMm: null | number = null;
+  for (let i = 0; i < row.childCount; i++) {
+    const mm = Number(row.child(i).attrs.minHeightMm);
+    if (!Number.isFinite(mm) || mm <= 0) continue;
+    maxMm = maxMm == null ? mm : Math.max(maxMm, mm);
+  }
+  return maxMm;
+}
+
+/** 当前行 minHeightMm，供行高数字框 */
+const currentRowMinHeightMm = computed(() => {
+  void toolbarRevision.value;
+  const row = currentTableRow();
+  return row ? readRowMinHeightMm(row.node) : null;
+});
+
+/** 本页内容区高度，行高上限用它，避免空书写区把落款挤出页脚 */
+const cellMinHeightMaxMm = computed(() => {
+  const paper = resolvePaperCssSize();
+  const paperMm = parseCssLengthMm(paper.height, 297);
+  const topMm = parseCssLengthMm(localPageMargins.value.top, 15);
+  const bottomMm = parseCssLengthMm(localPageMargins.value.bottom, 15);
+  return Math.round(pageContentHeightMm(paperMm, topMm, bottomMm));
+});
+
+/** 把当前行所有格写成同一 minHeightMm；空/0 表示跟内容走 */
+function onRowMinHeightMmChange(raw: null | number | undefined) {
+  if (!canEdit.value || props.readOnly) return;
+  const ed = editor.value;
+  if (!ed || ed.isDestroyed) return;
+  const row = currentTableRow();
+  if (!row) return;
+  const result =
+    raw == null
+      ? { clamped: false, value: null as null | number }
+      : clampCellMinHeightMm(raw, cellMinHeightMaxMm.value);
+  if (result.value === readRowMinHeightMm(row.node)) return;
+  if (result.clamped) {
+    ElMessage.warning('已到本页可用高度');
+  }
+  const { tr } = ed.state;
+  let offset = 0;
+  // 整行每格都写同一下限，避免只改当前格时行高看起来没动
+  for (let i = 0; i < row.node.childCount; i++) {
+    const cell = row.node.child(i);
+    const current = Number(cell.attrs.minHeightMm);
+    const currentVal = Number.isFinite(current) && current > 0 ? current : null;
+    if (currentVal !== result.value) {
+      tr.setNodeMarkup(row.start + offset, undefined, {
+        ...cell.attrs,
+        minHeightMm: result.value,
+      });
+    }
+    offset += cell.nodeSize;
+  }
+  if (tr.docChanged) {
+    ed.view.dispatch(tr);
+  }
+}
 
 /** 选区内是否包含非纯文本行内节点（元数据、固定字、图片等），有则不可整体转为固定文字 */
 function selectionHasNonTextInline(doc: Editor['state']['doc'], from: number, to: number) {
@@ -3439,6 +3630,32 @@ defineExpose({
 
             <span class="simple-editor__toolbar-compact-sep" aria-hidden="true"></span>
 
+            <label
+              v-if="isInTable"
+              class="simple-editor__cell-min-height"
+              title="当前行最小高度（mm）。空书写区可调矮；有字时仍跟内容走，不会裁切。"
+            >
+              <span class="simple-editor__cell-min-height-label">行高</span>
+              <ElInputNumber
+                :model-value="currentRowMinHeightMm ?? undefined"
+                size="small"
+                :min="EMR_MIN_CELL_HEIGHT_MM"
+                :max="cellMinHeightMaxMm"
+                :step="1"
+                :disabled="!canEdit"
+                controls-position="right"
+                class="simple-editor__cell-min-height-input"
+                @change="onRowMinHeightMmChange"
+              />
+              <span class="simple-editor__cell-min-height-unit">mm</span>
+            </label>
+
+            <span
+              v-if="isInTable"
+              class="simple-editor__toolbar-compact-sep"
+              aria-hidden="true"
+            ></span>
+
             <div class="simple-editor__toolbar-compact-group">
               <button
                 type="button"
@@ -4013,8 +4230,216 @@ defineExpose({
                 </div>
               </template>
 
+              <!-- 页面：纸张 / 页边距 / 页眉页脚 / 显示（与插入页签分开） -->
+              <template v-else-if="ribbonTab === 'page'">
+                <div class="simple-editor__ribbon-group">
+                  <div class="simple-editor__ribbon-group-body">
+                    <ElDropdown trigger="click" :disabled="!canChangeLayout">
+                      <button
+                        type="button"
+                        class="simple-editor__ribbon-cmd"
+                        :disabled="!canChangeLayout"
+                      >
+                        <ElIcon><Ticket /></ElIcon>
+                        <span>{{ paperSizeLabel }}</span>
+                      </button>
+                      <template #dropdown>
+                        <ElDropdownMenu>
+                          <ElDropdownItem
+                            v-for="p in EDITOR_PAPER_SIZE_PRESETS"
+                            :key="p.key"
+                            @click="applyPaperSize(p.key)"
+                          >
+                            {{ p.label }}
+                          </ElDropdownItem>
+                        </ElDropdownMenu>
+                      </template>
+                    </ElDropdown>
+                    <ElDropdown trigger="click" :disabled="!canChangeLayout">
+                      <button
+                        type="button"
+                        class="simple-editor__ribbon-cmd"
+                        :disabled="!canChangeLayout"
+                      >
+                        <ElIcon><ScaleToOriginal /></ElIcon>
+                        <span>{{ paperOrientationLabel }}</span>
+                      </button>
+                      <template #dropdown>
+                        <ElDropdownMenu>
+                          <ElDropdownItem @click="applyPaperOrientation('portrait')">
+                            纵向
+                          </ElDropdownItem>
+                          <ElDropdownItem @click="applyPaperOrientation('landscape')">
+                            横向
+                          </ElDropdownItem>
+                        </ElDropdownMenu>
+                      </template>
+                    </ElDropdown>
+                  </div>
+                  <span class="simple-editor__ribbon-group-label">纸张</span>
+                </div>
+
+                <span class="simple-editor__ribbon-sep"></span>
+
+                <div class="simple-editor__ribbon-group">
+                  <div class="simple-editor__ribbon-group-body">
+                    <ElDropdown
+                      trigger="click"
+                      :disabled="!canChangeLayout"
+                      popper-class="simple-editor__margin-popper"
+                      @command="onPageMarginCommand"
+                    >
+                      <button
+                        type="button"
+                        class="simple-editor__ribbon-cmd"
+                        :disabled="!canChangeLayout"
+                      >
+                        <ElIcon><Crop /></ElIcon>
+                        <span>页边距</span>
+                      </button>
+                      <template #dropdown>
+                        <ElDropdownMenu>
+                          <ElDropdownItem
+                            v-for="p in EDITOR_PAGE_MARGIN_PRESETS"
+                            :key="p.key"
+                            :command="p.key"
+                            :class="{ 'is-checked': currentMarginPresetKey === p.key }"
+                          >
+                            <div class="simple-editor__margin-preset">
+                              <div
+                                class="simple-editor__margin-thumb"
+                                :style="pageMarginThumbStyle(p.value)"
+                              >
+                                <span class="simple-editor__margin-thumb-body"></span>
+                              </div>
+                              <div class="simple-editor__margin-preset-text">
+                                <div class="simple-editor__margin-preset-name">{{ p.label }}</div>
+                                <div class="simple-editor__margin-preset-line">
+                                  {{ describeEditorPageMargins(p.value).line1 }}
+                                </div>
+                                <div class="simple-editor__margin-preset-line">
+                                  {{ describeEditorPageMargins(p.value).line2 }}
+                                </div>
+                              </div>
+                            </div>
+                          </ElDropdownItem>
+                          <ElDropdownItem
+                            divided
+                            command="custom"
+                            :class="{ 'is-checked': currentMarginPresetKey == null }"
+                          >
+                            <span class="simple-editor__margin-custom-item">自定义页边距...</span>
+                          </ElDropdownItem>
+                        </ElDropdownMenu>
+                      </template>
+                    </ElDropdown>
+                  </div>
+                  <span class="simple-editor__ribbon-group-label">页边距</span>
+                </div>
+
+                <span class="simple-editor__ribbon-sep"></span>
+
+                <div class="simple-editor__ribbon-group">
+                  <div class="simple-editor__ribbon-group-body">
+                    <button
+                      type="button"
+                      class="simple-editor__ribbon-cmd"
+                      :class="{ 'is-active': chromeEditingBand === 'header' }"
+                      :disabled="!canChangeLayout"
+                      @click="enterChromeEdit('header')"
+                    >
+                      <ElIcon><Notebook /></ElIcon>
+                      <span>页眉</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="simple-editor__ribbon-cmd"
+                      :class="{ 'is-active': chromeEditingBand === 'footer' }"
+                      :disabled="!canChangeLayout"
+                      @click="enterChromeEdit('footer')"
+                    >
+                      <ElIcon><Memo /></ElIcon>
+                      <span>页脚</span>
+                    </button>
+                    <ElDropdown trigger="click" :disabled="!canChangeLayout">
+                      <button
+                        type="button"
+                        class="simple-editor__ribbon-cmd"
+                        :disabled="!canChangeLayout"
+                      >
+                        <ElIcon><Document /></ElIcon>
+                        <span>页码</span>
+                      </button>
+                      <template #dropdown>
+                        <ElDropdownMenu>
+                          <ElDropdownItem @click="insertPageNumberFromRibbon('preset')">
+                            第 X 页 (共 Y 页)
+                          </ElDropdownItem>
+                          <ElDropdownItem @click="insertPageNumberFromRibbon('field')">
+                            仅页码
+                          </ElDropdownItem>
+                        </ElDropdownMenu>
+                      </template>
+                    </ElDropdown>
+                  </div>
+                  <span class="simple-editor__ribbon-group-label">页眉页脚</span>
+                </div>
+
+                <span class="simple-editor__ribbon-sep"></span>
+
+                <div class="simple-editor__ribbon-group">
+                  <div class="simple-editor__ribbon-group-body">
+                    <button
+                      type="button"
+                      class="simple-editor__ribbon-cmd"
+                      :disabled="!canChangeLayout"
+                      @click="insertPageBreakFromRibbon"
+                    >
+                      <ElIcon><Switch /></ElIcon>
+                      <span>分页符</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="simple-editor__ribbon-cmd"
+                      :disabled="!canChangeLayout"
+                      @click="insertOutlineFromRibbon"
+                    >
+                      <ElIcon><List /></ElIcon>
+                      <span>目录</span>
+                    </button>
+                  </div>
+                  <span class="simple-editor__ribbon-group-label">页面</span>
+                </div>
+
+                <span class="simple-editor__ribbon-sep"></span>
+
+                <div class="simple-editor__ribbon-group">
+                  <div class="simple-editor__ribbon-group-body">
+                    <button
+                      type="button"
+                      class="simple-editor__ribbon-cmd"
+                      :class="{ 'is-active': showPageRuler }"
+                      @click="togglePageRuler"
+                    >
+                      <ElIcon><Operation /></ElIcon>
+                      <span>标尺</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="simple-editor__ribbon-cmd"
+                      :class="{ 'is-active': showPageGridlines }"
+                      @click="togglePageGridlines"
+                    >
+                      <ElIcon><Grid /></ElIcon>
+                      <span>网格线</span>
+                    </button>
+                  </div>
+                  <span class="simple-editor__ribbon-group-label">显示</span>
+                </div>
+              </template>
+
               <!-- 插入：图标磁贴 + 控件网格 -->
-              <template v-else>
+              <template v-else-if="ribbonTab === 'insert'">
                 <div class="simple-editor__ribbon-group">
                   <div class="simple-editor__ribbon-group-body">
                     <div class="simple-editor__ribbon-cmd-grid">
@@ -4079,7 +4504,7 @@ defineExpose({
 
                 <span class="simple-editor__ribbon-sep"></span>
 
-                <div class="simple-editor__ribbon-group simple-editor__ribbon-group--fill">
+                <div class="simple-editor__ribbon-group">
                   <div class="simple-editor__ribbon-group-body">
                     <ElDropdown trigger="click" :disabled="!canChangeLayout">
                       <button
@@ -4176,6 +4601,35 @@ defineExpose({
                         </ElDropdownMenu>
                       </template>
                     </ElDropdown>
+                    <label
+                      v-if="isInTable"
+                      class="simple-editor__cell-min-height simple-editor__cell-min-height--ribbon"
+                      title="当前行最小高度（mm）。空书写区可调矮；有字时仍跟内容走，不会裁切。"
+                    >
+                      <span class="simple-editor__cell-min-height-label">行高</span>
+                      <span class="simple-editor__cell-min-height-row">
+                        <ElInputNumber
+                          :model-value="currentRowMinHeightMm ?? undefined"
+                          size="small"
+                          :min="EMR_MIN_CELL_HEIGHT_MM"
+                          :max="cellMinHeightMaxMm"
+                          :step="1"
+                          :disabled="!canEdit"
+                          controls-position="right"
+                          class="simple-editor__cell-min-height-input"
+                          @change="onRowMinHeightMmChange"
+                        />
+                        <span class="simple-editor__cell-min-height-unit">mm</span>
+                      </span>
+                    </label>
+                  </div>
+                  <span class="simple-editor__ribbon-group-label">表格</span>
+                </div>
+
+                <span class="simple-editor__ribbon-sep"></span>
+
+                <div class="simple-editor__ribbon-group">
+                  <div class="simple-editor__ribbon-group-body">
                     <button
                       type="button"
                       class="simple-editor__ribbon-cmd"
@@ -4446,6 +4900,26 @@ defineExpose({
       </template>
       <template v-if="ctxMenu.inTable">
         <li class="simple-editor__ctx-menu-sep"></li>
+        <li class="simple-editor__ctx-menu-row-height" @click.stop @mousedown.stop>
+          <label
+            class="simple-editor__cell-min-height"
+            title="当前行最小高度（mm）。空书写区可调矮；有字时仍跟内容走，不会裁切。"
+          >
+            <span class="simple-editor__cell-min-height-label">行高</span>
+            <ElInputNumber
+              :model-value="currentRowMinHeightMm ?? undefined"
+              size="small"
+              :min="EMR_MIN_CELL_HEIGHT_MM"
+              :max="cellMinHeightMaxMm"
+              :step="1"
+              :disabled="!canEdit"
+              controls-position="right"
+              class="simple-editor__cell-min-height-input"
+              @change="onRowMinHeightMmChange"
+            />
+            <span class="simple-editor__cell-min-height-unit">mm</span>
+          </label>
+        </li>
         <li
           @click="
             chain()?.addRowAfter().run();
@@ -4495,6 +4969,69 @@ defineExpose({
     @confirm="onInsertWidgetConfirm"
   />
   <EmrImageCropDialog v-model="imageCropOpen" :src="imageCropSrc" @confirm="onImageCropConfirm" />
+  <ElDialog
+    v-model="marginCustomVisible"
+    title="页边距"
+    width="420px"
+    append-to-body
+    destroy-on-close
+    class="simple-editor__margin-dialog"
+  >
+    <div class="simple-editor__margin-custom-grid">
+      <label class="simple-editor__margin-custom-field">
+        <span>上</span>
+        <ElInputNumber
+          v-model="customMarginCm.top"
+          :min="0.5"
+          :max="8"
+          :step="0.1"
+          :precision="2"
+          controls-position="right"
+        />
+        <span>厘米</span>
+      </label>
+      <label class="simple-editor__margin-custom-field">
+        <span>下</span>
+        <ElInputNumber
+          v-model="customMarginCm.bottom"
+          :min="0.5"
+          :max="8"
+          :step="0.1"
+          :precision="2"
+          controls-position="right"
+        />
+        <span>厘米</span>
+      </label>
+      <label class="simple-editor__margin-custom-field">
+        <span>左</span>
+        <ElInputNumber
+          v-model="customMarginCm.left"
+          :min="0.5"
+          :max="8"
+          :step="0.1"
+          :precision="2"
+          controls-position="right"
+        />
+        <span>厘米</span>
+      </label>
+      <label class="simple-editor__margin-custom-field">
+        <span>右</span>
+        <ElInputNumber
+          v-model="customMarginCm.right"
+          :min="0.5"
+          :max="8"
+          :step="0.1"
+          :precision="2"
+          controls-position="right"
+        />
+        <span>厘米</span>
+      </label>
+    </div>
+    <template #footer>
+      <ElButton @click="marginCustomVisible = false">取消</ElButton>
+      <ElButton type="primary" @click="applyCustomPageMargins">确定</ElButton>
+    </template>
+  </ElDialog>
 </template>
 
 <style scoped>
@@ -4502,6 +5039,46 @@ defineExpose({
   display: flex;
   min-height: 0;
   flex: 1;
+}
+
+.simple-editor__cell-min-height {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.simple-editor__cell-min-height-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.simple-editor__cell-min-height--ribbon {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 68px;
+  max-height: 68px;
+  padding: 0 4px;
+  gap: 2px;
+}
+
+.simple-editor__cell-min-height-input {
+  width: 92px;
+}
+
+.simple-editor__cell-min-height :deep(.el-input-number) {
+  width: 92px;
+  flex-shrink: 0;
+}
+
+.simple-editor__cell-min-height-unit {
+  color: var(--el-text-color-regular);
 }
 
 .simple-editor__sidebar {
@@ -4956,6 +5533,14 @@ defineExpose({
 
 .simple-editor__ctx-menu li:hover {
   background: var(--el-fill-color-light, #f5f7fa);
+}
+
+.simple-editor__ctx-menu-row-height {
+  cursor: default;
+}
+
+.simple-editor__ctx-menu li.simple-editor__ctx-menu-row-height:hover {
+  background: transparent;
 }
 
 .simple-editor__ctx-menu-sep {

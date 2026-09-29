@@ -74,11 +74,21 @@ const mutationLoading = ref(false);
 const postedChargesByRuleId = ref<Record<string, AutoRollPostedChargeTableRow[]>>({});
 /** 正在加载展开记录的 ruleId 集合 */
 const postedLoadingRuleIds = ref<Record<string, boolean>>({});
+/** 受控展开行（切患者时清空，避免旧 ruleId 错绑新就诊） */
+const expandedRuleIds = ref<string[]>([]);
 /** 正在取消的 chargeItemId */
 const cancellingChargeItemId = ref<string | null>(null);
+/** 配置列表请求世代：切患者 / 重复 reload 时丢弃过期响应 */
+let configLoadGeneration = 0;
+/** 已滚费用展开请求世代（同理） */
+let postedLoadGeneration = 0;
 
 const listConfigsRequest = useRequest(httpListAutoRollConfigs, { manual: true });
-const listPostedChargesRequest = useRequest(httpListAutoRollPostedCharges, { manual: true });
+/** 过期请求错误由世代守卫吞掉，避免切患者误报「配置不存在」 */
+const listPostedChargesRequest = useRequest(httpListAutoRollPostedCharges, {
+  manual: true,
+  showErrorMessage: false,
+});
 const cancelExecuteRequest = useRequest(httpCancelNurseStationOrderExecutions, { manual: true });
 const createRuleRequest = useRequest(httpCreateAutoGenRule, { manual: true });
 const updateRuleRequest = useRequest(httpUpdateAutoGenRule, { manual: true });
@@ -101,45 +111,75 @@ function resolvePatientIds() {
   return { encounterId, patientId };
 }
 
-/** 清空展开缓存（患者/配置刷新后重新拉取）。 */
+/** 清空展开缓存与展开态（患者切换 / 配置刷新后重新拉取）。 */
 function clearPostedChargeCache() {
   postedChargesByRuleId.value = {};
   postedLoadingRuleIds.value = {};
+  expandedRuleIds.value = [];
+}
+
+/** 丢弃在途配置/展开请求，并立刻清掉旧患者行，避免展开时 ruleId 与就诊错位。 */
+function invalidateAutoRollPanelState() {
+  configLoadGeneration += 1;
+  postedLoadGeneration += 1;
+  configRows.value = [];
+  nursingReadonly.value = null;
+  nurseOptions.value = [];
+  clearPostedChargeCache();
+}
+
+/** 当前表格是否仍包含该配置（防止旧行展开打到新就诊）。 */
+function isRuleInCurrentConfigRows(ruleId: string): boolean {
+  return configRows.value.some((item) => item.ruleId === ruleId);
 }
 
 /** 加载自动计费配置与护理只读区。 */
 async function loadAutoRollConfigs() {
+  const generation = ++configLoadGeneration;
+  postedLoadGeneration += 1;
+  // 先清空旧行与展开态，避免 reload / 切患者竞态下用旧 ruleId 打新就诊
+  clearPostedChargeCache();
+  configRows.value = [];
+  nursingReadonly.value = null;
+  nurseOptions.value = [];
+
   if (!props.canViewBilling || !props.patient) {
-    configRows.value = [];
-    nursingReadonly.value = null;
-    nurseOptions.value = [];
-    clearPostedChargeCache();
     return;
   }
   const { encounterId, patientId } = resolvePatientIds();
   if (!encounterId || !patientId) {
-    configRows.value = [];
-    nursingReadonly.value = null;
-    nurseOptions.value = [];
-    clearPostedChargeCache();
     return;
   }
-  const res = await listConfigsRequest.run({
-    encounterId,
-    patientId,
-    billDate: billDate.value || undefined,
-  });
-  configRows.value = mapAutoRollConfigRows(res.configs);
-  nursingReadonly.value = res.nursingLevelReadonly ?? null;
-  // 计费人下拉：value 须原样 string，禁止 Number
-  nurseOptions.value = (res.nurseOptions ?? [])
-    .map((opt) => {
-      const value = preserveApiIdForRequest(opt.value) ?? '';
-      const label = String(opt.label ?? '').trim() || value;
-      return { value, label };
-    })
-    .filter((opt) => opt.value.length > 0);
-  clearPostedChargeCache();
+  const requestedEncounterId = encounterId;
+  try {
+    const res = await listConfigsRequest.run({
+      encounterId,
+      patientId,
+      billDate: billDate.value || undefined,
+    });
+    if (generation !== configLoadGeneration) {
+      return;
+    }
+    if (preserveApiIdForRequest(props.patient?.id) !== requestedEncounterId) {
+      return;
+    }
+    configRows.value = mapAutoRollConfigRows(res.configs);
+    nursingReadonly.value = res.nursingLevelReadonly ?? null;
+    // 计费人下拉：value 须原样 string，禁止 Number
+    nurseOptions.value = (res.nurseOptions ?? [])
+      .map((opt) => {
+        const value = preserveApiIdForRequest(opt.value) ?? '';
+        const label = String(opt.label ?? '').trim() || value;
+        return { value, label };
+      })
+      .filter((opt) => opt.value.length > 0);
+  } catch {
+    if (generation === configLoadGeneration) {
+      configRows.value = [];
+      nursingReadonly.value = null;
+      nurseOptions.value = [];
+    }
+  }
 }
 
 /** 加载指定配置的已滚费用记录。 */
@@ -148,25 +188,56 @@ async function loadPostedChargesForRule(ruleId: string) {
   if (!encounterId || !patientId || !ruleId) {
     return;
   }
+  // 表格仍是旧患者配置时禁止请求，避免 EX-IP-ARG-401
+  if (!isRuleInCurrentConfigRows(ruleId)) {
+    return;
+  }
+  // 仅与「切患者 / 刷新配置」共享世代；同屏多行展开互不抢世代
+  const generation = postedLoadGeneration;
+  const requestedEncounterId = encounterId;
+  const requestedPatientId = patientId;
   postedLoadingRuleIds.value = {
     ...postedLoadingRuleIds.value,
     [ruleId]: true,
   };
   try {
     const res = await listPostedChargesRequest.run({
-      encounterId,
-      patientId,
+      encounterId: requestedEncounterId,
+      patientId: requestedPatientId,
       ruleId,
     });
+    if (generation !== postedLoadGeneration) {
+      return;
+    }
+    if (preserveApiIdForRequest(props.patient?.id) !== requestedEncounterId) {
+      return;
+    }
+    if (!isRuleInCurrentConfigRows(ruleId)) {
+      return;
+    }
     postedChargesByRuleId.value = {
       ...postedChargesByRuleId.value,
       [ruleId]: mapAutoRollPostedChargeRows(res.charges),
     };
+  } catch (error) {
+    if (generation !== postedLoadGeneration) {
+      return;
+    }
+    if (preserveApiIdForRequest(props.patient?.id) !== requestedEncounterId) {
+      return;
+    }
+    const msg =
+      (error as { message?: string; msg?: string })?.message ||
+      (error as { message?: string; msg?: string })?.msg ||
+      '计费记录加载失败，请稍后重试';
+    ElMessage.error(msg);
   } finally {
-    postedLoadingRuleIds.value = {
-      ...postedLoadingRuleIds.value,
-      [ruleId]: false,
-    };
+    if (generation === postedLoadGeneration) {
+      postedLoadingRuleIds.value = {
+        ...postedLoadingRuleIds.value,
+        [ruleId]: false,
+      };
+    }
   }
 }
 
@@ -175,8 +246,12 @@ function handleConfigExpandChange(
   row: AutoRollConfigTableRow,
   expandedRows: AutoRollConfigTableRow[],
 ) {
+  expandedRuleIds.value = expandedRows.map((item) => item.id);
   const expanded = expandedRows.some((item) => item.ruleId === row.ruleId);
   if (!expanded) {
+    return;
+  }
+  if (!isRuleInCurrentConfigRows(row.ruleId)) {
     return;
   }
   // 已缓存则不重复请求
@@ -417,6 +492,8 @@ function isPostedChargesLoading(ruleId: string): boolean {
 watch(
   () => props.patient?.id,
   () => {
+    // 先作废在途请求并清空旧行，再拉新患者配置（防止展开明细带着旧 ruleId）
+    invalidateAutoRollPanelState();
     void loadAutoRollConfigs();
   },
   { immediate: true },
@@ -472,6 +549,7 @@ defineExpose({ reload });
         stripe
         height="100%"
         row-key="id"
+        :expand-row-keys="expandedRuleIds"
         :row-class-name="resolveRowClassName"
         @expand-change="handleConfigExpandChange"
       >

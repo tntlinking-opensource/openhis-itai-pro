@@ -43,6 +43,12 @@ public class DoctorStationQueueDisplayEnrichment {
     private String idCard;
 
     /**
+     * 联系电话：来自患者主档 {@code phone}；读模型未投影。
+     */
+    @Schema(description = "联系电话")
+    private String phone;
+
+    /**
      * 险种类型码：来自就诊医保账户 {@code adm_account.insutype}（与护士站队列同口径）。
      */
     @Schema(description = "险种类型码")

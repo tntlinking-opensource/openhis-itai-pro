@@ -82,19 +82,7 @@ public enum SettingDefinitionEnum {
 
     DOCTOR_STATION_WESTERN_DIAGNOSIS_SOURCES(
 
-        "doctorStationWesternDiagnosisSources", "医生站西医诊断检索目录来源"),
-
-
-
-    /**
-
-     * 住院停嘱校对成功后是否自动将剩余 pending 计划点登记为不执行；值约定：{@code 1} 开启，{@code 0} 关闭（种子默认关闭）。
-
-     */
-
-    INPATIENT_STOP_VERIFY_AUTO_SKIP_PENDING(
-
-        "inpatientStopVerifyAutoSkipPending", "住院停嘱校对后自动不执行剩余时点");
+        "doctorStationWesternDiagnosisSources", "医生站西医诊断检索目录来源");
 
 
 

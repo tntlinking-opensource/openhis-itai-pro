@@ -17,10 +17,10 @@ import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
- * 将用户表单维护的出诊科室（及默认登录科室）同步至 {@code whale_user_organization_units}，供登录选科。
+ * 将用户表单维护的出诊科室、工作科室（及默认登录科室）同步至 {@code whale_user_organization_units}，供登录选科。
  *
- * <p>口径：能登哪些科以用户里配置的出诊科室为准；不维护则登录不出现选科（医院级）。
- * 默认登录科室只决定登录后落到哪一科，不单独灌满/清空绑定。无账号级特例。</p>
+ * <p>口径：能登哪些科以岗位上的科室为准（医师出诊科室、护士/医技工作科室）；不维护则登录不出现选科（医院级）。
+ * 默认登录科室只决定登录后落到哪一科，不单独灌满/清空绑定。会话选中的科室即当前执行归属，供后续统计记到该科。无账号级特例。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -66,14 +66,14 @@ public class UserLoginOrganizationSyncService {
     }
 
     /**
-     * 将用户可登录科室与出诊岗位 + 默认登录科室对齐并写入 Whale OU 绑定。
+     * 将用户可登录科室与出诊/工作科室岗位 + 默认登录科室对齐并写入 Whale OU 绑定。
      *
      * @param userId       平台用户主键
      * @param practitioner 医务人员主档
      */
     private void syncLoginOrganizationsForUser(Long userId, Practitioner practitioner) {
         LinkedHashSet<Long> orgIds = new LinkedHashSet<>();
-        // 出诊科室（岗位 org_id）= 登录可选/可切换科室来源
+        // 出诊科室 / 工作科室（岗位 org_id）= 登录可选/可切换科室来源
         orgIds.addAll(practitionerRoleQueryService.collectLoginOrganizationUnitIds(practitioner.getId()));
         // 默认登录科室：有则并入可选列表，供登录后落到该科
         if (practitioner.getOrgId() != null) {

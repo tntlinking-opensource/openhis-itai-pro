@@ -183,7 +183,7 @@ const currentLine = computed(
   () => effectiveLines.value.find((row) => row.id === currentLineId.value) ?? null,
 );
 
-/** 明细中是否存在非标追溯码品（依洛尤单抗等）：扫码解析放宽 20 位 */
+/** 明细中是否存在白名单非标追溯码品（依洛尤单抗 / 地舒单抗）：扫码解析才放宽 20 位 */
 const hasNonStandardTraceDrugLine = computed(() =>
   effectiveLines.value.some((row) => isNonStandardTraceDrugName(row.itemName)),
 );
@@ -483,7 +483,8 @@ function pickFallbackTargetLine(): TraceBatchScanLine | undefined {
 }
 
 /**
- * 非标长度码按药名匹配目标行：优先已锁定的非标品行，否则在非标品候选中挑未满行。
+ * 非标长度码按白名单药名匹配目标行：优先已锁定的白名单品行，否则在白名单候选中挑未满行。
+ * 仅依洛尤单抗 / 地舒单抗等关键字品可绑非标码；其它药不得回落。
  */
 function pickNonStandardDrugTargetLine(traceNo: string): TraceBatchScanLine | undefined {
   const preset = scenePreset();
@@ -978,6 +979,7 @@ function bindManualCodeToLine(row: TraceBatchScanLine, rawCode: string): boolean
   const trimmed = rawCode.trim();
   if (!trimmed) return false;
 
+  // 非 20 位仅白名单药（依洛尤单抗 / 地舒单抗）可绑；其它药一律拒
   const rowAllowsNonStandard = isNonStandardTraceDrugName(row.itemName);
   if (!isStandardTraceCode(trimmed)) {
     if (!rowAllowsNonStandard || !isNonStandardLengthTraceCode(trimmed)) {
@@ -1335,8 +1337,12 @@ function bindNonStandardLengthCodes(
     const target = pickNonStandardDrugTargetLine(trimmed);
     if (!target) {
       stats.invalid += 1;
-      pushLog(trimmed, 'invalid', '非标追溯码仅可绑到依洛尤单抗等指定药品，请点选对应行后再扫');
-      ElMessage.warning('非标追溯码请点选「依洛尤单抗」等对应药品后再扫');
+      pushLog(
+        trimmed,
+        'invalid',
+        '非标追溯码仅可绑到依洛尤单抗、地舒单抗等指定药品，请点选对应行后再扫',
+      );
+      ElMessage.warning('非标追溯码请点选「依洛尤单抗」「地舒单抗」等对应药品后再扫');
       continue;
     }
     if (bindManualCodeToLine(target, trimmed)) {
@@ -1512,6 +1518,7 @@ async function handleScanEnter(): Promise<void> {
     return;
   }
 
+  // 仅当明细含白名单药（依洛尤单抗 / 地舒单抗）时，才允许非 20 位整段入解析
   const { bad, ok } = extractTraceCodes(raw, {
     allowNonStandardLength: hasNonStandardTraceDrugLine.value,
   });

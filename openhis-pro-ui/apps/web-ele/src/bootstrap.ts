@@ -22,6 +22,18 @@ import './styles/persistent-error-messagebox.css';
 import './styles/date-picker-shortcuts-bottom.css';
 
 async function bootstrap(namespace: string) {
+  // ElForm 是原生 form。单行输入回车会隐式提交并整页刷新。
+  // SPA 内统一拦住默认提交，组件上的 @submit 仍会执行。
+  if (typeof document !== 'undefined') {
+    document.addEventListener(
+      'submit',
+      (event) => {
+        event.preventDefault();
+      },
+      true,
+    );
+  }
+
   // 添加全局错误处理，捕获 Element Plus useKeydown.ts 中的 querySelectorAll 错误
   if (typeof window !== 'undefined') {
     // 处理同步错误

@@ -21,17 +21,17 @@ import lombok.experimental.Accessors;
 public class LoadNurseWorkloadFormInitRequest {
 
     /**
-     * 就诊范围 OUTPATIENT/INPATIENT；空则默认门诊，用于刷新默认登录科室下拉口径。
+     * 就诊范围 OUTPATIENT/INPATIENT；空则默认门诊。工作科室下拉不随就诊域变化。
      */
     @Schema(description = "就诊范围 OUTPATIENT/INPATIENT")
     private String encounterScope;
 
     /**
-     * 默认登录科室主键（可选；{@code Practitioner.org_id}）。
+     * 工作科室主键（可选；岗位 {@code adm_pr_assign.org_id}）。
      *
-     * <p>已选时护士下拉仅返回该科人员；未选返回全院护士岗。</p>
+     * <p>已选时人员下拉仅返回挂了该工作科室的护士/医技；未选返回这两类角色全员。</p>
      */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "默认登录科室主键（可选；Practitioner.org_id）")
+    @Schema(description = "工作科室主键（可选；岗位 adm_pr_assign.org_id）")
     private Long organizationId;
 }

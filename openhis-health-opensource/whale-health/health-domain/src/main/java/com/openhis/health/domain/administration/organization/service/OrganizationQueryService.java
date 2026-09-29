@@ -71,14 +71,28 @@ public class OrganizationQueryService {
     /**
      * 护士站科室下拉：启用且分类为护士站（{@link OrganizationClassification#NS}）。
      *
-     * <p>供护士工作量「默认登录科室」等场景；含门诊注射室、采血室、疗区护士站等，
-     * <strong>禁止</strong>用挂号科/入院科冒充。</p>
+     * <p>含门诊注射室、采血室、疗区护士站等；<strong>禁止</strong>用挂号科/入院科冒充。</p>
      *
      * @return 护士站机构列表
      */
     public List<Organization> listOrganizationsForNurseStation() {
         return scopeToCurrentTenant(organizationRepository.findAllByStatusEnumAndClassEnumOrderByDisplayOrderAscIdAsc(
             PublicationStatus.ACTIVE.getCode(), OrganizationClassification.NS));
+    }
+
+    /**
+     * 工作科室下拉：启用的护士站（{@code NS}）与医技科室（{@code TECH}）。
+     *
+     * <p>护士工作量按岗位 {@code adm_pr_assign.org_id} 统计时使用；与人员主档默认登录科室无关。</p>
+     *
+     * @return 工作科室列表（按展示顺序）
+     */
+    public List<Organization> listOrganizationsForWorkDepartment() {
+        List<Organization> merged = new ArrayList<>();
+        merged.addAll(this.listOrganizationsForNurseStation());
+        merged.addAll(scopeToCurrentTenant(organizationRepository.findAllByStatusEnumAndClassEnumOrderByDisplayOrderAscIdAsc(
+            PublicationStatus.ACTIVE.getCode(), OrganizationClassification.TECH)));
+        return this.sortByDisplayOrder(merged);
     }
 
     /**

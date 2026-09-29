@@ -14,9 +14,11 @@ import com.openhis.health.domain.administration.encounter.queries.EncounterSessi
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterLocationScope;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.NurseStationOutpatientQueueQuery;
+import com.openhis.health.domain.administration.encounter.queries.MedicalTechWorkstationQueueQuery;
 import com.openhis.health.domain.administration.encounter.queries.OutpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.RegistrationSlipPageQuery;
 import com.openhis.health.domain.administration.location.entity.Location;
+import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.administration.patient.entity.Patient;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
@@ -24,6 +26,7 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.InpatientRegistrationConstants;
 import com.openhis.health.domain.share.constants.InpatientSettleQueueTab;
+import com.openhis.health.domain.share.constants.MedicalTechExecutionConstants;
 import com.openhis.health.domain.share.constants.RegistrationSlipConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.financial.paymentreconciliation.entity.PaymentReconciliation;
@@ -35,6 +38,7 @@ import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.enums.EncounterParticipantRole;
 import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.enums.LocationForm;
+import com.openhis.health.domain.share.enums.OrganizationClassification;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.query.AbstractPageQuery;
@@ -317,6 +321,73 @@ public class EncounterContextCriteriaSupport {
             if (effective instanceof NurseStationOutpatientQueueQuery nursePendingQuery
                 && Boolean.TRUE.equals(nursePendingQuery.getPendingDeviceOnly())) {
                 predicates.add(this.buildNurseStationPendingDeviceExists(root, cb, criteriaQuery));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+    }
+
+    /**
+     * 医技工作站患者队列筛选规约（BR-MT-EXE-002 有活；可选仅待发耗材 BR-MT-EXE-003）。
+     *
+     * <p>须携带登录医技科 {@code loginTechOrgId} 与 {@code encounterScope}；跨聚合 EXISTS 落在本 Support，
+     * 不由 {@code EncounterQueryService} 内联 subquery（B.6.4）。住院按 {@code inpatientStayFilter}
+     * 收窄在院（已入科/待转科·待出院/待出院结算）或不在院（已清床离院）。</p>
+     *
+     * @param query 分页与 TECH 科/scope/关键字/日期窗/{@code pendingDeviceOnly}/{@code inpatientStayFilter}；空或缺关键字段时返回空结果规约
+     * @return JPA 规约
+     */
+    public Specification<Encounter> medicalTechWorkstationSpecification(MedicalTechWorkstationQueueQuery query) {
+        return (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            // Gate：缺登录科或 scope 非法则空结果，避免误扫他科/全类别
+            if (query == null || query.getLoginTechOrgId() == null) {
+                predicates.add(cb.disjunction());
+                return cb.and(predicates.toArray(new Predicate[0]));
+            }
+            String classEnumCode = this.resolveMedicalTechEncounterClassCode(query.getEncounterScope());
+            if (classEnumCode == null) {
+                predicates.add(cb.disjunction());
+                return cb.and(predicates.toArray(new Predicate[0]));
+            }
+            predicates.add(cb.equal(root.get(FieldNameConstants.CLASS_ENUM), classEnumCode));
+            Long loginTechOrgId = query.getLoginTechOrgId();
+            // 住院：按在院/不在院筛选就诊态（默认在院；排除待入科）
+            if (EncounterClass.IMP.getCode().equals(classEnumCode)) {
+                this.applyMedicalTechInpatientVisibleStatus(
+                    predicates, root, cb, query.getInpatientStayFilter());
+            }
+            // 关键字：患者姓名/拼音/五笔 EXISTS，并精确命中置顶
+            if (StringUtils.isNotEmpty(query.getKeyword())) {
+                String trimmed = query.getKeyword().trim();
+                String pattern = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
+                predicates.add(this.existsPatientKeyword(root, cb, criteriaQuery, pattern));
+                // B.2.1：医技站患者关键字精确置顶，次级开始时间倒序
+                this.applyEncounterKeywordExactFirstOrder(
+                    criteriaQuery, cb, root, trimmed, false, true, false,
+                    List.of(
+                        cb.desc(root.get(FieldNameConstants.START_TIME)),
+                        cb.desc(root.get(FieldNameConstants.ID))));
+            }
+            // 就诊开始时间闭区间
+            if (query.getStartDate() != null) {
+                predicates.add(cb.greaterThanOrEqualTo(
+                    root.get(FieldNameConstants.START_TIME), query.getStartDate()));
+            }
+            if (query.getEndDate() != null) {
+                predicates.add(cb.lessThanOrEqualTo(
+                    root.get(FieldNameConstants.START_TIME), query.getEndDate()));
+            }
+            // 仅待发：只看本科耗材房待发；否则诊疗有活 ∪ 耗材待发有活
+            if (Boolean.TRUE.equals(query.getPendingDeviceOnly())) {
+                predicates.add(this.buildMedicalTechPendingDeviceExists(
+                    root, cb, criteriaQuery, loginTechOrgId));
+            } else {
+                predicates.add(cb.or(
+                    this.buildMedicalTechServiceRequestExists(
+                        root, cb, criteriaQuery, loginTechOrgId, classEnumCode),
+                    this.buildMedicalTechPendingDeviceExists(
+                        root, cb, criteriaQuery, loginTechOrgId)));
             }
             return cb.and(predicates.toArray(new Predicate[0]));
         };
@@ -657,6 +728,9 @@ public class EncounterContextCriteriaSupport {
 
     /**
      * 门诊护士站队列：就诊下存在待执行 completed 申请（服务/设备/注射或皮试药品）或退费中收费行。
+     *
+     * <p>可见性轴（DD / BR-NUR-001）：诊疗执行科室非 TECH；耗材发放房上级科室非 TECH（无发放兜底进护士站）；
+     * 输液/皮试药支路不受 TECH 轴影响。</p>
      */
     private Predicate buildNurseStationRequestExistsAny(
         Root<Encounter> root,
@@ -669,7 +743,9 @@ public class EncounterContextCriteriaSupport {
             cb.equal(sr.get(FieldNameConstants.ENCOUNTER_ID), root.get(FieldNameConstants.ID)),
             cb.equal(sr.get(FieldNameConstants.STATUS_ENUM), RequestStatus.COMPLETED.getCode()),
             cb.isNull(sr.get(FieldNameConstants.REFUND_SERVICE_ID)),
-            cb.isFalse(sr.get(FieldNameConstants.IS_DELETED))));
+            cb.isFalse(sr.get(FieldNameConstants.IS_DELETED)),
+            // 执行科室 class=TECH 归医技站，不计入护士站有活
+            this.notExistsTechOrganizationForOrgId(sr.get(FieldNameConstants.ORG_ID), cb, owningQuery)));
 
         Subquery<Long> deviceSq = owningQuery.subquery(Long.class);
         Root<DeviceRequest> dr = deviceSq.from(DeviceRequest.class);
@@ -678,7 +754,9 @@ public class EncounterContextCriteriaSupport {
             cb.equal(dr.get(FieldNameConstants.ENCOUNTER_ID), root.get(FieldNameConstants.ID)),
             cb.equal(dr.get(FieldNameConstants.STATUS_ENUM), RequestStatus.COMPLETED.getCode()),
             cb.isNull(dr.get(FieldNameConstants.REFUND_DEVICE_ID)),
-            cb.isFalse(dr.get(FieldNameConstants.IS_DELETED))));
+            cb.isFalse(dr.get(FieldNameConstants.IS_DELETED)),
+            // 发放耗材房上级为 TECH 时归医技站；无发放行时兜底仍算护士站有活
+            this.notExistsTechLocationDispenseForDeviceRequest(dr, cb, owningQuery)));
 
         Subquery<Long> medicationSq = owningQuery.subquery(Long.class);
         Root<MedicationRequest> mr = medicationSq.from(MedicationRequest.class);
@@ -703,9 +781,10 @@ public class EncounterContextCriteriaSupport {
     }
 
     /**
-     * 门诊护士站：就诊下存在「已收费且仍待发放」的耗材。
+     * 门诊护士站：就诊下存在「已收费且仍待发放」的耗材（发放房上级非 TECH）。
      *
-     * <p>与处置单侧栏一致：耗材请求 {@code COMPLETED}、非退单；发放单缺失或状态为草稿/待配药/待发药。</p>
+     * <p>与处置单侧栏一致：耗材请求 {@code COMPLETED}、非退单；发放单缺失或状态为草稿/待配药/待发药；
+     * TECH 耗材房待发不计入护士站红点（BR-NUR-017 / 可见性 DD）。</p>
      *
      * @param root        就诊根
      * @param cb          Criteria 构造器
@@ -731,7 +810,10 @@ public class EncounterContextCriteriaSupport {
             pendingDispenseRoot.get(FieldNameConstants.STATUS_ENUM).in(
                 DispenseStatus.DRAFT.getCode(),
                 DispenseStatus.PREPARATION.getCode(),
-                DispenseStatus.IN_PROGRESS.getCode())));
+                DispenseStatus.IN_PROGRESS.getCode()),
+            // 待发红点排除 TECH 耗材房
+            this.notExistsTechOrganizationForDispenseLocation(
+                pendingDispenseRoot.get(FieldNameConstants.LOCATION_ID), cb, owningQuery)));
 
         // 该请求下是否已有任意未删发放单（用于「已收费但尚未生成发放」）
         Subquery<Long> anyDispenseSq = owningQuery.subquery(Long.class);
@@ -787,8 +869,176 @@ public class EncounterContextCriteriaSupport {
             cb.isNull(deviceRequestRoot.get(FieldNameConstants.REFUND_DEVICE_ID)),
             cb.isFalse(deviceRequestRoot.get(FieldNameConstants.IS_DELETED)),
             cb.exists(billableChargeSq),
+            // 仅 TECH 耗材房发放的请求不进护士站待发
+            this.notExistsTechLocationDispenseForDeviceRequest(deviceRequestRoot, cb, owningQuery),
             cb.or(cb.exists(pendingDispenseSq), cb.not(cb.exists(anyDispenseSq)))));
         return cb.exists(pendingRequestSq);
+    }
+
+    /**
+     * 断言 orgId 对应科室不是 TECH（orgId 空视为非 TECH 兜底）。
+     *
+     * @param orgIdPath   ServiceRequest.orgId 路径
+     * @param cb          Criteria 构造器
+     * @param owningQuery 外层查询
+     * @return NOT EXISTS TECH 组织谓词
+     */
+    private Predicate notExistsTechOrganizationForOrgId(
+        jakarta.persistence.criteria.Path<Long> orgIdPath,
+        jakarta.persistence.criteria.CriteriaBuilder cb,
+        jakarta.persistence.criteria.CriteriaQuery<?> owningQuery) {
+        Subquery<Long> techOrgSq = owningQuery.subquery(Long.class);
+        Root<Organization> orgRoot = techOrgSq.from(Organization.class);
+        techOrgSq.select(orgRoot.get(FieldNameConstants.ID));
+        techOrgSq.where(cb.and(
+            cb.equal(orgRoot.get(FieldNameConstants.ID), orgIdPath),
+            cb.equal(orgRoot.get(FieldNameConstants.CLASS_ENUM), OrganizationClassification.TECH),
+            cb.isFalse(orgRoot.get(FieldNameConstants.IS_DELETED))));
+        return cb.or(cb.isNull(orgIdPath), cb.not(cb.exists(techOrgSq)));
+    }
+
+    /**
+     * 断言耗材请求下不存在发放房上级为 TECH 的发放行。
+     *
+     * <p>无发放行时本谓词为真（兜底进护士站）；一旦签发到 TECH 房则护士站不再认该请求有活。</p>
+     *
+     * @param deviceRequestRoot 耗材请求根
+     * @param cb                Criteria 构造器
+     * @param owningQuery       外层查询
+     * @return NOT EXISTS TECH 房发放谓词
+     */
+    private Predicate notExistsTechLocationDispenseForDeviceRequest(
+        Root<DeviceRequest> deviceRequestRoot,
+        jakarta.persistence.criteria.CriteriaBuilder cb,
+        jakarta.persistence.criteria.CriteriaQuery<?> owningQuery) {
+        Subquery<Long> techDispenseSq = owningQuery.subquery(Long.class);
+        Root<DeviceDispense> dispenseRoot = techDispenseSq.from(DeviceDispense.class);
+        Root<Location> locationRoot = techDispenseSq.from(Location.class);
+        Root<Organization> orgRoot = techDispenseSq.from(Organization.class);
+        techDispenseSq.select(dispenseRoot.get(FieldNameConstants.ID));
+        techDispenseSq.where(cb.and(
+            cb.equal(
+                dispenseRoot.get(FieldNameConstants.DEVICE_REQ_ID),
+                deviceRequestRoot.get(FieldNameConstants.ID)),
+            cb.isFalse(dispenseRoot.get(FieldNameConstants.IS_DELETED)),
+            cb.equal(dispenseRoot.get(FieldNameConstants.LOCATION_ID), locationRoot.get(FieldNameConstants.ID)),
+            cb.isFalse(locationRoot.get(FieldNameConstants.IS_DELETED)),
+            cb.equal(locationRoot.get(FieldNameConstants.ORGANIZATION_ID), orgRoot.get(FieldNameConstants.ID)),
+            cb.isFalse(orgRoot.get(FieldNameConstants.IS_DELETED)),
+            cb.equal(orgRoot.get(FieldNameConstants.CLASS_ENUM), OrganizationClassification.TECH)));
+        return cb.not(cb.exists(techDispenseSq));
+    }
+
+    /**
+     * 断言发放行 location 的上级科室不是 TECH（location 空视为非 TECH）。
+     *
+     * @param locationIdPath 发放 location_id 路径
+     * @param cb             Criteria 构造器
+     * @param owningQuery    外层查询
+     * @return NOT EXISTS TECH 谓词
+     */
+    private Predicate notExistsTechOrganizationForDispenseLocation(
+        jakarta.persistence.criteria.Path<Long> locationIdPath,
+        jakarta.persistence.criteria.CriteriaBuilder cb,
+        jakarta.persistence.criteria.CriteriaQuery<?> owningQuery) {
+        Subquery<Long> techLocSq = owningQuery.subquery(Long.class);
+        Root<Location> locationRoot = techLocSq.from(Location.class);
+        Root<Organization> orgRoot = techLocSq.from(Organization.class);
+        techLocSq.select(locationRoot.get(FieldNameConstants.ID));
+        techLocSq.where(cb.and(
+            cb.equal(locationRoot.get(FieldNameConstants.ID), locationIdPath),
+            cb.isFalse(locationRoot.get(FieldNameConstants.IS_DELETED)),
+            cb.equal(locationRoot.get(FieldNameConstants.ORGANIZATION_ID), orgRoot.get(FieldNameConstants.ID)),
+            cb.isFalse(orgRoot.get(FieldNameConstants.IS_DELETED)),
+            cb.equal(orgRoot.get(FieldNameConstants.CLASS_ENUM), OrganizationClassification.TECH)));
+        return cb.or(cb.isNull(locationIdPath), cb.not(cb.exists(techLocSq)));
+    }
+
+    /**
+     * 将医技队列 {@code encounterScope} 映射为就诊 {@code class_enum}。
+     *
+     * @param encounterScope {@code OUTPATIENT}/{@code INPATIENT}；其它返回 null
+     * @return AMB/IMP code，非法时 null
+     */
+    private String resolveMedicalTechEncounterClassCode(String encounterScope) {
+        if (StringUtils.isEmpty(encounterScope)) {
+            return null;
+        }
+        String trimmed = encounterScope.trim();
+        if ("OUTPATIENT".equalsIgnoreCase(trimmed)) {
+            return EncounterClass.AMB.getCode();
+        }
+        if ("INPATIENT".equalsIgnoreCase(trimmed)) {
+            return EncounterClass.IMP.getCode();
+        }
+        return null;
+    }
+
+    /**
+     * 医技诊疗有活：执行科室 = 登录 TECH，退费关联空；门诊 COMPLETED / 住院 VERIFIED。
+     *
+     * @param root             就诊根
+     * @param cb               Criteria 构造器
+     * @param owningQuery      外层查询
+     * @param loginTechOrgId   登录医技科
+     * @param classEnumCode    AMB 或 IMP
+     * @return EXISTS 谓词
+     */
+    private Predicate buildMedicalTechServiceRequestExists(
+        Root<Encounter> root,
+        jakarta.persistence.criteria.CriteriaBuilder cb,
+        jakarta.persistence.criteria.CriteriaQuery<?> owningQuery,
+        Long loginTechOrgId,
+        String classEnumCode) {
+        Subquery<Long> serviceSq = owningQuery.subquery(Long.class);
+        Root<ServiceRequest> sr = serviceSq.from(ServiceRequest.class);
+        serviceSq.select(sr.get(FieldNameConstants.ID));
+        String requiredStatus;
+        // 门诊已收费完成态；住院已校对态（BR-MT-EXE-002）
+        if (EncounterClass.AMB.getCode().equals(classEnumCode)) {
+            requiredStatus = RequestStatus.COMPLETED.getCode();
+        } else {
+            requiredStatus = RequestStatus.VERIFIED.getCode();
+        }
+        serviceSq.where(cb.and(
+            cb.equal(sr.get(FieldNameConstants.ENCOUNTER_ID), root.get(FieldNameConstants.ID)),
+            cb.equal(sr.get(FieldNameConstants.ORG_ID), loginTechOrgId),
+            cb.equal(sr.get(FieldNameConstants.STATUS_ENUM), requiredStatus),
+            cb.isNull(sr.get(FieldNameConstants.REFUND_SERVICE_ID)),
+            cb.isFalse(sr.get(FieldNameConstants.IS_DELETED))));
+        return cb.exists(serviceSq);
+    }
+
+    /**
+     * 医技耗材有活/待发：发放耗材房上级科室 = 登录 TECH，且发放仍为待配/待发族状态。
+     *
+     * @param root           就诊根
+     * @param cb             Criteria 构造器
+     * @param owningQuery    外层查询
+     * @param loginTechOrgId 登录医技科
+     * @return EXISTS 谓词
+     */
+    private Predicate buildMedicalTechPendingDeviceExists(
+        Root<Encounter> root,
+        jakarta.persistence.criteria.CriteriaBuilder cb,
+        jakarta.persistence.criteria.CriteriaQuery<?> owningQuery,
+        Long loginTechOrgId) {
+        Subquery<Long> pendingSq = owningQuery.subquery(Long.class);
+        Root<DeviceDispense> dispenseRoot = pendingSq.from(DeviceDispense.class);
+        Root<Location> locationRoot = pendingSq.from(Location.class);
+        pendingSq.select(dispenseRoot.get(FieldNameConstants.ID));
+        pendingSq.where(cb.and(
+            cb.equal(dispenseRoot.get(FieldNameConstants.ENCOUNTER_ID), root.get(FieldNameConstants.ID)),
+            cb.isFalse(dispenseRoot.get(FieldNameConstants.IS_DELETED)),
+            cb.equal(dispenseRoot.get(FieldNameConstants.LOCATION_ID), locationRoot.get(FieldNameConstants.ID)),
+            cb.isFalse(locationRoot.get(FieldNameConstants.IS_DELETED)),
+            cb.equal(locationRoot.get(FieldNameConstants.ORGANIZATION_ID), loginTechOrgId),
+            dispenseRoot.get(FieldNameConstants.STATUS_ENUM).in(
+                DispenseStatus.DRAFT.getCode(),
+                DispenseStatus.PREPARATION.getCode(),
+                DispenseStatus.IN_PROGRESS.getCode(),
+                DispenseStatus.PREPARED.getCode())));
+        return cb.exists(pendingSq);
     }
 
     /** 就诊下存在退费中/已退费收费行（护士站执行队列口径之一）。 */
@@ -1147,6 +1397,38 @@ public class EncounterContextCriteriaSupport {
             // 强制机构 scope 但未解析到机构：空结果
             predicates.add(cb.disjunction());
         }
+    }
+
+    /**
+     * 医技工作站住院队列可见状态：按在院/不在院筛选。
+     *
+     * <p>{@code IN_HOSPITAL}（默认/空/非法）：已入科 / 待转科·待出院 / 待出院结算。
+     * {@code NOT_IN_HOSPITAL}：已清床离院（{@code DISCHARGED}）。
+     * 均排除待入科（{@code REGISTERED}）。</p>
+     *
+     * @param predicates           外层谓词列表
+     * @param root                 就诊根
+     * @param cb                   Criteria 构造器
+     * @param inpatientStayFilter  在院态筛选码；可空
+     */
+    private void applyMedicalTechInpatientVisibleStatus(
+        List<Predicate> predicates,
+        Root<Encounter> root,
+        jakarta.persistence.criteria.CriteriaBuilder cb,
+        String inpatientStayFilter) {
+        // 不在院：仅已清床离院
+        if (MedicalTechExecutionConstants.INPATIENT_STAY_FILTER_NOT_IN_HOSPITAL.equals(
+            inpatientStayFilter)) {
+            predicates.add(cb.equal(
+                root.get(FieldNameConstants.STATUS_ENUM),
+                EncounterStatus.DISCHARGED.getCode()));
+            return;
+        }
+        // 在院（默认）：已入科 / 待转科·待出院 / 待出院结算
+        predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(
+            EncounterStatus.IN_PROGRESS.getCode(),
+            EncounterStatus.ON_HOLD.getCode(),
+            EncounterStatus.PENDING.getCode()));
     }
 
     /** 护士站默认在院状态并集（无显式 status 筛选时）。 */

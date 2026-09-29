@@ -129,6 +129,8 @@ public class ServiceRequestDomainService {
         request.setExecutionCount(item.getExecutionCount());
         request.setCategoryEnum(item.getCategoryEnum());
         request.setTherapyEnum(item.getTherapyEnum());
+        // Asm：优先级（检验/检查加急 EM）；空串规范化为 null
+        request.setPriorityEnum(this.normalizePriorityEnum(item.getPriorityEnum()));
         request.setRateCode(this.resolveRateCodeForTherapy(item.getTherapyEnum(), item.getRateCode()));
         // 开嘱人以后端当前操作人为兜底，避免调用方漏传 requesterId 导致列表无开嘱人。
         if (item.getRequesterId() != null) {
@@ -174,6 +176,8 @@ public class ServiceRequestDomainService {
             request.setBasedOnTable(item.getBasedOnTable().trim());
             request.setBasedOnId(item.getBasedOnId());
         }
+        // 手术/麻醉申请横表：创建草稿时一并落库（无 JSON）
+        this.applySurgeryPlanFieldsOnCreate(request, item);
         request.initDraft();
         request.setIsDeleted(Boolean.FALSE);
         // Pre：开立时间仅首次建草稿写入；签发写 req_authored_time，二者不得混用。
@@ -247,6 +251,14 @@ public class ServiceRequestDomainService {
                 changedFields.add(FieldNameConstants.CATEGORY_ENUM);
             }
             request.setCategoryEnum(item.getCategoryEnum());
+        }
+        // 优先级：非 null 覆盖；空串清空为非急（与 rateCode 空串清空口径一致）
+        if (item.getPriorityEnum() != null) {
+            String normalizedPriority = this.normalizePriorityEnum(item.getPriorityEnum());
+            if (!Objects.equals(normalizedPriority, request.getPriorityEnum())) {
+                changedFields.add(FieldNameConstants.PRIORITY_ENUM);
+            }
+            request.setPriorityEnum(normalizedPriority);
         }
         // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getTherapyEnum() != null) {
@@ -336,6 +348,8 @@ public class ServiceRequestDomainService {
             }
             request.setOccurrenceEndTime(item.getOccurrenceEndTime());
         }
+        // 手术/麻醉申请横表：命令非空字段覆盖写
+        this.applySurgeryPlanFieldsOnModify(request, item);
         // 就诊诊断有序 ids 串 绑定与药品医嘱一致，仅当命令显式传入且值变化时落库并记入变更摘要。
         if (item.getEncounterDiagnosisIds() != null
             && !Objects.equals(item.getEncounterDiagnosisIds(), request.getEncounterDiagnosisIds())) {
@@ -1897,5 +1911,92 @@ public class ServiceRequestDomainService {
         refund.markAsRefundFromPrescription(source.getPrescriptionNo());
         refund.initAsRefundNegativeOrder();
         return refund;
+    }
+
+    /**
+     * 规范化优先级 code：空白 → null；非空 trim（检验/检查加急为 {@code EM}）。
+     *
+     * @param priorityEnum 命令入参；可空
+     * @return 落库值；空输入为 null
+     */
+    private String normalizePriorityEnum(String priorityEnum) {
+        if (priorityEnum == null) {
+            return null;
+        }
+        String trimmed = priorityEnum.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        return trimmed;
+    }
+
+    /**
+     * 创建草稿时写入手术/麻醉申请横表字段（可空；无 JSON；国临经 activity_id 反查 PD，不落 PD 主键）。
+     *
+     * @param request 新建实体
+     * @param item    创建行命令
+     */
+    private void applySurgeryPlanFieldsOnCreate(
+        ServiceRequest request,
+        CreateServiceRequestDraftCommand.CreateServiceRequestDraftItemCommand item
+    ) {
+        request.setMainProcedureFlag(item.getMainProcedureFlag());
+        request.setProcedureLevelCode(item.getProcedureLevelCode());
+        request.setIncisionTypeCode(item.getIncisionTypeCode());
+        request.setAnesthesiaMethodCode(item.getAnesthesiaMethodCode());
+        request.setProcedureTime(item.getProcedureTime());
+        request.setSurgeonId(item.getSurgeonId());
+        request.setFirstAssistantId(item.getFirstAssistantId());
+        request.setSecondAssistantId(item.getSecondAssistantId());
+        request.setNurseId(item.getNurseId());
+        request.setAnesthetistId(item.getAnesthetistId());
+        if (StringUtils.isNotEmpty(item.getNestedAnesthesiaPrescriptionNo())) {
+            request.setNestedAnesthesiaPrescriptionNo(item.getNestedAnesthesiaPrescriptionNo().trim());
+        }
+    }
+
+    /**
+     * 改草稿时按「非空覆盖」写入医师申请横表字段（非护士执行职责字段）。
+     *
+     * @param request 已加载草稿
+     * @param item    修改行命令
+     */
+    private void applySurgeryPlanFieldsOnModify(
+        ServiceRequest request,
+        ModifyServiceRequestDraftCommand.ModifyServiceRequestDraftItemCommand item
+    ) {
+        if (item.getMainProcedureFlag() != null) {
+            request.setMainProcedureFlag(item.getMainProcedureFlag());
+        }
+        if (item.getProcedureLevelCode() != null) {
+            request.setProcedureLevelCode(item.getProcedureLevelCode());
+        }
+        if (item.getIncisionTypeCode() != null) {
+            request.setIncisionTypeCode(item.getIncisionTypeCode());
+        }
+        if (item.getAnesthesiaMethodCode() != null) {
+            request.setAnesthesiaMethodCode(item.getAnesthesiaMethodCode());
+        }
+        if (item.getProcedureTime() != null) {
+            request.setProcedureTime(item.getProcedureTime());
+        }
+        if (item.getSurgeonId() != null) {
+            request.setSurgeonId(item.getSurgeonId());
+        }
+        if (item.getFirstAssistantId() != null) {
+            request.setFirstAssistantId(item.getFirstAssistantId());
+        }
+        if (item.getSecondAssistantId() != null) {
+            request.setSecondAssistantId(item.getSecondAssistantId());
+        }
+        if (item.getNurseId() != null) {
+            request.setNurseId(item.getNurseId());
+        }
+        if (item.getAnesthetistId() != null) {
+            request.setAnesthetistId(item.getAnesthetistId());
+        }
+        if (item.getNestedAnesthesiaPrescriptionNo() != null) {
+            request.setNestedAnesthesiaPrescriptionNo(item.getNestedAnesthesiaPrescriptionNo());
+        }
     }
 }

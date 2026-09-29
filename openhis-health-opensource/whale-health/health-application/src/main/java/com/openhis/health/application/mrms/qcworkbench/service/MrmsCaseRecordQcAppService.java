@@ -65,22 +65,14 @@ public class MrmsCaseRecordQcAppService {
     private final CaseRecordOverdueScanOrchestrator caseRecordOverdueScanOrchestrator;
 
     /**
-     * 病案室开始质控：received → qcing，并执行接收后规则集。
+     * 开始质控（本期未开放：质控已从主档归档状态拆出）。
      *
      * @param request 含病案主键
-     * @return 质控批次结果与开放缺陷
+     * @return 不返回；始终拒绝
      */
     @Transactional(rollbackFor = Exception.class)
     public QcRunResultDto startQc(StartQcRequest request) {
-        // Gate：病案主键与操作人
-        Long caseRecordId = requireCaseRecordId(request.getCaseRecordId());
-        Long operatorId = operatorResolver.requireOperatorId();
-        // Cmd：先迁移至质控中，再跑 ON_RECEIVE 规则
-        transition(caseRecordId, CaseRecordTransitionAction.START_QC, operatorId, null);
-        QcRunResult result = qcRuleExecutor.execute(caseRecordId, QcTrigger.ON_RECEIVE, operatorId);
-        // Asm：附带主档详情映射
-        CaseRecord record = caseRecordDomainService.requireById(caseRecordId);
-        return qcMapper.toRunResultDto(result, record, caseRecordDetailMapper);
+        throw new ValidationException("质控尚未开放：主档 status 仅承载归档三态，质控以后另开");
     }
 
     /**
@@ -201,7 +193,7 @@ public class MrmsCaseRecordQcAppService {
     }
 
     /**
-     * 病案室归档：qcing → archived，冻结首页；归档成功后异步锁定 EMR 文书。
+     * 病案室归档入口：仅允许 {@code PENDING_ARCHIVE} → {@code ARCHIVED}（质控前置已拆出）。
      *
      * @param request 含病案主键与质控等级
      * @return 归档后主档详情
@@ -211,15 +203,9 @@ public class MrmsCaseRecordQcAppService {
         // Gate：病案主键与操作人
         Long caseRecordId = requireCaseRecordId(request.getCaseRecordId());
         Long operatorId = operatorResolver.requireOperatorId();
-        // Pre：归档前复检规则并阻断开放 BLOCK 级缺陷
-        qcRuleExecutor.execute(caseRecordId, QcTrigger.BEFORE_ARCHIVE, operatorId);
-        qcDefectDomainService.assertNoOpenBlockDefects(caseRecordId);
-        // Cmd：迁移至已归档并冻结首页
-        CaseRecord record = transition(
-                caseRecordId,
-                CaseRecordTransitionAction.ARCHIVE,
-                operatorId,
-                request.getQualityGradeCode());
+        // Cmd：走归档三态同意（不再要求 QCING）
+        CaseRecord record = caseRecordDomainService.approveArchive(
+                caseRecordId, operatorId, trimToNull(request.getQualityGradeCode()));
         // 提交后锁定 EMR，避免事务内调外部模块
         scheduleEmrLockAfterCommit(record);
         // Asm：映射主档详情
@@ -249,34 +235,14 @@ public class MrmsCaseRecordQcAppService {
     }
 
     /**
-     * 高权限解档：archived → received，解冻首页并解锁 EMR 文书。
+     * 解档（已禁止）。
      *
      * @param request 含解档原因
-     * @return 解档后主档详情
+     * @return 不返回
      */
     @Transactional(rollbackFor = Exception.class)
     public CaseRecordDetailDto unarchive(UnarchiveCaseRecordRequest request) {
-        // Gate：病案主键与解档原因必填
-        Long caseRecordId = requireCaseRecordId(request.getCaseRecordId());
-        if (trimToNull(request.getUnarchiveReason()) == null) {
-            throw new ValidationException("解档原因不能为空");
-        }
-        Long operatorId = operatorResolver.requireOperatorId();
-        // Pre：组装解档迁移命令
-        TransitionCaseRecordCommand command = new TransitionCaseRecordCommand();
-        command.setCaseRecordId(caseRecordId);
-        command.setAction(CaseRecordTransitionAction.UNARCHIVE);
-        command.setRole(WorkflowRole.RECORD_ROOM);
-        command.setUnarchiveReason(request.getUnarchiveReason());
-        command.setOperatorId(operatorId);
-        // Cmd：领域解档并解冻首页
-        CaseRecord record = caseRecordDomainService.transition(command);
-        // 解档同事务解锁 EMR，失败则整体回滚
-        if (emrDocumentExtension.isEnabled() && record.getEncounterId() != null) {
-            emrDocumentExtension.unlockAllByEncounter(record.getEncounterId());
-        }
-        // Asm：映射主档详情
-        return caseRecordDetailMapper.toDetail(record);
+        throw new ValidationException("已禁止解档；归档后修改请走编辑申请");
     }
 
     /**

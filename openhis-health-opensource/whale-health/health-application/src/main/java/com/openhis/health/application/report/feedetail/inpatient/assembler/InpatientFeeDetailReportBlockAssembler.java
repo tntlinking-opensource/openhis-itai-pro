@@ -15,6 +15,7 @@ import com.openhis.health.application.shared.pricing.HistoricalChargeItemPurchas
 import com.openhis.health.application.shared.product.ChargeItemProductLookupHelper;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.application.shared.report.ChargeItemOrderingDoctorFromRequestSupport;
+import com.openhis.health.application.shared.report.ChargeItemActivityOperatorResolver;
 import com.openhis.health.application.shared.report.PatientSettlementContextRow;
 import com.openhis.health.application.shared.report.ReportPatientSettlementContextAssembler;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
@@ -31,7 +32,6 @@ import com.openhis.health.domain.administration.patient.service.PatientQueryServ
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.administration.product.support.ProductDefinitionDisplaySupport;
-import com.openhis.health.domain.clinical.procedure.service.ProcedureQueryService;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.OutpatientFeeDetailPaymentContextQueryModel;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.OutpatientFeeDetailConstants;
@@ -79,8 +79,8 @@ public class InpatientFeeDetailReportBlockAssembler {
     /** 开单医生自三类 Request 批量解析。 */
     private final ChargeItemOrderingDoctorFromRequestSupport chargeItemOrderingDoctorFromRequestSupport;
 
-    /** 执行人：有 procedure 时取主执行人，否则回落账单 performer_id（临嘱/长嘱同口径）。 */
-    private final ProcedureQueryService procedureQueryService;
+    /** 收费行活动操作人批量解析（Procedure / DeviceDispense）。 */
+    private final ChargeItemActivityOperatorResolver chargeItemActivityOperatorResolver;
 
     /** 产品定义批量读侧。 */
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
@@ -603,7 +603,7 @@ public class InpatientFeeDetailReportBlockAssembler {
             lineDto.setOrderingDoctorId(orderingDoctorId);
             lineDto.setOrderingDoctorName(bundle.practitionerNameById.get(orderingDoctorId));
         }
-        // Asm：执行人 — 临嘱/长嘱同口径：有执行记录优先 Procedure 主执行人，否则账单 performer_id
+        // Asm：执行人 — Procedure 主执行人优先，否则 DeviceDispense 发放/配药人
         Long performerId = null;
         if (chargeItemId != null && bundle.performerByChargeItemId != null) {
             performerId = bundle.performerByChargeItemId.get(chargeItemId);
@@ -768,7 +768,7 @@ public class InpatientFeeDetailReportBlockAssembler {
                 practitionerIds.add(orderingDoctorId);
             }
         }
-        // Pre：执行人 — 临嘱/长嘱同口径：procedure 主执行人优先，否则 performer_id
+        // Pre：执行人 — Procedure / DeviceDispense（ChargeItemActivityOperatorResolver）
         bundle.performerByChargeItemId = this.mapPerformerIdByChargeItemId(chargeItemsForFinType);
         for (Long performerId : bundle.performerByChargeItemId.values()) {
             if (performerId != null) {
@@ -856,51 +856,13 @@ public class InpatientFeeDetailReportBlockAssembler {
     }
 
     /**
-     * 批量解析执行人（临嘱/长嘱同口径）。
-     *
-     * <p>有 {@code procedure_id} 时取执行记录主执行人；否则回落 {@code performer_id}
-     *（划价/滚费等无 Procedure 的路径）。</p>
+     * 批量解析执行人（临嘱/长嘱同口径）：Procedure 主执行人优先，否则耗材 DeviceDispense。
      *
      * @param chargeItems 收费行
      * @return chargeItemId → 执行人 practitionerId
      */
     private Map<Long, Long> mapPerformerIdByChargeItemId(List<ChargeItem> chargeItems) {
-        LinkedHashMap<Long, Long> result = new LinkedHashMap<>();
-        if (chargeItems == null || chargeItems.isEmpty()) {
-            return result;
-        }
-        LinkedHashSet<Long> procedureIds = new LinkedHashSet<>();
-        for (ChargeItem chargeItem : chargeItems) {
-            if (chargeItem == null || chargeItem.getId() == null) {
-                continue;
-            }
-            if (chargeItem.getProcedureId() != null) {
-                procedureIds.add(chargeItem.getProcedureId());
-            }
-        }
-        Map<Long, Long> practitionerByProcedureId = Map.of();
-        if (!procedureIds.isEmpty()) {
-            practitionerByProcedureId =
-                this.procedureQueryService.mapPrimaryPractitionerIdByProcedureIds(procedureIds);
-        }
-        for (ChargeItem chargeItem : chargeItems) {
-            if (chargeItem == null || chargeItem.getId() == null) {
-                continue;
-            }
-            // 有执行记录：临嘱单次 / 长嘱反复均取 Procedure 主执行人
-            if (chargeItem.getProcedureId() != null) {
-                Long fromProcedure = practitionerByProcedureId.get(chargeItem.getProcedureId());
-                if (fromProcedure != null) {
-                    result.put(chargeItem.getId(), fromProcedure);
-                    continue;
-                }
-            }
-            // 无执行记录（划价等）：回落账单 performer_id
-            if (chargeItem.getPerformerId() != null) {
-                result.put(chargeItem.getId(), chargeItem.getPerformerId());
-            }
-        }
-        return result;
+        return this.chargeItemActivityOperatorResolver.mapOperatorPractitionerIdByChargeItemId(chargeItems);
     }
 
     /**
@@ -964,7 +926,7 @@ public class InpatientFeeDetailReportBlockAssembler {
         /** chargeItemId → 开单医生（仅医生开立 Request.requester_id）。 */
         private Map<Long, Long> orderingDoctorByChargeItemId = Map.of();
 
-        /** chargeItemId → 执行人（Procedure 主执行人优先，否则 performer_id；临嘱/长嘱同口径）。 */
+        /** chargeItemId → 执行人（Procedure 主执行人 / DeviceDispense 发放·配药人）。 */
         private Map<Long, Long> performerByChargeItemId = Map.of();
 
         /** 产品复合键 → 展示 DTO。 */

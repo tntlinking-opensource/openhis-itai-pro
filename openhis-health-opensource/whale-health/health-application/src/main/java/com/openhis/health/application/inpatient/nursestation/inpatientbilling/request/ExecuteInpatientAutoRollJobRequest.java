@@ -27,8 +27,8 @@ public class ExecuteInpatientAutoRollJobRequest {
     @Schema(description = "滚费业务日")
     private LocalDate billDate;
 
-    /** 操作人主键（可选；空则系统操作人）。 */
+    /** 已废弃：滚费操作人取配置计费人，忽略本字段。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "操作人主键（可选；空则系统操作人）")
+    @Schema(description = "已废弃：忽略；操作人取配置计费人")
     private Long operatorId;
 }

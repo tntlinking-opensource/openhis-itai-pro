@@ -1,23 +1,20 @@
 {
   "folders": [
     {
-      "path": "../../../..",
+      "name": "zxplat-ui",
+      "path": "../../../../../zxplat-ui"
     },
     {
-      "path": "../../../../../whale-doc",
+      "name": "ZXPlat",
+      "path": "../../../../../ZXPlat"
     },
     {
-      "path": "../../../../../whale-sever",
+      "name": "zxplat-clinic",
+      "path": "../../../../../zxplat-clinic"
     },
     {
-      "path": "../../../../../whale-sever/whale-report",
-    },
-    {
-      "path": "../../../../../openhis-pro-win",
-    },
-    {
-      "path": "../../../../../openhis-sever",
-    },
+      "path": "../../../.."
+    }
   ],
   "settings": {},
 }

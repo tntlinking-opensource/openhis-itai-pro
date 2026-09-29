@@ -27,7 +27,8 @@ export const STAFF_SCOPE = {
   DOCTOR_VISIT_ORG: 'DOCTOR_VISIT_ORG',
   WAREHOUSE_LOCATION: 'WAREHOUSE_LOCATION',
   PHARMACY_LOCATION: 'PHARMACY_LOCATION',
-  NURSE_ORG: 'NURSE_ORG',
+  /** 工作科室（护士站 / 医技科室，由角色决定候选） */
+  WORK_ORG: 'WORK_ORG',
   NURSE_WARD_LOCATION: 'NURSE_WARD_LOCATION',
 } as const;
 
@@ -37,16 +38,49 @@ export const STAFF_SCOPE_OPTIONS: { label: string; value: StaffScopeCode }[] = [
   { label: '出诊科室', value: STAFF_SCOPE.DOCTOR_VISIT_ORG },
   { label: '管理库房', value: STAFF_SCOPE.WAREHOUSE_LOCATION },
   { label: '管理药房', value: STAFF_SCOPE.PHARMACY_LOCATION },
+  { label: '工作科室', value: STAFF_SCOPE.WORK_ORG },
   { label: '管理病区', value: STAFF_SCOPE.NURSE_WARD_LOCATION },
 ];
+
+/**
+ * 工作科室机构分类 sortOrder。
+ * 责任科室树 `classEnum` 出的是该数字（{@code OrganizationClassification}），不是中文名。
+ */
+export const WORK_DEPT_CLASS_SORT = {
+  /** 护士站 */
+  NS: '6',
+  /** 医技科室 */
+  TECH: '10',
+} as const;
+
+/**
+ * 按已选平台角色 code 汇总工作科室允许的机构分类。
+ * 只有护士 → 护士站；只有技师 → 医技科室；双角色 → 两类并集。
+ */
+export function workDeptClassSortsForRoleCodes(roleCodes: string[]): string[] {
+  const sorts = new Set<string>();
+  for (const raw of roleCodes) {
+    const code = raw.trim().toUpperCase();
+    if (code === 'ROLE_NURSE') {
+      sorts.add(WORK_DEPT_CLASS_SORT.NS);
+    }
+    if (code === 'ROLE_MEDICAL_TECH') {
+      sorts.add(WORK_DEPT_CLASS_SORT.TECH);
+    }
+  }
+  return [...sorts];
+}
 
 /** 内置业务角色默认「角色管理能力」；财务无人员维护块 */
 export const BUILTIN_ROLE_STAFF_SCOPES: Record<string, StaffScopeCode[]> = {
   ROLE_DOCTOR: [STAFF_SCOPE.DOCTOR_VISIT_ORG],
-  ROLE_NURSE: [STAFF_SCOPE.NURSE_WARD_LOCATION],
+  ROLE_NURSE: [STAFF_SCOPE.NURSE_WARD_LOCATION, STAFF_SCOPE.WORK_ORG],
+  ROLE_MEDICAL_TECH: [STAFF_SCOPE.WORK_ORG],
   ROLE_PHARMACIST: [STAFF_SCOPE.PHARMACY_LOCATION],
   ROLE_WAREHOUSE: [STAFF_SCOPE.WAREHOUSE_LOCATION, STAFF_SCOPE.PHARMACY_LOCATION],
   ROLE_ACCOUNTANT: [],
+  /** 款员无人员维护块（与财务相同，只挂科室） */
+  ROLE_CASHIER: [],
   /** 病案管理员无人员维护块（与财务审批类似） */
   ROLE_MRMS_ADMIN: [],
 };

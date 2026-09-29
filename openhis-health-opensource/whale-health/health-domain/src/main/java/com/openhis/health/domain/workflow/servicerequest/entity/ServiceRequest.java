@@ -5,6 +5,7 @@
 package com.openhis.health.domain.workflow.servicerequest.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.ServiceRequestCategoryConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestBusinessTimeKind;
 import com.openhis.health.domain.share.enums.RequestStatus;
@@ -199,6 +200,72 @@ public class ServiceRequest extends BaseAuditedEntity {
 
     @Column(name = "entrust_content")
     private String entrustContent;
+
+    /**
+     * 主手术标志（医师申请；空则病案首页补；非护士执行职责）。
+     */
+    @Column(name = "main_procedure_flag")
+    private Boolean mainProcedureFlag;
+
+    /**
+     * 手术级别字典码（医师申请；空则病案首页补；非护士执行职责）。
+     */
+    @Column(name = "procedure_level_code")
+    private String procedureLevelCode;
+
+    /**
+     * 切口类别字典码（医师申请可预填；护士执行另见 cln_procedure）。
+     */
+    @Column(name = "incision_type_code")
+    private String incisionTypeCode;
+
+    /**
+     * 麻醉方法字典码（医师申请可预填；真源宜麻醉侧/首页）。
+     */
+    @Column(name = "anesthesia_method_code")
+    private String anesthesiaMethodCode;
+
+    /**
+     * 手术时间（医师申请可填；执行拷贝至 {@code cln_procedure}，护士可改）。
+     */
+    @Column(name = "procedure_time")
+    private LocalDateTime procedureTime;
+
+    /**
+     * 主刀医师；申请预填，执行写入 {@code cln_procedure_performer}。
+     */
+    @Column(name = "surgeon_id")
+    private Long surgeonId;
+
+    /**
+     * 一助；申请预填，执行写入 performer。
+     */
+    @Column(name = "first_assistant_id")
+    private Long firstAssistantId;
+
+    /**
+     * 二助；申请预填，执行写入 performer。
+     */
+    @Column(name = "second_assistant_id")
+    private Long secondAssistantId;
+
+    /**
+     * 配合护士；申请预填，执行写入 performer。
+     */
+    @Column(name = "nurse_id")
+    private Long nurseId;
+
+    /**
+     * 麻醉医师；申请预填，执行写入 performer。
+     */
+    @Column(name = "anesthetist_id")
+    private Long anesthetistId;
+
+    /**
+     * 嵌套麻醉申请单号（手术 AR 关联麻醉 AR）。
+     */
+    @Column(name = "nested_anesthesia_prescription_no")
+    private String nestedAnesthesiaPrescriptionNo;
 
     /**
      * 草稿创建断言。
@@ -406,7 +473,7 @@ public class ServiceRequest extends BaseAuditedEntity {
     }
 
     /**
-     * 取消断言（ACTIVE/COMPLETED -> CANCELLED）。
+     * 取消断言（DRAFT/ACTIVE/VERIFIED/COMPLETED → CANCELLED）。
      *
      * @throws BusinessException 状态不允许
      */
@@ -414,10 +481,11 @@ public class ServiceRequest extends BaseAuditedEntity {
         if (this.statusEnum == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "服务申请状态不能为空");
         }
-        if (!this.statusEnum.equals(RequestStatus.ACTIVE.getCode())
+        if (!this.statusEnum.equals(RequestStatus.DRAFT.getCode())
+            && !this.statusEnum.equals(RequestStatus.ACTIVE.getCode())
             && !this.statusEnum.equals(RequestStatus.VERIFIED.getCode())
             && !this.statusEnum.equals(RequestStatus.COMPLETED.getCode())) {
-            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "仅已发送/已校对允许取消");
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "仅草稿/已发送/已校对/已完成允许取消");
         }
     }
 
@@ -665,6 +733,9 @@ public class ServiceRequest extends BaseAuditedEntity {
     /**
      * 改开立或停嘱时间；不改开立人/停嘱人/签发时间（BR-SRQ-016b）。
      *
+     * <p>出院类医嘱：列表「时间」与计划出院真源 {@code occurrence_start_time} 同源；
+     * 取消校对回草稿后医生改开立时间须同步计划出院时间，否则再校对仍用旧计划时刻。</p>
+     *
      * @param timeKind 时间种类 code
      * @param newTime  新业务时间
      */
@@ -675,9 +746,13 @@ public class ServiceRequest extends BaseAuditedEntity {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "新业务时间不能为空");
         }
         RequestBusinessTimeKind kind = RequestBusinessTimeKind.fromCodeOrNull(timeKind);
-        // OPENED：仅覆盖开立列。
+        // OPENED：覆盖开立列；出院嘱同步计划出院时间（occurrence_start_time 业务真源）
         if (RequestBusinessTimeKind.OPENED.equals(kind)) {
             this.reqOpenedTime = newTime;
+            // 出院类：取消校对回草稿后医生改时间须同步计划出院，否则再校对仍用旧计划时刻
+            if (ServiceRequestCategoryConstants.SERVICE_CATEGORY_DISCHARGE.equals(this.categoryEnum)) {
+                this.occurrenceStartTime = newTime;
+            }
             return;
         }
         // STOP：仅覆盖停嘱列。

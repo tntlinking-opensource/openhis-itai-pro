@@ -51,6 +51,14 @@ public class ProcedureDefinition extends BaseAuditedEntity {
     @Column(name = "status_enum", nullable = false)
     private String statusEnum;
 
+    /**
+     * 挂靠诊疗项目定义主键（{@code wkf_activity_definition.id}）。
+     *
+     * <p>国临选品后取本字段生成申请行计费（DM-CLN-009 BR-PD-010）；可空，未绑定时开立落行拒绝。</p>
+     */
+    @Column(name = "activity_definition_id")
+    private Long activityDefinitionId;
+
     public void assertCoreFields() {
         if (StringUtils.isEmpty(this.procedureCode) || StringUtils.isEmpty(this.name) || StringUtils.isEmpty(this.sourceEnum)) {
             throw new BusinessException(ErrorCodeConstants.PROCEDURE_DEFINITION_INVALID_ARGUMENT, "手术定义关键字段不能为空");

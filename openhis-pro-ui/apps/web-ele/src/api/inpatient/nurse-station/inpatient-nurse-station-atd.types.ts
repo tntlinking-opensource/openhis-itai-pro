@@ -170,6 +170,8 @@ export interface DischargePendingMedicationItemDto {
   statusEnum?: string;
   statusEnumText?: string;
   unitCode?: string;
+  /** 单位展示名（优先于 unitCode） */
+  unitCodeText?: string;
 }
 
 export interface ListDischargePendingMedicationsResponse {

@@ -46,7 +46,7 @@ public class NurseWorkloadReportMapperImpl implements NurseWorkloadReportMapper 
         query.setDateFrom(request.getDateFrom());
         query.setDateTo(request.getDateTo());
         query.setPractitionerId(request.getPractitionerId());
-        // 开立科室仅认显式 requestingOrgId；organizationId 改由 AppService 解析为默认登录科室护士集合
+        // 开立科室仅认显式 requestingOrgId；organizationId 由 AppService 解析为工作科室上的护士/医技集合
         query.setRequestingOrgId(request.getRequestingOrgId());
         return query;
     }

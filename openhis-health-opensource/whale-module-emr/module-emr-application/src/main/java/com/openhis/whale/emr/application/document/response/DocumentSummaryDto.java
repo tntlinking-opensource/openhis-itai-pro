@@ -28,7 +28,7 @@ public class DocumentSummaryDto {
     private String documentTypeName;
     /** 文书标题 */
     private String title;
-    /** 文书状态 code：DRAFT/SUBMITTED/LOCKED/ARCHIVED */
+    /** 文书状态 code：DRAFT/PENDING_ARCHIVE/ARCHIVED */
     private String status;
     /** 创建时间 */
     private LocalDateTime createdAt;

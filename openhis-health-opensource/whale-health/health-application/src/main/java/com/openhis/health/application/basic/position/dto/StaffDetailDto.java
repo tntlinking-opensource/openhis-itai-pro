@@ -64,7 +64,7 @@ public class StaffDetailDto {
     private List<StaffOrgLocationItemDto> warehouseLocationList;
     /** 可操作药房岗位列表。 */
     private List<StaffOrgLocationItemDto> pharmacyLocationList;
-    /** 护士管理科室岗位列表。 */
+    /** 护士管理科室岗位列表（工作科室：护士站或医技科室）。 */
     private List<StaffOrgLocationItemDto> nurseOrgList;
     /** 护士管理病区岗位列表。 */
     private List<StaffOrgLocationItemDto> nurseWardLocationList;

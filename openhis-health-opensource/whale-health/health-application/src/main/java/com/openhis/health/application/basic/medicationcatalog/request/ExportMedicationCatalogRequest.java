@@ -29,9 +29,14 @@ public class ExportMedicationCatalogRequest {
     private String categoryCode;
 
     /**
-     * 重点药类型筛选（{@link com.openhis.health.domain.share.enums.KeyDrugType#getCode()}）；空/{@code null} 表示不限，非空时筛对应标识为 true 的药品。
+     * 重点药类型筛选（仅基药/监控/集采/抗生素）；空/{@code null} 表示不限。麻/精见 {@link #medicinePropertyCode}。
      */
     private String keyDrugType;
+
+    /**
+     * 药品性质筛选（NARCOTIC/PSYCH_ONE/PSYCH_TWO）；空/{@code null} 表示不限。与重点药类型 AND。
+     */
+    private String medicinePropertyCode;
 
     /**
      * 发布状态筛选（{@code ACTIVE} 已启用 / {@code INACTIVE} 已停用）；空/{@code null} 表示不限。

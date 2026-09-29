@@ -103,7 +103,7 @@ public class QuartzJobAdapter implements Job {
         } catch (Exception e) {
             log.error("Error executing job: {}", context.getJobDetail().getKey(), e);
             report.setSuccess(false);
-            report.setErrorMessage(e.getMessage());
+            report.setErrorMessage(resolveErrorMessage(e));
             notifyJobExecutionListeners(report, startedAtMillis);
             throw new JobExecutionException("Job execution failed", e);
         }
@@ -127,6 +127,31 @@ public class QuartzJobAdapter implements Job {
                 log.warn("Job execution listener failed: {}", listenerError.getMessage());
             }
         }
+    }
+
+    /**
+     * 从异常链提取可读 message（反射包装常无自身 message，须下钻 cause）。
+     *
+     * @param error 任务执行异常
+     * @return 非空错误文案；整链皆空时回落类名
+     */
+    private String resolveErrorMessage(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && !message.isBlank()) {
+                return message;
+            }
+            Throwable cause = current.getCause();
+            if (cause == null || cause == current) {
+                break;
+            }
+            current = cause;
+        }
+        if (error == null) {
+            return "unknown job error";
+        }
+        return error.getClass().getName();
     }
 
     private Long resolveTenantId(JobDataMap dataMap) {

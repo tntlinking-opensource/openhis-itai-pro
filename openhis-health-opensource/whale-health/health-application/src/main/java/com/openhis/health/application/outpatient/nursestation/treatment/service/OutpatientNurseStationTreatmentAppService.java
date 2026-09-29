@@ -49,6 +49,10 @@ import com.openhis.health.application.outpatient.nursestation.treatment.response
 import com.openhis.health.application.outpatient.nursestation.treatment.response.QueryEncounterTreatmentSheetResponse;
 import com.openhis.health.domain.administration.devicedefinition.entity.DeviceDefinition;
 import com.openhis.health.domain.administration.location.entity.Location;
+import com.openhis.health.domain.administration.location.service.LocationQueryService;
+import com.openhis.health.domain.administration.organization.entity.Organization;
+import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
+import com.openhis.health.domain.share.enums.OrganizationClassification;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.workflow.activitydefinition.entity.ActivityDefinition;
@@ -70,6 +74,7 @@ import com.openhis.health.domain.clinical.procedure.queries.OrderExecutionSheetP
 import com.openhis.health.domain.clinical.procedure.queries.model.OrderExecutionSheetQueryModel;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.health.domain.share.constants.ServiceRequestCategoryConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
 import com.openhis.health.application.outpatient.nursestation.skintest.support.NurseStationOutpatientTcmExecuteExcludeHelper;
@@ -241,6 +246,12 @@ public class OutpatientNurseStationTreatmentAppService {
      */
     private final ServiceApplyFormAssembler serviceApplyFormAssembler;
 
+    /** 组织只读：处置单排除 TECH 执行科室。 */
+    private final OrganizationQueryService organizationQueryService;
+
+    /** 位置只读：耗材发放库位→组织，排除 TECH。 */
+    private final LocationQueryService locationQueryService;
+
     /**
      * IF-NUR-02：按就诊查询处置单（三列表同构）。
      *
@@ -307,11 +318,40 @@ public class OutpatientNurseStationTreatmentAppService {
         }
         Map<Long, Long> mergeDeviceByActivityId =
             specimenTubeMergeBindResolveSupport.mapMergeDeviceIdByActivityIds(serviceActivityIds);
+        // Pre：批量装载执行科室组织。TECH 诊疗不进护士站，检验（22）除外，供采血贴
+        Set<Long> serviceOrgIds = new LinkedHashSet<>();
+        for (ServiceRequestListModel serviceRow : serviceRequests) {
+            if (serviceRow != null && serviceRow.getOrgId() != null) {
+                serviceOrgIds.add(serviceRow.getOrgId());
+            }
+        }
+        Map<Long, Organization> serviceOrgById = this.organizationQueryService.mapByIds(serviceOrgIds);
+        // Pre：耗材请求库位→组织，排除 TECH 耗材房发放
+        Set<Long> deviceLocationIds = new LinkedHashSet<>();
+        for (DeviceRequestListModel deviceRow : deviceRequests) {
+            if (deviceRow != null && deviceRow.getLocationId() != null) {
+                deviceLocationIds.add(deviceRow.getLocationId());
+            }
+        }
+        Map<Long, Location> deviceLocationById =
+            this.locationQueryService.loadLocationEntityMapByIds(deviceLocationIds);
+        Set<Long> deviceOrgIds = new LinkedHashSet<>();
+        for (Location location : deviceLocationById.values()) {
+            if (location != null && location.getOrganizationId() != null) {
+                deviceOrgIds.add(location.getOrganizationId());
+            }
+        }
+        Map<Long, Organization> deviceOrgById = this.organizationQueryService.mapByIds(deviceOrgIds);
         List<NurseStationTreatmentLineDto> serviceLines = new ArrayList<>();
         Map<NurseStationTreatmentLineDto, Long> latestCompletedProcedureByLine = new HashMap<>();
         for (ServiceRequestListModel row : serviceRequests) {
             if (NurseStationSkinTestExecuteExcludeHelper.shouldExcludeServiceFromNurseStationExecuteList(
                 skinTestActivityId, row)) {
+                continue;
+            }
+            // 业务：TECH 执行科室由医技站执行，护士站跳过；检验仍返回，供项目列表与采血贴
+            if (this.isTechOrganization(row.getOrgId(), serviceOrgById)
+                && !this.isLabProofServiceRequest(row, catalogContext)) {
                 continue;
             }
             if (AdviceChargeDisplayStatusAssembler.isRefundOrderCopyRequest(row.getRefundServiceId())) {
@@ -345,6 +385,10 @@ public class OutpatientNurseStationTreatmentAppService {
             int completed = 0;
             int aborted = 0;
             for (ProcedureRecordQueryModel p : procedures) {
+                // 业务：护士侧仅统计 org_id 为空的执行记录（与医技侧隔离）
+                if (p == null || p.getOrgId() != null) {
+                    continue;
+                }
                 if (EventStatus.COMPLETED.getCode().equals(p.getStatusEnum())) {
                     completed++;
                 }
@@ -355,7 +399,7 @@ public class OutpatientNurseStationTreatmentAppService {
             line.setPerformCount(Integer.valueOf(completed));
             line.setCancelCount(Integer.valueOf(aborted));
             ProcedureRecordQueryModel latestCompleted =
-                this.pickLatestNetRemainingCompletedProcedure(procedures);
+                this.pickLatestNetRemainingCompletedProcedureNurseSide(procedures);
             if (latestCompleted != null && latestCompleted.getId() != null) {
                 latestCompletedProcedureByLine.put(line, latestCompleted.getId());
             }
@@ -395,6 +439,10 @@ public class OutpatientNurseStationTreatmentAppService {
         for (DeviceRequestListModel row : deviceRequests) {
             // 退单镜像（负向复制行）不进侧栏
             if (AdviceChargeDisplayStatusAssembler.isRefundOrderCopyRequest(row.getRefundDeviceId())) {
+                continue;
+            }
+            // 业务：耗材房上级为 TECH 时由医技站发放，护士站侧栏跳过
+            if (this.isTechDeviceLocation(row.getLocationId(), deviceLocationById, deviceOrgById)) {
                 continue;
             }
             String deviceChargeStatus = this.resolveAggregatedChargeStatus(
@@ -607,11 +655,11 @@ public class OutpatientNurseStationTreatmentAppService {
             Long procedureId = this.procedureDomainService.createProcedureRecord(createCmd);
             this.procedureDomainService.startProcedureExecution(
                 this.outpatientNurseStationTreatmentMapper.toStartProcedureExecutionCommand(procedureId));
-            this.procedureDomainService.completeProcedureRecord(
-                this.outpatientNurseStationTreatmentMapper.toCompleteProcedureRecordCommand(procedureId, practitionerId));
-            // Cmd：登记主执行人（与 Procedure 1:1 写入 cln_procedure_performer）。
+            // Cmd：执行人须在 COMPLETED 前挂入（DM-CLN-004 §6.1.3）
             this.procedureExecutionPerformerOrchestrator.registerPrimaryPerformer(
                 procedureId, practitionerId, practitionerId, now);
+            this.procedureDomainService.completeProcedureRecord(
+                this.outpatientNurseStationTreatmentMapper.toCompleteProcedureRecordCommand(procedureId, practitionerId));
             performedServiceIds.add(serviceRequestId);
         }
         // Cmd：药品路径——净次数门控计划次数取自 execute_num（BR-NUR-005，见 MedicationRequestDetailQueryModel）。
@@ -644,11 +692,11 @@ public class OutpatientNurseStationTreatmentAppService {
             Long procedureId = this.procedureDomainService.createProcedureRecord(createCmd);
             this.procedureDomainService.startProcedureExecution(
                 this.outpatientNurseStationTreatmentMapper.toStartProcedureExecutionCommand(procedureId));
-            this.procedureDomainService.completeProcedureRecord(
-                this.outpatientNurseStationTreatmentMapper.toCompleteProcedureRecordCommand(procedureId, practitionerId));
-            // Cmd：登记主执行人（与 Procedure 1:1 写入 cln_procedure_performer）。
+            // Cmd：执行人须在 COMPLETED 前挂入（DM-CLN-004 §6.1.3）
             this.procedureExecutionPerformerOrchestrator.registerPrimaryPerformer(
                 procedureId, practitionerId, practitionerId, now);
+            this.procedureDomainService.completeProcedureRecord(
+                this.outpatientNurseStationTreatmentMapper.toCompleteProcedureRecordCommand(procedureId, practitionerId));
             performedMedicationIds.add(medicationRequestId);
         }
         // Cmd：耗材路径——按开关推进已配药或就地改库房后已发药（只改 location、按签发批号扣库）；DeviceRequest 状态不变
@@ -832,6 +880,9 @@ public class OutpatientNurseStationTreatmentAppService {
         // 进入进行中态后写入 CANCEL 终态（非对历史 COMPLETED 行直接 cancel）。
         this.procedureDomainService.startProcedureExecution(
             this.outpatientNurseStationTreatmentMapper.toStartProcedureExecutionCommand(procedureId));
+        // Cmd：取消操作人须在 CANCEL 前挂入（DM-CLN-004 §6.1.3 仅 PREPARATION/IN_PROGRESS）
+        this.procedureExecutionPerformerOrchestrator.registerPrimaryPerformer(
+            procedureId, operatorId, operatorId, now);
         if (offsetCompletedProcedureId == null) {
             throw new BusinessException(ErrorCodeConstants.PROCEDURE_INVALID_ARGUMENT, "被取消的已完成执行记录主键不能为空");
         }
@@ -839,9 +890,6 @@ public class OutpatientNurseStationTreatmentAppService {
         this.procedureDomainService.cancelProcedureRecord(
             this.outpatientNurseStationTreatmentMapper.toCancelProcedureRecordCommand(
                 procedureId, statusReasonText, offsetCompletedProcedureId, operatorId));
-        // Cmd：登记取消操作人（与 CANCEL Procedure 1:1 写入 cln_procedure_performer）。
-        this.procedureExecutionPerformerOrchestrator.registerPrimaryPerformer(
-            procedureId, operatorId, operatorId, now);
     }
 
     /**
@@ -1057,6 +1105,88 @@ public class OutpatientNurseStationTreatmentAppService {
             }
         }
         return latest;
+    }
+
+    /**
+     * 选取护士侧（org_id 为空）最近一条净剩 COMPLETED。
+     *
+     * @param procedures 同请求下全部执行记录
+     * @return 最近护士侧净剩 COMPLETED；无则 null
+     */
+    private ProcedureRecordQueryModel pickLatestNetRemainingCompletedProcedureNurseSide(
+        List<ProcedureRecordQueryModel> procedures) {
+        if (procedures == null || procedures.isEmpty()) {
+            return null;
+        }
+        List<ProcedureRecordQueryModel> nurseSide = new ArrayList<>();
+        for (ProcedureRecordQueryModel row : procedures) {
+            // 仅保留护士侧（org_id 空）
+            if (row != null && row.getOrgId() == null) {
+                nurseSide.add(row);
+            }
+        }
+        return this.pickLatestNetRemainingCompletedProcedure(nurseSide);
+    }
+
+    /**
+     * 判断组织是否为 TECH 医技科。
+     *
+     * @param orgId   组织主键
+     * @param orgById 组织索引
+     * @return TECH 时 true
+     */
+    private boolean isTechOrganization(Long orgId, Map<Long, Organization> orgById) {
+        if (orgId == null || orgById == null) {
+            return false;
+        }
+        Organization org = orgById.get(orgId);
+        if (org == null || org.getClassEnum() == null) {
+            return false;
+        }
+        return org.getClassEnum() == OrganizationClassification.TECH;
+    }
+
+    /**
+     * 是否检验诊疗（类目 22）。医技科项目里只有检验要回到护士站项目列表。
+     *
+     * @param row            诊疗请求
+     * @param catalogContext 已预热的诊疗定义
+     * @return 类目为检验时 true
+     */
+    private boolean isLabProofServiceRequest(
+        ServiceRequestListModel row,
+        OrderRequestCatalogWarmContext catalogContext) {
+        if (row == null || row.getActivityId() == null || catalogContext == null) {
+            return false;
+        }
+        ActivityDefinition activityDef =
+            catalogContext.getActivityDefinitionById().get(row.getActivityId());
+        if (activityDef == null || StringUtils.isEmpty(activityDef.getCategoryCode())) {
+            return false;
+        }
+        return ServiceRequestCategoryConstants.SERVICE_CATEGORY_PROOF.equals(activityDef.getCategoryCode().trim());
+    }
+
+    /**
+     * 判断耗材请求库位上级组织是否为 TECH。
+     *
+     * @param locationId     库位主键
+     * @param locationById   库位索引
+     * @param orgById        组织索引
+     * @return TECH 时 true
+     */
+    private boolean isTechDeviceLocation(
+        Long locationId,
+        Map<Long, Location> locationById,
+        Map<Long, Organization> orgById) {
+        if (locationId == null || locationById == null) {
+            return false;
+        }
+        Location location = locationById.get(locationId);
+        if (location == null || location.getOrganizationId() == null) {
+            return false;
+        }
+        return this.isTechOrganization(location.getOrganizationId(), orgById);
     }
 
     /**
@@ -1693,6 +1823,8 @@ public class OutpatientNurseStationTreatmentAppService {
                 line.setSpecimenTubeMergeDeviceId(mergeDeviceByActivityId.get(row.getActivityId()));
             }
         }
+        // Asm：优先级下发供采血贴「急」
+        line.setPriorityEnum(row.getPriorityEnum());
         if (catalogContext != null) {
             line.setServiceCategoryCodeText(
                 OrderCatalogDisplayAssembler.resolveCategoryDisplay(

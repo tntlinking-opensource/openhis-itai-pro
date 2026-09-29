@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.Map;
@@ -43,12 +44,41 @@ public class AppServiceJobMethodInvoker {
         try {
             Object[] args = buildArguments(descriptor.getMethod(), businessParameters);
             log.info("Invoking AppService job handler: {} tenantId={}", handlerKey, tenantId);
-            descriptor.getMethod().invoke(descriptor.getServiceBean(), args);
+            try {
+                // 须经代理 Method 调用，否则 CGLIB 会绕过 AppServiceAspect（含 openAppServiceTransaction=false）
+                Method invocable = resolveInvocableMethod(descriptor);
+                invocable.invoke(descriptor.getServiceBean(), args);
+            } catch (InvocationTargetException ex) {
+                // 反射包装会吞掉业务异常 message，导致执行日志 error_message 为空、排障困难
+                Throwable cause = ex.getCause();
+                if (cause instanceof Exception) {
+                    throw (Exception) cause;
+                }
+                if (cause instanceof Error) {
+                    throw (Error) cause;
+                }
+                throw ex;
+            }
         } finally {
             if (tenantBound) {
                 tenantContext.clear();
             }
         }
+    }
+
+    /**
+     * 解析可经 Spring 代理拦截的 Method（避免目标类 Method.invoke 绕过 AOP）。
+     *
+     * @param descriptor 任务处理器描述
+     * @return 代理或目标上同签名方法
+     */
+    private Method resolveInvocableMethod(AppServiceJobMethodDescriptor descriptor) throws NoSuchMethodException {
+        Method declared = descriptor.getMethod();
+        Object serviceBean = descriptor.getServiceBean();
+        if (serviceBean == null) {
+            return declared;
+        }
+        return serviceBean.getClass().getMethod(declared.getName(), declared.getParameterTypes());
     }
 
     private Object[] buildArguments(Method method, Map<String, Object> businessParameters) {

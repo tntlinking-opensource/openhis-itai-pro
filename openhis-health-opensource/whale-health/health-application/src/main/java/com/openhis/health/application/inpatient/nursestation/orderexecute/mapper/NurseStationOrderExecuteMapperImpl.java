@@ -170,6 +170,7 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
         command.setOperatorId(operatorId);
         // 同一 request+planTime 重复提交时领域层幂等跳过（防 double-click）
         command.setSkipDuplicateRequestAnchorCheck(Boolean.TRUE);
+        // 写槽位缺失时仅回传带操作人的空壳命令
         if (item == null) {
             return command;
         }
@@ -180,6 +181,14 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
         command.setCategoryEnum(categoryEnum);
         // occurrence=护士选择的计划点；recorded 在 complete 阶段写入
         command.setOccurrenceTime(item.getPlanTime());
+        // 手术/麻醉弹窗横表：与 occurrence 分离写入（BR-IP-SAE-002/003/006/007）
+        if (Boolean.TRUE.equals(item.getSurgeryAnesthExecuteFlag())) {
+            command.setProcedureTime(item.getProcedureTime());
+            command.setSpecimen(item.getSpecimen());
+            command.setNote(item.getNote());
+            command.setAnesthesiaStartTime(item.getAnesthesiaStartTime());
+            command.setAnesthesiaEndTime(item.getAnesthesiaEndTime());
+        }
         return command;
     }
 
@@ -196,10 +205,16 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
 
     /**
      * 完成 Procedure 执行（recorded=护士 actualTime；逻辑锚点仍为 create 时的 occurrence=planTime）。
+     *
+     * @param procedureId  执行记录主键
+     * @param operatorId   操作人
+     * @param recordedTime 实际执行时刻
+     * @param item         写槽位；手术/麻醉弹窗时携带横表覆盖字段
+     * @return 完成命令
      */
     @Override
     public CompleteProcedureRecordCommand toCompleteProcedureRecordCommand(
-        Long procedureId, Long operatorId, LocalDateTime recordedTime) {
+        Long procedureId, Long operatorId, LocalDateTime recordedTime, NurseStationOrderExecuteWriteSlotDto item) {
         CompleteProcedureRecordCommand command = new CompleteProcedureRecordCommand();
         command.setProcedureId(procedureId);
         command.setOperatorId(operatorId);
@@ -208,6 +223,14 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
         command.setReportJson(null);
         // 展示/事实时间：actualTime；发药 plannedDispenseTime 与账单 occurrence 仍用 planTime
         command.setRecordedTime(recordedTime);
+        // 手术/麻醉弹窗：完成时非空覆盖横表实填字段（BR-IP-SAE-003/006/007）
+        if (item != null && Boolean.TRUE.equals(item.getSurgeryAnesthExecuteFlag())) {
+            command.setProcedureTime(item.getProcedureTime());
+            command.setSpecimen(item.getSpecimen());
+            command.setNote(item.getNote());
+            command.setAnesthesiaStartTime(item.getAnesthesiaStartTime());
+            command.setAnesthesiaEndTime(item.getAnesthesiaEndTime());
+        }
         return command;
     }
 

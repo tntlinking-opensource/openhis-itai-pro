@@ -359,7 +359,19 @@ async function compensateOrphanRefund() {
   if (!row?.orphanRefund) {
     return;
   }
-  if (!row.paymentId || !row.merTradeNo || !row.tradeNo || row.txnAmtFen == null) {
+  let channelFen = 0;
+  if (row.paidAmtFen != null && Number(row.paidAmtFen) > 0) {
+    channelFen = Number(row.paidAmtFen);
+  } else if (row.txnAmtFen != null && Number(row.txnAmtFen) > 0) {
+    channelFen = Number(row.txnAmtFen);
+  }
+  if (
+    !row.paymentId ||
+    !row.merTradeNo ||
+    !row.tradeNo ||
+    !Number.isFinite(channelFen) ||
+    channelFen <= 0
+  ) {
     ElMessage.warning('订单信息不完整，无法补退');
     return;
   }
@@ -367,7 +379,8 @@ async function compensateOrphanRefund() {
     ElMessage.warning('本机未检测到 OpenHIS.Win 银联组件，无法补退');
     return;
   }
-  const refundAmountYuan = formatMoneyDisplay(row.txnAmtFen / 100);
+  // 银联 Win 按渠道患者实付；医院账仍是原下单金额，互不混用
+  const refundAmountYuan = formatMoneyDisplay(channelFen / 100);
   try {
     await ElMessageBox.confirm(
       `确认为支付单 ${row.paymentId} 发起银联补退 ¥${refundAmountYuan}？\n（HIS 已退费，仅补退银联，不会再次冲账）`,

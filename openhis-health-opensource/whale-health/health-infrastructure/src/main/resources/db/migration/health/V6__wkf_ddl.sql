@@ -100,8 +100,74 @@ COMMENT ON INDEX idx_wkf_act_def_tenant_cat_children_status IS
 COMMENT ON INDEX idx_wkf_act_def_peis_sort_bus IS
     'PEIS 目录：展示顺序+业务号';
 
--- seed: wkf_activity_definition
--- ----- seed sync from DB (wkf_activity_definition, 7 rows) -----
+-- seed: wkf_activity_definition（产品内置；BuiltInActivityDefinitionConstants）
+-- 按 name 精确匹配：皮试检查 / 嘱托 / 代煎中药 / 采血费；写侧禁止删/改名/改类型与类目
+INSERT INTO wkf_activity_definition (
+    id, tenant_id, created_at, updated_at, created_by, updated_by,
+    is_deleted, deleted_at, deleted_by, version,
+    category_code, bus_no, name, py_str, wb_str, package_unit_code,
+    type_enum, status_enum, description_text,
+    pricing_flag, yb_flag, yb_match_flag, children_flag,
+    def_encounter_unit_code, def_inhospital_unit_code, permitted_gender_enum
+)
+VALUES
+    (323002894106234880, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1,
+     false, NULL, NULL, 0,
+     '22', 'AD00000012', '皮试检查', 'PSJC', 'HYSS', '6',
+     '1', 'ACTIVE', NULL,
+     NULL, NULL, NULL, false,
+     '6', '6', 'BOTH'),
+    (329010000000000001, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1,
+     false, NULL, NULL, 0,
+     '52', 'AD00000015', '嘱托', 'ZT', 'YKRP', '6',
+     '5', 'ACTIVE', '住院嘱托医嘱（自由文本正文，执行不计费）',
+     false, false, false, false,
+     '6', '6', 'BOTH'),
+    (328502947422932992, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1,
+     false, NULL, NULL, 0,
+     '31', 'AD00000002', '代煎中药', 'DJZY', 'WUKA', '6',
+     '5', 'ACTIVE', NULL,
+     NULL, NULL, NULL, false,
+     '6', '6', 'BOTH'),
+    (340200000000000001, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1,
+     false, NULL, NULL, 0,
+     '22', 'AD00000016', '采血费', 'CXF', 'ETWU', '6',
+     '1', 'ACTIVE', '标本合管采血费（名称精确匹配）',
+     true, false, false, false,
+     '6', '6', 'BOTH')
+ON CONFLICT (id) DO NOTHING;
+
+-- 产品内置诊疗对应价表（SALE/PURCHASE/LIMIT；adm_charge_item_definition 已在 V2 建表）
+INSERT INTO adm_charge_item_definition (
+    id, tenant_id, created_at, updated_at, created_by, updated_by,
+    is_deleted, deleted_at, deleted_by, version,
+    instance_table, instance_id, charge_name, status_enum, org_id,
+    type_code, yb_type, price_type_code, lot_no, price_value, priority
+)
+VALUES
+    (323002894131400704, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1, false, NULL, NULL, 0,
+     'wkf_activity_definition', 323002894106234880, '皮试检查', 'ACTIVE', NULL, '1004', NULL, 'PURCHASE', NULL, 2.000000, NULL),
+    (323002894131400705, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1, false, NULL, NULL, 0,
+     'wkf_activity_definition', 323002894106234880, '皮试检查', 'ACTIVE', NULL, '1004', NULL, 'SALE', NULL, 2.000000, NULL),
+    (323002894131400706, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1, false, NULL, NULL, 0,
+     'wkf_activity_definition', 323002894106234880, '皮试检查', 'ACTIVE', NULL, '1004', NULL, 'LIMIT', NULL, 2.000000, NULL),
+    (329010000000000010, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1, false, NULL, NULL, 0,
+     'wkf_activity_definition', 329010000000000001, '嘱托', 'ACTIVE', NULL, '1008', NULL, 'PURCHASE', NULL, 0.000000, NULL),
+    (329010000000000011, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1, false, NULL, NULL, 0,
+     'wkf_activity_definition', 329010000000000001, '嘱托', 'ACTIVE', NULL, '1008', NULL, 'SALE', NULL, 0.000000, NULL),
+    (329010000000000012, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1, false, NULL, NULL, 0,
+     'wkf_activity_definition', 329010000000000001, '嘱托', 'ACTIVE', NULL, '1008', NULL, 'LIMIT', NULL, 0.000000, NULL),
+    (328502947456487424, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1, false, NULL, NULL, 0,
+     'wkf_activity_definition', 328502947422932992, '代煎中药', 'ACTIVE', NULL, '1013', NULL, 'PURCHASE', NULL, 3.000000, NULL),
+    (328502947456487425, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1, false, NULL, NULL, 0,
+     'wkf_activity_definition', 328502947422932992, '代煎中药', 'ACTIVE', NULL, '1013', NULL, 'SALE', NULL, 3.000000, NULL),
+    (340200000000000010, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1, false, NULL, NULL, 0,
+     'wkf_activity_definition', 340200000000000001, '采血费', 'ACTIVE', NULL, '1004', NULL, 'PURCHASE', NULL, 3.000000, NULL),
+    (340200000000000011, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1, false, NULL, NULL, 0,
+     'wkf_activity_definition', 340200000000000001, '采血费', 'ACTIVE', NULL, '1004', NULL, 'SALE', NULL, 3.000000, NULL),
+    (340200000000000012, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1, false, NULL, NULL, 0,
+     'wkf_activity_definition', 340200000000000001, '采血费', 'ACTIVE', NULL, '1004', NULL, 'LIMIT', NULL, 3.000000, NULL)
+ON CONFLICT (id) DO NOTHING;
 
 -- from V53__wkf_activity_definition_children.sql
 -- wkf_activity_definition_children（建表）
@@ -698,6 +764,17 @@ CREATE TABLE IF NOT EXISTS "public"."wkf_service_request" (
     "entrust_content" varchar(255),
     "sort_number" int4,
     "execution_count" int4,
+    "main_procedure_flag" bool,
+    "procedure_level_code" varchar(64),
+    "incision_type_code" varchar(64),
+    "anesthesia_method_code" varchar(64),
+    "procedure_time" timestamptz(6),
+    "surgeon_id" int8,
+    "first_assistant_id" int8,
+    "second_assistant_id" int8,
+    "nurse_id" int8,
+    "anesthetist_id" int8,
+    "nested_anesthesia_prescription_no" varchar(64),
     CONSTRAINT "wkf_service_request_pkey" PRIMARY KEY ("id")
 );
 COMMENT ON TABLE wkf_service_request IS '工作流 service request';
@@ -758,6 +835,28 @@ COMMENT ON COLUMN wkf_service_request.remark IS '备注';
 COMMENT ON COLUMN wkf_service_request.entrust_content IS '嘱托内容';
 COMMENT ON COLUMN wkf_service_request.sort_number IS '排序号';
 COMMENT ON COLUMN wkf_service_request.execution_count IS '服务申请聚合根（非药品医嘱）';
+COMMENT ON COLUMN wkf_service_request.main_procedure_flag IS
+    '主手术标志（医师申请）；空则病案首页补；非护士执行职责';
+COMMENT ON COLUMN wkf_service_request.procedure_level_code IS
+    '手术级别字典码（医师申请/目录）；空则病案首页补；非护士执行职责';
+COMMENT ON COLUMN wkf_service_request.incision_type_code IS
+    '切口类别字典码（医师申请可预填）';
+COMMENT ON COLUMN wkf_service_request.anesthesia_method_code IS
+    '麻醉方法字典码（医师申请可预填；真源宜麻醉侧/首页）';
+COMMENT ON COLUMN wkf_service_request.procedure_time IS
+    '手术时间（医师申请可填；执行拷贝至 cln_procedure.procedure_time，护士可改；非 occurrence_time）';
+COMMENT ON COLUMN wkf_service_request.surgeon_id IS
+    '主刀医师（申请预填；执行写入 cln_procedure_performer）';
+COMMENT ON COLUMN wkf_service_request.first_assistant_id IS
+    '一助（申请预填；执行写入 performer）';
+COMMENT ON COLUMN wkf_service_request.second_assistant_id IS
+    '二助（申请预填；执行写入 performer）';
+COMMENT ON COLUMN wkf_service_request.nurse_id IS
+    '配合护士（申请预填；执行护士可改写，真源 cln_procedure_performer）';
+COMMENT ON COLUMN wkf_service_request.anesthetist_id IS
+    '麻醉医师（申请预填；执行写入 performer）';
+COMMENT ON COLUMN wkf_service_request.nested_anesthesia_prescription_no IS
+    '嵌套麻醉申请单号（手术 AR 关联麻醉 AR；可空）';
 
 -- from V62__wkf_service_request_detail.sql
 -- wkf_service_request_detail（建表）

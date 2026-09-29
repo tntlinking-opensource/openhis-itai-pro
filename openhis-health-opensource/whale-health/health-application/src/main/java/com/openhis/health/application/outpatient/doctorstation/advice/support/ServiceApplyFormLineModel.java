@@ -38,6 +38,9 @@ public class ServiceApplyFormLineModel {
     /** 纯备注（主表字段）。 */
     private String remark;
 
+    /** 医嘱优先级 code（加急 {@code EM}）。 */
+    private String priorityEnum;
+
     /** 部位/样本明细摘要列表。 */
     private List<ServiceRequestDetailSummaryModel> details;
 }

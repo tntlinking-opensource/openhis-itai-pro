@@ -63,6 +63,10 @@ interface QueryState {
   openedDateTo?: string;
   /** 筛选项 value 为 "true"/"false" 字符串；空=不限 */
   reasonableValue?: string;
+  /** 重点药类型 KeyDrugType code；空=不限 */
+  keyDrugType?: string;
+  /** 药品性质 KeyDrugType code；空=不限 */
+  medicinePropertyCode?: string;
   /** 处方号或点评业务号关键字 */
   keyword?: string;
 }
@@ -95,6 +99,8 @@ const tableData = ref<PrescriptionReviewListRow[]>([]);
 const total = ref(0);
 
 const reasonableOptions = ref<ApiOptionItem[]>([]);
+const keyDrugTypeOptions = ref<ApiOptionItem[]>([]);
+const medicinePropertyOptions = ref<ApiOptionItem[]>([]);
 
 const queryParams = reactive<QueryState>({
   pageNo: 1,
@@ -190,6 +196,8 @@ function buildFilterBody(): Omit<PagePrescriptionReviewsRequest, 'pageNo' | 'pag
     openedDateFrom: queryParams.openedDateFrom || undefined,
     openedDateTo: queryParams.openedDateTo || undefined,
     reasonableFlag: resolveReasonableFlag(),
+    keyDrugType: queryParams.keyDrugType || undefined,
+    medicinePropertyCode: queryParams.medicinePropertyCode || undefined,
     keyword: queryParams.keyword?.trim() || undefined,
   };
 }
@@ -212,6 +220,8 @@ const { run: runInit, loading: initLoading } = useRequest(loadPrescriptionReview
       normalizeReportDateRangeYmd(data?.defaultReviewedDateTo) || queryParams.reviewedDateTo;
     // 本页仅有效已点评行，不再展示点评状态筛
     reasonableOptions.value = optionDtosToSelectItems(data?.reasonableOptions);
+    keyDrugTypeOptions.value = optionDtosToSelectItems(data?.keyDrugTypeOptions);
+    medicinePropertyOptions.value = optionDtosToSelectItems(data?.medicinePropertyOptions);
   },
 });
 
@@ -243,6 +253,8 @@ function handleQuery() {
 /** 重置筛选并重新初始化默认日期后查询。 */
 async function handleReset() {
   queryParams.reasonableValue = undefined;
+  queryParams.keyDrugType = undefined;
+  queryParams.medicinePropertyCode = undefined;
   queryParams.keyword = undefined;
   queryParams.openedDateFrom = undefined;
   queryParams.openedDateTo = undefined;
@@ -386,6 +398,40 @@ onMounted(async () => {
               >
                 <ElOption
                   v-for="item in toSelectOptions(reasonableOptions)"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="重点药类型">
+              <ElSelect
+                v-model="queryParams.keyDrugType"
+                clearable
+                filterable
+                placeholder="全部"
+                :class="REPORT_QUERY_CONTROL"
+                @change="handleQuery"
+              >
+                <ElOption
+                  v-for="item in toSelectOptions(keyDrugTypeOptions)"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="药品性质">
+              <ElSelect
+                v-model="queryParams.medicinePropertyCode"
+                clearable
+                filterable
+                placeholder="全部"
+                :class="REPORT_QUERY_CONTROL"
+                @change="handleQuery"
+              >
+                <ElOption
+                  v-for="item in toSelectOptions(medicinePropertyOptions)"
                   :key="item.value"
                   :label="item.label"
                   :value="item.value"

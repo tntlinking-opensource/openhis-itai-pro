@@ -11,7 +11,10 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 /**
- * 撤销转科/出院过渡态命令：{@code ON_HOLD} → {@code IN_PROGRESS}（GAP-ATD-008）。
+ * 撤销转科/出院过渡态命令：{@code ON_HOLD} → {@code IN_PROGRESS}（GAP-ATD-008；办理出院前）。
+ *
+ * <p>由 {@code InpatientTransferDischargeHoldOrchestrator} 组装；领域
+ * {@code EncounterDomainService#revertTransferOrDischargeHold} 执行。</p>
  */
 @Getter
 @Setter

@@ -129,8 +129,11 @@ public class RegistrationSlipDto {
     @Schema(description = "支付宝支付展示")
     private String alipayPayText;
 
-    /** 医保个人账户余额展示文案。 */
-    @Schema(description = "账户余额展示")
+    /**
+     * 医保个人账户余额展示文案（本笔扣款后剩余；由 {@code balc − acct_pay} 装配，见
+     * {@code InsuranceReceiptAccountBalanceSupport}）。
+     */
+    @Schema(description = "账户余额展示（扣款后）")
     private String accountBalanceText;
 
     /** 收费员展示名。 */

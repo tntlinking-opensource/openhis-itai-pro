@@ -32,6 +32,7 @@ import com.openhis.health.domain.share.utils.FieldSourcesJsonUtil;
 import com.openhis.health.domain.share.utils.InpatientStayDaysCalculator;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.whale.core.application.exception.BusinessException;
+import com.openhis.whale.core.application.exception.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -152,7 +153,9 @@ public class CaseRecordHomepageDomainService {
             sources.put("procedures", FieldFillSource.MANUAL.getCode());
         }
         homepage.setFieldSourcesJson(FieldSourcesJsonUtil.toJson(objectMapper, sources));
-        homepage.bumpVersion(command.getOperatorId());
+        // 草稿期保存不升业务版本（与编辑审核版本解耦，DM-MRMS-001 v1.2）
+        homepage.setUpdatedAt(java.time.LocalDateTime.now());
+        homepage.setUpdatedBy(command.getOperatorId());
         // 持久化首页标量
         homepageRepository.save(homepage);
         // 诊断子表非 null 时全量替换（null 表示本次不修改子表）
@@ -431,6 +434,51 @@ public class CaseRecordHomepageDomainService {
     }
 
     /**
+     * 编辑审核通过后回写首页（保持 frozen；设定 toVersion；不覆盖费用分区）。
+     *
+     * <p>入参 {@link HomepageSaveCommand} 由应用层从工作稿 JSON 解析；本方法不解析 JSON。</p>
+     *
+     * @param command 首页保存命令（含诊断/手术子表可选）
+     * @param expectedFromVersion 申请上的 from_version，须等于当前首页 version_no
+     * @param toVersion 目标版本
+     * @return 回写后首页
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public CaseRecordHomepage applyApprovedEditSnapshot(
+            HomepageSaveCommand command,
+            Integer expectedFromVersion,
+            Integer toVersion) {
+        // Pre：加载首页并校验版本并发
+        CaseRecordHomepage homepage = homepageRepository
+                .findByCaseRecordIdAndIsDeletedFalse(command.getCaseRecordId())
+                .orElseThrow(() -> new EntityNotFoundException("病案首页", command.getCaseRecordId()));
+        if (expectedFromVersion == null || !expectedFromVersion.equals(homepage.getVersionNo())) {
+            throw new BusinessException(
+                    MrmsErrorCodes.HOMEPAGE_EDIT_VERSION_CONFLICT,
+                    "首页版本已变化，请重新申请编辑");
+        }
+        Map<String, String> sources = FieldSourcesJsonUtil.parse(objectMapper, homepage.getFieldSourcesJson());
+        // Cmd：允许在 frozen 下回写非费用字段（跳过 assertEditable）
+        homepage.applyManualFields(command, sources);
+        if (command.getDiagnoses() != null) {
+            sources.put("diagnoses", FieldFillSource.MANUAL.getCode());
+        }
+        if (command.getProcedures() != null) {
+            sources.put("procedures", FieldFillSource.MANUAL.getCode());
+        }
+        homepage.setFieldSourcesJson(FieldSourcesJsonUtil.toJson(objectMapper, sources));
+        homepage.applyApprovedVersion(toVersion, command.getOperatorId());
+        homepageRepository.save(homepage);
+        if (command.getDiagnoses() != null) {
+            replaceDiagnoses(command.getCaseRecordId(), homepage.getTenantId(), command.getDiagnoses());
+        }
+        if (command.getProcedures() != null) {
+            replaceProcedures(command.getCaseRecordId(), homepage.getTenantId(), command.getProcedures());
+        }
+        return homepage;
+    }
+
+    /**
      * 解档解冻首页。
      *
      * @param caseRecordId 病案主档主键
@@ -510,14 +558,25 @@ public class CaseRecordHomepageDomainService {
             entity.setOprnOprtCode(line.getOprnOprtCode());
             entity.setOprnOprtName(line.getOprnOprtName());
             entity.setOprnDate(line.getOprnDate());
+            entity.setOprnTime(line.getOprnTime());
             entity.setMainOprnFlag(line.getMainOprnFlag());
-            // P0 手术扩列：级别/切口/愈合/麻醉/术者，随全量替换一并落库
+            // 手术扩列：级别/切口/愈合/麻醉/人员/起止/样本备注（DM-MRMS-001 §3.2）
             entity.setOprnLevelCode(line.getOprnLevelCode());
             entity.setOprnIncisionCode(line.getOprnIncisionCode());
             entity.setHealGradeCode(line.getHealGradeCode());
             entity.setAnstWayCode(line.getAnstWayCode());
             entity.setOperDrName(line.getOperDrName());
+            entity.setOperDrCode(line.getOperDrCode());
+            entity.setAsit1Name(line.getAsit1Name());
+            entity.setAsit2Name(line.getAsit2Name());
+            entity.setNurseName(line.getNurseName());
             entity.setAnstDrName(line.getAnstDrName());
+            entity.setAnstDrCode(line.getAnstDrCode());
+            entity.setAnstStartTime(line.getAnstStartTime());
+            entity.setAnstEndTime(line.getAnstEndTime());
+            entity.setSpecimen(line.getSpecimen());
+            entity.setNote(line.getNote());
+            entity.setSendLabFlag(line.getSendLabFlag());
             entity.setValiFlag("1");
             entity.setCreatedAt(LocalDateTime.now());
             entity.setIsDeleted(false);
@@ -572,7 +631,7 @@ public class CaseRecordHomepageDomainService {
         putIfAllowed(homepage, sources, "empr_addr", patient.getWorkCompany(), force);
     }
 
-    /** 合并住院信息分区（adm_encounter + 转科摘要）。 */
+    /** 合并住院信息分区（adm_encounter + 账户付费方式 + 转科摘要）。 */
     private void mergeInpatientSection(
             CaseRecord record,
             CaseRecordHomepage homepage,
@@ -589,6 +648,8 @@ public class CaseRecordHomepageDomainService {
         // 纠偏非法/空白入院途径后，按就诊 in_way（与 adm_way 同码）回填；空白/非法不受 manual 空锁阻挡
         this.clearInvalidAdmWayIfNeeded(homepage, sources);
         this.putAdmWayFromHis(homepage, sources, enc.getAdmWayCode(), force);
+        // 付费方式：入院登记费用性质/险种已知，空或 auto 时带入，尊重 manual
+        putIfAllowed(homepage, sources, "pay_way_code", enc.getPayWayCode(), force);
         putIfAllowed(homepage, sources, "adm_caty_code", enc.getAdmCatyCode(), force);
         putIfAllowed(homepage, sources, "adm_caty_name", enc.getAdmCatyName(), force);
         putIfAllowed(homepage, sources, "dscg_caty_code", enc.getDscgCatyCode(), force);
@@ -826,12 +887,27 @@ public class CaseRecordHomepageDomainService {
             row.setOprnOprtCode(snap.getOprnCode());
             row.setOprnOprtName(snap.getOprnName());
             row.setOprnDate(snap.getOprnDate());
-            // 主手术标记：首条或快照 main=true 写 1，否则 0
+            row.setOprnTime(snap.getOprnTime());
+            // 主手术标记：快照 main=true 写 1，否则 0
             if (Boolean.TRUE.equals(snap.getMain())) {
                 row.setMainOprnFlag("1");
             } else {
                 row.setMainOprnFlag("0");
             }
+            row.setOprnLevelCode(snap.getOprnLevelCode());
+            row.setOprnIncisionCode(snap.getOprnIncisionCode());
+            row.setAnstWayCode(snap.getAnstWayCode());
+            row.setOperDrName(snap.getOperDrName());
+            row.setAsit1Name(snap.getAsit1Name());
+            row.setAsit2Name(snap.getAsit2Name());
+            row.setNurseName(snap.getNurseName());
+            row.setAnstDrName(snap.getAnstDrName());
+            row.setAnstStartTime(snap.getAnstStartTime());
+            row.setAnstEndTime(snap.getAnstEndTime());
+            row.setSpecimen(snap.getSpecimen());
+            row.setNote(snap.getNote());
+            row.setSendLabFlag(snap.getSendLabFlag());
+            // heal_grade_code 仅首页终改，带入留空
             lines.add(row);
         }
         replaceProcedureSnapshots(record.getId(), homepage.getTenantId(), lines);
@@ -990,6 +1066,7 @@ public class CaseRecordHomepageDomainService {
             case "prfs_code" -> homepage.setPrfsCode(String.valueOf(value));
             case "ipt_no" -> homepage.setIptNo(String.valueOf(value));
             case "adm_way_code" -> homepage.setAdmWayCode(String.valueOf(value));
+            case "pay_way_code" -> homepage.setPayWayCode(String.valueOf(value));
             case "adm_time" -> homepage.setAdmTime((LocalDateTime) value);
             case "dscg_time" -> homepage.setDscgTime((LocalDateTime) value);
             case "adm_caty_code" -> homepage.setAdmCatyCode(String.valueOf(value));

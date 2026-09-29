@@ -6,6 +6,19 @@ import { publicRequestClient } from '#/api/request';
 export const ORDER_TEMPLATE_KIND_GENERAL = 'GENERAL';
 export const ORDER_TEMPLATE_KIND_TCM = 'TCM';
 export const ORDER_TEMPLATE_KIND_PRICING = 'PRICING';
+/** 医生站申请单组套（检查/检验/治疗） */
+export const ORDER_TEMPLATE_KIND_SERVICE_APPLY = 'SERVICE_APPLY';
+
+/** 申请单组套行类别，与申请单目录 categoryEnum 一致，落在行 groupKey */
+export const SERVICE_APPLY_TEMPLATE_CATEGORY_EXAM = 'TEST';
+export const SERVICE_APPLY_TEMPLATE_CATEGORY_LAB = 'PROOF';
+export const SERVICE_APPLY_TEMPLATE_CATEGORY_TREATMENT = 'TREATMENT';
+
+export const SERVICE_APPLY_TEMPLATE_CATEGORY_OPTIONS = [
+  { value: SERVICE_APPLY_TEMPLATE_CATEGORY_EXAM, label: '检查' },
+  { value: SERVICE_APPLY_TEMPLATE_CATEGORY_LAB, label: '检验' },
+  { value: SERVICE_APPLY_TEMPLATE_CATEGORY_TREATMENT, label: '治疗' },
+];
 
 /** 行类型 */
 export const ORDER_TEMPLATE_LINE_KIND_MEDICATION = 'MEDICATION';
@@ -15,6 +28,7 @@ export const ORDER_TEMPLATE_LINE_KIND_DEVICE = 'DEVICE';
 /** 生命周期动作 */
 export const ORDER_TEMPLATE_LIFECYCLE_PUBLISH = 'PUBLISH';
 export const ORDER_TEMPLATE_LIFECYCLE_RETIRE = 'RETIRE';
+export const ORDER_TEMPLATE_LIFECYCLE_REACTIVATE = 'REACTIVATE';
 export const ORDER_TEMPLATE_LIFECYCLE_DELETE = 'DELETE';
 
 export interface OrderTemplateHeaderItem {

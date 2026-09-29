@@ -29,6 +29,10 @@ export type PrescriptionReviewStatusCode =
 export interface LoadPrescriptionReviewPageInitResponse {
   statusOptions?: ApiOptionItem[];
   reasonableOptions?: ApiOptionItem[];
+  /** 重点药类型（基药/监控/集采/抗生素） */
+  keyDrugTypeOptions?: ApiOptionItem[];
+  /** 药品性质（麻醉/精一/精二） */
+  medicinePropertyOptions?: ApiOptionItem[];
   defaultReviewedDateFrom?: string;
   defaultReviewedDateTo?: string;
 }
@@ -47,6 +51,14 @@ export interface PagePrescriptionReviewsRequest extends PageParams {
   reviewerId?: string;
   /** 关键字：处方号或点评业务号模糊（OR） */
   keyword?: string;
+  /**
+   * 重点药类型 KeyDrugType code：BASIC/NATIONAL_MONITOR/CENTRAL_PURCHASE/ANTIBIOTIC；空=不限
+   */
+  keyDrugType?: string;
+  /**
+   * 药品性质 KeyDrugType code：NARCOTIC/PSYCH_ONE/PSYCH_TWO；空=不限
+   */
+  medicinePropertyCode?: string;
 }
 
 /** 列表行：与工作表数据列同构（字段名我方命名）；id/busNo 等供行键与详情。 */

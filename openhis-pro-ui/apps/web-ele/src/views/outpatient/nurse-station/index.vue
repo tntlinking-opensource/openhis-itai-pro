@@ -70,6 +70,7 @@ import {
   groupMedicationLabelPrintTargets,
   groupProcedureApplyPrintTargets,
   groupSpecimenBarcodePrintTargets,
+  isLabSpecimenExecuteRow,
 } from '#/utils/print/nurse-station-print-targets';
 
 import NurseActionRecordDrawer from './components/nurse-action-record-drawer.vue';
@@ -999,6 +1000,57 @@ async function handlePrintInfusionLabelRow(row: NurseAdviceExecuteRow) {
   }
 }
 
+/** 医技列表打印：仅检验行，走采血贴 */
+async function handlePrintLabRows(rows: NurseAdviceExecuteRow[]) {
+  if (!currentPatient.value) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+  const encounterId = resolveEncounterIdForApi(selectedPatientId.value);
+  if (!encounterId) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+  // 只打传入的检验行，不带上项目列表里勾选的其它医嘱
+  const keys = rows.map((row) => row.key).filter((key) => key.length > 0);
+  const targets = groupSpecimenBarcodePrintTargets(executeItems.value, keys);
+  if (!targets.length) {
+    ElMessage.warning('没有可打印的采血/检验医嘱');
+    return;
+  }
+  printSubmitting.value = true;
+  try {
+    const ctx = buildNursePrintContext();
+    const patientName = currentPatient.value.name || '—';
+    const result = await printSpecimenBarcode({
+      encounterId,
+      patientName: ctx.patientName,
+      genderEnumText: ctx.genderEnumText,
+      ageText: ctx.ageText,
+      items: targets.map((target) => ({
+        serviceRequestId: target.serviceRequestId,
+        itemName: target.itemName,
+        labelCount: target.labelCount,
+        priorityEnum: target.priorityEnum,
+      })),
+    });
+    if (result.ok) {
+      appendRecord({
+        type: 'PRINT',
+        actionCode: 'PRINT_SPECIMEN_BARCODE',
+        action: NURSE_PRINT_ACTION_LABEL[NURSE_PRINT_ACTION.SPECIMEN_BARCODE],
+        target: `${patientName}（检验${targets.length}项） · ${result.count} 张`,
+      });
+      // 多条时 printSpecimenBarcode 已提示；单条由这里补一句
+      if (targets.length <= 1) {
+        ElMessage.success(`已发送 ${result.count} 张采血贴`);
+      }
+    }
+  } finally {
+    printSubmitting.value = false;
+  }
+}
+
 /** 侧栏打印按钮统一入口 */
 async function handlePrint(actionCode: NursePrintActionCode) {
   const actionLabel = NURSE_PRINT_ACTION_LABEL[actionCode];
@@ -1105,8 +1157,16 @@ async function handlePrint(actionCode: NursePrintActionCode) {
   }
 
   if (actionCode === NURSE_PRINT_ACTION.SPECIMEN_BARCODE) {
-    // 所选（或全部待执行）检验医嘱主键，每张采血贴一个条码
-    const targets = groupSpecimenBarcodePrintTargets(executeItems.value, selectedKeys);
+    // 右侧采血码只打医技列表里的检验行；合管仍一组一张（名称拼接、张数取组内最大）
+    const labKeys = executeItems.value
+      .filter((row) => isLabSpecimenExecuteRow(row))
+      .map((row) => row.key)
+      .filter((key) => key.length > 0);
+    if (labKeys.length === 0) {
+      ElMessage.warning('没有可打印的采血/检验医嘱');
+      return;
+    }
+    const targets = groupSpecimenBarcodePrintTargets(executeItems.value, labKeys);
     if (!targets.length) {
       ElMessage.warning('没有可打印的采血/检验医嘱');
       return;
@@ -1119,7 +1179,12 @@ async function handlePrint(actionCode: NursePrintActionCode) {
         patientName: ctx.patientName,
         genderEnumText: ctx.genderEnumText,
         ageText: ctx.ageText,
-        items: targets,
+        items: targets.map((target) => ({
+          serviceRequestId: target.serviceRequestId,
+          itemName: target.itemName,
+          labelCount: target.labelCount,
+          priorityEnum: target.priorityEnum,
+        })),
       });
       if (result.ok) {
         appendRecord({
@@ -1260,6 +1325,7 @@ async function handleCancelProcedureDialogConfirm(procedureIds: string[]) {
         @execute="executeSelectedItems"
         @cancel-execute="handleCancelExecute"
         @print-infusion-label="handlePrintInfusionLabelRow"
+        @print-lab-rows="handlePrintLabRows"
         @refresh-skin-test="loadSkinTestRows(selectedPatientId)"
         @save-skin-test-row="handleSaveSkinTestRow"
         @delete-skin-test-row="handleDeleteSkinTestRow"

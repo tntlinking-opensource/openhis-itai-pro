@@ -170,6 +170,27 @@ public class CaseRecordQueryService {
     }
 
     /**
+     * 待归档审批分页：强制 status=PENDING_ARCHIVE（DM-MRMS-001 §6.3）。
+     *
+     * <p>复用 {@link #queryPage} 条件装配；调用方仍可传关键字/科室/出院日等。</p>
+     *
+     * @param query 列表查询入参（status 字段会被覆盖为 PENDING_ARCHIVE）
+     * @param pageable 分页排序
+     * @return 待审病案列表
+     */
+    public Page<CaseRecordListItemQueryModel> pageForArchiveApproval(
+            CaseRecordPageQuery query, Pageable pageable) {
+        // Gate：待审列表固定状态，忽略调用方传入的其他 status 以免混入草稿/已归档
+        CaseRecordPageQuery pendingQuery = query;
+        if (pendingQuery == null) {
+            pendingQuery = new CaseRecordPageQuery();
+        }
+        pendingQuery.setStatusCode(CaseRecordStatus.PENDING_ARCHIVE.getCode());
+        pendingQuery.setStatusCodes(null);
+        return queryPage(pendingQuery, pageable);
+    }
+
+    /**
      * 病案实体 → 列表项读模型。
      *
      * @param record 病案聚合根

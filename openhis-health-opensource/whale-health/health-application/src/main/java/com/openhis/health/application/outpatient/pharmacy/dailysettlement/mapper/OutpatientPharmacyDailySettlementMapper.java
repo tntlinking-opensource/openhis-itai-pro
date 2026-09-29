@@ -23,17 +23,21 @@ public interface OutpatientPharmacyDailySettlementMapper {
     /**
      * 装配页初始化响应。
      *
-     * @param defaultDateFrom  默认窗起
-     * @param defaultDateTo    默认窗止
+     * @param defaultDateFrom      默认窗起
+     * @param defaultDateTo        默认窗止
      * @param pharmacyOptions      药房下拉
      * @param practitionerOptions  药师岗发药人下拉
+     * @param keyDrugTypeOptions      重点药类型下拉（品规销售排名筛选）
+     * @param medicinePropertyOptions 药品性质下拉（麻/精，品规销售排名筛选）
      * @return 初始化响应
      */
     LoadOutpatientPharmacyDailySettlementPageInitResponse toLoadPageInitResponse(
         String defaultDateFrom,
         String defaultDateTo,
         List<OptionDto> pharmacyOptions,
-        List<OptionDto> practitionerOptions);
+        List<OptionDto> practitionerOptions,
+        List<OptionDto> keyDrugTypeOptions,
+        List<OptionDto> medicinePropertyOptions);
 
     /**
      * 预览请求转领域查询。

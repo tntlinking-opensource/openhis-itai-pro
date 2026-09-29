@@ -11,7 +11,9 @@ import lombok.Data;
 import java.math.BigDecimal;
 
 /**
- * 挂号类型维护界面展示：底层为医疗服务主数据，附带销售价金额（元，来自收费定义行解析）。
+ * 挂号类型维护界面展示（AS-BAS-MST-015）。
+ *
+ * <p>金额为绑定诊查费 AD 当前 SALE 合计（只读 enrich）；无 {@code ybNo} 业务字段。</p>
  */
 @Data
 public class RegistrationTypeDto {
@@ -20,12 +22,14 @@ public class RegistrationTypeDto {
     private Long id;
     /** 挂号类型名称。 */
     private String name;
-    /** 医保目录编码或对照码。 */
-    private String ybNo;
+    /** 诊查费 ActivityDefinition 主键 CSV。 */
+    private String activityIds;
+    /** 已绑诊查费名称摘要（逗号拼接，只读）。 */
+    private String activityNames;
     /** 业务流水号/内部编码。 */
     private String busNo;
     /** 启用标志：1 启用，0 停用。 */
     private Integer activeFlag;
-    /** 挂号费销售金额（元，两位小数），无定价行时为 {@code null}。 */
+    /** 绑定 AD 当前售价合计（元）；无绑为 0。 */
     private BigDecimal amount;
 }

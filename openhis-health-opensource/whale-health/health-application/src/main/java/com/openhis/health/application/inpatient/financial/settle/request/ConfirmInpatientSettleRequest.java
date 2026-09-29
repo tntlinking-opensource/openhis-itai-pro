@@ -16,6 +16,7 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -81,4 +82,10 @@ public class ConfirmInpatientSettleRequest {
      */
     @Schema(description = "医保出院预交金原路退 Win 回传列表")
     private List<InpatientSettleClientRefundItemDto> clientRefundResults;
+
+    /**
+     * 款员所选折扣率 (0,1]；须与预结算一致；仅能力门控开启时可传（BR-IP-STL-020～025）。
+     */
+    @Schema(description = "款员所选折扣率")
+    private BigDecimal cashierDiscountRate;
 }

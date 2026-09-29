@@ -341,6 +341,8 @@ CREATE TABLE IF NOT EXISTS "public"."med_medication_request" (
     "rate_code" varchar(255) NOT NULL,
     "dose" numeric(18,6),
     "dose_unit_code" varchar(255),
+    "dose_schedule" varchar(500),
+    "quantity_schedule" varchar(500),
     "max_dose" numeric(18,6),
     "first_dose" numeric(18,6),
     "first_dose_unit_code" varchar(255),
@@ -425,6 +427,10 @@ COMMENT ON COLUMN med_medication_request.method_code IS 'method编码';
 COMMENT ON COLUMN med_medication_request.rate_code IS 'rate编码';
 COMMENT ON COLUMN med_medication_request.dose IS '剂量';
 COMMENT ON COLUMN med_medication_request.dose_unit_code IS 'dose单元编码';
+COMMENT ON COLUMN med_medication_request.dose_schedule IS
+    '分次剂量序列（计量、逗号分隔；仅长期西药/中成药用量不一致；空=走 dose）';
+COMMENT ON COLUMN med_medication_request.quantity_schedule IS
+    '分次用量序列（拆零、逗号分隔；与 dose_schedule 同序同段数；空=走 quantity）';
 COMMENT ON COLUMN med_medication_request.max_dose IS '最大剂量';
 COMMENT ON COLUMN med_medication_request.first_dose IS '字段：first dose';
 COMMENT ON COLUMN med_medication_request.first_dose_unit_code IS 'firstdose单元编码';

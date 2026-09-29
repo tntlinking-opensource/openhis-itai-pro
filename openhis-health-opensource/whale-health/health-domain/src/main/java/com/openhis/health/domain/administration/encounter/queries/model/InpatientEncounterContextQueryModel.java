@@ -47,6 +47,12 @@ public class InpatientEncounterContextQueryModel {
     /** 年龄文本。 */
     private String ageText;
 
+    /** 患者联系电话（主档；信息条回显）。 */
+    private String phone;
+
+    /** 患者身份证号（主档；信息条回显）。 */
+    private String idCard;
+
     /** 当前科室 ID。 */
     private Long organizationId;
 

@@ -32,9 +32,11 @@ import {
   ORDER_TEMPLATE_BINDING_PERSONAL,
   ORDER_TEMPLATE_KIND_GENERAL,
   ORDER_TEMPLATE_KIND_PRICING,
+  ORDER_TEMPLATE_KIND_SERVICE_APPLY,
   ORDER_TEMPLATE_KIND_TCM,
   ORDER_TEMPLATE_LIFECYCLE_DELETE,
   ORDER_TEMPLATE_LIFECYCLE_PUBLISH,
+  ORDER_TEMPLATE_LIFECYCLE_REACTIVATE,
   ORDER_TEMPLATE_LIFECYCLE_RETIRE,
   pageMaintainedOrderTemplatesApi,
 } from '#/api/basic/order-template';
@@ -77,13 +79,17 @@ const kindTabOptions = computed(() => {
     { value: ORDER_TEMPLATE_KIND_GENERAL, label: '通用组套' },
     { value: ORDER_TEMPLATE_KIND_TCM, label: '中药组套' },
     { value: ORDER_TEMPLATE_KIND_PRICING, label: '划价组套' },
+    { value: ORDER_TEMPLATE_KIND_SERVICE_APPLY, label: '申请单组套' },
   ];
 });
 
 const isGeneralKind = computed(() => activeKind.value === ORDER_TEMPLATE_KIND_GENERAL);
 const isPricingKind = computed(() => activeKind.value === ORDER_TEMPLATE_KIND_PRICING);
-/** 通用/划价组套不展示协定处方（仅中药组套保留） */
-const showAgreementBinding = computed(() => !isGeneralKind.value && !isPricingKind.value);
+const isServiceApplyKind = computed(() => activeKind.value === ORDER_TEMPLATE_KIND_SERVICE_APPLY);
+/** 通用/划价/申请单组套不展示协定处方（仅中药组套保留） */
+const showAgreementBinding = computed(
+  () => !isGeneralKind.value && !isPricingKind.value && !isServiceApplyKind.value,
+);
 
 /** 左侧树绑定维度选项（通用/划价过滤协定处方） */
 const maintenanceBindingOptions = computed(() => {
@@ -279,6 +285,7 @@ async function handleLifecycle(lifecycleActionCode: string, confirmMessage?: str
     const msgMap: Record<string, string> = {
       [ORDER_TEMPLATE_LIFECYCLE_PUBLISH]: '发布成功',
       [ORDER_TEMPLATE_LIFECYCLE_RETIRE]: '已停用',
+      [ORDER_TEMPLATE_LIFECYCLE_REACTIVATE]: '已启用',
       [ORDER_TEMPLATE_LIFECYCLE_DELETE]: '删除成功',
     };
     ElMessage.success(msgMap[lifecycleActionCode] ?? '操作成功');
@@ -405,6 +412,16 @@ onActivated(() => {
                 "
               >
                 停用
+              </ElButton>
+              <ElButton
+                v-if="selectedTemplateId && selectedHeader?.statusEnum === 'RETIRED'"
+                type="primary"
+                plain
+                @click="
+                  handleLifecycle(ORDER_TEMPLATE_LIFECYCLE_REACTIVATE, '确定重新启用该组套吗？')
+                "
+              >
+                启用
               </ElButton>
               <ElButton
                 v-if="selectedTemplateId"

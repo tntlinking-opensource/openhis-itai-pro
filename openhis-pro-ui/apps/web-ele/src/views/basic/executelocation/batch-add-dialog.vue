@@ -242,7 +242,7 @@ watch(
               v-model="executionOrgId"
               filterable
               clearable
-              placeholder="请选择执行科室"
+              placeholder="护士站或医技科室"
               class="w-full"
             >
               <ElOption

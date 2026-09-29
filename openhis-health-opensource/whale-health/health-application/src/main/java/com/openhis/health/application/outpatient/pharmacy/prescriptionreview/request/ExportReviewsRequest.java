@@ -59,6 +59,18 @@ public class ExportReviewsRequest extends AbstractHealthPageRequest {
     private String openedDateTo;
 
     /**
+     * 重点药类型筛选（与列表 {@link PageReviewsRequest#getKeyDrugType()} 同口径）；空=不限。
+     */
+    @Schema(description = "重点药类型 KeyDrugType code：BASIC/NATIONAL_MONITOR/CENTRAL_PURCHASE/ANTIBIOTIC；空=不限")
+    private String keyDrugType;
+
+    /**
+     * 药品性质筛选（与列表 {@link PageReviewsRequest#getMedicinePropertyCode()} 同口径）；空=不限。
+     */
+    @Schema(description = "药品性质 KeyDrugType code：NARCOTIC/PSYCH_ONE/PSYCH_TWO；空=不限")
+    private String medicinePropertyCode;
+
+    /**
      * 导出列清单（field 须落在 ExportRowDto {@code @Excel} 白名单；title 用工作表表头）。
      */
     @Schema(description = "导出列清单", requiredMode = Schema.RequiredMode.REQUIRED)

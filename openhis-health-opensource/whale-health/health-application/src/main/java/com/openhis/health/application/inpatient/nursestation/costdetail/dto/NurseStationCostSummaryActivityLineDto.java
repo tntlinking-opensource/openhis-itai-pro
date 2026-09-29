@@ -43,7 +43,7 @@ public class NurseStationCostSummaryActivityLineDto {
     @Schema(description = "展示时间（执行/划价事实时刻）")
     private LocalDateTime displayDateTime;
 
-    /** 操作人展示名（划价/执行均取 ChargeItem.performer_id；enterer_* 为收费人）。 */
+    /** 操作人展示名（划价/执行跟 Procedure 主执行人或 DeviceDispense 发放·配药人；enterer_* 为收费人）。 */
     @Schema(description = "操作人展示名")
     private String operatorName;
 

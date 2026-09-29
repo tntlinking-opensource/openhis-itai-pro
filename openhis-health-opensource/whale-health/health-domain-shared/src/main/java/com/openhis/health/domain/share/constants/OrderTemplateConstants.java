@@ -20,6 +20,9 @@ public interface OrderTemplateConstants {
         /** 停用：ACTIVE/DRAFT → RETIRED。 */
         String RETIRE = "RETIRE";
 
+        /** 重新启用：RETIRED → ACTIVE，恢复套用。 */
+        String REACTIVATE = "REACTIVATE";
+
         /** 逻辑删除头并级联软删行。 */
         String DELETE = "DELETE";
     }

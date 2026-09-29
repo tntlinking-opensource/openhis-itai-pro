@@ -19,6 +19,14 @@ import { isFillableIslandElement } from '../node-views/fillable-field-view.share
 
 const key = new PluginKey('emrWordlikeOps');
 
+/** 中文输入法上屏的标点（含全角）；正文 keypress 再插一次就会成对 */
+function isImePunctuationChar(ch: string): boolean {
+  if (!ch) return false;
+  if (/^[\u00B7\u2010-\u2027\u3000-\u303F\uFF00-\uFFEF]$/.test(ch)) return true;
+  // 中文模式下按键仍可能是半角，IME 会再写全角
+  return /^[,.;:?!]$/.test(ch);
+}
+
 /** 选区落在填写岛 contenteditable 内：由岛屿自己处理，禁止映成 PM 选区 */
 function domSelectionInsideFillableIsland(range: Range): boolean {
   const node = range.commonAncestorContainer;
@@ -198,12 +206,27 @@ export const EmrWordlikeOps = Extension.create({
           /**
            * 正文输入不带 scrollIntoView：分页 soft spacer 重挂后默认滚动会把视口/光标拽到页尾。
            * 岛屿 contenteditable 自行处理 input，此处不拦截。
+           * 中文标点交给 ProseMirror 默认（带 composition meta），自己 insertText 会叠成两个。
            */
           handleTextInput(view, from, to, text) {
             if (!view.editable) return false;
             if (isFillableIslandElement(document.activeElement)) return false;
+            if (text.length > 0 && [...text].every((ch) => isImePunctuationChar(ch))) {
+              return false;
+            }
             view.dispatch(view.state.tr.insertText(text, from, to));
             return true;
+          },
+
+          /**
+           * 同段 TextSelection 时 PM 不 preventDefault keypress，浏览器先插一字，
+           * 中文输入法再上屏全角，正文就会「，，」。岛内不走这条。
+           */
+          handleKeyPress(view, event) {
+            if (!view.editable) return false;
+            if (isFillableIslandElement(document.activeElement)) return false;
+            const ch = event.charCode ? String.fromCharCode(event.charCode) : '';
+            return isImePunctuationChar(ch);
           },
 
           handleClick(view, pos, event) {

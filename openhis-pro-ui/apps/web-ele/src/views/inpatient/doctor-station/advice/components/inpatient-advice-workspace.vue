@@ -41,15 +41,27 @@ import type { ServiceApplyDocumentGroup } from '#/views/outpatient/doctor-statio
 import { useInpatientAdviceTab } from '../composables/use-inpatient-advice-tab';
 import {
   adviceTherapyTypeClass,
+  flattenAdviceRowsForResourceOps,
   getSkinTestDisplayTagType,
   resolveAdviceTherapyTypeText,
 } from '../services/advice-list';
 import { resolveDefaultInpatientAdviceTherapyType, rowLooksDraft } from '../services/advice-row';
 import {
+  collectInpatientAdviceClipboardLines,
+  expandServiceApplyFormsInSelection,
+  replaceInpatientAdviceClipboard,
+  useInpatientAdviceClipboardLines,
+} from '../services/inpatient-advice-clipboard';
+import {
+  InpatientAdviceClipboardPasteError,
+  pasteInpatientAdviceClipboard,
+} from '../services/inpatient-advice-clipboard-paste.service';
+import {
   applyOrderTemplateToAdviceDraft,
   OrderTemplateApplyError,
 } from '../services/order-template-apply.service';
 import AdviceEditCard from './advice-edit-card.vue';
+import InpatientAdviceExecutionRecordDialog from './inpatient-advice-execution-record-dialog.vue';
 import InpatientAdviceQuickActionBar from './inpatient-advice-quick-action-bar.vue';
 import SaveAsOrderTemplateDialog from './save-as-order-template-dialog.vue';
 import WesternAdviceCollapsed from './western-advice-collapsed.vue';
@@ -63,6 +75,7 @@ const props = withDefaults(defineProps<UseInpatientAdviceTabProps>(), {
   patientId: '',
   defaultTimeSortOrder: undefined,
   includeTcmPrescriptions: false,
+  showExecutionRecord: false,
 });
 
 const emit = defineEmits<{
@@ -73,7 +86,13 @@ const emit = defineEmits<{
 const authStore = useAuthStore();
 const orderTemplateSidePanelRef = ref<InstanceType<typeof OrderTemplateSidePanel> | null>(null);
 const orderTemplateApplyLoading = ref(false);
+const adviceClipboardPasteLoading = ref(false);
+const adviceClipboardLines = useInpatientAdviceClipboardLines();
 const saveAsOrderTemplateDialogVisible = ref(false);
+/** 执行记录弹窗可见（仅病案首页医嘱侧栏） */
+const executionRecordVisible = ref(false);
+/** 当前行医嘱 requestId（成组则含成员）；必填，按单行打开 */
+const executionRecordFilterRequestIds = ref<string[]>([]);
 
 const {
   adviceMutationLoading,
@@ -125,9 +144,11 @@ const {
   listTherapyFilter,
   loadAdviceInit,
   medicationRateOptions,
+  dayTimesCountByRateCode,
   medicationRouteOptions,
   medicationSpeedOptions,
   onAdviceSelectionChange,
+  tableSelection,
   orderSelectExpandNonce,
   orderSelectFocusNonce,
   patientId,
@@ -151,6 +172,82 @@ const saveOrderTemplateAdviceRows = computed(() => getTableRows().filter((row) =
 /** 另存成功后刷新侧栏（维护组套 + 另存模板合并列表） */
 function handleSaveAsOrderTemplateSaved() {
   void orderTemplateSidePanelRef.value?.reloadTemplateList();
+}
+
+/** 剪贴板有内容且当前患者可开立时允许粘贴 */
+const advicePasteDisabled = computed(
+  () =>
+    adviceWriteDisabled.value ||
+    adviceClipboardPasteLoading.value ||
+    adviceClipboardLines.value.length === 0,
+);
+
+/** 勾选医嘱写入医生站剪贴板，供其他患者粘贴；不可复制行跳过且不覆盖空结果 */
+function handleCopySelectedAdvice() {
+  if (adviceWriteDisabled.value) {
+    return;
+  }
+  const selected = expandServiceApplyFormsInSelection(
+    tableSelection.value.filter((row) => !row.isEditor),
+    getTableRows(),
+  );
+  if (selected.length === 0) {
+    ElMessage.warning('请先勾选要复制的医嘱');
+    return;
+  }
+  const { lines, skippedCount } = collectInpatientAdviceClipboardLines(selected);
+  if (lines.length === 0) {
+    ElMessage.warning('勾选的医嘱不能复制（护理级别、转科、出院、皮试检查、耗材不支持）');
+    return;
+  }
+  replaceInpatientAdviceClipboard(lines);
+  if (skippedCount > 0) {
+    ElMessage.success(`已复制 ${lines.length} 条，跳过 ${skippedCount} 条不可复制的医嘱`);
+    return;
+  }
+  ElMessage.success(`已复制 ${lines.length} 条，可在其他患者医嘱页粘贴`);
+}
+
+/** 把剪贴板写成当前患者的新草稿；成功后保留剪贴板 */
+async function handlePasteAdviceClipboard() {
+  if (advicePasteDisabled.value) {
+    return;
+  }
+  const encounter = preserveApiIdForRequest(encounterId.value);
+  const patient = preserveApiIdForRequest(patientId.value);
+  if (!encounter || !patient) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+  const orgRaw = authStore.getSelectedOrganization();
+  const organizationUnitId =
+    orgRaw !== null && orgRaw !== undefined && String(orgRaw).trim() !== ''
+      ? String(orgRaw)
+      : undefined;
+  adviceClipboardPasteLoading.value = true;
+  try {
+    const result = await pasteInpatientAdviceClipboard({
+      lines: adviceClipboardLines.value,
+      encounterId: encounter,
+      patientId: patient,
+      organizationUnitId,
+      feeNatureOptions: feeNatureOptions.value,
+      medicationRateOptions: medicationRateOptions.value,
+      medicationRouteOptions: medicationRouteOptions.value,
+      listTherapyFilter: listTherapyFilter.value,
+    });
+    ElMessage.success(`已粘贴 ${result.appliedLineCount} 条草稿`);
+    if (result.filterHint) {
+      ElMessage.warning(result.filterHint);
+    }
+    await reload();
+  } catch (error) {
+    if (error instanceof InpatientAdviceClipboardPasteError) {
+      ElMessage.error(error.message);
+    }
+  } finally {
+    adviceClipboardPasteLoading.value = false;
+  }
 }
 
 /** 打开另存为组套弹窗 */
@@ -186,6 +283,39 @@ async function handleRowDblclick(row: AdviceRowItem) {
     return;
   }
   await handleAdviceRowDblclick(row);
+}
+
+/**
+ * 打开单条医嘱的执行记录（含成组成员 requestId）；仅病案首页入口。
+ *
+ * @param row 列表行；编辑卡行忽略
+ */
+function handleOpenExecutionRecord(row: AdviceRowItem) {
+  if (!props.showExecutionRecord || row.isEditor) {
+    return;
+  }
+  const enc = preserveApiIdForRequest(encounterId.value) || '';
+  if (!enc) {
+    ElMessage.warning('缺少就诊信息，无法查看执行记录');
+    return;
+  }
+  // 成组行拆成成员 requestId，供护士执行历史按行过滤
+  const flat = flattenAdviceRowsForResourceOps([row]);
+  const requestIds: string[] = [];
+  const seen = new Set<string>();
+  for (const item of flat) {
+    const rid = preserveApiIdForRequest(item.requestId) || '';
+    if (rid && !seen.has(rid)) {
+      seen.add(rid);
+      requestIds.push(rid);
+    }
+  }
+  if (requestIds.length === 0) {
+    ElMessage.warning('当前行缺少医嘱主键，无法查看执行记录');
+    return;
+  }
+  executionRecordFilterRequestIds.value = requestIds;
+  executionRecordVisible.value = true;
 }
 
 defineExpose({
@@ -465,6 +595,7 @@ function adviceOrderingDoctorLabel(row: AdviceRowItem): string {
       ref="orderTemplateSidePanelRef"
       v-loading="orderTemplateApplyLoading"
       class="ip-advice-workspace-root__template-panel"
+      allow-personal-delete
       :encounter-id="encounterId"
       :patient-id="patientId"
       @select="handleOrderTemplateSelect"
@@ -566,6 +697,17 @@ function adviceOrderingDoctorLabel(row: AdviceRowItem): string {
           >
             另存为组套
           </ElButton>
+          <ElButton plain :disabled="adviceWriteDisabled" @click="handleCopySelectedAdvice">
+            复制
+          </ElButton>
+          <ElButton
+            plain
+            :disabled="advicePasteDisabled"
+            :loading="adviceClipboardPasteLoading"
+            @click="handlePasteAdviceClipboard"
+          >
+            粘贴
+          </ElButton>
         </div>
         <ElRadioGroup
           class="ip-advice-list-therapy-filter shrink-0"
@@ -622,6 +764,7 @@ function adviceOrderingDoctorLabel(row: AdviceRowItem): string {
                 :fee-nature-options="feeNatureOptions"
                 :encounter-id="encounterId"
                 :medication-rate-options="medicationRateOptions"
+                :day-times-count-by-rate-code="dayTimesCountByRateCode"
                 :medication-route-options="medicationRouteOptions"
                 :medication-speed-options="medicationSpeedOptions"
                 :order-select-expand-nonce="orderSelectExpandNonce"
@@ -888,6 +1031,24 @@ function adviceOrderingDoctorLabel(row: AdviceRowItem): string {
               </div>
             </template>
           </ElTableColumn>
+          <ElTableColumn
+            v-if="props.showExecutionRecord"
+            label="操作"
+            width="88"
+            align="center"
+            fixed="right"
+          >
+            <template #default="{ row }">
+              <ElButton
+                v-if="!row.isEditor"
+                link
+                type="primary"
+                @click.stop="handleOpenExecutionRecord(row)"
+              >
+                执行记录
+              </ElButton>
+            </template>
+          </ElTableColumn>
         </ElTable>
       </div>
 
@@ -898,6 +1059,14 @@ function adviceOrderingDoctorLabel(row: AdviceRowItem): string {
       />
     </div>
   </div>
+
+  <InpatientAdviceExecutionRecordDialog
+    v-if="props.showExecutionRecord"
+    v-model="executionRecordVisible"
+    :encounter-id="encounterId"
+    :patient-id="patientId"
+    :filter-request-ids="executionRecordFilterRequestIds"
+  />
 
   <SaveAsOrderTemplateDialog
     v-model:open="saveAsOrderTemplateDialogVisible"

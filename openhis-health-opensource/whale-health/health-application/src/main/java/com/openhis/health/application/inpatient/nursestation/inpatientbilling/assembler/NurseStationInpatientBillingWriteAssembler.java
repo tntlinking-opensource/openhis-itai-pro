@@ -40,7 +40,7 @@ import java.util.Map;
  * IF-IP-PRC-02/04 写路径专项装配：权威定价重算、吸氧/心电时长 Gate（BR-IP-PRC-010）。
  *
  * <p>诊疗套餐（BR-IP-PRC-011）全局仅落父项一条 {@code ChargeItem}；子项由
- * {@link com.openhis.health.application.basic.activitydefinition.support.ActivityDefinitionPackageChildResolver} 在需要时解析。</p>
+ * {@link com.openhis.health.application.shared.activitydefinition.ActivityDefinitionPackageChildResolver} 在需要时解析。</p>
  *
  * <p>耗材 {@code performLocation} 须为 IF-IP-PRC-01 {@code defaultDispenseLocationId} 回传；
  * 可选 {@code lotNumber} 锁定批号价。权威单价先取包装锚 LOT_NUMBER_PRICE/SALE，再按提交

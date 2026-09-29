@@ -18,7 +18,8 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 /**
  * 4401 组装结果业务校验（上传前）。
  *
- * <p>仅校验规范「是否必填」与医保病人必填；手术有行时校实体已映射的愈合/麻醉码。</p>
+ * <p>仅校验规范「是否必填」与医保病人必填。手术行：出站码已在组装期门控；
+ * 愈合/麻醉按 AS-MRMS-UP-001 <strong>透传可空</strong>，本校验不强制。</p>
  */
 public final class Upload4401Validator {
 
@@ -86,19 +87,11 @@ public final class Upload4401Validator {
         if (!hasMain) {
             errors.add("缺少主诊断行");
         }
-        // 手术有行时校愈合/麻醉等已映射必填码
+        // 手术行：出站码/空码已在 CaseRecord4401Mapper 组装期抛 EX-MRMS-UP-OP-*；此处仅兜底缺码
         if (input.getOprninfo() != null) {
             for (MedcasHomepageOprnInfo row : input.getOprninfo()) {
                 if (trimToNull(row.getOprnOprtCode()) == null) {
                     errors.add("手术行缺 oprn_oprt_code");
-                    break;
-                }
-                if (trimToNull(row.getSincHealLvCode()) == null) {
-                    errors.add("手术行缺切口愈合等级代码，请在首页手术补全");
-                    break;
-                }
-                if (trimToNull(row.getAnstMtdCode()) == null) {
-                    errors.add("手术行缺麻醉方法代码，请在首页手术补全");
                     break;
                 }
             }

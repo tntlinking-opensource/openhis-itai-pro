@@ -302,7 +302,10 @@ public class CaseRecord4401Mapper {
     }
 
     /**
-     * 首页手术子表 → 4401 oprninfo 行（跳过无编码行，按序号排序）。
+     * 首页手术子表 → 4401 oprninfo 行（按序号排序；空列表→{@code []}）。
+     *
+     * <p>每行国临码须非空且能解析 {@code yb_no}，否则整单失败（EX-MRMS-UP-OP-201/202）；
+     * 禁止静默跳过无码行。</p>
      *
      * @param rows 手术实体
      * @param hmpgSn 4401 首页流水号
@@ -315,6 +318,7 @@ public class CaseRecord4401Mapper {
             String hmpgSn,
             String mdtrtSn,
             String fixmedinsCode) {
+        // 无手术行：上送空数组（非 null）
         if (rows == null || rows.isEmpty()) {
             return Collections.emptyList();
         }
@@ -324,6 +328,7 @@ public class CaseRecord4401Mapper {
         Set<String> clinicCodes = new LinkedHashSet<>();
         for (HomepageProcedure row : sorted) {
             String clinic = trimToNull(row.getOprnOprtCode());
+            // 仅收集非空国临码做批量对码；空码行在下方 Gate 抛 EX-202
             if (clinic != null) {
                 clinicCodes.add(clinic);
             }
@@ -332,16 +337,20 @@ public class CaseRecord4401Mapper {
                 medcasDualCodeResolveSupport.resolveProcedureBatch(clinicCodes);
         List<MedcasHomepageOprnInfo> result = new ArrayList<>();
         for (HomepageProcedure row : sorted) {
-            // 无手术编码行跳过
             String clinicCode = trimToNull(row.getOprnOprtCode());
-            if (clinicCode == null) {
-                continue;
-            }
+            // 业务分支：组装报错 hint（码+名；皆空则序号）
             String hint = clinicCode;
-            if (trimToNull(row.getOprnOprtName()) != null) {
+            if (hint == null) {
+                hint = trimToNull(row.getOprnOprtName());
+            } else if (trimToNull(row.getOprnOprtName()) != null) {
                 hint = clinicCode + " " + row.getOprnOprtName().trim();
             }
-            String ybNo = medcasDualCodeResolveSupport.requireYbOutbound(dualByClinic, clinicCode, hint);
+            if (hint == null && row.getSortNo() != null) {
+                hint = "序号" + row.getSortNo();
+            }
+            // Gate：空码→EX-202；无 yb_no→EX-201
+            String ybNo = medcasDualCodeResolveSupport.requireProcedureYbOutbound(
+                    dualByClinic, clinicCode, hint);
             MedcasHomepageOprnInfo item = new MedcasHomepageOprnInfo();
             item.setIptMedcasHmpgSn(hmpgSn);
             item.setMdtrtSn(mdtrtSn);
@@ -350,11 +359,13 @@ public class CaseRecord4401Mapper {
             item.setOprnOprtCode(ybNo);
             item.setOprnOprtName(trimToNull(row.getOprnOprtName()));
             item.setMainOprnFlag(trimToNull(row.getMainOprnFlag()));
-            // 实体已有愈合/麻醉/级别码则上送（规范有行时校这些码）
+            // Asm：愈合/麻醉/级别/助手术者透传可空（AS BR-MRMS-UP-OP-004）
             item.setOprnLvCode(trimToNull(row.getOprnLevelCode()));
             item.setSincHealLvCode(trimToNull(row.getHealGradeCode()));
             item.setAnstMtdCode(trimToNull(row.getAnstWayCode()));
             item.setOperName(trimToNull(row.getOperDrName()));
+            item.setAsit1Name(trimToNull(row.getAsit1Name()));
+            item.setAsitName2(trimToNull(row.getAsit2Name()));
             item.setAnstDrName(trimToNull(row.getAnstDrName()));
             item.setValiFlag("1");
             result.add(item);

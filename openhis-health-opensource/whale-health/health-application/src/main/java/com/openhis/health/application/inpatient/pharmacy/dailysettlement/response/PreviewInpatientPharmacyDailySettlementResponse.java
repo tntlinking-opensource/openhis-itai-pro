@@ -7,9 +7,9 @@ package com.openhis.health.application.inpatient.pharmacy.dailysettlement.respon
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.openhis.health.application.finance.pharmacydailysettlement.dto.PharmacyDailySettlementCategoryRowDto;
-import com.openhis.health.application.finance.pharmacydailysettlement.dto.PharmacyDailySettlementDispenseItemDto;
-import com.openhis.health.application.finance.pharmacydailysettlement.dto.PharmacyDailySettlementProductRowDto;
+import com.openhis.health.application.shared.pharmacydailysettlement.PharmacyDailySettlementCategoryRowDto;
+import com.openhis.health.application.shared.pharmacydailysettlement.PharmacyDailySettlementDispenseItemDto;
+import com.openhis.health.application.shared.pharmacydailysettlement.PharmacyDailySettlementProductRowDto;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.whale.core.application.dto.OptionDto;
 import io.swagger.v3.oas.annotations.media.Schema;

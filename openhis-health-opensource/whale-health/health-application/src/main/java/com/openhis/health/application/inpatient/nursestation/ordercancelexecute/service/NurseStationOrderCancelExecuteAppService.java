@@ -4,6 +4,7 @@
  */
 package com.openhis.health.application.inpatient.nursestation.ordercancelexecute.service;
 
+import com.openhis.health.application.shared.medicaltech.MedicalTechBilateralHomologySupport;
 import com.openhis.health.application.shared.validator.CurrentManagedWardLocationIdsResolver;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.application.shared.validator.InpatientPendingSettlementClinicalGate;
@@ -88,6 +89,9 @@ public class NurseStationOrderCancelExecuteAppService {
     /** 药品申请读侧（方级扩行索引）。 */
     private final MedicationRequestQueryService medicationRequestQueryService;
 
+    /** 医技协同门禁（取消同态已废；空操作保留调用点）。 */
+    private final MedicalTechBilateralHomologySupport medicalTechBilateralHomologySupport;
+
     /**
      * IF-IP-CXL-01：批量取消已执行医嘱计划点。
      *
@@ -148,6 +152,8 @@ public class NurseStationOrderCancelExecuteAppService {
                     bucket.add(row.getRequestId());
                 }
             }
+            // Pre：医技取消同态已废止——空操作保留调用点（协同 DD 软落地）
+            this.medicalTechBilateralHomologySupport.assertNurseCancelHomology(completedRowByProcedureId.values());
             // Pre：主医嘱发放行与 Charge 索引
             List<MedicationDispense> dispensesByProcedure =
                 medicationDispenseQueryService.listMedicationDispensesByProcedureIds(expandedProcedureIds);

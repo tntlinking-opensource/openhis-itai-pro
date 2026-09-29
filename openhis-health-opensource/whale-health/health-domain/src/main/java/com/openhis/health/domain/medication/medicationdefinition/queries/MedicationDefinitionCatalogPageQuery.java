@@ -21,9 +21,15 @@ public class MedicationDefinitionCatalogPageQuery extends AbstractPageQuery {
     private String categoryCode;
 
     /**
-     * 重点药类型 code（可选，见 {@code KeyDrugType}）；空表示不限，非空时筛选对应标识为 {@code true} 的药品。
+     * 重点药类型 code（可选）；仅认基药/监控/集采/抗生素；空表示不限。麻/精见 {@link #medicinePropertyCode}。
      */
     private String keyDrugType;
+
+    /**
+     * 药品性质 code（可选，NARCOTIC/PSYCH_ONE/PSYCH_TWO）；空表示不限。
+     * 与 {@link #keyDrugType} 同时非空时按 AND 收窄。
+     */
+    private String medicinePropertyCode;
 
     /**
      * 发布状态 code（可选，见 {@link com.openhis.health.domain.share.enums.PublicationStatus}）；空表示不限。

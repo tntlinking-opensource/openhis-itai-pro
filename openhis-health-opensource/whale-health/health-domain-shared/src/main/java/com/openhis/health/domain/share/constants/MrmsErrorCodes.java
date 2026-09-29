@@ -54,6 +54,15 @@ public final class MrmsErrorCodes {
     /** 4401 组装校验失败。 */
     public static final String UPLOAD_ASSEMBLE_VALIDATION = "MRMS_UPLOAD_ASSEMBLE_VALIDATION";
 
+    /** 首页手术保存：主手术标志超过一条（AS-MRMS-HP-001 EX-MRMS-HP-PR-203）。 */
+    public static final String HOMEPAGE_PROCEDURE_MAIN_DUPLICATE = "EX-MRMS-HP-PR-203";
+
+    /** 4401/4101A 手术行无医保对照（AS-MRMS-UP-001 EX-MRMS-UP-OP-201）。 */
+    public static final String UPLOAD_PROCEDURE_YB_UNMAPPED = "EX-MRMS-UP-OP-201";
+
+    /** 4401/4101A 手术编码为空（AS-MRMS-UP-001 EX-MRMS-UP-OP-202）。 */
+    public static final String UPLOAD_PROCEDURE_CODE_EMPTY = "EX-MRMS-UP-OP-202";
+
     /** 非病案管理员不可归档/解档病例。 */
     public static final String CLINICAL_ARCHIVE_ROLE_REQUIRED = "MRMS_CLINICAL_ARCHIVE_ROLE_REQUIRED";
 
@@ -63,4 +72,16 @@ public final class MrmsErrorCodes {
 
     /** EMR 未启用，无法归档/解档病例。 */
     public static final String CLINICAL_ARCHIVE_EMR_DISABLED = "MRMS_CLINICAL_ARCHIVE_EMR_DISABLED";
+
+    /** 首页编辑申请不存在。 */
+    public static final String HOMEPAGE_EDIT_NOT_FOUND = "MRMS_HOMEPAGE_EDIT_NOT_FOUND";
+
+    /** 首页编辑申请状态不允许当前操作。 */
+    public static final String HOMEPAGE_EDIT_INVALID_STATUS = "MRMS_HOMEPAGE_EDIT_INVALID_STATUS";
+
+    /** 同病案已有在途编辑申请。 */
+    public static final String HOMEPAGE_EDIT_ACTIVE_EXISTS = "MRMS_HOMEPAGE_EDIT_ACTIVE_EXISTS";
+
+    /** 编辑申请版本与主档不一致（并发）。 */
+    public static final String HOMEPAGE_EDIT_VERSION_CONFLICT = "MRMS_HOMEPAGE_EDIT_VERSION_CONFLICT";
 }

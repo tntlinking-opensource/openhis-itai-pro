@@ -28,8 +28,10 @@ import java.util.List;
 /**
  * 住院护士划价诊疗 Procedure 写编排（AS-IP-NUR-005 IF-IP-PRC-02/04/06）。
  *
- * <p>确认划价：{@code create→start→complete} 并登记主执行人（登录医务人员）；取消划价：对 COMPLETED 行追加 CANCEL 对冲。
- * 对齐老系统 {@code addInNurseBilling} 诊疗路径与 **BR-RPT-NWL-020**；**耗材划价仍不写 Procedure**。</p>
+ * <p>确认划价：{@code create→start→挂主执行人→complete}（登录医务人员；主执行人须在 COMPLETED 前挂入，
+ * 对齐 DM-CLN-004 {@code assertPerformerAppendable}）。取消划价：对 COMPLETED 行追加 CANCEL 对冲。
+ * 诊疗须落 Procedure（BR-IP-PRC-007），供护士工作量按执行记录统计（AS-RPT-002 BR-RPT-NWL-020）；
+ * 耗材划价不写 Procedure，走 DeviceRequest/Dispense/Charge。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -44,6 +46,10 @@ public class NurseStationInpatientBillingProcedureOrchestrator {
     /**
      * 护士划价诊疗：创建并完成 Procedure，写入记录人与主执行人（IF-IP-PRC-02/04，BR-IP-PRC-007）。
      *
+     * <p>编排顺序固定为 {@code create→start→挂主执行人→complete}：
+     * {@code cln_procedure_performer} 仅允许在 PREPARATION/IN_PROGRESS 维护（DM-CLN-004 §6.1.3），
+     * 禁止在 COMPLETED 后再挂执行人。</p>
+     *
      * <p>{@code practitionerId} 须为 {@link com.openhis.health.application.shared.validator.CurrentPractitionerResolver}
      * 解析的登录医务人员，同时写入 {@code cln_procedure.recorder_id} 与 {@code cln_procedure_performer}。</p>
      *
@@ -53,7 +59,8 @@ public class NurseStationInpatientBillingProcedureOrchestrator {
      * @param practitionerId   当前登录医务人员（{@code adm_practitioner.id}），兼操作人与主执行人
      * @param occurrenceTime   执行发生时刻；可空时取当前时刻
      * @return 已完成 Procedure 主键，供 Charge 挂 {@code procedure_id}
-     * @throws BusinessException 执行人缺失时 {@link ErrorCodeConstants#PROCEDURE_INVALID_ARGUMENT}
+     * @throws BusinessException 执行人缺失时 {@link ErrorCodeConstants#PROCEDURE_INVALID_ARGUMENT}；
+     *                           状态不允许挂执行人时 {@link ErrorCodeConstants#PROCEDURE_INVALID_STATUS}
      */
     public Long registerCompletedNursePricingProcedure(
         Long serviceRequestId,
@@ -79,18 +86,19 @@ public class NurseStationInpatientBillingProcedureOrchestrator {
             patientId,
             practitionerId,
             effectiveTime);
-        // Cmd：Procedure 三态收口为 COMPLETED；complete 写入 recorder_id/recorded_time
+        // Cmd：创建 PREPARATION → 启动至 IN_PROGRESS（完成态禁止再挂执行人）
         Long procedureId = procedureDomainService.createProcedureRecord(createCmd);
         StartProcedureExecutionCommand startCmd =
             nurseStationInpatientBillingMapper.toStartProcedureExecutionCommand(procedureId, practitionerId);
         procedureDomainService.startProcedureExecution(startCmd);
+        // Cmd：主执行人须在 COMPLETED 前写入 cln_procedure_performer（DM-CLN-004 assertPerformerAppendable；供 AS-RPT-002）
+        procedureExecutionPerformerOrchestrator.registerPrimaryPerformer(
+            procedureId, practitionerId, practitionerId, effectiveTime);
+        // Cmd：完成 Procedure；complete 写入 recorder_id/recorded_time，状态收口 COMPLETED
         CompleteProcedureRecordCommand completeCmd =
             nurseStationInpatientBillingMapper.toCompleteNursePricingProcedureRecordCommand(
                 procedureId, practitionerId, effectiveTime);
         procedureDomainService.completeProcedureRecord(completeCmd);
-        // Cmd：主执行人写入 cln_procedure_performer，供 AS-RPT-002 按护士筛选净执行次数
-        procedureExecutionPerformerOrchestrator.registerPrimaryPerformer(
-            procedureId, practitionerId, practitionerId, effectiveTime);
         return procedureId;
     }
 

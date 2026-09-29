@@ -35,6 +35,10 @@ public class ModifyServiceRequestDraftCommand extends BatchCommand<ModifyService
         private Integer executionCount;
         /** 医嘱类别持久化码；非空时覆盖。 */
         private String categoryEnum;
+        /**
+         * 优先级持久化码（DM-WKF-004；加急 {@code EM}）；非 null 时覆盖，空串表示清空为非急。
+         */
+        private String priorityEnum;
         /** 治疗类别持久化码；非空时覆盖。 */
         private String therapyEnum;
         /** 开嘱人 practitioner 主键；非空时覆盖。 */
@@ -71,6 +75,50 @@ public class ModifyServiceRequestDraftCommand extends BatchCommand<ModifyService
          * 费用性质/合同主键；非空且与存量不同时更新 {@code wkf_service_request.contract_id}。
          */
         private Long contractId;
+        /**
+         * 主手术标志；非空时覆盖。
+         */
+        private Boolean mainProcedureFlag;
+        /**
+         * 手术级别字典码；非空时覆盖。
+         */
+        private String procedureLevelCode;
+        /**
+         * 切口类别字典码；非空时覆盖。
+         */
+        private String incisionTypeCode;
+        /**
+         * 麻醉方法字典码；非空时覆盖。
+         */
+        private String anesthesiaMethodCode;
+        /**
+         * 手术时间；非空时覆盖。
+         */
+        private LocalDateTime procedureTime;
+        /**
+         * 主刀医师；非空时覆盖。
+         */
+        private Long surgeonId;
+        /**
+         * 一助；非空时覆盖。
+         */
+        private Long firstAssistantId;
+        /**
+         * 二助；非空时覆盖。
+         */
+        private Long secondAssistantId;
+        /**
+         * 配合护士；非空时覆盖。
+         */
+        private Long nurseId;
+        /**
+         * 麻醉医师；非空时覆盖。
+         */
+        private Long anesthetistId;
+        /**
+         * 嵌套麻醉申请单号；非空时覆盖。
+         */
+        private String nestedAnesthesiaPrescriptionNo;
     }
 
     /** 明细行子命令（为本命令独立类型，每行一个 target_table + target_id 引用）。 */

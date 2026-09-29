@@ -133,7 +133,8 @@ public class InpatientChargeInsuranceExtensionImpl implements InpatientChargeIns
                 .setEncounterId(row.getEncounterId())
                 .setContractId(row.getContractId())
                 .setMdtrtId(row.getMdtrtId())
-                .setPlatformAdmitted(row.getPlatformAdmitted()));
+                .setPlatformAdmitted(row.getPlatformAdmitted())
+                .setInsuplcAdmdvs(row.getInsuplcAdmdvs()));
         }
         return result;
     }

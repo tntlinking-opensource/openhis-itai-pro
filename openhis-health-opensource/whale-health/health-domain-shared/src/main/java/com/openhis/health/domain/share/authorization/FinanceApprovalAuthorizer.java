@@ -13,7 +13,7 @@ package com.openhis.health.domain.share.authorization;
 public interface FinanceApprovalAuthorizer {
 
     /**
-     * 当前登录用户是否具备财务审批权限（用户管理 {@code whale_user_roles} 上的 {@code ROLE_FINANCE_APPROVER}）。
+     * 当前登录用户是否具备财务审批权限（用户管理 {@code whale_user_roles} 上的 {@code ROLE_ACCOUNTANT}）。
      *
      * @return 可审批财务审批族单据或调价单时为 {@code true}
      */
@@ -22,7 +22,7 @@ public interface FinanceApprovalAuthorizer {
     /**
      * 断言当前用户具备财务审批权限（调价及财务审批页同意/驳回入口）。
      *
-     * @throws com.openhis.whale.core.application.exception.BusinessException 无 {@code ROLE_FINANCE_APPROVER} 时
+     * @throws com.openhis.whale.core.application.exception.BusinessException 无 {@code ROLE_ACCOUNTANT} 时
      */
     void assertFinanceApprovalRole();
 

@@ -26,8 +26,17 @@ public class ServiceApplyFormLineSpec {
     /** 计价单位 code（术语 {@code UNIT_CODE} 或产品槽位回落）。 */
     private String unitCode;
 
+    /**
+     * 本行执行次数；可空。
+     * <p>编排写入 {@code ServiceRequest.execution_count} 时优先本字段，空则回落整单执行次数。</p>
+     */
+    private Integer executionCount;
+
     /** 纯备注，落库 {@code wkf_service_request.remark}。 */
     private String remark;
+
+    /** 医嘱优先级 code（加急 {@code EM}；空表示非急）。 */
+    private String priorityEnum;
 
     /** 部位/样本明细；检查/检验类别下由编排层校验至少一条。 */
     private List<ServiceApplyFormDetailItemSpec> detailItems;

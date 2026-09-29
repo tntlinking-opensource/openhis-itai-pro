@@ -27,6 +27,11 @@ export interface HomepageListRow {
   bedName?: string;
   /** 病区/病室展示名 */
   wardName?: string;
+  /**
+   * 当前/末次病区主键。
+   * 体温单/护理记录：登录科室不是入院科室时，管辖病区包含该主键才可写。
+   */
+  wardId?: string;
   /** 住院号 */
   iptNo: string;
   /** 病案号 */
@@ -61,7 +66,7 @@ export interface HomepageListRow {
   orderUploadStatusCode: string;
   /** 病案工作流状态 */
   statusCode?: string;
-  /** 病例是否已归档（就诊下存在 LOCKED 文书） */
+  /** 病例是否已归档（就诊下存在 PENDING_ARCHIVE/ARCHIVED 文书） */
   clinicalArchived?: boolean;
 }
 

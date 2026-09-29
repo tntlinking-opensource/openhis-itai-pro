@@ -156,7 +156,7 @@ public class PrescriptionSpotCheckWesternRowDto {
     @Schema(description = "发药数量单位")
     private String dispenseUnitText;
 
-    /** 药品顺序（sortNumber）。 */
+    /** 药品顺序（同方内从 1 起的行序）。 */
     @Excel(name = "药品顺序", sort = 27, scale = 0)
     @Schema(description = "药品顺序")
     private Integer drugOrder;

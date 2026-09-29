@@ -6,6 +6,8 @@ export interface BinaryExportResult {
   body?: string;
   /** 部分 AppService 使用 fileBytes 字段承载 xlsx 字节。 */
   fileBytes?: string;
+  /** 部分报表（结余留用/处方抽查/医保费用明细等）使用 content 字段。 */
+  content?: string;
   exportedRowCount?: number;
   rowCount?: number;
   truncated?: boolean;
@@ -16,7 +18,7 @@ export function downloadBinaryExportFile(
   result: BinaryExportResult,
   defaultFileName = 'export.xlsx',
 ): void {
-  const base64 = (result.body ?? result.fileBytes)?.trim();
+  const base64 = (result.body ?? result.fileBytes ?? result.content)?.trim();
   if (!base64) {
     return;
   }

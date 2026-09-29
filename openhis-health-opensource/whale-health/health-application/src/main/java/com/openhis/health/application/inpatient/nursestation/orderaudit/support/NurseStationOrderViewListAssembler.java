@@ -414,6 +414,15 @@ public class NurseStationOrderViewListAssembler {
             core.setDosageDisplay(this.formatDosageDisplay(medDetail.getDose(), medDetail.getDoseUnitCode(),
                 ctx.getDoseUnitLabelByCode(), medDetail.getQuantity(), medDetail.getUnitCode(),
                 ctx.getUnitLabelByCode(), medProduct));
+            // 分次 schedule：有值时剂量列走序列（如 2mg,1mg），禁止再用单值×次数估日总量（BR-IP-EXE-040）
+            core.setDoseSchedule(medDetail.getDoseSchedule());
+            core.setQuantitySchedule(medDetail.getQuantitySchedule());
+            if (StringUtils.isNotEmpty(medDetail.getDoseSchedule())) {
+                String scheduleUnitName = ProductDefinitionCatalogUnitBandsAssembler.resolveDoseUnitDisplayName(
+                    ctx.getDoseUnitLabelByCode(), medDetail.getDoseUnitCode(), medProduct);
+                core.setDosageDisplay(this.buildDoseScheduleDisplay(
+                    medDetail.getDoseSchedule(), scheduleUnitName));
+            }
             // 临时/出院带药：quantity 为开立总量，供摆药/用药单总量列；长期不填（避免单次用量被误当总量）
             core.setQuantityDisplay(this.buildOrderTotalQuantityDisplay(
                 therapyCode,
@@ -421,14 +430,26 @@ public class NurseStationOrderViewListAssembler {
                 medDetail.getUnitCode(),
                 ctx.getUnitLabelByCode(),
                 medProduct));
-            // 长期药日剂量：单次拆零量 × 每日次数 →「每日三片」
+            // 长期药日剂量：有 schedule 时各段求和；否则单次×每日次数（BR-IP-EXE-040）
             core.setDailyDoseDisplay(this.buildDailyDoseDisplay(
                 medDetail.getDose(),
                 medDetail.getDoseUnitCode(),
+                medDetail.getDoseSchedule(),
+                medDetail.getQuantitySchedule(),
+                medDetail.getUnitCode(),
                 medDetail.getRateCode(),
                 therapyCode,
                 ctx.getDoseUnitLabelByCode(),
+                ctx.getUnitLabelByCode(),
                 ctx.getTimesPerDayByRateCode(),
+                medProduct));
+            // 首日用量回显：仅长期有意义；单位展示优先剂量术语，回落开立单位术语/目录字典（BR-IP-ORD-030）
+            core.setFirstDose(medDetail.getFirstDose());
+            core.setFirstDoseUnitCode(medDetail.getFirstDoseUnitCode());
+            core.setFirstDoseUnitName(this.resolveFirstDoseUnitDisplayName(
+                medDetail.getFirstDoseUnitCode(),
+                ctx.getDoseUnitLabelByCode(),
+                ctx.getUnitLabelByCode(),
                 medProduct));
             core.setUsageDisplay(OrderCatalogDisplayAssembler.resolveCategoryDisplay(
                 ctx.getMethodLabelByCode(), medDetail.getMethodCode()));
@@ -591,6 +612,8 @@ public class NurseStationOrderViewListAssembler {
             core.setSortNumber(svcDetail.getSortNumber());
             // 医嘱备注（过滤套餐覆盖 JSON 误入）
             core.setRemark(this.resolveOrderRemarkForDisplay(svcDetail.getRemark()));
+            // 出院/转科专用字段：计划出院时间与原因（BR-IP-ORD-017 / BR-IP-AUD-006）
+            this.fillSpecialServiceDischargeFields(core, serviceCategory, svcDetail);
         } else {
             // 明细缺失时：开立可用骨架解析（含存量回落）；签发须直读列，禁止把开立回填进签发。
             core.setReqOpenedTime(order.resolveOrderOpenedTime());
@@ -696,6 +719,37 @@ public class NurseStationOrderViewListAssembler {
             return DoctorStationAdviceConstants.ADVICE_LIST_TRANSFER_DISPLAY_NAME_INPATIENT;
         }
         return null;
+    }
+
+    /**
+     * 出院/转科专用展示字段：计划出院时间与原因（BR-IP-ORD-017 / BR-IP-AUD-006）。
+     *
+     * <p>计划出院时间取 {@code occurrence_start_time}（医生开立时填写）；原因取
+     * {@code reason_text}。普通诊疗类目不写本字段。出院方式 out_way 仍由就诊里程碑解析，
+     * 校对写路径使用，列表本期不下发出院方式名。</p>
+     *
+     * @param core            展示内核；非空
+     * @param serviceCategory 已解析诊疗类目
+     * @param svcDetail       诊疗明细；可 null
+     */
+    private void fillSpecialServiceDischargeFields(
+        NurseStationOrderViewDisplayCore core,
+        String serviceCategory,
+        ServiceRequestListModel svcDetail) {
+        if (!this.isSpecialServiceCategory(serviceCategory)) {
+            return;
+        }
+        if (svcDetail == null) {
+            return;
+        }
+        // 计划出院/转科时间：医生填写的 occurrence_start_time
+        if (svcDetail.getOccurrenceStartTime() != null) {
+            core.setPlannedDischargeTime(svcDetail.getOccurrenceStartTime());
+        }
+        // 出院/转科原因正文
+        if (StringUtils.isNotEmpty(svcDetail.getReasonText())) {
+            core.setReasonText(svcDetail.getReasonText());
+        }
     }
 
     /**
@@ -932,6 +986,34 @@ public class NurseStationOrderViewListAssembler {
     }
 
     /**
+     * 解析首日用量单位展示名：剂量术语优先，未命中再走开立单位术语/目录字典（支/瓶等常落 UNIT_CODE）。
+     *
+     * @param firstDoseUnitCode   首日用量单位编码；可空
+     * @param doseUnitLabelByCode 剂量单位术语映射
+     * @param unitLabelByCode     开立单位术语映射
+     * @param productRow          药品目录读模型；可空
+     * @return 展示名；无法解析时为 null
+     */
+    private String resolveFirstDoseUnitDisplayName(
+        String firstDoseUnitCode,
+        Map<String, String> doseUnitLabelByCode,
+        Map<String, String> unitLabelByCode,
+        ProductDefinitionDisplayDto productRow) {
+        if (StringUtils.isEmpty(firstDoseUnitCode)) {
+            return null;
+        }
+        // Pre：先按剂量单位术语解析（与医生站列表 firstDoseUnitName 同入口）
+        String doseUnitName = ProductDefinitionCatalogUnitBandsAssembler.resolveDoseUnitDisplayName(
+            doseUnitLabelByCode, firstDoseUnitCode, productRow);
+        if (StringUtils.isNotEmpty(doseUnitName)) {
+            return doseUnitName.trim();
+        }
+        // 回落：开立/包装/拆零单位术语 + 产品字典（首日量单位常为支/瓶等非剂量码）
+        return ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(
+            unitLabelByCode, firstDoseUnitCode, productRow);
+    }
+
+    /**
      * 开立总量展示：仅临时/出院带药（BR-MRQ-009 总量语义）；长期返回 null。
      *
      * @param therapyCode         长临 code
@@ -957,19 +1039,29 @@ public class NurseStationOrderViewListAssembler {
 
     /**
      * 长期药日剂量友好文案（每日三片）；非长期或无法解析每日次数时返回 null。
+     *
+     * <p>有分次序列时各段求和（禁止单值×次数；BR-IP-EXE-040）。</p>
      */
     private String buildDailyDoseDisplay(
         BigDecimal dose,
         String doseUnitCode,
+        String doseSchedule,
+        String quantitySchedule,
+        String unitCode,
         String rateCode,
         String therapyCode,
         Map<String, String> doseUnitLabelByCode,
+        Map<String, String> unitLabelByCode,
         Map<String, Integer> timesPerDayByRateCode,
         ProductDefinitionDisplayDto productRow
     ) {
         if (!TherapyType.LONG_TERM.getCode().equals(StringUtils.trimToEmpty(therapyCode))) {
             return null;
         }
+        String doseUnitName = ProductDefinitionCatalogUnitBandsAssembler.resolveDoseUnitDisplayName(
+            doseUnitLabelByCode, doseUnitCode, productRow);
+        String quantityUnitName = ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(
+            unitLabelByCode, unitCode, productRow);
         Integer timesPerDay = null;
         if (timesPerDayByRateCode != null && StringUtils.isNotEmpty(rateCode)) {
             timesPerDay = timesPerDayByRateCode.get(rateCode);
@@ -981,11 +1073,50 @@ public class NurseStationOrderViewListAssembler {
         if (perDoseQty == null) {
             perDoseQty = dose;
             if (StringUtils.isEmpty(perDoseUnit)) {
-                perDoseUnit = ProductDefinitionCatalogUnitBandsAssembler.resolveDoseUnitDisplayName(
-                    doseUnitLabelByCode, doseUnitCode, productRow);
+                perDoseUnit = doseUnitName;
             }
         }
-        return MedicationDailyDoseDisplayAssembler.buildDailyDoseDisplay(perDoseQty, perDoseUnit, timesPerDay);
+        return MedicationDailyDoseDisplayAssembler.buildDailyDoseDisplayPreferringSchedule(
+            quantitySchedule,
+            quantityUnitName,
+            doseSchedule,
+            doseUnitName,
+            perDoseQty,
+            perDoseUnit,
+            timesPerDay);
+    }
+
+    /**
+     * 分次剂量序列展示：各段拼单位，如 {@code 2mg,1mg}（BR-IP-EXE-040）。
+     *
+     * @param doseSchedule 计量逗号串
+     * @param unitName     单位展示名；可空
+     * @return 序列文案
+     */
+    private String buildDoseScheduleDisplay(String doseSchedule, String unitName) {
+        if (StringUtils.isEmpty(doseSchedule)) {
+            return null;
+        }
+        String[] parts = doseSchedule.split(",");
+        StringBuilder sb = new StringBuilder();
+        String unit = StringUtils.trimToEmpty(unitName);
+        for (int i = 0; i < parts.length; i++) {
+            String seg = StringUtils.trimToEmpty(parts[i]);
+            if (seg.isEmpty()) {
+                continue;
+            }
+            if (sb.length() > 0) {
+                sb.append(',');
+            }
+            sb.append(seg);
+            if (!unit.isEmpty()) {
+                sb.append(unit);
+            }
+        }
+        if (sb.length() == 0) {
+            return null;
+        }
+        return sb.toString();
     }
 
     /**

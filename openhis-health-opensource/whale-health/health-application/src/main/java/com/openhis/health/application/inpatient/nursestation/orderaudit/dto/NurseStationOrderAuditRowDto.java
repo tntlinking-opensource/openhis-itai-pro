@@ -98,6 +98,33 @@ public class NurseStationOrderAuditRowDto {
     @Schema(description = "日剂量展示（如 每日三片）")
     private String dailyDoseDisplay;
 
+    /**
+     * 首日/首次用量（仅长期药品；空=首次槽用常规单次量，BR-IP-ORD-030 / BR-IP-AUD-006）。
+     * 库内为最小/拆零单位数量。
+     */
+    @Schema(description = "首日/首次用量（仅长期药品）")
+    private BigDecimal firstDose;
+
+    /** 首日用量单位编码（与 {@link #firstDose} 成对；最小/拆零单位码）。 */
+    @Schema(description = "首日用量单位编码")
+    private String firstDoseUnitCode;
+
+    /** 首日用量单位展示名。 */
+    @Schema(description = "首日用量单位展示名")
+    private String firstDoseUnitName;
+
+    /**
+     * 分次剂量序列（计量、逗号分隔；可空；有值时剂量列可拼序列；BR-IP-EXE-040）。
+     */
+    @Schema(description = "分次剂量序列（计量）")
+    private String doseSchedule;
+
+    /**
+     * 分次用量序列（拆零、逗号分隔；与 doseSchedule 同序）。
+     */
+    @Schema(description = "分次用量序列（拆零）")
+    private String quantitySchedule;
+
     /** 用法展示（药品）。 */
     @Schema(description = "用法展示（药品）")
     private String usageDisplay;
@@ -244,4 +271,18 @@ public class NurseStationOrderAuditRowDto {
      */
     @Schema(description = "皮试临床状态展示文案（仅皮试药）")
     private String skinTestOutcomeText;
+
+    /**
+     * 计划出院时间（出院医嘱 {@code occurrence_start_time}；医生填写；非清床/结算时刻）。
+     * <p>仅出院类诊疗行（{@code category_enum=34}）有值；前端医嘱内容扩展行展示。</p>
+     */
+    @Schema(description = "计划出院时间（出院医嘱 occurrence_start_time）")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    private LocalDateTime plannedDischargeTime;
+
+    /**
+     * 出院/转科原因（{@code wkf_service_request.reason_text}）；普通诊疗行 null。
+     */
+    @Schema(description = "出院/转科原因")
+    private String reasonText;
 }

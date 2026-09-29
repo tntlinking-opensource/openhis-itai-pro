@@ -1,0 +1,11 @@
+{
+  "moduleId": "pacs-imaging",
+  "displayName": "PACS 影像扩展",
+  "enabledProperty": "openhis.modules.pacs.imaging.enabled",
+  "autoConfigurationClass": "com.openhis.whale.pacsimaging.application.config.ImagingAutoConfiguration",
+  "appServiceNames": [
+    "pacsViewerUrlConfig",
+    "pacsImageCapture",
+    "pacsViewer"
+  ]
+}

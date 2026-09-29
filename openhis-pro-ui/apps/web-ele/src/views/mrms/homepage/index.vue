@@ -153,7 +153,7 @@ let detailLoadSeq = 0;
 let detailInflightKey: string | null = null;
 let detailInflightPromise: Promise<void> | null = null;
 const printing = ref(false);
-const editStatusCode = ref('draft');
+const editStatusCode = ref('DRAFT');
 const returnReason = ref('');
 /** 中医信息段：医院 medins_type（loadPage 回填） */
 const tcmInfoEnabled = ref(false);
@@ -429,9 +429,7 @@ const tableColumns = computed<TableColumn[]>(() => {
 const clinicalHostRef = ref<InstanceType<typeof MrmsInpatientClinicalHost> | null>(null);
 
 /** 草稿/退回可编辑保存；4401 成功自动归档后只读 */
-const canEditForm = computed(
-  () => editStatusCode.value === 'draft' || editStatusCode.value === 'returned',
-);
+const canEditForm = computed(() => editStatusCode.value === 'DRAFT');
 
 const { run: runPage, loading: pageLoading } = useRequest(queryCaseRecordPageApi, {
   manual: true,
@@ -700,7 +698,7 @@ async function loadDetailFromRoute() {
       form.medcasno = form.medcasno || page.caseRecord?.medcasno;
       form.encounterId = encounterId || form.encounterId;
       formModel.value = cloneHomepageForm(form);
-      editStatusCode.value = page.caseRecord?.statusCode || 'draft';
+      editStatusCode.value = page.caseRecord?.statusCode || 'DRAFT';
       returnReason.value = page.caseRecord?.returnReason || '';
       // 中医信息：优先页级开关，回落 homepage 同名字段
       tcmInfoEnabled.value = Boolean(page.tcmInfoEnabled ?? page.homepage?.tcmInfoEnabled);
@@ -1126,7 +1124,7 @@ async function handleSubmit() {
   saving.value = true;
   try {
     const detail = await submitHomepageApi(formModel.value.caseRecordId!);
-    editStatusCode.value = detail.statusCode || 'submitted';
+    editStatusCode.value = detail.statusCode || 'PENDING_ARCHIVE';
     formDirty.value = false;
     ElMessage.success('已提交');
   } finally {

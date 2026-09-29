@@ -16,7 +16,7 @@ import com.openhis.health.application.shared.validator.CurrentManagedLocationIds
 import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.application.shared.validator.PageWindowGate;
-import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
+import com.openhis.health.application.shared.practitioner.PractitionerRoleScopeLoader;
 import com.openhis.health.application.inventory.department.requisition.dto.DepartmentRequisitionDetailLineDto;
 import com.openhis.health.application.inventory.department.requisition.dto.DepartmentRequisitionLineDto;
 import com.openhis.health.application.inventory.department.requisition.dto.DepartmentRequisitionListRowDto;
@@ -576,8 +576,9 @@ public class InventoryDepartmentRequisitionAppService {
             // —— 选品为批号行级展开（inventoryItemId 锚点）：可用量按 wkf_inventory_item.id 回填（剔除锁定/过期/停供等不可用口径）。——
             Map<Long, BigDecimal> availableQtyByInventoryItemId = new HashMap<>();
             if (!pageInventoryItemIds.isEmpty()) {
+                // Pre：库房账面量回填（不过期、不剔锁定；药库/药房/科室同口径）
                 List<InventoryCatalogAvailabilityRowModel> availRows =
-                    this.inventoryItemQueryService.findAvailableCatalogRowsForInventoryItemIds(
+                    this.inventoryItemQueryService.findWarehouseOperableCatalogRowsForInventoryItemIds(
                         pageInventoryItemIds, List.of(request.getSourceLocationId()));
                 for (InventoryCatalogAvailabilityRowModel ar : availRows) {
                     if (ar == null || ar.getId() == null || ar.getQuantity() == null) {
@@ -1009,8 +1010,9 @@ public class InventoryDepartmentRequisitionAppService {
         }
         if (!requestedByInventoryItemId.isEmpty()) {
             List<Long> invIds = new ArrayList<>(requestedByInventoryItemId.keySet());
+            // Pre：库房账面量回填（不过期、不剔锁定；药库/药房/科室同口径）
             List<InventoryCatalogAvailabilityRowModel> rowsById =
-                this.inventoryItemQueryService.findAvailableCatalogRowsForInventoryItemIds(invIds, locationIds);
+                this.inventoryItemQueryService.findWarehouseOperableCatalogRowsForInventoryItemIds(invIds, locationIds);
             Map<Long, InventoryCatalogAvailabilityRowModel> rowByInventoryItemId = new HashMap<>();
             for (InventoryCatalogAvailabilityRowModel row : rowsById) {
                 if (row == null || row.getId() == null) {
@@ -1027,7 +1029,7 @@ public class InventoryDepartmentRequisitionAppService {
                 if (row == null || sample == null) {
                     throw new BusinessException(
                         ErrorCodeConstants.DEP_QL_001,
-                        "所选库存行当前不可用、已锁定或已过期，请刷新选品后再试");
+                        "所选库存行不存在或已变更，请刷新选品后再试");
                 }
                 if (!Objects.equals(row.getLocationId(), sourceLocationId)) {
                     throw new BusinessException(ErrorCodeConstants.DEP_QL_001, "所选库存行与当前来源药库不一致");
@@ -1108,8 +1110,9 @@ public class InventoryDepartmentRequisitionAppService {
             if (itemIds.isEmpty()) {
                 continue;
             }
+            // Pre：库房账面量回填（不过期、不剔锁定；药库/药房/科室同口径）
             List<InventoryCatalogAvailabilityRowModel> catalogRows =
-                this.inventoryItemQueryService.findAvailableCatalogRowsForOrder(
+                this.inventoryItemQueryService.findWarehouseOperableCatalogRowsForOrder(
                     itemTable, new ArrayList<>(itemIds), locationIds);
             Map<Long, Map<String, BigDecimal>> availableByItemLot = new HashMap<>();
             Map<Long, BigDecimal> availableByItemId = new HashMap<>();

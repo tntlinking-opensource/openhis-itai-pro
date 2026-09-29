@@ -37,13 +37,19 @@ import {
   YES_NO_DISCHARGE_OPTIONS,
 } from '../homepage/homepage.constants';
 import { mapListItemToRow } from '../homepage/homepage-form.util';
-import { resolveInpatientClinicalEditDenial } from '../mrms-clinical-edit-gate';
+import {
+  resolveInpatientClinicalEditDenial,
+  resolveInpatientNurseSheetEditDenial,
+} from '../mrms-clinical-edit-gate';
+import { loadManagedWardLocationIds } from '../mrms-managed-ward-ids';
+
 defineOptions({ name: 'MrmsInpatientEmrQuery' });
 
 /**
  * T3：住院病例查询列表（独立菜单页）
  * 列表与临床弹层均以住院就诊 encounter 为锚点；病历侧栏仅本就诊文书。
- * 快捷入口：病历 / 医嘱 / 体温单 / 护理记录；同入院科室大夫可编辑，其他科室只读。
+ * 快捷入口：病历 / 医嘱 / 体温单 / 护理记录。
+ * 病历/医嘱按入院科室；体温单/护理记录另放行管辖病区护士。
  */
 
 const userStore = useUserStore();
@@ -242,20 +248,42 @@ function handlePagination(pagination: { page: number; limit: number }) {
  * @param code 行操作 code
  * @param current 列表行
  */
-function openClinical(code: HomepageRowActionCode, current: HomepageListRow) {
+async function openClinical(code: HomepageRowActionCode, current: HomepageListRow) {
   const kind = toClinicalKind(code);
   if (!kind) {
     ElMessage.info('暂不支持该入口');
     return;
   }
-  // 同入院科室可写；否则静默只读（页面无保存入口，不再弹 tip）
+  const editable = await resolveClinicalEditable(kind, current);
+  clinicalHostRef.value?.open(kind, current, { forceReadOnly: !editable });
+}
+
+/**
+ * 临床弹层是否可写：病历/医嘱按入院科室；体温单/护理记录另放行管辖病区护士。
+ *
+ * @param kind 临床模块
+ * @param row 列表行
+ */
+async function resolveClinicalEditable(
+  kind: MrmsInpatientClinicalKind,
+  row: HomepageListRow,
+): Promise<boolean> {
+  if (kind === 'temperature' || kind === 'nursing') {
+    const managedWardIds = await loadManagedWardLocationIds();
+    const denial = resolveInpatientNurseSheetEditDenial(
+      loginPractitionerId.value,
+      loginOrganizationId.value,
+      managedWardIds,
+      row,
+    );
+    return denial === null;
+  }
   const denial = resolveInpatientClinicalEditDenial(
     loginPractitionerId.value,
     loginOrganizationId.value,
-    current,
+    row,
   );
-  const editable = denial === null;
-  clinicalHostRef.value?.open(kind, current, { forceReadOnly: !editable });
+  return denial === null;
 }
 
 /** 行操作 code → 临床宿主 kind */
@@ -308,7 +336,7 @@ async function handleArchiveClinicalCase(row: HomepageListRow) {
 }
 
 /**
- * 解档病例：确认后解锁 LOCKED 文书（病案主档已归档时后端拒绝）。
+ * 解档病例：确认后将 ARCHIVED 文书恢复为 DRAFT（病案主档已归档时后端拒绝）。
  *
  * @param row 列表行
  */

@@ -517,6 +517,21 @@ public class CaseRecordHomepage extends BaseAuditedEntity {
     }
 
     /**
+     * 编辑审核通过后设定业务版本（保持 frozen=true）。
+     *
+     * @param toVersion 目标版本号
+     * @param operatorId 操作人
+     */
+    public void applyApprovedVersion(Integer toVersion, Long operatorId) {
+        if (toVersion == null || toVersion < 1) {
+            throw new BusinessException(MrmsErrorCodes.HOMEPAGE_EDIT_VERSION_CONFLICT, "目标版本无效");
+        }
+        this.versionNo = toVersion;
+        this.setUpdatedAt(LocalDateTime.now());
+        this.setUpdatedBy(operatorId);
+    }
+
+    /**
      * 归档冻结首页。
      *
      * @param operatorId 操作人
@@ -530,8 +545,12 @@ public class CaseRecordHomepage extends BaseAuditedEntity {
     /**
      * 解档恢复首页可编辑。
      *
+     * <p>业务口径已取消解档入口；方法保留供存量调用方编译，新业务禁止调用。</p>
+     *
      * @param operatorId 操作人
+     * @deprecated 解档取消，归档后改走编辑申请
      */
+    @Deprecated
     public void unfreezeHomepage(Long operatorId) {
         this.frozen = false;
         this.setUpdatedAt(LocalDateTime.now());

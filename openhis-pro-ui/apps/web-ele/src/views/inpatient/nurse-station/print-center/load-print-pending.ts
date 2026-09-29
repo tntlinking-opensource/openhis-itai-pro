@@ -1258,8 +1258,11 @@ async function loadServiceApplyPending(
       patientId: str(order.patientId) || str(patient?.patientId),
       listRowKey,
       orderId: str(order.orderId),
+      // 检验开立数量展示（如「2次」）；采血贴按数量打对应张数
+      dosageDisplay: str(order.dosageDisplay) || undefined,
       specimenTubeMergeDeviceId:
         preserveApiIdForRequest(order.specimenTubeMergeDeviceId) ?? undefined,
+      priorityEnum: str(order.priorityEnum) || undefined,
     });
   }
   return rows;

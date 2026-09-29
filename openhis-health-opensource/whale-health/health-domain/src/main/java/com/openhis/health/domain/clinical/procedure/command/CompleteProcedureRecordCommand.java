@@ -33,4 +33,39 @@ public class CompleteProcedureRecordCommand {
      * 汇总/发药/计费逻辑锚点仍用 {@code occurrence_time}（planTime），本字段仅事实与展示。</p>
      */
     private LocalDateTime recordedTime;
+
+    /**
+     * 手术时间；非空时覆盖。
+     */
+    private LocalDateTime procedureTime;
+
+    /**
+     * 麻醉开始时间；非空时覆盖。
+     */
+    private LocalDateTime anesthesiaStartTime;
+
+    /**
+     * 麻醉结束时间；非空时覆盖。
+     */
+    private LocalDateTime anesthesiaEndTime;
+
+    /**
+     * 切口类别（术中可填）；非空时覆盖。
+     */
+    private String incisionTypeCode;
+
+    /**
+     * 是否送检；非空时覆盖。
+     */
+    private Boolean sendLabFlag;
+
+    /**
+     * 样本；非空时覆盖。
+     */
+    private String specimen;
+
+    /**
+     * 备注；非空时覆盖。
+     */
+    private String note;
 }

@@ -53,4 +53,17 @@ public class PageReviewsRequest extends AbstractHealthPageRequest {
     /** 开方日止（yyyy-MM-dd）；与起成对；空=不限。 */
     @Schema(description = "开方日止（yyyy-MM-dd）")
     private String openedDateTo;
+
+    /**
+     * 重点药类型筛选（BASIC/NATIONAL_MONITOR/CENTRAL_PURCHASE/ANTIBIOTIC）；空=不限。
+     * 麻/精见 {@link #medicinePropertyCode}。
+     */
+    @Schema(description = "重点药类型 KeyDrugType code：BASIC/NATIONAL_MONITOR/CENTRAL_PURCHASE/ANTIBIOTIC；空=不限")
+    private String keyDrugType;
+
+    /**
+     * 药品性质筛选（NARCOTIC/PSYCH_ONE/PSYCH_TWO）；空=不限。与重点药类型同时非空时 AND。
+     */
+    @Schema(description = "药品性质 KeyDrugType code：NARCOTIC/PSYCH_ONE/PSYCH_TWO；空=不限")
+    private String medicinePropertyCode;
 }

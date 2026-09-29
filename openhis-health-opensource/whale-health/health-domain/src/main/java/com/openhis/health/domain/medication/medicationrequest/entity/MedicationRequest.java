@@ -160,6 +160,18 @@ public class MedicationRequest extends BaseAuditedEntity {
     @Column(name = "first_dose_unit_code")
     private String firstDoseUnitCode;
 
+    /**
+     * 分次剂量序列（计量口径、逗号分隔；仅长期西药/中成药用量不一致；空=走 {@link #dose}；BR-MRQ-035）。
+     */
+    @Column(name = "dose_schedule", length = 500)
+    private String doseSchedule;
+
+    /**
+     * 分次用量序列（拆零口径、逗号分隔；与 {@link #doseSchedule} 同序同段数；空=走 {@link #quantity}；BR-MRQ-035）。
+     */
+    @Column(name = "quantity_schedule", length = 500)
+    private String quantitySchedule;
+
     @Column(name = "first_duration")
     private String firstDuration;
 
@@ -288,7 +300,9 @@ public class MedicationRequest extends BaseAuditedEntity {
     }
 
     /**
-     * 校验剂量语义。
+     * 校验剂量语义（含分次 schedule 成对/长期/正数段；BR-MRQ-009/010/035）。
+     *
+     * <p>{@code quantity} 始终必填；有 {@link #quantitySchedule} 时读侧按槽取段，不读本列单值作全日每次量。</p>
      */
     public void validateDosageSemantics() {
         if (this.quantity == null || this.quantity.compareTo(BigDecimal.ZERO) <= 0) {
@@ -297,6 +311,87 @@ public class MedicationRequest extends BaseAuditedEntity {
         if (TherapyType.LONG_TERM.getCode().equals(this.therapyEnum)
             && this.firstDose != null && this.firstDose.compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT, "长期医嘱首日量必须大于 0");
+        }
+        // 分次用量：两列同空或同有值；有值仅长期非中药；段数一致且每段正数（频次日次数对齐由应用层 Gate）
+        this.validateDoseQuantitySchedulePair();
+    }
+
+    /**
+     * 校验 {@link #doseSchedule}/{@link #quantitySchedule} 成对与正数段（BR-MRQ-035）。
+     *
+     * <p>段数与频次日次数对齐由应用层 {@code InpatientMedicationDoseQuantityScheduleGate} 负责；
+     * 本方法只守域不变量。schedule 皆空立即返回（原 dose/quantity 路径零侵入）。</p>
+     *
+     * @throws BusinessException 半写、中药携带、非长期携带、段数不一致或非正段
+     */
+    private void validateDoseQuantitySchedulePair() {
+        boolean doseBlank = StringUtils.isBlank(this.doseSchedule);
+        boolean quantityBlank = StringUtils.isBlank(this.quantitySchedule);
+        // 一空一满：禁止半写
+        if (doseBlank != quantityBlank) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT,
+                "分次剂量与分次用量须同时为空或同时有值");
+        }
+        if (doseBlank) {
+            return;
+        }
+        // 中药不承载分次 schedule
+        if (Boolean.TRUE.equals(this.tcmFlag)) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT,
+                "中药医嘱不可填写分次用量序列");
+        }
+        // 仅长期可有分次序列
+        if (!TherapyType.LONG_TERM.getCode().equals(this.therapyEnum)) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT,
+                "仅长期医嘱可填写分次用量序列");
+        }
+        String[] doseParts = this.doseSchedule.split(",");
+        String[] quantityParts = this.quantitySchedule.split(",");
+        if (doseParts.length != quantityParts.length) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT,
+                "分次剂量与分次用量段数须一致");
+        }
+        if (doseParts.length == 0) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT,
+                "分次用量序列不能为空串");
+        }
+        for (int i = 0; i < doseParts.length; i++) {
+            // 每段须可解析为正数（计量/拆零同判）
+            this.requirePositiveScheduleSegment(doseParts[i], "分次剂量");
+            this.requirePositiveScheduleSegment(quantityParts[i], "分次用量");
+        }
+    }
+
+    /**
+     * 解析 schedule 单段为正数；空白或非正拒绝。
+     *
+     * @param raw      逗号分割后的单段原文
+     * @param fieldLabel 提示用字段名（分次剂量/分次用量）
+     */
+    private void requirePositiveScheduleSegment(String raw, String fieldLabel) {
+        String trimmed = StringUtils.trimToEmpty(raw);
+        if (StringUtils.isBlank(trimmed)) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT,
+                fieldLabel + "各段不能为空");
+        }
+        BigDecimal value;
+        try {
+            value = new BigDecimal(trimmed);
+        } catch (NumberFormatException ex) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT,
+                fieldLabel + "各段须为数字");
+        }
+        if (value.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT,
+                fieldLabel + "各段须大于 0");
         }
     }
 
@@ -427,6 +522,20 @@ public class MedicationRequest extends BaseAuditedEntity {
         if (!RequestStatus.ACTIVE.getCode().equals(this.statusEnum)
             && !RequestStatus.DRAFT.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_STATUS, "仅草稿或已发送状态可取消");
+        }
+    }
+
+    /**
+     * 断言仍为未签发草稿可废弃（调价配套；禁止误伤已签发医嘱）。
+     *
+     * @throws BusinessException 非 DRAFT 或已写入签发时刻时
+     */
+    public void ensureUnsignedDraftCancellable() {
+        if (!RequestStatus.DRAFT.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_STATUS, "仅未签发草稿可废弃");
+        }
+        if (this.reqAuthoredTime != null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_STATUS, "已签发医嘱不可按草稿废弃");
         }
     }
 

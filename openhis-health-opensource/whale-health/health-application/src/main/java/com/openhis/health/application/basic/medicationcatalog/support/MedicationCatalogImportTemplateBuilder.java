@@ -4,7 +4,7 @@
  */
 package com.openhis.health.application.basic.medicationcatalog.support;
 
-import com.openhis.health.application.basic.catalog.support.CatalogExportNumericCellWriter;
+import com.openhis.health.application.shared.catalog.CatalogExportNumericCellWriter;
 import com.openhis.health.domain.share.constants.MedicationCatalogImportConstants;
 import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
 import com.openhis.whale.core.application.util.StringUtils;

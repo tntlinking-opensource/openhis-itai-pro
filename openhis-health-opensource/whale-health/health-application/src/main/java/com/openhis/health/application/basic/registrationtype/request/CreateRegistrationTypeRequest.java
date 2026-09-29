@@ -8,10 +8,10 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
-import java.math.BigDecimal;
-
 /**
- * 新增挂号类型请求：落库为医疗服务创建 + 关联实例定价（销售金额，分）由应用服务二次写入。
+ * 新增挂号类型请求（AS-BAS-MST-015 IF-BAS-REG-03）。
+ *
+ * <p>金额不入写请求：展示金额由绑定诊查费 AD 当前售价汇总（BR-BAS-REG-004/005）。</p>
  */
 @Data
 public class CreateRegistrationTypeRequest {
@@ -20,16 +20,15 @@ public class CreateRegistrationTypeRequest {
     @Size(max = 255, message = "名称长度不能超过255")
     private String name;
 
-    /** 医保侧编码或对照字段。 */
-    @Size(max = 255, message = "医保码长度不能超过255")
-    private String ybNo;
+    /**
+     * 诊查费 ActivityDefinition 主键 CSV（逗号分隔）；零元号可空（BR-BAS-REG-002/003）。
+     */
+    @Size(max = 512, message = "诊查费绑定串长度不能超过512")
+    private String activityIds;
 
     /**
      * 挂号类型编码（adm_healthcare_service.type_code），未传时由应用层兜底为"1"。
      */
     @Size(max = 64, message = "挂号类型编码长度不能超过64")
     private String typeCode;
-
-    /** 挂号费销售金额（元）；新建时必填，由应用服务同步写入定价。 */
-    private BigDecimal amount;
 }

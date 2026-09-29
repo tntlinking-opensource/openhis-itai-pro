@@ -26,8 +26,15 @@ import {
   DEFAULT_FORM_KEYBOARD_SELECTORS,
   useFormKeyboardNavigation,
 } from '#/hooks/use-form-keyboard-navigation';
-import { calcAgeFromBirthDate, parseChineseIdCard18 } from '#/utils/format/id-card-cn';
+import {
+  birthDateFromAgeYears,
+  calcAgeFromBirthDate,
+  isAcceptableChineseIdCardInput,
+  parseChineseIdCard18,
+} from '#/utils/format/id-card-cn';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
+import { REGISTRATION_DOCTOR_REQUIRED } from '#/views/outpatient/charge/register/constants/register-doctor.config';
+import { REGISTRATION_ID_CARD_REQUIRED } from '#/views/outpatient/charge/register/constants/register-id-card.config';
 import { REGISTRATION_PHONE_REQUIRED } from '#/views/outpatient/charge/register/constants/register-phone.config';
 
 /** 中国大陆手机号：1 开头第二位 3–9，共 11 位（与后端 PHONE_REGEX 对齐） */
@@ -173,7 +180,8 @@ const refreshDoctorOptions = async (organizationId?: string) => {
       },
     },
   ]);
-  registerFormApi.setFieldValue('doctorId', undefined);
+  // 程序性清空勿校验：否则国基必填时一进页/换科室就红框
+  registerFormApi.setFieldValue('doctorId', undefined, false);
 };
 
 /**
@@ -187,7 +195,8 @@ async function handleDoctorChange(value: string | undefined) {
   const values = await registerFormApi.getValues();
   const organizationId = String(values.departmentId ?? '').trim();
   await refreshServiceTypeOptions(organizationId || undefined, value || undefined);
-  registerFormApi.setFieldValue('serviceTypeId', undefined);
+  // 联动清空号源类型，勿触发必填红框
+  registerFormApi.setFieldValue('serviceTypeId', undefined, false);
   emit('serviceTypeChange', '');
   registerFeeAmount.value = 0;
   await syncServiceTypeFieldState();
@@ -255,6 +264,48 @@ function handleIdCardInput(value: string) {
 }
 
 /**
+ * 年龄变更：未填身份证时回写出生日期（年龄↔生日双向联动）。
+ */
+function handleAgeInput(value: string) {
+  void (async () => {
+    const values = await patientFormApi.getValues();
+    if (String(values.patientIdCard ?? '').trim()) {
+      return;
+    }
+    const ageText = String(value ?? '').trim();
+    if (ageText === '' || Number.isNaN(Number(ageText))) {
+      return;
+    }
+    const age = Number(ageText);
+    if (age < 0 || age > 150) {
+      return;
+    }
+    patientFormApi.setFieldValue('patientBirthday', birthDateFromAgeYears(age));
+  })();
+}
+
+/**
+ * 出生日期变更：未填身份证时回写年龄（年龄↔生日双向联动）。
+ */
+function handleBirthdayChange(value: string) {
+  void (async () => {
+    const values = await patientFormApi.getValues();
+    if (String(values.patientIdCard ?? '').trim()) {
+      return;
+    }
+    const birthday = String(value ?? '').trim();
+    if (!birthday) {
+      return;
+    }
+    const ageText = calcAgeFromBirthDate(birthday);
+    if (!ageText) {
+      return;
+    }
+    patientFormApi.setFieldValue('medicalInsuranceNo', ageText);
+  })();
+}
+
+/**
  * 科室变更：按 IF-REG-05 重拉医生下拉。
  */
 async function handleDepartmentChange(value: string) {
@@ -266,7 +317,8 @@ async function handleDepartmentChange(value: string) {
   emit('serviceTypeChange', '');
   await refreshDoctorOptions(value || undefined);
   await refreshServiceTypeOptions(value || undefined, undefined);
-  registerFormApi.setFieldValue('serviceTypeId', undefined);
+  // 联动清空号源类型，勿触发必填红框
+  registerFormApi.setFieldValue('serviceTypeId', undefined, false);
   registerFeeAmount.value = 0;
   await syncServiceTypeFieldState();
 }
@@ -469,13 +521,22 @@ const [PatientForm, patientFormApi] = useVbenForm(
         component: 'Input',
         fieldName: 'patientIdCard',
         label: '身份证号',
-        required: true,
+        required: REGISTRATION_ID_CARD_REQUIRED,
         componentProps: {
-          placeholder: '请输入或扫描身份证号',
+          placeholder: REGISTRATION_ID_CARD_REQUIRED
+            ? '请输入或扫描身份证号'
+            : '可不填（无证须填年龄）',
           clearable: true,
           maxlength: 18,
           onInput: handleIdCardInput,
         },
+        // 产品：填了则校 15/18 位格式；空串放行（国基等院点可无证）
+        rules: z.preprocess(
+          (v) => (v === null || v === undefined ? '' : String(v)).trim(),
+          z.string().refine((val) => isAcceptableChineseIdCardInput(val), {
+            message: '请输入正确的身份证号格式（15位或18位）',
+          }),
+        ),
       },
       {
         component: 'Input',
@@ -505,6 +566,7 @@ const [PatientForm, patientFormApi] = useVbenForm(
           style: { width: '100%' },
           format: 'YYYY-MM-DD',
           valueFormat: 'YYYY-MM-DD',
+          onChange: handleBirthdayChange,
         },
       },
       {
@@ -520,9 +582,12 @@ const [PatientForm, patientFormApi] = useVbenForm(
         component: 'Input',
         fieldName: 'medicalInsuranceNo',
         label: '年龄',
+        // 产品必填：有证时由身份证回填；无证院点（身份证可选）须手填
+        required: true,
         componentProps: {
           placeholder: '请输入年龄',
           clearable: true,
+          onInput: handleAgeInput,
         },
       },
       {
@@ -584,10 +649,11 @@ const [RegisterForm, registerFormApi] = useVbenForm(
         fieldName: 'doctorId',
         label: '医生',
         // BR-REG-001：医生统一可选；未选则挂到科室（BR-DOR-009 待诊科室共享）
-        required: false,
+        // 院点若需必选：override register-doctor.config → REGISTRATION_DOCTOR_REQUIRED=true
+        required: REGISTRATION_DOCTOR_REQUIRED,
         componentProps: {
-          placeholder: '可不选（挂到科室）',
-          clearable: true,
+          placeholder: REGISTRATION_DOCTOR_REQUIRED ? '请选择医生' : '可不选（挂到科室）',
+          clearable: !REGISTRATION_DOCTOR_REQUIRED,
           filterable: true,
           options: doctorOptions.value,
           onChange: handleDoctorChange,
@@ -729,12 +795,24 @@ async function validateForSubmit(): Promise<boolean> {
 
 /**
  * 读取两块表单当前值，并补上展示用挂号费（确认框仍以预结算 totalAmount 为准）。
+ * 无证且已填年龄时，提交前再兜底推算出生日期，避免 onInput 异步未完成。
  */
 async function getSubmitValues(): Promise<Record<string, unknown>> {
   const patientValues = await patientFormApi.getValues();
   const registerValues = await registerFormApi.getValues();
+  const idCard = String(patientValues.patientIdCard ?? '').trim();
+  const ageText = String(patientValues.medicalInsuranceNo ?? '').trim();
+  let birthday = String(patientValues.patientBirthday ?? '').trim();
+  if (!idCard && ageText !== '' && !Number.isNaN(Number(ageText))) {
+    const age = Number(ageText);
+    if (age >= 0 && age <= 150 && !birthday) {
+      birthday = birthDateFromAgeYears(age);
+      patientFormApi.setFieldValue('patientBirthday', birthday);
+    }
+  }
   return {
     ...patientValues,
+    ...(birthday ? { patientBirthday: birthday } : {}),
     ...registerValues,
     fee: registerFeeAmount.value,
   };
@@ -1028,10 +1106,10 @@ onMounted(async () => {
     },
     {
       fieldName: 'doctorId',
-      required: false,
+      required: REGISTRATION_DOCTOR_REQUIRED,
       componentProps: {
-        placeholder: '可不选（挂到科室）',
-        clearable: true,
+        placeholder: REGISTRATION_DOCTOR_REQUIRED ? '请选择医生' : '可不选（挂到科室）',
+        clearable: !REGISTRATION_DOCTOR_REQUIRED,
         filterable: true,
         options: doctorOptions.value,
         onChange: handleDoctorChange,

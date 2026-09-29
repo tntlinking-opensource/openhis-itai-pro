@@ -49,31 +49,60 @@ public class SpecimenTubeMergeBindResolveSupport {
     /**
      * 按检验 activity 反查合管设备主键。
      *
+     * <p>采血费 activity 即使只绑一台设备也不作为合管触发源（避免单开采血费再带一遍耗材）。</p>
+     *
      * @param activityId 检验 activity 主键
-     * @return 合管设备主键；未配置时 empty
+     * @return 合管设备主键；未配置或目标为采血费时 empty
      */
     public Optional<Long> findMergeDeviceIdByActivityId(Long activityId) {
+        if (activityId == null || this.isBloodCollectionFeeActivityId(activityId)) {
+            return Optional.empty();
+        }
         return specimenTubeMergeQueryService.findDeviceIdByActivityId(activityId);
     }
 
     /**
      * 批量反查 activity → 合管设备主键。
      *
+     * <p>结果中剔除采血费 activity，避免单开/回落路径误触发合管派生耗材。</p>
+     *
      * @param activityIds 检验 activity 主键集合
      * @return activityId → deviceId
      */
     public Map<Long, Long> mapMergeDeviceIdByActivityIds(Collection<Long> activityIds) {
-        return specimenTubeMergeQueryService.mapDeviceIdByActivityIds(activityIds);
+        Map<Long, Long> mapped = specimenTubeMergeQueryService.mapDeviceIdByActivityIds(activityIds);
+        Long bloodFeeActivityId = this.resolveBloodCollectionFeeActivityId();
+        if (bloodFeeActivityId == null || mapped.isEmpty()) {
+            return mapped;
+        }
+        // 采血费可跨设备复用：不得作为合管分组/派生触发键
+        Map<Long, Long> result = new HashMap<>(mapped);
+        result.remove(bloodFeeActivityId);
+        return result;
     }
 
     /**
      * 判断检验 activity 是否已配置合管（归属某台设备）。
      *
      * @param activityId 检验 activity 主键
-     * @return 已配置为 true
+     * @return 已配置为 true（采血费恒为 false）
      */
     public boolean isActivityConfiguredForMerge(Long activityId) {
         return this.findMergeDeviceIdByActivityId(activityId).isPresent();
+    }
+
+    /**
+     * 是否为合管口径下的「采血费」诊疗项目。
+     *
+     * @param activityId 诊疗活动主键
+     * @return 名称精确匹配「采血费」且唯一解析成功时为 true
+     */
+    private boolean isBloodCollectionFeeActivityId(Long activityId) {
+        if (activityId == null) {
+            return false;
+        }
+        Long bloodFeeActivityId = this.resolveBloodCollectionFeeActivityId();
+        return bloodFeeActivityId != null && bloodFeeActivityId.equals(activityId);
     }
 
     /**

@@ -196,9 +196,48 @@ public class MedcasDualCodeResolveSupport {
     }
 
     /**
+     * 手术上传出站：必须已对医保码，否则抛业务异常（禁止国临顶替）。
+     *
+     * <p>对齐 AS-MRMS-UP-001 EX-MRMS-UP-OP-201/202。</p>
+     *
+     * @param resolved    批量解析结果
+     * @param clinicCode  国临码
+     * @param displayHint 报错用展示（码+名称）
+     * @return 非空医保码
+     */
+    public String requireProcedureYbOutbound(
+            Map<String, MedcasDualCodeResolveResult> resolved,
+            String clinicCode,
+            String displayHint) {
+        String code = trimToNull(clinicCode);
+        // 业务分支：手术码空 → EX-MRMS-UP-OP-202
+        if (code == null) {
+            throw new BusinessException(
+                    MrmsErrorCodes.UPLOAD_PROCEDURE_CODE_EMPTY, "手术操作编码不能为空");
+        }
+        MedcasDualCodeResolveResult hit = null;
+        // 无批量结果时 hit 保持 null，走下方未对码异常
+        if (resolved != null) {
+            hit = resolved.get(code);
+        }
+        // 业务分支：已对码则返回医保出站码
+        if (hit != null && hit.isMapped() && trimToNull(hit.getOutboundCode()) != null) {
+            return hit.getOutboundCode().trim();
+        }
+        String hint = trimToNull(displayHint);
+        // 无展示 hint 时回落国临码本身
+        if (hint == null) {
+            hint = code;
+        }
+        throw new BusinessException(
+                MrmsErrorCodes.UPLOAD_PROCEDURE_YB_UNMAPPED,
+                "手术未对医保码，请在目录维护国临码与医保编码(yb_no)对照：" + hint);
+    }
+
+    /**
      * 上传出站：必须已对医保码，否则抛业务异常（禁止国临顶替）。
      *
-     * <p>手术与西医诊断共用；中医诊断请走 {@link #requireDiagnosisOutbound}。</p>
+     * <p>西医诊断共用；手术请走 {@link #requireProcedureYbOutbound}；中医诊断请走 {@link #requireDiagnosisOutbound}。</p>
      *
      * @param resolved    批量解析结果
      * @param clinicCode  国临码
@@ -210,11 +249,13 @@ public class MedcasDualCodeResolveSupport {
             String clinicCode,
             String displayHint) {
         String code = trimToNull(clinicCode);
+        // 业务分支：诊断/手术编码空（西医诊断路径；手术应走 requireProcedureYbOutbound）
         if (code == null) {
             throw new BusinessException(
                     MrmsErrorCodes.UPLOAD_ASSEMBLE_VALIDATION, "诊断/手术编码不能为空");
         }
         MedcasDualCodeResolveResult hit = null;
+        // 无批量结果时 hit 保持 null，走下方未对码异常
         if (resolved != null) {
             hit = resolved.get(code);
         }
@@ -223,6 +264,7 @@ public class MedcasDualCodeResolveSupport {
             return hit.getOutboundCode().trim();
         }
         String hint = trimToNull(displayHint);
+        // 无展示 hint 时回落国临码本身
         if (hint == null) {
             hint = code;
         }

@@ -8,6 +8,7 @@ import com.openhis.chs.domain.inpatient.entity.YbInpatientPreSettle;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -59,4 +60,15 @@ public interface YbInpatientPreSettleRepository extends JpaRepository<YbInpatien
         String status,
         LocalDateTime beginAt,
         LocalDateTime endExclusive);
+
+    /**
+     * 按就诊 ID 集合批量查询预结算快照（按创建时间降序）。
+     *
+     * @param encounterIds 就诊 ID 集合
+     * @param tenantId     租户 ID
+     * @return 预结算快照列表
+     */
+    List<YbInpatientPreSettle> findAllByEncounterIdInAndTenantIdAndIsDeletedFalseOrderByCreatedAtDesc(
+        Collection<Long> encounterIds,
+        Long tenantId);
 }

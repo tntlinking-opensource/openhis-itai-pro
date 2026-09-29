@@ -184,8 +184,9 @@ public class ThirdPartyPaymentSettleOrchestrator {
     /**
      * 校验银联回传交易金额（分）相对 HIS 扫码行金额（元）合法；回传缺失时跳过。
      *
-     * <p>POS 实付可小于院内下单（常见为渠道分账/营销）；实付写入 BPC {@code paid_amt_fen}，
-     * settle 仅拒绝大于下单。HIS 扫码行金额保持院内下单，不随实付压低。</p>
+     * <p>POS 实付可小于院内下单（渠道优惠由渠道承担）；实付写入 BPC {@code paid_amt_fen}，
+     * settle 仅拒绝大于下单。HIS 扫码行金额保持院内下单，不随实付压低。
+     * 退货时 Win R 按实付、HIS 冲账按下单，见 BPC 双账口径。</p>
      *
      * @param clientScanResult Win 被扫回传
      * @param amountYuan       待结算扫码行金额（元）

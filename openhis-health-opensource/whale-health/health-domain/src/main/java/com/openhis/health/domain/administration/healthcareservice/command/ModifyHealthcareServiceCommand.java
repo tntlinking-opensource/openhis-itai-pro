@@ -13,7 +13,7 @@ import java.util.List;
 /**
  * 修改医疗服务命令（批量）。
  * <p>
- * 用于变更已有医疗服务的名称、类型、分类或提供机构等信息，可配合变更字段列表做增量更新或审计。
+ * 用于变更已有医疗服务的名称、类型、分类、提供机构或诊查费绑定；可配合变更字段列表做增量更新或审计。
  */
 @Getter
 @Setter
@@ -36,8 +36,11 @@ public class ModifyHealthcareServiceCommand extends BatchCommand<ModifyHealthcar
         private String categoryCode;
         /** 提供该服务的组织机构主键。 */
         private Long offeredOrgId;
-        /** 医保目录编码或对照码。 */
-        private String ybNo;
+        /**
+         * 诊查费 ActivityDefinition 主键 CSV；零元号可空。
+         * <p>对齐 DM-ADM-007 {@code activity_ids}；禁止再写业务 yb_no。</p>
+         */
+        private String activityIds;
         /** 本次实际发生变更的字段名列表（用于部分更新或留痕）。 */
         private List<String> changedFields;
     }

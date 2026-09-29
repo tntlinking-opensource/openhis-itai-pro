@@ -555,6 +555,7 @@ public class DoctorStationAdviceListAssembler {
                 line.setPerformLocationName(servicePerformOrgNameById.get(performOrgId));
             }
             line.setRemark(serviceRow.getRemark());
+            line.setPriorityEnum(serviceRow.getPriorityEnum());
             line.setEntrustContent(serviceRow.getEntrustContent());
             line.setRequestExtensions(AdviceExtensionJsonParser.parseRequestExtensions(serviceRow.getContentJson()));
             line.setBasedOnServiceRequestId(resolveBasedOnServiceRequestId(serviceRow.getBasedOnTable(), serviceRow.getBasedOnId()));

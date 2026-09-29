@@ -12,6 +12,7 @@ import lombok.Data;
 import lombok.experimental.Accessors;
 
 import java.util.List;
+import java.math.BigDecimal;
 
 /**
  * 住院预结算请求（IF-IP-STL-05）。
@@ -76,4 +77,10 @@ public class PreSettleInpatientChargesRequest {
     /** 结算模式：DISCHARGE_FULL | MID_SETTLE。 */
     @Schema(description = "结算模式")
     private String settleMode;
+
+    /**
+     * 款员所选折扣率 (0,1]；仅能力门控开启时可传（BR-IP-STL-020～023）。
+     */
+    @Schema(description = "款员所选折扣率")
+    private BigDecimal cashierDiscountRate;
 }

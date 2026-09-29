@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import type { NursingRecordPaperHeader, NursingRecordViewRow } from './nursing-record.types';
 
-import { Delete } from '@element-plus/icons-vue';
-
 import { nextTick, onMounted, watch } from 'vue';
 
 import { usePaperSheetFullscreen } from '../../composables/use-paper-sheet-fullscreen';
@@ -11,6 +9,7 @@ import {
   getNowDateTime,
   splitNursingRecordDatetime,
 } from '../services/map-nurse-station-nursing-record';
+import { canDeleteNursingRecordRow } from './nursing-record-row-state';
 
 defineOptions({
   name: 'NursingRecordPaperTable',
@@ -197,6 +196,7 @@ onMounted(() => {
                   <col class="col-io-color" />
                   <col class="col-observation" />
                   <col class="col-signature" />
+                  <col v-if="!readonly" class="col-action" />
                 </colgroup>
                 <thead>
                   <tr>
@@ -212,6 +212,7 @@ onMounted(() => {
                     <th class="col-io" colspan="3">出量</th>
                     <th class="col-observation" rowspan="2">病情观察及护理</th>
                     <th class="col-signature" rowspan="2">护士签名</th>
+                    <th v-if="!readonly" class="col-action" rowspan="2">操作</th>
                   </tr>
                   <tr>
                     <th class="col-vital">℃</th>
@@ -250,15 +251,6 @@ onMounted(() => {
                         data-nav-col="0"
                         @update:model-value="syncRowDatetime(row, $event as string | null)"
                       />
-                      <button
-                        v-if="!readonly && row.rowType === 'extra'"
-                        type="button"
-                        class="paper-row-delete"
-                        title="删除此行"
-                        @click="emit('deleteRow', row.id)"
-                      >
-                        <ElIcon :size="10"><Delete /></ElIcon>
-                      </button>
                     </td>
                     <td class="col-vital">
                       <input
@@ -418,6 +410,17 @@ onMounted(() => {
                           :value="opt.value"
                         />
                       </ElSelect>
+                    </td>
+                    <td v-if="!readonly" class="col-action">
+                      <button
+                        v-if="canDeleteNursingRecordRow(row)"
+                        type="button"
+                        class="paper-row-delete"
+                        @mousedown.stop
+                        @click.stop="emit('deleteRow', row.id)"
+                      >
+                        删除
+                      </button>
                     </td>
                   </tr>
                 </tbody>
@@ -677,6 +680,12 @@ onMounted(() => {
   width: 8.06%;
 }
 
+.paper-record__table th.col-action,
+.paper-record__table td.col-action {
+  width: 44px;
+  overflow: visible;
+}
+
 .paper-field {
   display: block;
   box-sizing: border-box;
@@ -849,23 +858,20 @@ onMounted(() => {
 }
 
 .paper-row-delete {
-  position: absolute;
-  top: 1px;
-  right: 0;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 12px;
-  height: 12px;
-  padding: 0;
+  padding: 0 2px;
   border: 0;
   background: transparent;
-  color: #666;
+  color: var(--el-color-danger);
+  font-size: 12px;
+  line-height: 1.2;
   cursor: pointer;
 }
 
 .paper-row-delete:hover {
-  color: #020817;
+  color: var(--el-color-danger-dark-2);
 }
 
 @media print {
@@ -894,6 +900,7 @@ onMounted(() => {
     width: 100%;
   }
 
+  .col-action,
   .paper-row-delete {
     display: none;
   }

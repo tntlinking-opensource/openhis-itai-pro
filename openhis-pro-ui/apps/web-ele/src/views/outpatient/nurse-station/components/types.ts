@@ -92,6 +92,8 @@ export interface NurseAdviceExecuteRow {
   serviceCategoryCodeText?: string;
   /** 合管检验设备主键（采血贴分组） */
   specimenTubeMergeDeviceId?: string;
+  /** 医嘱优先级 code（EM=急；采血贴印「急」） */
+  priorityEnum?: string;
 }
 
 export interface SupplyItem {

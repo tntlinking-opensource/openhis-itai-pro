@@ -10,6 +10,12 @@ export interface OutpatientPatientCardPayload extends OutpatientInfoItemDto {
   hasPendingSupply?: boolean;
   /** 护士站：风险提示 */
   riskHint?: string;
+  /** 住院医技队列：账户余额主文案（对齐护士站余额展示） */
+  accountBalanceSummary?: string;
+  /** 住院医技队列：账户余额副文案 */
+  accountBalanceSub?: string;
+  /** 低余额预警（负余额等） */
+  lowBalanceWarning?: boolean;
 }
 
 /**

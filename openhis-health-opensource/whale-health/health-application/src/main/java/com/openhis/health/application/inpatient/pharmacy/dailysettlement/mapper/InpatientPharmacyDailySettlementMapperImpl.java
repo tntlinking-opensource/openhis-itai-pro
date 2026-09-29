@@ -29,10 +29,12 @@ public class InpatientPharmacyDailySettlementMapperImpl implements InpatientPhar
     /**
      * 装配页初始化响应（IF-IP-PDC-01）。
      *
-     * @param defaultDateFrom  默认窗起
-     * @param defaultDateTo    默认窗止
+     * @param defaultDateFrom      默认窗起
+     * @param defaultDateTo        默认窗止
      * @param pharmacyOptions      药房下拉
      * @param practitionerOptions  药师岗发药人下拉
+     * @param keyDrugTypeOptions      重点药类型下拉
+     * @param medicinePropertyOptions 药品性质下拉（麻/精）
      * @return 初始化响应
      */
     @Override
@@ -40,13 +42,17 @@ public class InpatientPharmacyDailySettlementMapperImpl implements InpatientPhar
         String defaultDateFrom,
         String defaultDateTo,
         List<OptionDto> pharmacyOptions,
-        List<OptionDto> practitionerOptions) {
+        List<OptionDto> practitionerOptions,
+        List<OptionDto> keyDrugTypeOptions,
+        List<OptionDto> medicinePropertyOptions) {
         LoadInpatientPharmacyDailySettlementPageInitResponse response =
             new LoadInpatientPharmacyDailySettlementPageInitResponse();
         response.setDefaultDateFrom(defaultDateFrom);
         response.setDefaultDateTo(defaultDateTo);
         response.setPharmacyOptions(pharmacyOptions);
         response.setPractitionerOptions(practitionerOptions);
+        response.setKeyDrugTypeOptions(keyDrugTypeOptions);
+        response.setMedicinePropertyOptions(medicinePropertyOptions);
         return response;
     }
 

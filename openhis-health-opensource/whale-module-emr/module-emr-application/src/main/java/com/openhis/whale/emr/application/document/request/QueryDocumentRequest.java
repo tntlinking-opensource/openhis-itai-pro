@@ -28,7 +28,7 @@ public class QueryDocumentRequest {
     private Boolean includeLinkedEncounters;
     /** 文书类型编码 */
     private String documentTypeCode;
-    /** 文书状态 code：DRAFT/SUBMITTED/LOCKED/ARCHIVED */
+    /** 文书状态 code：DRAFT/PENDING_ARCHIVE/ARCHIVED */
     private String status;
 
     /** 1-based 页码（与前端 pageNo 对齐） */

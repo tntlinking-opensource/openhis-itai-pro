@@ -47,6 +47,10 @@ export interface InitDoctorStationAdviceRequest {
 
 export interface InitDoctorStationAdviceResponse {
   medicationRateOptions?: TerminologyOptionDto[];
+  /**
+   * 频次码 → day_times 非空段数（住院「用量不一致」展开框数；BR-IP-ORD-037）。
+   */
+  dayTimesCountByRateCode?: Record<string, number>;
   medicationRouteOptions?: TerminologyOptionDto[];
   /** 输液滴速下拉（术语 speed_code；住院输液/注射药开立） */
   medicationSpeedOptions?: TerminologyOptionDto[];
@@ -177,6 +181,10 @@ export interface DoctorStationAdviceRowDto {
   firstDose?: number | string;
   firstDoseUnitCode?: string;
   firstDoseUnitName?: string;
+  /** 分次剂量序列（计量；有值时剂量列走序列；BR-IP-ORD-037） */
+  doseSchedule?: string | null;
+  /** 分次用量序列（拆零；与 doseSchedule 同序） */
+  quantitySchedule?: string | null;
   methodCode?: string;
   methodName?: string;
   rateCode?: string;
@@ -240,6 +248,8 @@ export interface DoctorStationAdviceRowDto {
   basedOnMedicationRequestId?: string;
   /** 申请单行纯备注（wkf_service_request.remark） */
   remark?: string;
+  /** 医嘱优先级 code（加急=EM） */
+  priorityEnum?: string;
   /** 申请单部位/样本明细摘要（AR 前缀申请单） */
   serviceRequestDetails?: ServiceRequestDetailSummaryDto[];
 }
@@ -458,10 +468,18 @@ export interface SaveMedicationAdviceDraftLinePayload {
   dose?: number | string;
   /** 单次用量单位编码（对应 dose_unit_code） */
   doseUnitCode?: string;
-  /** 首日/首次用量（仅住院长期；BR-IP-ORD-030） */
-  firstDose?: number | string;
-  /** 首日用量单位编码 */
-  firstDoseUnitCode?: string;
+  /** 首日/首次用量（仅住院长期；BR-IP-ORD-030；UPDATE 清空时显式传 null） */
+  firstDose?: number | string | null;
+  /** 首日用量单位编码（与 firstDose 成对；清空时显式传 null） */
+  firstDoseUnitCode?: string | null;
+  /**
+   * 分次剂量序列（计量、逗号分隔；仅长期西药/中成药；BR-IP-ORD-037；清空传 null）
+   */
+  doseSchedule?: string | null;
+  /**
+   * 分次用量序列（拆零、逗号分隔；与 doseSchedule 同序；清空传 null）
+   */
+  quantitySchedule?: string | null;
   /** 用药天数（对应 dispense_per_duration） */
   dispensePerDuration?: number;
   methodCode?: string;
@@ -507,6 +525,8 @@ export interface SaveServiceAdviceDraftLinePayload {
    * 有套餐子项覆盖时后端优先写覆盖 JSON，本字段可不生效）。
    */
   remark?: string;
+  /** 医嘱优先级 code（检验/检查加急=EM；空=非急） */
+  priorityEnum?: string;
 }
 
 export interface SaveDeviceAdviceDraftLinePayload {
@@ -670,7 +690,11 @@ export interface ServiceApplyFormLineRequest {
   activityDefinitionId: string;
   quantity: number | string;
   unitCode: string;
+  /** 本行执行次数；优先于整单 executionCount；空则后端回落整单或 1 */
+  executionCount?: number;
   remark?: string;
+  /** 医嘱优先级 code（按项目加急=EM） */
+  priorityEnum?: string;
   detailItems?: ServiceApplyFormDetailItemRequest[];
 }
 
@@ -681,7 +705,10 @@ export interface SaveDoctorStationServiceApplyFormRequest {
   /** 检验 PROOF/22、检查 TEST/23、治疗 TREATMENT/21 */
   categoryEnum: string;
   orgId: string;
-  /** 整单执行次数（各明细行共用；空则后端回落 1） */
+  /**
+   * 整单执行次数回落值（行未传 executionCount 时使用；空则后端回落 1）。
+   * 新前端按行传 executionCount，可省略本字段。
+   */
   executionCount?: number;
   /** 整单绑定就诊诊断有序 ids 串（有序；主诊第一；写入全部 ServiceRequest） */
   encounterDiagnosisIds?: string;
@@ -711,6 +738,8 @@ export interface ServiceApplyFormLineDto {
   unitCode?: string;
   unitName?: string;
   remark?: string;
+  /** 医嘱优先级 code（加急=EM） */
+  priorityEnum?: string;
   details?: ServiceRequestDetailSummaryDto[];
 }
 

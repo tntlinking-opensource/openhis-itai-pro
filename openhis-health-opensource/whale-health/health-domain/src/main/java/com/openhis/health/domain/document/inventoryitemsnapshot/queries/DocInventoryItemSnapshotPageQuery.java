@@ -44,12 +44,17 @@ public class DocInventoryItemSnapshotPageQuery {
     private List<Integer> chrgitmLvs;
 
     /**
-     * 重点药类型 code（见 {@code KeyDrugType}）；非空时仅保留药品行且 {@code item_id} 落在预解析列表。
+     * 重点药类型 code（见 {@code KeyDrugType} 四旗）；非空时仅保留药品行且 {@code item_id} 落在预解析列表。
      */
     private String keyDrugType;
 
     /**
-     * 应用层按重点药类型预解析的药品定义主键；与 {@link #keyDrugType} 成对使用。
+     * 药品性质 code（NARCOTIC/PSYCH_ONE/PSYCH_TWO）；与 {@link #keyDrugType} 分字段，同时非空时 AND 求交。
+     */
+    private String medicinePropertyCode;
+
+    /**
+     * 应用层按重点药类型/药品性质预解析的药品定义主键；与筛选字段成对使用。
      */
     private List<Long> resolvedMedicationDefinitionIds;
 

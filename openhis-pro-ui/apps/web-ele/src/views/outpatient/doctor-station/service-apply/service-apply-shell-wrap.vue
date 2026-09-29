@@ -24,7 +24,7 @@ const modelValue = defineModel<boolean>({ default: false });
     v-if="shell === 'dialog'"
     v-model="modelValue"
     :title="title"
-    width="1120px"
+    width="1320px"
     top="4vh"
     destroy-on-close
     append-to-body

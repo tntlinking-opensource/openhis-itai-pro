@@ -22,4 +22,10 @@ public class LoadChargePageInitResponse {
 
     /** 支付渠道选项（477 ∩ PaymentChannel）。 */
     private List<OptionDto> paymentChannelOptions;
+
+    /**
+     * 本院是否启用收费折扣能力（BR-OPC-027）：
+     * {@code ChargeDiscountConfigQueryService#isDiscountFeatureEnabled}；false 时 UI 不展示折扣率/折扣列。
+     */
+    private Boolean discountFeatureEnabled;
 }

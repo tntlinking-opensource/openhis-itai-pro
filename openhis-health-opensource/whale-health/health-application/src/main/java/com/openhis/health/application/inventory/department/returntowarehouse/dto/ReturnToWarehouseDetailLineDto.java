@@ -44,6 +44,10 @@ public class ReturnToWarehouseDetailLineDto {
     private String reason;
     /** 备注。 */
     private String remake;
+    /** 行单价（供应请求落库价；打印单价列）。 */
+    private BigDecimal price;
+    /** 行金额（供应请求落库总额；打印金额列）。 */
+    private BigDecimal totalPrice;
     /** 产品展示名称（读模型富化）。 */
     private String productName;
     /** 规格展示文本（来自产品定义 {@code totalVolume}）。 */

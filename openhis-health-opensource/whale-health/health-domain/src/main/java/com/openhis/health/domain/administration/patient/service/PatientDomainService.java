@@ -435,7 +435,7 @@ public class PatientDomainService {
             return;
         }
         String normalizedIdCard = this.normalizeIdCard(idCard);
-        // 身份证格式非法时拒绝建档/修改，防止脏数据进入医保链路
+        // Gate：非空证件号须符合大陆 18 位身份证格式（空号允许建档，见 DM-ADM-001）
         if (!normalizedIdCard.matches(GeneralSharedConstants.ID_CARD_REGEX)) {
             throw new BusinessException(ErrorCodeConstants.PATIENT_INVALID_ARGUMENT, "身份证号格式不正确");
         }

@@ -600,7 +600,7 @@ public class UserAppService {
     /**
      * 持有指定平台角色且账号仍启用的用户主键列表（读 {@code whale_user_roles}）。
      *
-     * @param roleCode 平台角色 code，如 {@code ROLE_FINANCE_APPROVER}；空白返回空列表
+     * @param roleCode 平台角色 code，如 {@code ROLE_ACCOUNTANT}；空白返回空列表
      * @return 启用用户主键；角色不存在或无绑定时为空列表
      */
     public List<Long> listActiveUserIdsByRoleCode(String roleCode) {

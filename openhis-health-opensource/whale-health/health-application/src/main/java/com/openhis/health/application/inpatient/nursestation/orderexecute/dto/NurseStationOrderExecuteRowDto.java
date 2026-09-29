@@ -129,6 +129,35 @@ public class NurseStationOrderExecuteRowDto {
     @Schema(description = "日剂量展示（如 每日三片）")
     private String dailyDoseDisplay;
 
+    /**
+     * 首日/首次用量（仅长期药品；空=首次槽用常规单次量，BR-IP-ORD-030 / BR-IP-EXE-012）。
+     * 库内为最小/拆零单位数量（执行首次槽与常规长嘱同路径）。
+     */
+    @Schema(description = "首日/首次用量（仅长期药品）")
+    private BigDecimal firstDose;
+
+    /** 首日用量单位编码（与 {@link #firstDose} 成对；最小/拆零单位码）。 */
+    @Schema(description = "首日用量单位编码")
+    private String firstDoseUnitCode;
+
+    /** 首日用量单位展示名。 */
+    @Schema(description = "首日用量单位展示名")
+    private String firstDoseUnitName;
+
+    /**
+     * 分次剂量序列（计量、逗号分隔；可空；有值时剂量列可拼序列；BR-IP-EXE-012/040）。
+     */
+    @Schema(description = "分次剂量序列（计量）")
+    private String doseSchedule;
+
+    /**
+     * 分次用量序列（拆零、逗号分隔；与 {@link #doseSchedule} 同序；BR-IP-EXE-012/040）。
+     *
+     * <p>空=执行侧走 {@code quantity}；有值仅改正算量（分槽取段），不改变执行/取消/不执行槽位集合规则。</p>
+     */
+    @Schema(description = "分次用量序列（拆零）")
+    private String quantitySchedule;
+
     /** 用法展示。 */
     @Schema(description = "用法展示")
     private String usageDisplay;
@@ -303,6 +332,12 @@ public class NurseStationOrderExecuteRowDto {
     @Schema(description = "合管检验设备主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long specimenTubeMergeDeviceId;
+
+    /**
+     * 医嘱优先级 code（加急为 {@code EM}；采血贴印「急」用）。
+     */
+    @Schema(description = "医嘱优先级 code（加急=EM）")
+    private String priorityEnum;
 
     /**
      * 是否皮试药（仅药嘱；{@code med_medication_request.skin_test_flag}）。

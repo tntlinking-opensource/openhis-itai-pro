@@ -4,13 +4,12 @@
  */
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.service;
 
-import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
+import com.openhis.health.application.shared.practitioner.PractitionerRoleScopeLoader;
 import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.shared.validator.CurrentManagedWardLocationIdsResolver;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.application.shared.validator.InpatientPendingSettlementClinicalGate;
-import com.openhis.health.application.shared.validator.SystemOperatorResolver;
 import com.openhis.health.application.shared.validator.PageWindowGate;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.assembler.NurseStationAutoRollListAssembler;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.assembler.NurseStationInpatientBillingCatalogAssembler;
@@ -137,6 +136,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -164,7 +164,6 @@ import java.util.Set;
 public class NurseStationInpatientBillingAppService {
 
     private final CurrentPractitionerResolver currentPractitionerResolver;
-    private final SystemOperatorResolver systemOperatorResolver;
     private final CurrentManagedWardLocationIdsResolver managedWardLocationIdsResolver;
     private final PageWindowGate pageWindowGate;
     private final ProductDefinitionCatalogPageLoader productDefinitionCatalogPageLoader;
@@ -1273,34 +1272,31 @@ public class NurseStationInpatientBillingAppService {
     /**
      * IF-IP-ARG-08：住院滚费定时任务（系统调度，无 UI 按钮）。
      *
-     * @param request billDate 空则前一日；operatorId 空则系统操作人（非登录态）
+     * <p>cron 须为 {@code 0 10 0 * * ?}（00:10 Asia/Shanghai），与库存备份 {@code 0 5 0 * * ?} 错开；
+     * {@link com.openhis.whale.core.infrastructure.job.SchedulableJob#openAppServiceTransaction()} 关闭外层 UoW，
+     * 单就诊失败不拖整批、不与备份抢长事务。</p>
+     *
+     * @param request billDate 空则前一日；操作人/审计人一律取配置计费人（或其回落责任护士），禁止写死种子 admin
      * @return 扫描与落账计数汇总
      */
-    @SchedulableJob("住院滚费")
+    @SchedulableJob(value = "住院滚费", openAppServiceTransaction = false)
     public ExecuteInpatientAutoRollJobResponse executeInpatientAutoRollJob(
         ExecuteInpatientAutoRollJobRequest request) {
-        // Gate：业务日缺省——00:00～00:15 视为定时窗口用前一日（BR-IP-ARG-006）；其余未传参视为手工补跑当日
+        // Gate：业务日缺省——固定 Asia/Shanghai；00:00～00:15 用前一日（定时窗口 BR-IP-ARG-006）；
+        // 其余未传参视为手工补跑当日。补跑昨天须显式传 billDate，或在 00:15 前触发。
         LocalDate billDate = null;
         if (request != null) {
             billDate = request.getBillDate();
         }
         if (billDate == null) {
-            LocalTime triggerClock = LocalDateTime.now().toLocalTime();
+            ZoneId shanghai = ZoneId.of("Asia/Shanghai");
+            LocalDateTime triggerNow = LocalDateTime.now(shanghai);
+            LocalTime triggerClock = triggerNow.toLocalTime();
             if (triggerClock.isBefore(LocalTime.of(0, 15))) {
-                billDate = LocalDate.now().minusDays(1);
+                billDate = triggerNow.toLocalDate().minusDays(1);
             } else {
-                billDate = LocalDate.now();
+                billDate = triggerNow.toLocalDate();
             }
-        }
-        Long operatorId = null;
-        if (request != null) {
-            operatorId = request.getOperatorId();
-        }
-        if (operatorId == null) {
-            operatorId = currentPractitionerResolver.findOperatorIdOrNull();
-        }
-        if (operatorId == null) {
-            operatorId = systemOperatorResolver.getOperatorPractitionerId();
         }
         // Pre：在院 encounter 全量扫描（分床后、清床前）
         List<InpatientAutoRollEncounterQueryModel> contexts =
@@ -1313,7 +1309,7 @@ public class NurseStationInpatientBillingAppService {
         int createdChargeItemCount = 0;
         int skippedCount = 0;
         int failedCount = 0;
-        LocalDateTime triggerTime = LocalDateTime.now();
+        LocalDateTime triggerTime = LocalDateTime.now(ZoneId.of("Asia/Shanghai"));
         if (contexts != null) {
             // Loop：逐 encounter 门控后委托处理器（单 encounter 异常不阻断批次）
             for (InpatientAutoRollEncounterQueryModel ctx : contexts) {
@@ -1364,12 +1360,9 @@ public class NurseStationInpatientBillingAppService {
                     continue;
                 }
                 try {
-                    Long performerId = ctx.getPrimaryNurseId();
-                    if (performerId == null) {
-                        performerId = operatorId;
-                    }
+                    // Pre：责任护士仅作配置未配计费人 / 护理分支回落（BR-IP-ARG-019）；禁止种子 admin
                     AutoRollEncounterProcessResult encounterResult = nurseStationAutoRollEncounterProcessor.processEncounter(
-                        ctx, billDate, operatorId, performerId);
+                        ctx, billDate, ctx.getPrimaryNurseId());
                     createdChargeItemCount += encounterResult.getCreatedChargeItemCount();
                     skippedCount += encounterResult.getSkippedCount();
                     failedCount += encounterResult.getFailedCount();

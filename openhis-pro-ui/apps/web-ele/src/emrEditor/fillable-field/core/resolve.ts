@@ -337,7 +337,10 @@ export function extendFillableMarkOverImeComposition(
 
   const head = newState.selection.head;
   if (head <= hit.to) return null;
-  const maxSpan = imeLocked ? 4096 : 64;
+  const ghost = newState.doc.textBetween(hit.to, head, '', '');
+  const pinyinGhost = /^[a-zA-Z']+$/.test(ghost);
+  // 锁槽时 CJK 一次上屏很短；4096 会把槽后整段体检吸进出生地（B22）
+  const maxSpan = imeLocked && !pinyinGhost ? 12 : 64;
   if (head - hit.to > maxSpan) return null;
   if (!isPlainTextBetween(newState.doc, hit.to, head)) return null;
 
@@ -371,7 +374,7 @@ export function isImeCompositionGhostAfterFillable(
   if (!locked && !sticky) return false;
   // 组字锁槽时 storedMarks 可能已是 []，仍要把 ] 画到拼音后
   if (!locked && isExplicitlyOutsideFillable(storedMarks)) return false;
-  if (head <= hit.to || head - hit.to > 4096) return false;
+  if (head <= hit.to || head - hit.to > 64) return false;
   return isPlainTextBetween(doc, hit.to, head);
 }
 

@@ -17,6 +17,7 @@ import {
   normalizeInvFormTripleSpec,
   resolveInvFormTripleHeightMm,
 } from './form-print-preference';
+import { normalizeInvGainLossPrintJson } from './normalize-inv-gain-loss-print-json';
 import { applyInvMovementDeviceSignOffFormatters } from './normalize-inv-movement-sign-off';
 import { normalizeInvReturnPrintJson } from './normalize-inv-return-print-json';
 import { print } from './runtime';
@@ -95,8 +96,12 @@ export async function printInvDocument(options: PrintInvDocumentOptions): Promis
       // 退货种子模板是迷你版，先对齐流转单版式再套纸张
       const afterReturn = family === 'return' ? normalizeInvReturnPrintJson(printJson) : printJson;
       // 耗材进货/采购申请签批与药品分流（库模板未迁时仍按 PrintData 开关改写）
-      const normalized =
+      let normalized =
         family === 'movement' ? applyInvMovementDeviceSignOffFormatters(afterReturn) : afterReturn;
+      // 损益单复用盘点模版：去掉账面/实盘列，避免把损益量印成实盘
+      if (family === 'stocktake' && options.bizRef?.docKind === 'gain-loss') {
+        normalized = normalizeInvGainLossPrintJson(normalized);
+      }
       return applyInvDocumentPaperByKind(normalized, kind, heightMm);
     },
   });

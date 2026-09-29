@@ -23,10 +23,6 @@ import com.openhis.health.application.inpatient.nursestation.orderaudit.response
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.application.inpatient.nursestation.orderaudit.support.InpatientStopVerifyAutoSkipPendingSupport;
-import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecuteWriteSlotDto;
-import com.openhis.health.application.inpatient.nursestation.orderexecute.request.SkipNurseStationOrderSlotsRequest;
-import com.openhis.health.application.inpatient.nursestation.orderexecute.service.NurseStationOrderExecuteAppService;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.support.InpatientNurseStationTcmOrchestrator;
 import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.domain.custom.encounterhistory.queries.model.EncounterHistoryMilestoneQueryModel;
@@ -85,8 +81,8 @@ import java.util.Set;
  * <p>待校列表：管理病区内多选患者的待审/已审医嘱，按 Tab 与长临筛选；
  * pending 含开嘱待校（ACTIVE）与停嘱待校（长期 STOPPED 且 {@code stopPerformerCheckId} 为空）。</p>
  * <p>校对（IF-IP-AUD-02）：ACTIVE 走开嘱校对；STOPPED 走停嘱校对（仅写停嘱校对痕迹）；
- * 转科/出院联动仅开嘱校对成功后触发。开关 {@code inpatientStopVerifyAutoSkipPending=1} 时，
- * 停嘱校对成功后自动将剩余 pending 登记为不执行（复用 IF-IP-EXE-04）。</p>
+ * 转科/出院联动仅开嘱校对成功后触发。停嘱校对不自动 skip 剩余 pending——
+ * 真 pending 由执行 Tab / IF-IP-EXE-04 处理，改量假 pending 由 BR-IP-EXE-038 抑制。</p>
  * <p>退回（IF-IP-AUD-03）：{@code ACTIVE}/{@code VERIFIED} 退回草稿（须 **BR-IP-AUD-013**）；
  * 已停嘱校对走取消停嘱校对（{@code EX-IP-AUD-204}，不改状态）；
  * 转科/出院里程碑同步撤销 {@code ON_HOLD} 仅开嘱退回路径触发。</p>
@@ -119,12 +115,6 @@ public class NurseStationOrderAuditAppService {
 
     /** 中药 Tab 筛选与整方扩行。 */
     private final InpatientNurseStationTcmOrchestrator inpatientNurseStationTcmOrchestrator;
-
-    /** 停嘱校对成功后按开关收集剩余 pending（IF-IP-AUD-02 可选）。 */
-    private final InpatientStopVerifyAutoSkipPendingSupport inpatientStopVerifyAutoSkipPendingSupport;
-
-    /** 不执行写路径（IF-IP-EXE-04）；停嘱校对后自动 skip 复用此编排。 */
-    private final NurseStationOrderExecuteAppService nurseStationOrderExecuteAppService;
 
     /**
      * IF-IP-AUD-01：待校/已校医嘱列表，按管理病区与 Tab、长临筛选后按就诊分组返回。
@@ -233,7 +223,6 @@ public class NurseStationOrderAuditAppService {
             this.expandAuditWriteItemsByTcmPrescription(items, medByEncounter);
         Map<Long, ServiceRequestListModel> serviceDetailById =
             this.indexServiceRequestListById(visibleEncounterIds);
-        List<NurseStationOrderAuditWriteItemDto> stopVerifiedItems = new ArrayList<>();
         // Gate：扩行后逐条校验可见性与开嘱/停嘱校对资格
         for (NurseStationOrderAuditWriteItemDto item : expandedItems) {
             this.assertWriteItemVerifiableAndVisible(item, visibleEncounterIds);
@@ -257,7 +246,6 @@ public class NurseStationOrderAuditAppService {
                         item, operatorId, performerCheckId, checkTime);
                 medicationRequestDomainService.verifyStopMedicationOrder(stopCommand);
                 processed = processed + 1;
-                stopVerifiedItems.add(item);
                 continue;
             }
             // 分支：已发送行走开嘱校对 → VERIFIED
@@ -285,7 +273,6 @@ public class NurseStationOrderAuditAppService {
                         item, operatorId, performerCheckId, checkTime);
                 serviceRequestDomainService.verifyStopServiceRequest(stopCommand);
                 processed = processed + 1;
-                stopVerifiedItems.add(item);
                 continue;
             }
             // 分支：已发送行走开嘱校对，收集 id 供转科/出院编排
@@ -313,34 +300,8 @@ public class NurseStationOrderAuditAppService {
                     "患者流转状态已变更，请刷新后重试");
             }
         }
-        // Cmd：开关开启时收集与门禁同源的剩余 pending，再复用 IF-IP-EXE-04 登记不执行
-        this.skipRemainingPendingSlotsAfterStopVerify(stopVerifiedItems);
         // Asm：映射处理条数
         return nurseStationOrderAuditMapper.toVerifyNurseStationOrdersResponse(processed);
-    }
-
-    /**
-     * 停嘱校对成功后，按开关将剩余 pending 登记为不执行。
-     *
-     * <p>开关关闭或无槽位时为空操作。写路径复用 IF-IP-EXE-04，失败则随 AUD-02 整批回滚。
-     * 不放宽 {@code BR-IP-ATD-011①′}：未 skip 成功的 pending 仍拦截出院。</p>
-     *
-     * @param stopVerifiedItems 本批已成功停嘱校对的写锚点
-     */
-    private void skipRemainingPendingSlotsAfterStopVerify(
-        List<NurseStationOrderAuditWriteItemDto> stopVerifiedItems) {
-        // Pre：开关关闭或无停嘱校对项时 Support 返回空，此处不调执行写路径
-        List<NurseStationOrderExecuteWriteSlotDto> skipItems =
-            inpatientStopVerifyAutoSkipPendingSupport.collectRemainingPendingSlotsAfterStopVerify(
-                stopVerifiedItems);
-        if (skipItems == null || skipItems.isEmpty()) {
-            return;
-        }
-        SkipNurseStationOrderSlotsRequest skipRequest = new SkipNurseStationOrderSlotsRequest();
-        skipRequest.setItems(skipItems);
-        skipRequest.setExecutionDeadline(LocalDateTime.now());
-        // Cmd：复用执行不执行（含中药整方/成组扩行与 occurrence 防重）
-        nurseStationOrderExecuteAppService.skipNurseStationOrderSlots(skipRequest);
     }
 
     /**
@@ -348,6 +309,8 @@ public class NurseStationOrderAuditAppService {
      *
      * <p>STOPPED 且已有 {@code stopPerformerCheckId}：取消停嘱校对（清空痕迹、不改状态、不退回草稿）。
      * 其余走原退回草稿（须 **BR-IP-AUD-013**）。</p>
+     * <p>出院类（category=34）开嘱退回后同事务软删申请并废离院里程碑（**BR-IP-AUD-016**）：
+     * 出院内容不可行内修订，医生须右上角 IF-IP-DOR-21 重开。</p>
      *
      * @param request 待退回项与统一原因
      * @return 处理结果
@@ -458,6 +421,11 @@ public class NurseStationOrderAuditAppService {
                 operatorId,
                 checkTime,
                 InpatientNurseStationConstants.EX_IP_AUD_203);
+        }
+        // Cmd（BR-IP-AUD-016）：出院退回后直接软删，医生须右上角 IF-IP-DOR-21 重开（不可行内修订）
+        for (Long serviceRequestId : rejectedServiceRequestIds) {
+            transferDischargeHoldOrchestrationSupport.softDeleteDischargeAdviceAfterRevertedToDraft(
+                serviceRequestId, operatorId);
         }
         // Asm：映射处理条数
         return nurseStationOrderAuditMapper.toRejectNurseStationOrdersResponse(processed);

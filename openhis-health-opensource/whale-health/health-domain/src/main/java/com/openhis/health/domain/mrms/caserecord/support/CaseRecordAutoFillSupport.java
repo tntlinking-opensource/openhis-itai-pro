@@ -4,6 +4,8 @@
  */
 package com.openhis.health.domain.mrms.caserecord.support;
 
+import com.openhis.health.domain.administration.account.entity.Account;
+import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
@@ -30,8 +32,11 @@ import com.openhis.health.domain.clinical.conditiondefinition.queries.model.Clin
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.ConditionDefinitionBatchItemQueryModel;
 import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService;
 import com.openhis.health.domain.clinical.procedure.entity.Procedure;
+import com.openhis.health.domain.clinical.procedure.queries.model.ProcedurePerformerQueryModel;
 import com.openhis.health.domain.clinical.procedure.queries.model.ProcedureRecordQueryModel;
 import com.openhis.health.domain.clinical.procedure.service.ProcedureQueryService;
+import com.openhis.health.domain.clinical.proceduredefinition.queries.model.ProcedureDefinitionSearchItemQueryModel;
+import com.openhis.health.domain.clinical.proceduredefinition.service.ProcedureDefinitionQueryService;
 import com.openhis.health.domain.custom.encounterhistory.queries.model.EncounterHistoryMilestoneQueryModel;
 import com.openhis.health.domain.custom.encounterhistory.service.EncounterHistoryQueryService;
 import com.openhis.health.domain.mrms.caserecord.resolver.AdmissionConditionResolver;
@@ -45,6 +50,7 @@ import com.openhis.health.domain.mrms.caserecord.vo.ProcedureLineSnapshot;
 import com.openhis.health.domain.mrms.caserecord.vo.TransferLineSnapshot;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
+import com.openhis.health.domain.share.constants.ClinicalProcedureConstants;
 import com.openhis.health.domain.share.constants.CustomConstants;
 import com.openhis.health.domain.share.constants.DoctorStationDiagnosisConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -101,12 +107,14 @@ public class CaseRecordAutoFillSupport {
     private final PatientQueryService patientQueryService;
     private final EncounterQueryService encounterQueryService;
     private final EncounterContextQueryService encounterContextQueryService;
+    private final AccountQueryService accountQueryService;
     private final PractitionerQueryService practitionerQueryService;
     private final LocationQueryService locationQueryService;
     private final OrganizationQueryService organizationQueryService;
     private final EncounterHistoryQueryService encounterHistoryQueryService;
     private final ConditionDefinitionQueryService conditionDefinitionQueryService;
     private final ProcedureQueryService procedureQueryService;
+    private final ProcedureDefinitionQueryService procedureDefinitionQueryService;
     private final ServiceRequestQueryService serviceRequestQueryService;
     private final ActivityDefinitionQueryService activityDefinitionQueryService;
     private final MedicationDefinitionQueryService medicationDefinitionQueryService;
@@ -185,10 +193,30 @@ public class CaseRecordAutoFillSupport {
         snap.setDscgTime(this.resolveBusinessDischargeTime(encounterId, encounter.getEndTime()));
         // 入院途径：in_way 与 4401 adm_way 同码（V28）；禁止拷贝入院类型 admit_source（如 6=常规）
         snap.setAdmWayCode(MrmsConstants.mapInWayCodeToAdmWayCode(encounter.getInWayCode()));
+        // 付费方式：入院登记已开户；无医保户→全自费，有户按 insutype 映射国标 1～9
+        snap.setPayWayCode(this.resolvePayWayCode(encounterId));
         applyDepartments(snap, encounter);
         applyWardAndBed(snap, encounterId);
         applyParticipants(snap, encounterQueryService.listDisplayEncounterParticipants(encounterId));
         return snap;
+    }
+
+    /**
+     * 解析首页付费方式：优先就诊医保账户 {@code insutype}，无医保户则全自费。
+     *
+     * <p>调用关系：{@link #loadEncounter}；映射见 {@link MrmsConstants#resolvePayWayCode}。
+     * 有医保户但险种尚未回写时返回 null，打开页保留空选、待读卡或手工。</p>
+     *
+     * @param encounterId 就诊主键
+     * @return 国标付费方式码；无法判定时 null
+     */
+    private String resolvePayWayCode(Long encounterId) {
+        // 跨聚合读：adm_account 医保户
+        Account miAccount = accountQueryService.getYbAccount(encounterId);
+        if (miAccount == null) {
+            return MrmsConstants.resolvePayWayCode(false, null);
+        }
+        return MrmsConstants.resolvePayWayCode(true, miAccount.getInsutype());
     }
 
     /**
@@ -680,7 +708,9 @@ public class CaseRecordAutoFillSupport {
     }
 
     /**
-     * 列出就诊已完成手术/操作快照（cln_procedure）。
+     * 列出就诊已完成手术/操作快照（国临 PD 术式行；纯加收不占行）。
+     *
+     * <p>对齐 DM-MRMS-001 §7 BR-MRMS-HP-PR-002～006；手术时间优先 procedure_time。</p>
      *
      * @param encounterId 就诊主键
      * @return 手术快照列表
@@ -695,9 +725,6 @@ public class CaseRecordAutoFillSupport {
         if (completedRows.isEmpty()) {
             return Collections.emptyList();
         }
-        completedRows.sort(Comparator
-                .comparing(ProcedureRecordQueryModel::getOccurrenceTime, Comparator.nullsLast(Comparator.naturalOrder()))
-                .thenComparing(ProcedureRecordQueryModel::getId, Comparator.nullsLast(Comparator.naturalOrder())));
 
         List<Long> serviceRequestIds = new ArrayList<>();
         List<Long> procedureIds = new ArrayList<>();
@@ -713,7 +740,38 @@ public class CaseRecordAutoFillSupport {
         Map<Long, Procedure> procedureById = indexProcedures(procedureQueryService.listByIds(procedureIds));
         Map<Long, ServiceRequestListModel> serviceRequestById =
                 serviceRequestQueryService.mapListModelsByIds(serviceRequestIds);
-        Map<Long, ActivityDefinition> activityById = loadActivities(serviceRequestById);
+        Map<Long, List<ProcedurePerformerQueryModel>> performersByProcedureId =
+                procedureQueryService.mapPerformersByProcedureIds(procedureIds);
+
+        // 收集 AD → 国临 PD；人员 id → 姓名
+        Set<Long> activityIds = new LinkedHashSet<>();
+        Set<Long> practitionerIds = new LinkedHashSet<>();
+        for (ServiceRequestListModel sr : serviceRequestById.values()) {
+            if (sr == null) {
+                continue;
+            }
+            if (sr.getActivityId() != null) {
+                activityIds.add(sr.getActivityId());
+            }
+            addPractitionerId(practitionerIds, sr.getSurgeonId());
+            addPractitionerId(practitionerIds, sr.getFirstAssistantId());
+            addPractitionerId(practitionerIds, sr.getSecondAssistantId());
+            addPractitionerId(practitionerIds, sr.getNurseId());
+            addPractitionerId(practitionerIds, sr.getAnesthetistId());
+        }
+        for (List<ProcedurePerformerQueryModel> performers : performersByProcedureId.values()) {
+            if (performers == null) {
+                continue;
+            }
+            for (ProcedurePerformerQueryModel p : performers) {
+                if (p != null) {
+                    addPractitionerId(practitionerIds, p.getPractitionerId());
+                }
+            }
+        }
+        Map<Long, ProcedureDefinitionSearchItemQueryModel> pdByActivityId =
+                procedureDefinitionQueryService.mapActiveClinicalByActivityDefinitionIds(activityIds);
+        Map<Long, String> practitionerNameById = mapPractitionerNames(practitionerIds);
 
         List<ProcedureLineSnapshot> result = new ArrayList<>();
         Set<Long> seenServiceRequestIds = new LinkedHashSet<>();
@@ -732,21 +790,70 @@ public class CaseRecordAutoFillSupport {
                     || !ServiceRequestCategoryConstants.SERVICE_CATEGORY_PROCEDURE.equals(serviceRequest.getCategoryEnum())) {
                 continue;
             }
-            ActivityDefinition activity = activityById.get(serviceRequest.getActivityId());
+            // 无国临 PD（纯加收）不占首页手术行
+            ProcedureDefinitionSearchItemQueryModel pd = pdByActivityId.get(serviceRequest.getActivityId());
+            if (pd == null) {
+                continue;
+            }
             Procedure procedure = procedureById.get(row.getId());
-            ProcedureLineSnapshot snap = toProcedureSnapshot(row, activity, procedure);
+            List<ProcedurePerformerQueryModel> performers = performersByProcedureId.get(row.getId());
+            ProcedureLineSnapshot snap = toProcedureSnapshot(
+                    row, serviceRequest, procedure, pd, performers, practitionerNameById);
             if (snap != null) {
                 result.add(snap);
             }
         }
-        // 按时间排序后首条标记为主手术
-        if (!result.isEmpty()) {
+        // 按业务手术时间排序后处理主手术缺省
+        result.sort(Comparator
+                .comparing(ProcedureLineSnapshot::getOprnTime, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(ProcedureLineSnapshot::getOprnDate, Comparator.nullsLast(Comparator.naturalOrder())));
+        boolean anyMainFromSr = false;
+        for (ProcedureLineSnapshot snap : result) {
+            if (Boolean.TRUE.equals(snap.getMain())) {
+                anyMainFromSr = true;
+                break;
+            }
+        }
+        // SR 未标主手术时：序首条为主
+        if (!anyMainFromSr && !result.isEmpty()) {
             result.get(0).setMain(Boolean.TRUE);
             for (int i = 1; i < result.size(); i++) {
                 result.get(i).setMain(Boolean.FALSE);
             }
         }
         return result;
+    }
+
+    /**
+     * 收集人员主键（空跳过）。
+     *
+     * @param target 目标集合
+     * @param id     人员主键
+     */
+    private void addPractitionerId(Set<Long> target, Long id) {
+        if (id != null) {
+            target.add(id);
+        }
+    }
+
+    /**
+     * 批量解析医务人员姓名。
+     *
+     * @param practitionerIds 人员主键集合
+     * @return id → 姓名
+     */
+    private Map<Long, String> mapPractitionerNames(Set<Long> practitionerIds) {
+        Map<Long, String> names = new HashMap<>();
+        if (practitionerIds == null || practitionerIds.isEmpty()) {
+            return names;
+        }
+        for (Practitioner practitioner : practitionerQueryService.findAllByIds(practitionerIds)) {
+            if (practitioner == null || practitioner.getId() == null) {
+                continue;
+            }
+            names.put(practitioner.getId(), trimToNull(practitioner.getName()));
+        }
+        return names;
     }
 
     /**
@@ -1058,32 +1165,25 @@ public class CaseRecordAutoFillSupport {
     }
 
     /**
-     * 已完成手术记录 → 首页手术行快照（编码优先 ybNo/ procedureCode/ busNo）。
+     * 已完成手术记录 → 首页手术行快照（国临 PD + performer + SR 横表）。
      *
-     * @param row       手术记录读模型
-     * @param activity  关联活动定义
-     * @param procedure 手术实体
+     * @param row                  手术记录读模型
+     * @param serviceRequest       关联申请
+     * @param procedure            手术实体（可空）
+     * @param pd                   国临手术定义（必有）
+     * @param performers           执行人列表（可空）
+     * @param practitionerNameById 人员姓名索引
      * @return 手术行；编码名称均空时 null
      */
     private ProcedureLineSnapshot toProcedureSnapshot(
             ProcedureRecordQueryModel row,
-            ActivityDefinition activity,
-            Procedure procedure) {
-        String oprnName = null;
-        String oprnCode = null;
-        if (activity != null) {
-            oprnName = trimToNull(activity.getName());
-            String procedureCode = null;
-            if (procedure != null) {
-                procedureCode = trimToNull(procedure.getProcedureCode());
-            }
-            oprnCode = firstNonBlank(
-                    trimToNull(activity.getYbNo()),
-                    procedureCode,
-                    trimToNull(activity.getBusNo()));
-        } else if (procedure != null) {
-            oprnCode = trimToNull(procedure.getProcedureCode());
-        }
+            ServiceRequestListModel serviceRequest,
+            Procedure procedure,
+            ProcedureDefinitionSearchItemQueryModel pd,
+            List<ProcedurePerformerQueryModel> performers,
+            Map<Long, String> practitionerNameById) {
+        String oprnCode = trimToNull(pd.getProcedureCode());
+        String oprnName = trimToNull(pd.getName());
         // 编码与名称均为空时丢弃该行
         if (oprnCode == null && oprnName == null) {
             return null;
@@ -1091,11 +1191,119 @@ public class CaseRecordAutoFillSupport {
         ProcedureLineSnapshot snap = new ProcedureLineSnapshot();
         snap.setOprnCode(oprnCode);
         snap.setOprnName(oprnName);
-        if (row.getOccurrenceTime() != null) {
-            snap.setOprnDate(row.getOccurrenceTime().toLocalDate());
+
+        // 手术时间：Procedure.procedure_time → SR.procedure_time；禁止优先 occurrence_time
+        LocalDateTime oprnTime = null;
+        if (procedure != null) {
+            oprnTime = procedure.getProcedureTime();
         }
-        snap.setMain(Boolean.FALSE);
+        if (oprnTime == null && serviceRequest != null) {
+            oprnTime = serviceRequest.getProcedureTime();
+        }
+        snap.setOprnTime(oprnTime);
+        if (oprnTime != null) {
+            snap.setOprnDate(oprnTime.toLocalDate());
+        }
+
+        if (serviceRequest != null) {
+            snap.setOprnLevelCode(trimToNull(serviceRequest.getProcedureLevelCode()));
+            snap.setAnstWayCode(trimToNull(serviceRequest.getAnesthesiaMethodCode()));
+            if (Boolean.TRUE.equals(serviceRequest.getMainProcedureFlag())) {
+                snap.setMain(Boolean.TRUE);
+            } else if (Boolean.FALSE.equals(serviceRequest.getMainProcedureFlag())) {
+                snap.setMain(Boolean.FALSE);
+            } else {
+                snap.setMain(Boolean.FALSE);
+            }
+            String incisionFromSr = trimToNull(serviceRequest.getIncisionTypeCode());
+            snap.setOprnIncisionCode(incisionFromSr);
+        } else {
+            snap.setMain(Boolean.FALSE);
+        }
+        // 切口：执行可覆盖申请预填
+        if (procedure != null && trimToNull(procedure.getIncisionTypeCode()) != null) {
+            snap.setOprnIncisionCode(trimToNull(procedure.getIncisionTypeCode()));
+        }
+        if (procedure != null) {
+            snap.setAnstStartTime(procedure.getAnesthesiaStartTime());
+            snap.setAnstEndTime(procedure.getAnesthesiaEndTime());
+            snap.setSpecimen(trimToNull(procedure.getSpecimen()));
+            snap.setNote(trimToNull(procedure.getNote()));
+            snap.setSendLabFlag(procedure.getSendLabFlag());
+        }
+
+        // 人员：performer 优先，缺则回落 SR 预填 id
+        Long surgeonId = null;
+        Long firstAssistantId = null;
+        Long secondAssistantId = null;
+        Long nurseId = null;
+        Long anesthetistId = null;
+        if (serviceRequest != null) {
+            surgeonId = serviceRequest.getSurgeonId();
+            firstAssistantId = serviceRequest.getFirstAssistantId();
+            secondAssistantId = serviceRequest.getSecondAssistantId();
+            nurseId = serviceRequest.getNurseId();
+            anesthetistId = serviceRequest.getAnesthetistId();
+        }
+        snap.setOperDrName(resolveRoleName(
+                performers,
+                ClinicalProcedureConstants.PROCEDURE_PERFORMER_FUNCTION_SURGEON,
+                surgeonId,
+                practitionerNameById));
+        snap.setAsit1Name(resolveRoleName(
+                performers,
+                ClinicalProcedureConstants.PROCEDURE_PERFORMER_FUNCTION_FIRST_ASSISTANT,
+                firstAssistantId,
+                practitionerNameById));
+        snap.setAsit2Name(resolveRoleName(
+                performers,
+                ClinicalProcedureConstants.PROCEDURE_PERFORMER_FUNCTION_SECOND_ASSISTANT,
+                secondAssistantId,
+                practitionerNameById));
+        snap.setNurseName(resolveRoleName(
+                performers,
+                ClinicalProcedureConstants.PROCEDURE_PERFORMER_FUNCTION_NURSE,
+                nurseId,
+                practitionerNameById));
+        snap.setAnstDrName(resolveRoleName(
+                performers,
+                ClinicalProcedureConstants.PROCEDURE_PERFORMER_FUNCTION_ANESTHETIST,
+                anesthetistId,
+                practitionerNameById));
         return snap;
+    }
+
+    /**
+     * 按角色解析人员姓名：performer 同码优先，否则 SR 预填 id。
+     *
+     * @param performers           执行人列表
+     * @param functionCode         角色码
+     * @param fallbackPractitionerId SR 预填人员
+     * @param practitionerNameById 姓名索引
+     * @return 姓名；无则 null
+     */
+    private String resolveRoleName(
+            List<ProcedurePerformerQueryModel> performers,
+            String functionCode,
+            Long fallbackPractitionerId,
+            Map<Long, String> practitionerNameById) {
+        if (performers != null) {
+            for (ProcedurePerformerQueryModel p : performers) {
+                if (p == null) {
+                    continue;
+                }
+                if (functionCode != null && functionCode.equals(p.getFunctionCode())) {
+                    String name = practitionerNameById.get(p.getPractitionerId());
+                    if (name != null) {
+                        return name;
+                    }
+                }
+            }
+        }
+        if (fallbackPractitionerId == null) {
+            return null;
+        }
+        return practitionerNameById.get(fallbackPractitionerId);
     }
 
     /**

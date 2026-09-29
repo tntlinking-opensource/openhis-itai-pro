@@ -1266,7 +1266,44 @@ public class InpatientDailySettlementMapperImpl implements InpatientDailySettlem
         if (StringUtils.isEmpty(payEnum)) {
             return false;
         }
-        return PaymentChannel.DEPOSIT_OFFSET.getCode().equals(payEnum.trim());
+        return PaymentChannel.DEPOSIT_OFFSET.getCode().equals(payEnum.trim())
+            || PaymentChannel.DISCOUNT.getCode().equals(payEnum.trim());
+    }
+
+    /**
+     * 汇总收费折扣旁证净额（BR-IP-DCL-031）：Σ {@code pay_enum=DISCOUNT}；无旁证时为 0。
+     *
+     * @param displayItems          展示过滤后的候选行
+     * @param recDetailsByPaymentId paymentId → 子明细
+     * @return 折扣合计（带符号）
+     */
+    private BigDecimal sumDiscountChannelAmount(
+        List<InpatientDailySettlementPaymentItemDto> displayItems,
+        Map<Long, List<PaymentRecDetailQueryModel>> recDetailsByPaymentId
+    ) {
+        BigDecimal total = BigDecimal.ZERO;
+        if (displayItems == null || recDetailsByPaymentId == null) {
+            return total;
+        }
+        for (InpatientDailySettlementPaymentItemDto item : displayItems) {
+            if (item == null || item.getPaymentId() == null) {
+                continue;
+            }
+            List<PaymentRecDetailQueryModel> details = recDetailsByPaymentId.get(item.getPaymentId());
+            if (details == null) {
+                continue;
+            }
+            for (PaymentRecDetailQueryModel detail : details) {
+                if (detail == null || StringUtils.isEmpty(detail.getPayEnum())) {
+                    continue;
+                }
+                if (!PaymentChannel.DISCOUNT.getCode().equals(detail.getPayEnum().trim())) {
+                    continue;
+                }
+                total = total.add(this.resolveSignedDetailNetAmount(detail, item));
+            }
+        }
+        return total;
     }
 
     /**
@@ -1481,7 +1518,9 @@ public class InpatientDailySettlementMapperImpl implements InpatientDailySettlem
         summary.setTotalIncome(totalIncomeText);
         summary.setReceivableAmount(totalIncomeText);
         summary.setActualAmount(totalIncomeText);
-        summary.setDiscountAmount(DailySettlementSharedConstants.DISCOUNT_AMOUNT_ZERO);
+        // 折扣合计：Σ DISCOUNT 旁证；无打折落账时为 0（零侵入）
+        summary.setDiscountAmount(this.formatAmount(
+            this.sumDiscountChannelAmount(displayItems, recDetailsByPaymentId)));
         summary.setWechatAmount(wechatText);
         summary.setAlipayAmount(alipayText);
         summary.setOnlineBankAmount(onlineBankText);

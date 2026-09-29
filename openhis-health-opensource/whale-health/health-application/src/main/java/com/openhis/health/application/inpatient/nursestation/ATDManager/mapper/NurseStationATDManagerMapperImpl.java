@@ -478,6 +478,7 @@ public class NurseStationATDManagerMapperImpl implements NurseStationATDManagerM
      * @param medicationName      药品名称；可 null
      * @param performLocationName 库房名称；可 null
      * @param statusEnumText      状态展示文案；可 null
+     * @param unitCodeText        单位展示名；可 null（术语解析失败时回落 code）
      * @return 行 DTO；row 为 null 时返回 null
      */
     @Override
@@ -485,7 +486,8 @@ public class NurseStationATDManagerMapperImpl implements NurseStationATDManagerM
         MedicationDispenseListQueryModel row,
         String medicationName,
         String performLocationName,
-        String statusEnumText) {
+        String statusEnumText,
+        String unitCodeText) {
         if (row == null) {
             return null;
         }
@@ -500,6 +502,8 @@ public class NurseStationATDManagerMapperImpl implements NurseStationATDManagerM
         dto.setStatusEnumText(statusEnumText);
         dto.setQuantity(row.getQuantity());
         dto.setUnitCode(row.getUnitCode());
+        // 展示优先 unitCodeText；空则前端可回落 unitCode
+        dto.setUnitCodeText(unitCodeText);
         dto.setPlannedDispenseTime(row.getPlannedDispenseTime());
         dto.setPerformLocationId(row.getLocationId());
         dto.setPerformLocationName(performLocationName);

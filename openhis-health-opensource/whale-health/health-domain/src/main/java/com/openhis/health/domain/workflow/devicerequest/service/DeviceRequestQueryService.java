@@ -4,6 +4,7 @@
  */
 package com.openhis.health.domain.workflow.devicerequest.service;
 
+import com.openhis.health.domain.workflow.devicerequest.queries.model.*;
 import com.openhis.health.domain.workflow.devicerequest.repository.DeviceRequestRepository;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
@@ -12,13 +13,10 @@ import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.utils.EncounterDiagnosisIdsPredicates;
 import com.openhis.health.domain.share.utils.IdInQueryChunkSupport;
 import com.openhis.health.domain.workflow.devicerequest.entity.DeviceRequest;
-import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestFifoSignContext;
-import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestHistoryModel;
-import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestListModel;
-import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestQueryModel;
-import com.openhis.health.domain.workflow.devicerequest.queries.model.OffsetVerificationModel;
 import com.openhis.whale.core.application.exception.BusinessException;
 import jakarta.persistence.criteria.Predicate;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -125,7 +123,10 @@ public class DeviceRequestQueryService {
     }
 
     /**
-     * 判断耗材是否存在非终态医嘱申请（调价提交互斥 BR-PRC-SUB-003：在途医嘱）。
+     * 判断耗材是否存在非终态医嘱申请（含未签发 DRAFT 的复合口径）。
+     *
+     * <p>调价提交请改用 {@link #existsHardInTransitRequestByDeviceDefId}（硬在途）与
+     * {@link #listUnsignedDraftsByDeviceDefId}（未签发草稿，由应用层按 48h 窗口分流）。</p>
      *
      * @param deviceDefId 耗材定义主键 {@code adm_device_definition.id}
      * @return 存在在途申请时为 true
@@ -146,6 +147,70 @@ public class DeviceRequestQueryService {
     }
 
     /**
+     * 按耗材定义列出未签发草稿（调价保存/提交在途配套）。
+     *
+     * <p>口径：未软删、{@code DRAFT}、从未签发（{@code req_authored_time} 空）；
+     * 填充患者/开立人/有效开立时刻供 48h 新鲜窗口分流。</p>
+     *
+     * @param deviceDefId 耗材定义主键
+     * @return 未签发草稿读模型；无则空列表
+     */
+    public List<StaleUnsignedDeviceRequestDraftQueryModel> listUnsignedDraftsByDeviceDefId(Long deviceDefId) {
+        if (deviceDefId == null) {
+            return new ArrayList<>();
+        }
+        Specification<DeviceRequest> specification = (root, cq, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.DEVICE_DEF_ID), deviceDefId));
+            predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), RequestStatus.DRAFT.getCode()));
+            predicates.add(cb.isNull(root.get(FieldNameConstants.REQ_AUTHORED_TIME)));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        List<DeviceRequest> entities = deviceRequestRepository.findAll(specification);
+        List<StaleUnsignedDeviceRequestDraftQueryModel> rows = new ArrayList<>();
+        for (DeviceRequest entity : entities) {
+            if (entity == null || entity.getId() == null) {
+                continue;
+            }
+            StaleUnsignedDeviceRequestDraftQueryModel row = new StaleUnsignedDeviceRequestDraftQueryModel();
+            row.setId(entity.getId());
+            row.setEncounterId(entity.getEncounterId());
+            row.setPatientId(entity.getPatientId());
+            row.setRequesterId(entity.getRequesterId());
+            row.setDeviceDefId(entity.getDeviceDefId());
+            row.setUpdatedAt(entity.getUpdatedAt());
+            LocalDateTime openedAt = entity.getReqOpenedTime();
+            if (openedAt == null) {
+                openedAt = entity.getUpdatedAt();
+            }
+            row.setOpenedAt(openedAt);
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    /**
+     * 是否存在硬在途耗材申请（已签发/已校对/暂挂；不含 DRAFT）。
+     *
+     * @param deviceDefId 耗材定义主键
+     * @return 存在硬在途时 true
+     */
+    public boolean existsHardInTransitRequestByDeviceDefId(Long deviceDefId) {
+        if (deviceDefId == null) {
+            return false;
+        }
+        Specification<DeviceRequest> specification = (root, cq, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.DEVICE_DEF_ID), deviceDefId));
+            predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(this.hardInTransitRequestStatusCodes()));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        return deviceRequestRepository.count(specification) > 0;
+    }
+
+    /**
      * 在途耗材申请状态码：待发、已签发、已校对、暂挂（非 COMPLETED/CANCELLED/STOPPED）。
      *
      * @return 状态 code 列表
@@ -153,6 +218,19 @@ public class DeviceRequestQueryService {
     private List<String> inTransitRequestStatusCodes() {
         List<String> codes = new ArrayList<>();
         codes.add(RequestStatus.DRAFT.getCode());
+        codes.add(RequestStatus.ACTIVE.getCode());
+        codes.add(RequestStatus.VERIFIED.getCode());
+        codes.add(RequestStatus.HOLD.getCode());
+        return codes;
+    }
+
+    /**
+     * 硬在途状态：已签发后链路（不含未签发草稿）。
+     *
+     * @return 状态 code 列表
+     */
+    private List<String> hardInTransitRequestStatusCodes() {
+        List<String> codes = new ArrayList<>();
         codes.add(RequestStatus.ACTIVE.getCode());
         codes.add(RequestStatus.VERIFIED.getCode());
         codes.add(RequestStatus.HOLD.getCode());

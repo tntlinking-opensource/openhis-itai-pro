@@ -4,14 +4,8 @@
 
 import type { PageParams } from '#/types/api-response';
 
-/** 病案主档状态 code */
-export type CaseRecordStatusCode =
-  | 'archived'
-  | 'draft'
-  | 'qcing'
-  | 'received'
-  | 'returned'
-  | 'submitted';
+/** 病案主档状态 code（大写，与 CaseRecordStatus.getCode 对齐；仅归档三态） */
+export type CaseRecordStatusCode = 'ARCHIVED' | 'DRAFT' | 'PENDING_ARCHIVE';
 
 /** 病案检索列表行（CaseRecordListItemDto：以住院就诊为行，主档可空） */
 export interface CaseRecordListItemDto {
@@ -31,6 +25,11 @@ export interface CaseRecordListItemDto {
   bedName?: string;
   /** 病区/病室名（无活动病区时为末次已完成病区） */
   wardName?: string;
+  /**
+   * 当前/末次病区主键（就诊上下文 wardId，string 防雪花精度丢失）。
+   * 体温单/护理记录门禁与护士管辖病区比对。
+   */
+  wardId?: string;
   certno?: string;
   /** 医保人员编号 psn_no */
   psnNo?: string;
@@ -287,6 +286,10 @@ export interface DiagnosisLineDto {
   sortNo?: number;
   diagCode?: string;
   diagName?: string;
+  /**
+   * 目录来源（不落库）：tcm_dx 中医疾病目录，tcm_syndrome 中医证候目录，其余为西医目录。
+   */
+  sourceEnum?: string;
   admCondCode?: string;
   /** 诊断转归/病情（1治愈 2好转 3未愈 4死亡 9其他） */
   outIllStatusCode?: string;
@@ -305,16 +308,29 @@ export interface DiagnosisLineDto {
 export interface ProcedureLineDto {
   id?: string;
   sortNo?: number;
+  /** 国临码（落库） */
   oprnOprtCode?: string;
   oprnOprtName?: string;
+  /** 手术日期 YYYY-MM-DD */
   oprnDate?: string;
+  /** 业务手术时间 */
+  oprnTime?: string;
   mainOprnFlag?: string;
   oprnLevelCode?: string;
   oprnIncisionCode?: string;
+  /** 愈合等级（仅首页终改） */
   healGradeCode?: string;
   anstWayCode?: string;
   operDrName?: string;
+  asit1Name?: string;
+  asit2Name?: string;
+  nurseName?: string;
   anstDrName?: string;
+  anstStartTime?: string;
+  anstEndTime?: string;
+  specimen?: string;
+  note?: string;
+  sendLabFlag?: boolean;
   valiFlag?: string;
 }
 
@@ -494,9 +510,13 @@ export interface SearchIcdParams {
 }
 
 export interface IcdItemDto {
+  /** 目录定义主键（手术 PD id；string 防精度丢失） */
+  id?: string;
   code?: string;
   name?: string;
   pyStr?: string;
+  /** 医保对照码；手术选码可空表示未对码 */
+  ybNo?: string;
 }
 
 export interface ReturnHomepageParams {
@@ -786,7 +806,7 @@ export interface OutpatientEmrListItemDto {
   statusCode?: string;
   updatedAt?: string;
   printable?: boolean;
-  /** 病例是否已归档（文书 LOCKED/ARCHIVED） */
+  /** 病例是否已归档（文书 PENDING_ARCHIVE/ARCHIVED） */
   clinicalArchived?: boolean;
 }
 
@@ -823,6 +843,11 @@ export interface InpatientEmrListItemDto {
   bedName?: string;
   /** 病区/病室名（无活动病区时为末次已完成病区） */
   wardName?: string;
+  /**
+   * 当前/末次病区主键（就诊上下文 wardId，string 防雪花精度丢失）。
+   * 体温单/护理记录门禁与护士管辖病区比对。
+   */
+  wardId?: string;
   certno?: string;
   admTime?: string;
   dscgTime?: string;
@@ -842,7 +867,7 @@ export interface InpatientEmrListItemDto {
   insuranceTypeText?: string;
   settleUploadStatusCode?: string;
   orderUploadStatusCode?: string;
-  /** 病例是否已归档（就诊下存在 LOCKED 文书） */
+  /** 病例是否已归档（就诊下存在 PENDING_ARCHIVE/ARCHIVED 文书） */
   clinicalArchived?: boolean;
 }
 

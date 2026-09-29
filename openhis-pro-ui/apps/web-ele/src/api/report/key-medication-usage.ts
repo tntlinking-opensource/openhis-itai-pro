@@ -16,8 +16,10 @@ export interface KeyMedicationUsageQueryFilter {
   dateFrom: string;
   dateTo: string;
   encounterClassCodes?: string[];
-  /** 重点药类型多选；结果按类型拆行 */
+  /** 重点药类型多选（四旗）；结果按类型拆行 */
   keyDrugTypeCodes?: string[];
+  /** 药品性质多选（麻/精）；与重点药类型分框 */
+  medicinePropertyCodes?: string[];
 }
 
 /** 页初始化响应。 */
@@ -26,6 +28,7 @@ export interface LoadKeyMedicationUsageReportPageInitResponse {
   defaultDateTo?: string;
   encounterClassOptions?: ApiOptionItem[];
   keyDrugTypeOptions?: ApiOptionItem[];
+  medicinePropertyOptions?: ApiOptionItem[];
 }
 
 /** 汇总行（就诊类型 × 药品类型；合计行 keyDrugTypeCode=TOTAL）。 */

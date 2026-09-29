@@ -1597,7 +1597,7 @@ public interface ErrorCodeConstants {
     String SERVICE_DEVICE_TEMPLATE_INVALID_STATUS = "SERVICE_DEVICE_TEMPLATE_003";
 
     /**
-     * 财务审批角色缺失：财务审批族供应单或调价单 agree/reject 时当前用户无 {@code ROLE_FINANCE_APPROVER} 系统角色。
+     * 财务审批角色缺失：供应单或调价单 agree/reject 时，当前用户无 {@code ROLE_ACCOUNTANT}。
      */
     String FINANCE_APPROVAL_ROLE_REQUIRED = "FINANCE_APPROVAL_001";
 
@@ -1888,4 +1888,169 @@ public interface ErrorCodeConstants {
      * 处方点评错误码：不合理时原因必填。
      */
     String PRESCRIPTION_REVIEW_REASON_REQUIRED = "PRESCRIPTION_REVIEW_004";
+
+    /**
+     * 检查工单错误码：参数非法。
+     */
+    String PACS_WORK_ITEM_INVALID_ARGUMENT = "PACS_WORK_ITEM_001";
+    /**
+     * 检查工单错误码：资源不存在。
+     */
+    String PACS_WORK_ITEM_NOT_FOUND = "PACS_WORK_ITEM_002";
+    /**
+     * 检查工单错误码：状态不允许。
+     */
+    String PACS_WORK_ITEM_INVALID_STATUS = "PACS_WORK_ITEM_003";
+    /**
+     * 检查工单错误码：规则冲突（幂等冲突、缺检查号等）。
+     */
+    String PACS_WORK_ITEM_RULE_CONFLICT = "PACS_WORK_ITEM_004";
+    /**
+     * 检查工单错误码：模态能力未覆盖 activity。
+     */
+    String PACS_MODALITY_CAPABILITY_MISSING = "PACS_WORK_ITEM_005";
+
+    /**
+     * 检查报告错误码：参数非法。
+     */
+    String PACS_REPORT_INVALID_ARGUMENT = "PACS_REPORT_001";
+    /**
+     * 检查报告错误码：资源不存在。
+     */
+    String PACS_REPORT_NOT_FOUND = "PACS_REPORT_002";
+    /**
+     * 检查报告错误码：工单未完成不可写报告。
+     */
+    String PACS_REPORT_WORKITEM_NOT_COMPLETED = "PACS_REPORT_003";
+    /**
+     * 检查报告错误码：已 final 不可改。
+     */
+    String PACS_REPORT_ALREADY_FINAL = "PACS_REPORT_004";
+    /**
+     * 检查报告错误码：待审中不可改正文。
+     */
+    String PACS_REPORT_PENDING_AUDIT = "PACS_REPORT_005";
+    /**
+     * 检查报告错误码：状态不允许。
+     */
+    String PACS_REPORT_INVALID_STATUS = "PACS_REPORT_006";
+    /**
+     * 检查报告错误码：审核人与书写人相同。
+     */
+    String PACS_REPORT_AUDITOR_SAME_AS_AUTHOR = "PACS_REPORT_007";
+    /**
+     * 检查报告错误码：退回原因必填。
+     */
+    String PACS_REPORT_REJECT_REASON_REQUIRED = "PACS_REPORT_008";
+    /**
+     * 检查报告错误码：PDF 存储键不存在。
+     */
+    String PACS_REPORT_PDF_NOT_FOUND = "PACS_REPORT_009";
+
+    /** 取消审核原因不能为空。 */
+    String PACS_REPORT_CANCEL_REASON_REQUIRED = "PACS_REPORT_010";
+
+    /**
+     * 报告模板错误码：参数非法。
+     */
+    String PACS_REPORT_TEMPLATE_INVALID_ARGUMENT = "PACS_TEMPLATE_001";
+    /**
+     * 报告模板错误码：资源不存在或已删。
+     */
+    String PACS_REPORT_TEMPLATE_NOT_FOUND = "PACS_TEMPLATE_002";
+    /**
+     * 报告模板错误码：已停用不可套用。
+     */
+    String PACS_REPORT_TEMPLATE_DISABLED = "PACS_TEMPLATE_003";
+
+    /**
+     * 设备台账错误码：参数非法。
+     */
+    String PACS_DEVICE_INVALID_ARGUMENT = "PACS_DEVICE_001";
+    /**
+     * 设备台账错误码：资源不存在或已删。
+     */
+    String PACS_DEVICE_NOT_FOUND = "PACS_DEVICE_002";
+    /**
+     * 设备台账错误码：同租户设备编码冲突。
+     */
+    String PACS_DEVICE_CODE_DUPLICATE = "PACS_DEVICE_003";
+
+    /**
+     * 模态能力错误码：配置不存在。
+     */
+    String PACS_CAPABILITY_NOT_FOUND = "PACS_CAPABILITY_001";
+    /**
+     * 模态能力错误码：在途工单引用不可删。
+     */
+    String PACS_CAPABILITY_IN_USE = "PACS_CAPABILITY_002";
+
+    /**
+     * 影像索引错误码：Study 绑定冲突（同 UID/工单指向不同行）。
+     */
+    String PACS_IMAGING_STUDY_BIND_FAILED = "PACS_IMAGING_001";
+    /**
+     * 影像索引错误码：Study 不存在。
+     */
+    String PACS_IMAGING_STUDY_NOT_FOUND = "PACS_IMAGING_002";
+    /**
+     * 关键图错误码：contentType / sourceEnum 非法。
+     */
+    String PACS_KEY_IMAGE_TYPE_INVALID = "PACS_IMAGING_003";
+    /**
+     * 关键图错误码：索引不存在或不属于该工单。
+     */
+    String PACS_KEY_IMAGE_NOT_FOUND = "PACS_IMAGING_004";
+    /**
+     * 阅片端点错误码：baseUrl 非法。
+     */
+    String PACS_VIEWER_ENDPOINT_INVALID = "PACS_IMAGING_005";
+    /**
+     * 阅片端点错误码：配置不存在。
+     */
+    String PACS_VIEWER_ENDPOINT_NOT_FOUND = "PACS_IMAGING_006";
+    /**
+     * 关键图错误码：对象存储写入失败。
+     */
+    String PACS_KEY_IMAGE_STORE_FAILED = "PACS_IMAGING_007";
+
+    /**
+     * 集成日志错误码：分页非法、详情缺 id。
+     */
+    String PACS_INTEGRATION_LOG_INVALID_ARGUMENT = "PACS_LOG_001";
+    /**
+     * 集成日志错误码：详情不存在或已删。
+     */
+    String PACS_INTEGRATION_LOG_NOT_FOUND = "PACS_LOG_002";
+
+    /**
+     * 收费折扣配置错误码：参数非法（互斥行形态、表名、折扣率等，BR-CDC-001～003）。
+     */
+    String CHARGE_DISCOUNT_CONFIG_INVALID_ARGUMENT = "CHARGE_DISCOUNT_CONFIG_001";
+    /**
+     * 收费折扣配置错误码：资源不存在或已删。
+     */
+    String CHARGE_DISCOUNT_CONFIG_NOT_FOUND = "CHARGE_DISCOUNT_CONFIG_002";
+    /**
+     * 收费折扣配置错误码：状态不允许（启停目标非法等）。
+     */
+    String CHARGE_DISCOUNT_CONFIG_INVALID_STATUS = "CHARGE_DISCOUNT_CONFIG_003";
+    /**
+     * 收费折扣配置错误码：唯一键冲突（BR-CDC-004）。
+     */
+    String CHARGE_DISCOUNT_CONFIG_IDENTITY_CONFLICT = "CHARGE_DISCOUNT_CONFIG_004";
+    /**
+     * 收费折扣配置错误码：目录大类码或产品定义不存在（应用层 Gate，对齐 AS EX-CDC-005）。
+     */
+    String CHARGE_DISCOUNT_CONFIG_CATALOG_NOT_FOUND = "CHARGE_DISCOUNT_CONFIG_005";
+
+    /**
+     * 折扣能力未启用却提交折扣率 / 非纯自费打折 / 费率冲突 / 无命中却传率（EX-OPC-310 / EX-IP-STL 同源）。
+     */
+    String CHARGE_DISCOUNT_APPLY_RULE_CONFLICT = "CHARGE_DISCOUNT_APPLY_001";
+
+    /**
+     * 折扣落账入参非法（费率区间、空批等）。
+     */
+    String CHARGE_DISCOUNT_APPLY_INVALID_ARGUMENT = "CHARGE_DISCOUNT_APPLY_002";
 }

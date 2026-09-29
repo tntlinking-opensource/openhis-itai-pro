@@ -34,6 +34,8 @@ import com.openhis.health.infrastructure.integration.lis.LisAdviceApplyExtension
 import com.openhis.health.infrastructure.integration.pacs.PacsAdviceApplyExtension;
 import com.openhis.health.infrastructure.integration.emr.EmrAdmissionConditionExtension;
 import com.openhis.health.infrastructure.integration.emr.EmrDocumentExtension;
+import com.openhis.health.infrastructure.integration.emr.EmrDocumentArchiveWorkflowExtension;
+import com.openhis.health.infrastructure.integration.emr.EmrDocumentEditApplicationExtension;
 import com.openhis.health.infrastructure.integration.notification.StaffNotificationExtension;
 import com.openhis.health.infrastructure.integration.payment.ThirdPartyPaymentExtension;
 import com.openhis.health.infrastructure.integration.noop.booking.NoOpInpatientBedBookingConsumeExtension;
@@ -48,6 +50,8 @@ import com.openhis.health.infrastructure.integration.noop.lis.NoOpLisAdviceApply
 import com.openhis.health.infrastructure.integration.noop.pacs.NoOpPacsAdviceApplyExtension;
 import com.openhis.health.infrastructure.integration.noop.emr.NoOpEmrAdmissionConditionExtension;
 import com.openhis.health.infrastructure.integration.noop.emr.NoOpEmrDocumentExtension;
+import com.openhis.health.infrastructure.integration.noop.emr.NoOpEmrDocumentArchiveWorkflowExtension;
+import com.openhis.health.infrastructure.integration.noop.emr.NoOpEmrDocumentEditApplicationExtension;
 import com.openhis.health.infrastructure.integration.noop.notification.LoggingStaffNotificationExtension;
 import com.openhis.health.infrastructure.integration.noop.einvoice.NoOpBossElectronicInvoiceExtension;
 import com.openhis.health.infrastructure.integration.noop.insurance.dict.NoOpInsurancePlatformDictDisplayExtension;
@@ -352,6 +356,28 @@ public class IntegrationSpiAutoConfiguration {
     }
 
     /**
+     * EMR 文书归档三态工作流占位（EMR Module 覆盖实现）。
+     *
+     * @return 默认 isEnabled=false
+     */
+    @Bean
+    @ConditionalOnMissingBean(EmrDocumentArchiveWorkflowExtension.class)
+    EmrDocumentArchiveWorkflowExtension noOpEmrDocumentArchiveWorkflowExtension() {
+        return new NoOpEmrDocumentArchiveWorkflowExtension();
+    }
+
+    /**
+     * EMR 文书编辑申请占位（EMR Module 覆盖实现）。
+     *
+     * @return 默认 isEnabled=false
+     */
+    @Bean
+    @ConditionalOnMissingBean(EmrDocumentEditApplicationExtension.class)
+    EmrDocumentEditApplicationExtension noOpEmrDocumentEditApplicationExtension() {
+        return new NoOpEmrDocumentEditApplicationExtension();
+    }
+
+    /**
      * 病案首页上传 Extension 占位（chs-jilin 覆盖为 {@code MedcasHomepageUploadExtensionImpl}）。
      *
      * @return {@link MedcasHomepageUploadExtension} 默认实现，{@code isEnabled()=false}
@@ -407,7 +433,7 @@ public class IntegrationSpiAutoConfiguration {
     }
 
     /**
-     * PACS 检查申请 Extension 占位（PACS Module 覆盖为 {@code PacsAdviceApplyExtensionImpl}）。
+     * PACS 检查申请 Extension 占位（厂商/外院可选；国基建工单走 PacsOrderIngressOrchestrator 直调 Domain，不经本 Extension）。
      *
      * @return {@link PacsAdviceApplyExtension} 默认实现，{@code isEnabled()=false}
      */

@@ -618,6 +618,15 @@ CREATE TABLE IF NOT EXISTS mrms_homepage_procedure (
     anst_dr_name        VARCHAR(50),
     oper_dr_code        VARCHAR(32),
     anst_dr_code        VARCHAR(32),
+    asit_1_name         VARCHAR(50),
+    asit_2_name         VARCHAR(50),
+    nurse_name          VARCHAR(50),
+    oprn_time           TIMESTAMPTZ(6),
+    anst_start_time     TIMESTAMPTZ(6),
+    anst_end_time       TIMESTAMPTZ(6),
+    specimen            VARCHAR(500),
+    note                VARCHAR(500),
+    send_lab_flag       BOOLEAN,
     vali_flag           VARCHAR(3)   NOT NULL DEFAULT '1',
     created_at          TIMESTAMP    NOT NULL,
     updated_at          TIMESTAMP,
@@ -648,6 +657,24 @@ COMMENT ON COLUMN mrms_homepage_procedure.oper_dr_name IS '术者姓名（4401 o
 COMMENT ON COLUMN mrms_homepage_procedure.anst_dr_name IS '麻醉医师姓名（4401 anst_dr_name）';
 COMMENT ON COLUMN mrms_homepage_procedure.oper_dr_code IS '术者医保医师代码（4101A oper_dr_code）';
 COMMENT ON COLUMN mrms_homepage_procedure.anst_dr_code IS '麻醉医师医保医师代码（4101A anst_dr_code）';
+COMMENT ON COLUMN mrms_homepage_procedure.asit_1_name IS
+    '一助姓名（终改；4401 asit_1_name）';
+COMMENT ON COLUMN mrms_homepage_procedure.asit_2_name IS
+    '二助姓名（终改；4401 asit_name2）';
+COMMENT ON COLUMN mrms_homepage_procedure.nurse_name IS
+    '配合护士姓名（终改）';
+COMMENT ON COLUMN mrms_homepage_procedure.oprn_time IS
+    '手术时间（业务终改；非计费 occurrence_time；可推导 oprn_date）';
+COMMENT ON COLUMN mrms_homepage_procedure.anst_start_time IS
+    '麻醉开始时间（回显/终改）';
+COMMENT ON COLUMN mrms_homepage_procedure.anst_end_time IS
+    '麻醉结束时间（回显/终改）';
+COMMENT ON COLUMN mrms_homepage_procedure.specimen IS
+    '样本（回显执行；可终改；与备注分列）';
+COMMENT ON COLUMN mrms_homepage_procedure.note IS
+    '备注（回显执行；可终改；与样本分列）';
+COMMENT ON COLUMN mrms_homepage_procedure.send_lab_flag IS
+    '是否送检（回显/终改）';
 COMMENT ON COLUMN mrms_homepage_procedure.vali_flag IS '有效标志';
 COMMENT ON COLUMN mrms_homepage_procedure.created_at IS '创建时间';
 COMMENT ON COLUMN mrms_homepage_procedure.updated_at IS '最后更新时间';

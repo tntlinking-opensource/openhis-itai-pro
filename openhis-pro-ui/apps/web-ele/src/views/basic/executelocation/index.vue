@@ -964,6 +964,7 @@ onActivated(() => {
         class="flex w-64 min-w-[220px] shrink-0 flex-col border-r border-[var(--el-border-color-light)] pr-2"
       >
         <div class="mb-2 font-semibold text-[var(--el-text-color-primary)]">开立科室</div>
+        <div class="mb-2 text-xs text-[var(--el-text-color-secondary)]">仅门诊、住院</div>
         <div class="min-h-0 flex-1 overflow-auto" v-loading="treeLoading">
           <ElTree
             :data="orgTree"
@@ -1070,7 +1071,7 @@ onActivated(() => {
               v-model="row.executionOrgId"
               filterable
               clearable
-              placeholder="请选择执行科室"
+              placeholder="护士站或医技科室"
               class="cell-control"
             >
               <ElOption

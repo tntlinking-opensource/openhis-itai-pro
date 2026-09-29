@@ -28,8 +28,14 @@ import {
   ElTabs,
   ElTag,
 } from 'element-plus';
+import { z } from 'zod';
 
 import { useVbenForm } from '#/adapter/form';
+import {
+  birthDateFromAgeYears,
+  calcAgeFromBirthDate,
+  isAcceptableChineseIdCardInput,
+} from '#/utils/format/id-card-cn';
 import { httpGetConditionDefinitionMetadata } from '#/api/doctor-station/diagnosis.http';
 import {
   httpCancelInpatientRegistration,
@@ -611,6 +617,54 @@ function syncBirthAgeFromIdCard(raw: string) {
   void basicInfoFormApi.setFieldValue('age', ageToFormValue(registerForm.age));
 }
 
+/**
+ * 年龄变更：未填证件号时回写出生日期（年龄↔生日双向联动）。
+ */
+function handleAgeChange(val: null | number | undefined) {
+  void (async () => {
+    const values = await basicInfoFormApi.getValues<Record<string, unknown>>();
+    if (String(values.idCard ?? registerForm.idCard ?? '').trim()) {
+      return;
+    }
+    if (val === null || val === undefined || Number.isNaN(Number(val))) {
+      return;
+    }
+    const age = Number(val);
+    if (age < 0 || age > 150) {
+      return;
+    }
+    const birth = `${birthDateFromAgeYears(age)} 00:00:00`;
+    registerForm.age = age;
+    registerForm.birthDate = birth;
+    void basicInfoFormApi.setFieldValue('birthDate', birth);
+  })();
+}
+
+/**
+ * 出生日期变更：未填证件号时回写年龄（年龄↔生日双向联动）。
+ */
+function handleBirthDateChange(val: string) {
+  void (async () => {
+    const values = await basicInfoFormApi.getValues<Record<string, unknown>>();
+    if (String(values.idCard ?? registerForm.idCard ?? '').trim()) {
+      return;
+    }
+    const raw = String(val ?? '').trim();
+    if (!raw) {
+      return;
+    }
+    const ymd = raw.length >= 10 ? raw.slice(0, 10) : raw;
+    const ageText = calcAgeFromBirthDate(ymd);
+    if (!ageText) {
+      return;
+    }
+    const age = Number(ageText);
+    registerForm.birthDate = normalizeBirthDateForForm(raw);
+    registerForm.age = age;
+    void basicInfoFormApi.setFieldValue('age', ageToFormValue(age));
+  })();
+}
+
 const tableColumns: TableColumn[] = [
   { type: 'index', label: '序号', width: 60, align: 'center', headerAlign: 'center' },
   {
@@ -692,6 +746,13 @@ const [BasicInfoForm, basicInfoFormApi] = useVbenForm(
         label: '证件号码',
         required: true,
         componentProps: idCardFieldProps,
+        // 产品：填了则校 15/18 位格式；空串放行（无证建档 id_card 可空）
+        rules: z.preprocess(
+          (v) => (v === null || v === undefined ? '' : String(v)).trim(),
+          z.string().refine((val) => isAcceptableChineseIdCardInput(val), {
+            message: '请输入正确的身份证号格式（15位或18位）',
+          }),
+        ),
       },
       {
         component: 'DatePicker',
@@ -702,6 +763,7 @@ const [BasicInfoForm, basicInfoFormApi] = useVbenForm(
           type: 'date',
           valueFormat: 'YYYY-MM-DD HH:mm:ss',
           placeholder: '请选择出生日期',
+          onChange: handleBirthDateChange,
         },
       },
       {
@@ -714,6 +776,7 @@ const [BasicInfoForm, basicInfoFormApi] = useVbenForm(
           max: 150,
           controls: false,
           placeholder: '请输入年龄',
+          onChange: handleAgeChange,
         },
       },
       {
@@ -1372,13 +1435,24 @@ async function setDialogFormsDisabled(disabled: boolean) {
       fieldName: 'birthDate',
       componentProps: disabled
         ? { disabled: true, type: 'date', valueFormat: 'YYYY-MM-DD HH:mm:ss' }
-        : { type: 'date', valueFormat: 'YYYY-MM-DD HH:mm:ss', placeholder: '请选择出生日期' },
+        : {
+            type: 'date',
+            valueFormat: 'YYYY-MM-DD HH:mm:ss',
+            placeholder: '请选择出生日期',
+            onChange: handleBirthDateChange,
+          },
     },
     {
       fieldName: 'age',
       componentProps: disabled
         ? { disabled: true, min: 0, max: 150, controls: false }
-        : { min: 0, max: 150, controls: false, placeholder: '请输入年龄' },
+        : {
+            min: 0,
+            max: 150,
+            controls: false,
+            placeholder: '请输入年龄',
+            onChange: handleAgeChange,
+          },
     },
     {
       fieldName: 'genderEnum',

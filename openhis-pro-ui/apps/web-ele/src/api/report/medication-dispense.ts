@@ -38,6 +38,8 @@ export interface LoadMedicationDispenseReportPageInitResponse {
   feeNatureOptions?: ApiOptionItem[];
   /** 开立/领用科室下拉 */
   organizationOptions?: ApiOptionItem[];
+  /** 药品性质下拉（麻醉/精一/精二） */
+  medicinePropertyOptions?: ApiOptionItem[];
 }
 
 export interface MedicationDispenseReportFilter {
@@ -53,6 +55,8 @@ export interface MedicationDispenseReportFilter {
   feeNatureContractNo?: string;
   /** 患者侧=开立科室；领用侧=领用科室 */
   organizationId?: string;
+  /** 药品性质 KeyDrugType：NARCOTIC/PSYCH_ONE/PSYCH_TWO */
+  keyDrugType?: string;
 }
 
 export interface SummarizeMedicationDispenseReportParams extends MedicationDispenseReportFilter {

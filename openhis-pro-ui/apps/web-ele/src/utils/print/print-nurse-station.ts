@@ -17,6 +17,8 @@ import {
   resolveInfusionLabelPrintTimesPerDay,
 } from './mappers/outpatient-infusion-label';
 import { resolveNursePrescriptionPrintTargets } from './nurse-prescription-print';
+import { resolveSpecimenBarcodeLabelCount } from './nurse-station-print-targets';
+import { resolveSpecimenBarcodeUrgencyText } from './constants/service-request-priority';
 import { print, PRINT_SCENARIO } from './runtime';
 import { resolveOutpatientPrescriptionPrintScenario } from './resolve-outpatient-prescription-scenario';
 
@@ -172,6 +174,10 @@ export interface PrintSpecimenBarcodeItem {
   serviceRequestId: string;
   /** 检验项目名称 */
   itemName?: string;
+  /** 开立数量对应贴数（如「2次」→ 2）；缺省 1 */
+  labelCount?: number;
+  /** 医嘱优先级 code（EM=急） */
+  priorityEnum?: string;
 }
 
 export interface PrintSpecimenBarcodeOptions {
@@ -181,14 +187,14 @@ export interface PrintSpecimenBarcodeOptions {
   ageText?: string;
   /** 住院采血贴床号；门诊可空 */
   bedNo?: string;
-  /** 检验项目列表，每张贴一个条码 */
+  /** 检验项目列表，每张贴一个条码；同条可按 labelCount 打多份 */
   items: PrintSpecimenBarcodeItem[];
   jobName?: string;
   /** 默认门诊采血贴；住院护士站请传 PRINT_SCENARIO.ipSpecimenBarcodePrint */
   scenarioCode?: string;
 }
 
-/** 护士站采血贴：按检验项目主键逐张打印（含患者信息与项目名） */
+/** 护士站采血贴：按检验项目主键逐张打印；开立数量 N 打 N 份 */
 export async function printSpecimenBarcode(options: PrintSpecimenBarcodeOptions) {
   const encounterId = strId(options.encounterId);
   if (!encounterId) {
@@ -208,6 +214,8 @@ export async function printSpecimenBarcode(options: PrintSpecimenBarcodeOptions)
     items.push({
       serviceRequestId,
       itemName: strId(raw.itemName),
+      labelCount: resolveSpecimenBarcodeLabelCount(raw.labelCount),
+      priorityEnum: strId(raw.priorityEnum) || undefined,
     });
   }
   if (!items.length) {
@@ -225,6 +233,7 @@ export async function printSpecimenBarcode(options: PrintSpecimenBarcodeOptions)
   let printedCount = 0;
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index]!;
+    const labelCount = resolveSpecimenBarcodeLabelCount(item.labelCount);
     const suffix = items.length > 1 ? ` (${index + 1}/${items.length})` : '';
     const result = await print({
       scenarioCode,
@@ -235,7 +244,10 @@ export async function printSpecimenBarcode(options: PrintSpecimenBarcodeOptions)
         ageText,
         itemName: item.itemName,
         serviceRequestId: item.serviceRequestId,
+        priorityEnum: item.priorityEnum,
+        urgencyText: resolveSpecimenBarcodeUrgencyText(item.priorityEnum),
       },
+      copies: labelCount,
       bizRef: {
         scenarioCode,
         encounterId,
@@ -245,14 +257,15 @@ export async function printSpecimenBarcode(options: PrintSpecimenBarcodeOptions)
       jobName: `${options.jobName ?? '采血贴'}${suffix}`,
     });
     if (result.ok) {
-      printedCount += 1;
+      printedCount += labelCount;
     }
   }
 
   if (printedCount <= 0) {
     return { ok: false as const, count: 0 };
   }
-  if (printedCount > 1) {
+  // 多条检验一次打完时汇总提示；单条（含按数量多份）由调用方提示，避免双 toast
+  if (items.length > 1) {
     ElMessage.success(`已发送 ${printedCount} 张采血贴`);
   }
   return { ok: true as const, count: printedCount };

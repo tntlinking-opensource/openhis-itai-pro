@@ -10,20 +10,31 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 /**
  * 发药/退药/库存断言：把开方或发放行上的<strong>业务单位数量</strong>换成库存账面的<strong>拆零数量</strong>。
  *
- * <p>{@code wkf_inventory_item.quantity} 只存拆零。开方单位无论是盒、片还是克，都必须先换成拆零再扣加库存；
- * 换算 = 业务数量 × 该单位相对拆零倍数。拆零单位本身倍数为 1，结果仍是「转换后的拆零量」，不是跳过转换。</p>
+ * <p>{@code wkf_inventory_item.quantity} 只存拆零。开方单位无论是盒、片还是克，都必须先换成拆零再扣加库存。</p>
  *
- * <p>倍数只取目录五类（拆零 / 剂量 / 采购 / 库存 / 包装）。追溯码倍数表示「一码对应多少拆零」，
- * 只用于扫码个数；同码「盒」禁止用贴码倍数覆盖五类。仅当操作单位码不在五类中（游离贴码单位）才回落
- * {@code traceUnitRatio}。</p>
+ * <p><strong>采购/库存/包装/拆零</strong>：换算 = 业务数量 × 该单位相对拆零倍数；拆零单位倍数为 1。</p>
+ *
+ * <p><strong>剂量（计量）单位</strong>：目录 {@code dose_unit_ratio} 表示「1 拆零对应多少计量」
+ * （与医生站开立双单位、{@code MedicationDosageDisplayAssembler} 同源），故
+ * 拆零量 = 计量数量 ÷ {@code dose_unit_ratio}。业务单位码等于剂量单位码时走本口径，
+ * 禁止按包装倍数语义误乘。住院首日用量落库为最小单位后通常不经本分支。</p>
+ *
+ * <p>追溯码倍数表示「一码对应多少拆零」，只用于扫码个数；同码「盒」禁止用贴码倍数覆盖五类。
+ * 仅当操作单位码不在五类中（游离贴码单位）才回落 {@code traceUnitRatio}。</p>
  *
  * <p>发药、退药、住院执行预占、医生站占用均走本入口；库房供应行 {@code item_quantity} 已是拆零，禁止再调本器。</p>
  */
 public final class MedicationProductQuantityToSplitUnitConverter {
+
+    /**
+     * 剂量→拆零除法小数位：与库存断言比较对齐，避免短小数截断导致假不足。
+     */
+    private static final int DOSE_TO_SPLIT_SCALE = 10;
 
     /**
      * 禁止实例化：仅静态换算入口。
@@ -57,14 +68,21 @@ public final class MedicationProductQuantityToSplitUnitConverter {
         if (StringUtils.isEmpty(businessUnitCode)) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "发放单位编码为空，无法换算库存最小单位数量");
         }
-        BigDecimal ratio = resolveRatioToSplit(product, businessUnitCode.trim());
+        String unitCode = businessUnitCode.trim();
+        // 剂量（计量）单位：拆零量 = 计量数量 ÷ dose_unit_ratio（禁止走下方「×倍数」）
+        if (StringUtils.isNotEmpty(product.getDoseUnitCode())
+            && unitCode.equals(product.getDoseUnitCode().trim())) {
+            BigDecimal dosePerSplit = requirePositiveRatio(product.getDoseUnitRatio(), "剂量单位");
+            return quantity.divide(dosePerSplit, DOSE_TO_SPLIT_SCALE, RoundingMode.HALF_UP);
+        }
+        BigDecimal ratio = resolveRatioToSplit(product, unitCode);
         return quantity.multiply(ratio);
     }
 
     /**
-     * 解析开方单位相对拆零的倍数。
+     * 解析开方单位相对拆零的倍数（采购/库存/包装/拆零；剂量单位不在此方法，见主入口除法分支）。
      *
-     * <p>顺序：拆零（1）→ 剂量 → 采购 → 库存 → 包装。同一码（如盒）同时出现在采购/库存/包装时，
+     * <p>顺序：拆零（1）→ 采购 → 库存 → 包装。同一码（如盒）同时出现在采购/库存/包装时，
      * 用五类里先命中的倍数（目录维护一致时应相同）。五类都对不上时，才允许游离追溯码单位（与盒/片不同码）回落。</p>
      *
      * @param product  目录单位源
@@ -78,13 +96,6 @@ public final class MedicationProductQuantityToSplitUnitConverter {
             // 命中拆零码：10 片 → 10 片账面
             if (unitCode.equals(product.getSplitUnitCode().trim())) {
                 return BigDecimal.ONE;
-            }
-        }
-        // 剂量单位：× 剂量相对拆零倍数
-        if (StringUtils.isNotEmpty(product.getDoseUnitCode())) {
-            // 命中剂量码
-            if (unitCode.equals(product.getDoseUnitCode().trim())) {
-                return requirePositiveRatio(product.getDoseUnitRatio(), "剂量单位");
             }
         }
         // 采购单位：× 采购相对拆零倍数（盒常落在此槽，禁止被贴码倍数 1 抢匹配）

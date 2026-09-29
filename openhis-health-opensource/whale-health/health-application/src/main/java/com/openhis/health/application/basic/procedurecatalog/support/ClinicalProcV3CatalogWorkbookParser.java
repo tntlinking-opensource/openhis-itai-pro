@@ -90,7 +90,13 @@ public class ClinicalProcV3CatalogWorkbookParser {
                 }
                 String mainCode = trimToNull(cellText(row.getCell(mainCodeCol)));
                 String addCode = trimToNull(cellText(row.getCell(addCodeCol)));
-                String code = mainCode != null ? mainCode : addCode;
+                // 主码优先；主码空时回落附加码
+                String code;
+                if (mainCode != null) {
+                    code = mainCode;
+                } else {
+                    code = addCode;
+                }
                 String name = trimToNull(cellText(row.getCell(nameCol)));
                 if (code == null && name == null) {
                     emptyStreak++;

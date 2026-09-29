@@ -175,9 +175,30 @@ public final class InsuranceSettlementCashAlignSupport {
             if (line == null) {
                 continue;
             }
+            // DISCOUNT / DEPOSIT_OFFSET 为旁证或冲抵，不进「真收款渠道=收费项」勾稽分子（方案甲）
+            if (isNonRealPaymentChannel(line.getPayEnum())) {
+                continue;
+            }
             total = total.add(nullToZero(line.getAmount()));
         }
         return MonetaryAmountSupport.scaleSettle(total);
+    }
+
+    /**
+     * 是否为非真收款渠道（折扣旁证 / 预交金冲抵），勾稽与自付合计须排除。
+     *
+     * @param payEnum 渠道 code
+     * @return 排除为 true
+     */
+    private static boolean isNonRealPaymentChannel(String payEnum) {
+        if (StringUtils.isEmpty(payEnum)) {
+            return false;
+        }
+        String code = payEnum.trim();
+        if (PaymentChannel.DISCOUNT.getCode().equals(code)) {
+            return true;
+        }
+        return PaymentChannel.DEPOSIT_OFFSET.getCode().equals(code);
     }
 
     /**
@@ -193,6 +214,10 @@ public final class InsuranceSettlementCashAlignSupport {
         }
         for (PaymentDetailItemCommand line : allLines) {
             if (line == null || isInsuranceChannel(line.getPayEnum())) {
+                continue;
+            }
+            // 折扣旁证/预交金冲抵不计入自付渠道合计
+            if (isNonRealPaymentChannel(line.getPayEnum())) {
                 continue;
             }
             total = total.add(nullToZero(line.getAmount()));

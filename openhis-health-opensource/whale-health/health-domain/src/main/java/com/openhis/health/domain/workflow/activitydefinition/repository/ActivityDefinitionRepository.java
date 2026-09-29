@@ -59,6 +59,14 @@ public interface ActivityDefinitionRepository extends JpaRepository<ActivityDefi
     Optional<ActivityDefinition> findByBusNo(String busNo);
 
     /**
+     * 未软删范围内是否已存在该精确名称（产品内置名唯一性门禁）。
+     *
+     * @param name 项目名称
+     * @return 已存在则为 true
+     */
+    boolean existsByNameAndIsDeletedFalse(String name);
+
+    /**
      * 查询所有未删除记录（导出等场景）。
      *
      * <p>注意：返回集合可能较大，调用方需评估规模风险。</p>

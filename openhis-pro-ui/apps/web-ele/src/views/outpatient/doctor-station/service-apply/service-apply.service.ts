@@ -19,6 +19,7 @@ import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.ty
 
 import {
   httpInitDoctorStationAdvice,
+  httpListActivityExecutionLocations,
   httpListDoctorStationAdvice,
   httpPageDoctorStationAdviceCatalog,
   httpSaveDoctorStationServiceApplyForm,
@@ -26,6 +27,7 @@ import {
 } from '#/api/doctor-station/advice.http';
 import {
   httpListInpatientDoctorStationAdvice,
+  httpSaveInpatientDoctorStationServiceApplyForm,
   httpSignInpatientDoctorStationAdviceBatch,
 } from '#/api/inpatient/doctor-station/inpatient-doctor-station-advice.http';
 import type {
@@ -59,7 +61,7 @@ import {
   convertInboundQtyBetweenBandKinds,
   normalizeInboundProductUnitBands,
 } from '#/utils/inventory/inbound-product-unit-bands';
-import { loadAllDepartmentPerformOrgOptions } from '#/views/doctor-station/advice-shared/perform-org-options.service';
+import { unionPerformOrgOptions } from '#/views/doctor-station/advice-shared/perform-org-options.service';
 
 import type { PrepickedProductKeyDto } from '#/api/doctor-station/advice.types';
 import { httpPageInpatientDoctorStationAdviceCatalog } from '#/api/inpatient/doctor-station/inpatient-doctor-station-advice.http';
@@ -67,10 +69,12 @@ import { fetchAdviceCatalogRowsByPrepickedKeys } from '../advice/services/advice
 import { mapCatalogRowToOption } from '../advice/services/advice-list';
 import type { AdviceProductOption } from '../advice/services/advice.types';
 import {
+  ACTIVITY_DEFINITION_TABLE,
   ADVICE_PRICING_SOURCE_CODE,
   DEVICE_DEFINITION_TABLE,
 } from '../advice/services/advice-tab.constants';
 
+import { inferServiceApplyKindFromAdviceRow } from './service-apply-doc-groups';
 import {
   isServiceApplyDetailRequired,
   SERVICE_APPLY_ACTIVITY_TABLE,
@@ -95,6 +99,7 @@ import {
 } from '../advice/services/advice-draft-bind.service';
 import type { AdviceDraftBindDialogRow } from '../advice/services/advice-draft-bind.types';
 import {
+  isAdviceRowBoundActivityFromService,
   isAdviceRowBoundConsumableFromService,
   resourceKeyFromRow,
 } from '../advice/services/advice-row';
@@ -400,13 +405,23 @@ export async function loadServiceApplyCatalog(params: {
   return { rows, totalCount };
 }
 
-/** 申请单执行科室为整单全局字段，下拉始终全院科室（不按单项目规则收窄） */
-export async function loadServiceApplyOrgOptions(_params?: {
+/** 申请单执行科室：有规则用规则，没规则由接口回落开立科室。 */
+export async function loadServiceApplyOrgOptions(params?: {
   activityDefinitionId: string;
   encounterId: string;
   patientId: string;
 }): Promise<ServiceApplyOrgOption[]> {
-  return loadAllDepartmentPerformOrgOptions();
+  const activityDefinitionId = String(params?.activityDefinitionId ?? '').trim();
+  const encounterId = String(params?.encounterId ?? '').trim();
+  const patientId = String(params?.patientId ?? '').trim();
+  if (!activityDefinitionId || !encounterId || !patientId) {
+    return [];
+  }
+  return mergeServiceApplyOrgOptions({
+    activityDefinitionIds: [activityDefinitionId],
+    encounterId,
+    patientId,
+  });
 }
 
 /**
@@ -452,13 +467,47 @@ export function pickCatalogDefaultPerformOrgId(
   return '';
 }
 
-/** 整单执行科室下拉：全局选一个，清单内全部项目共用该科室 */
-export async function mergeServiceApplyOrgOptions(_params?: {
+/** 整单执行科室：各项目规则并行取并集；都没配时接口回落开立科室。 */
+export async function mergeServiceApplyOrgOptions(params?: {
   activityDefinitionIds: string[];
   encounterId: string;
   patientId: string;
 }): Promise<ServiceApplyOrgOption[]> {
-  return loadAllDepartmentPerformOrgOptions();
+  const encounterId = String(params?.encounterId ?? '').trim();
+  const patientId = String(params?.patientId ?? '').trim();
+  const activityDefinitionIds = params?.activityDefinitionIds ?? [];
+  if (!encounterId || !patientId || activityDefinitionIds.length === 0) {
+    return [];
+  }
+  const uniqueIds = [
+    ...new Set(
+      activityDefinitionIds
+        .map((rawId) => String(rawId ?? '').trim())
+        .filter((id) => id.length > 0),
+    ),
+  ];
+  // 并行拉各项目规则，避免整单多项目时串行 N 次
+  const responses = await Promise.all(
+    uniqueIds.map((activityDefinitionId) =>
+      httpListActivityExecutionLocations({
+        encounterId,
+        patientId,
+        activityDefinitionId,
+      }),
+    ),
+  );
+  return unionPerformOrgOptions(responses.map((res) => res.rules));
+}
+
+/** 解析行级执行次数：非法时回落 1（与保存口径一致） */
+export function resolveServiceApplyLineExecutionCount(
+  executionCount: number | undefined | null,
+): number {
+  const raw = Number(executionCount);
+  if (Number.isFinite(raw) && raw > 0) {
+    return Math.trunc(raw);
+  }
+  return 1;
 }
 
 /** 校验已选行是否满足保存前置条件（检验样本/治疗部位可选，BR-REQ-005） */
@@ -467,14 +516,10 @@ export function validateServiceApplySelectedItems(
   orgId: string,
   encounterDiagnosisIds: string[],
   applyKind: ServiceApplyKind,
-  options?: { executionCount?: number; requireDiagnosis?: boolean },
+  options?: { requireDiagnosis?: boolean },
 ): null | string {
   if (items.length === 0) return '请先选择申请项目';
   if (!String(orgId ?? '').trim()) return '请选择执行科室';
-  const executionCount = Number(options?.executionCount ?? 0);
-  if (!Number.isFinite(executionCount) || executionCount <= 0) {
-    return '执行次数须大于 0';
-  }
   // 住院申请单不展示诊断，跳过必填；门诊仍须选诊断
   const requireDiagnosis = options?.requireDiagnosis !== false;
   if (requireDiagnosis && parseEncounterDiagnosisIds(encounterDiagnosisIds).length === 0) {
@@ -487,6 +532,9 @@ export function validateServiceApplySelectedItems(
     if (!String(item.unitCode ?? '').trim())
       return `「${item.activityName}」缺少单位，请移除后重选`;
     if (Number(item.quantity) <= 0) return `「${item.activityName}」单次执行数量须大于 0`;
+    if (resolveServiceApplyLineExecutionCount(item.executionCount) <= 0) {
+      return `「${item.activityName}」执行次数须大于 0`;
+    }
     if (detailRequired && (item.detailItems ?? []).length === 0) {
       return `「${item.activityName}」须选择${detailLabel}明细`;
     }
@@ -500,8 +548,6 @@ export function buildSaveServiceApplyFormRequest(params: {
   encounterDiagnosisIds: string[];
   encounterDiagnosisRows: EncounterDiagnosisRowDto[];
   encounterId: string;
-  /** 整单执行次数（各明细行共用） */
-  executionCount: number;
   items: ServiceApplySelectedItem[];
   orgId: string;
   patientId: string;
@@ -511,10 +557,6 @@ export function buildSaveServiceApplyFormRequest(params: {
     params.encounterDiagnosisIds,
     params.encounterDiagnosisRows,
   );
-  const executionCountRaw = Number(params.executionCount);
-  // 整单执行次数：非法时回落 1，与行级单次量相乘得账单 quantity
-  const executionCount =
-    Number.isFinite(executionCountRaw) && executionCountRaw > 0 ? Math.trunc(executionCountRaw) : 1;
   const lines = params.items.map((item) => {
     // 检验/治疗可无明细：空明细不传 detailItems
     const detailItems = (item.detailItems ?? [])
@@ -524,14 +566,17 @@ export function buildSaveServiceApplyFormRequest(params: {
         remark: String(detail.remark ?? '').trim() || undefined,
       }))
       .filter((detail) => String(detail.targetId ?? '').trim());
-    // 行 quantity 为单次执行数量；落库账单 quantity = 单次 × 整单执行次数
-    const billingQty = resolveServiceBillingQuantity(item.quantity, executionCount);
+    // 行级：账单 quantity = 单次执行数量 × 本行执行次数
+    const lineExecutionCount = resolveServiceApplyLineExecutionCount(item.executionCount);
+    const billingQty = resolveServiceBillingQuantity(item.quantity, lineExecutionCount);
     return {
       activityDefinitionId:
         preserveApiIdForRequest(item.activityDefinitionId) ?? item.activityDefinitionId,
       quantity: billingQty ?? item.quantity,
       unitCode: item.unitCode,
+      executionCount: lineExecutionCount,
       remark: String(item.remark ?? '').trim() || undefined,
+      priorityEnum: String(item.priorityEnum ?? '').trim() || '',
       ...(detailItems.length > 0 ? { detailItems } : {}),
     };
   });
@@ -540,7 +585,6 @@ export function buildSaveServiceApplyFormRequest(params: {
     patientId: params.patientId,
     categoryEnum: resolveServiceApplyCategoryEnum(params.applyKind),
     orgId: preserveApiIdForRequest(params.orgId) ?? params.orgId,
-    executionCount,
     ...(encounterDiagnosisIds ? { encounterDiagnosisIds } : {}),
     previousPrescriptionNo: params.previousPrescriptionNo?.trim() || undefined,
     lines,
@@ -558,6 +602,101 @@ export async function saveServiceApplyForm(
     throw new Error('保存成功但未返回申请单号或医嘱标识');
   }
   return { prescriptionNo, requestIds };
+}
+
+/** 复制源：整张申请单的诊疗行（不含绑定耗材子行） */
+export interface CopyServiceApplyFormSource {
+  lines: readonly AdviceRowItem[];
+  boundConsumablesByRequestId?: ReadonlyMap<string, AdviceRowItem[]>;
+}
+
+/** 按门诊/住院保存申请单，不替换旧单号（复制专用） */
+async function saveCopiedServiceApplyForm(
+  stationScope: 'inpatient' | 'outpatient',
+  request: SaveDoctorStationServiceApplyFormRequest,
+): Promise<{ prescriptionNo: string; requestIds: string[] }> {
+  if (stationScope === 'inpatient') {
+    const res = await httpSaveInpatientDoctorStationServiceApplyForm(request);
+    const prescriptionNo = String(res.prescriptionNo ?? '').trim();
+    const requestIds = (res.requestIds ?? []).map((id) => String(id ?? '').trim()).filter(Boolean);
+    if (!prescriptionNo || requestIds.length === 0) {
+      throw new Error('保存成功但未返回申请单号或医嘱标识');
+    }
+    return { prescriptionNo, requestIds };
+  }
+  return saveServiceApplyForm(request);
+}
+
+/**
+ * 将勾选申请单按新草稿整张落库（不带旧单号）。
+ * 门诊须沿用源单诊断；绑定耗材按源单数量重落，签发时不再二次解析。
+ */
+export async function copyServiceApplyFormsAsNewDraft(params: {
+  encounterId: string;
+  patientId: string;
+  stationScope: 'inpatient' | 'outpatient';
+  forms: readonly CopyServiceApplyFormSource[];
+}): Promise<number> {
+  const encounterId = params.encounterId.trim();
+  const patientId = params.patientId.trim();
+  if (!encounterId || !patientId) {
+    throw new Error('缺少就诊或患者信息，无法复制申请单');
+  }
+  if (params.forms.length === 0) {
+    throw new Error('未选择可复制的申请单');
+  }
+  const requireDiagnosis = params.stationScope !== 'inpatient';
+  let copiedCount = 0;
+  for (const form of params.forms) {
+    const lines = form.lines.filter((line) => String(line.productDefinitionId ?? '').trim());
+    if (lines.length === 0) {
+      throw new Error('申请单缺少项目，无法复制');
+    }
+    let applyKind: ServiceApplyKind | null = null;
+    for (const line of lines) {
+      applyKind = inferServiceApplyKindFromAdviceRow(line);
+      if (applyKind) {
+        break;
+      }
+    }
+    if (!applyKind) {
+      throw new Error('无法识别申请单类型，无法复制');
+    }
+    const orgId = String(lines[0]?.performOrgId ?? '').trim();
+    const diagnosisIds = requireDiagnosis
+      ? parseEncounterDiagnosisIds(lines[0]?.encounterDiagnosisIds)
+      : [];
+    const items = buildServiceApplySelectedItemsFromAdviceRows(
+      lines,
+      applyKind,
+      form.boundConsumablesByRequestId,
+    );
+    const invalid = validateServiceApplySelectedItems(items, orgId, diagnosisIds, applyKind, {
+      requireDiagnosis,
+    });
+    if (invalid) {
+      throw new Error(invalid);
+    }
+    const request = buildSaveServiceApplyFormRequest({
+      encounterId,
+      patientId,
+      applyKind,
+      orgId,
+      encounterDiagnosisIds: diagnosisIds,
+      encounterDiagnosisRows: [],
+      items,
+    });
+    const saved = await saveCopiedServiceApplyForm(params.stationScope, request);
+    await persistServiceApplyDraftBindsAfterSign({
+      encounterId,
+      patientId,
+      items,
+      requestIds: saved.requestIds,
+      stationScope: params.stationScope,
+    });
+    copiedCount += 1;
+  }
+  return copiedCount;
 }
 
 /** 解析列表行金额文案为元数字 */
@@ -606,7 +745,7 @@ export function buildServiceApplySelectedItemsFromAdviceRows(
   lines: readonly AdviceRowItem[],
   applyKind: ServiceApplyKind,
   boundConsumablesByRequestId?: ReadonlyMap<string, AdviceRowItem[]>,
-  /** 整单执行次数；用于把落库总量拆回单次执行数量 */
+  /** @deprecated 行级已用 listExecutionCount；保留参数仅兼容旧调用 */
   formExecutionCount?: number,
 ): ServiceApplySelectedItem[] {
   const execFallback =
@@ -619,7 +758,7 @@ export function buildServiceApplySelectedItemsFromAdviceRows(
     .map((line) => {
       const activityDefinitionId = String(line.productDefinitionId ?? '').trim();
       const activityName = String(line.content ?? '').trim();
-      // 落库 listQuantity 为计费总量；卡内回填单次执行数量
+      // 落库 listQuantity 为计费总量；卡内回填单次执行数量与本行执行次数
       const totalQtyRaw = line.listQuantity ?? 1;
       const totalQty = totalQtyRaw > 0 ? totalQtyRaw : 1;
       const execCount =
@@ -645,10 +784,12 @@ export function buildServiceApplySelectedItemsFromAdviceRows(
         activityDefinitionId,
         activityName,
         quantity: perQty,
+        executionCount: execCount,
         unitCode: String(line.listUnitCode ?? '').trim(),
         unitPrice,
         chrgitmLvText: String(line.chrgitmLvText ?? '').trim() || undefined,
         remark: String(line.remark ?? '').trim() || undefined,
+        priorityEnum: String(line.priorityEnum ?? '').trim() || undefined,
         detailItems: mapServiceRequestDetailsToDetailItems(line.serviceRequestDetails, applyKind),
         boundConsumables,
         boundConsumablesLoaded: boundRows.length > 0,
@@ -657,7 +798,7 @@ export function buildServiceApplySelectedItemsFromAdviceRows(
     .filter((item) => item.activityDefinitionId && item.activityName);
 }
 
-/** 从申请单行解析整单执行次数（各行应一致，取首个有效值） */
+/** 从申请单行解析执行次数回落值（取首个有效行；兼容旧「整单共用」口径） */
 export function resolveServiceApplyFormExecutionCount(lines: readonly AdviceRowItem[]): number {
   for (const line of lines) {
     const count = line.listExecutionCount;
@@ -777,7 +918,36 @@ export function resolveBoundConsumableSignTargetsForServiceRequestIds(
   return targets;
 }
 
-/** 申请单诊疗 + 绑定耗材合并签发目标（去重） */
+/** 诊疗 requestId → 合管采血费等绑定诊疗签发目标 */
+export function resolveBoundActivitySignTargetsForServiceRequestIds(
+  serviceRequestIds: readonly string[],
+  allRows: readonly AdviceRowItem[],
+): DoctorStationAdviceResourceKeyDto[] {
+  const serviceIdSet = new Set(
+    serviceRequestIds.map((id) => normalizeServiceRequestIdForBind(id)).filter(Boolean),
+  );
+  if (serviceIdSet.size === 0) {
+    return [];
+  }
+  const targets: DoctorStationAdviceResourceKeyDto[] = [];
+  // 仅锚定在本批申请单诊疗下的派生诊疗（采血费）
+  for (const row of allRows) {
+    if (!isAdviceRowBoundActivityFromService(row)) {
+      continue;
+    }
+    const anchorId = normalizeServiceRequestIdForBind(row.basedOnServiceRequestId);
+    if (!anchorId || !serviceIdSet.has(anchorId)) {
+      continue;
+    }
+    const key = resourceKeyFromRow(row);
+    if (key) {
+      targets.push(key);
+    }
+  }
+  return targets;
+}
+
+/** 申请单诊疗 + 绑定耗材/采血费合并签发目标（去重） */
 export function buildServiceApplySignTargetsWithBinds(
   serviceRequestIds: readonly string[],
   allRows: readonly AdviceRowItem[],
@@ -810,6 +980,13 @@ export function buildServiceApplySignTargetsWithBinds(
   )) {
     addTarget(target);
   }
+  // 合管采血费等诊疗派生须与检验一并签发，否则草稿滞留且不进收费
+  for (const target of resolveBoundActivitySignTargetsForServiceRequestIds(
+    serviceRequestIds,
+    allRows,
+  )) {
+    addTarget(target);
+  }
   return [...dedupe.values()];
 }
 
@@ -824,7 +1001,7 @@ export function expandServiceApplyResourceTargetsWithBinds(
   return buildServiceApplySignTargetsWithBinds(serviceRequestIds, allRows);
 }
 
-/** 申请单诊疗行关联绑定耗材 DELETE 行 */
+/** 申请单诊疗行关联绑定耗材/采血费 DELETE 行 */
 export function buildServiceApplyBoundConsumableDeleteLines(
   serviceRows: readonly AdviceRowItem[],
   allRows: readonly AdviceRowItem[],
@@ -832,13 +1009,19 @@ export function buildServiceApplyBoundConsumableDeleteLines(
   const serviceRequestIds = serviceRows
     .map((row) => normalizeServiceRequestIdForBind(row.requestId))
     .filter(Boolean);
-  return resolveBoundConsumableSignTargetsForServiceRequestIds(serviceRequestIds, allRows).map(
-    (target) => ({
-      lineOp: 'DELETE',
-      requestId: target.requestId,
-      productTableName: target.productTableName,
-    }),
+  const deviceTargets = resolveBoundConsumableSignTargetsForServiceRequestIds(
+    serviceRequestIds,
+    allRows,
   );
+  const activityTargets = resolveBoundActivitySignTargetsForServiceRequestIds(
+    serviceRequestIds,
+    allRows,
+  );
+  return [...deviceTargets, ...activityTargets].map((target) => ({
+    lineOp: 'DELETE',
+    requestId: target.requestId,
+    productTableName: target.productTableName,
+  }));
 }
 
 async function signDoctorStationAdviceBatchTargets(params: {
@@ -884,9 +1067,11 @@ function buildServiceApplyBindPreviewLine(
   };
 }
 
-/** 弹窗行 → 申请单卡内耗材展示行 */
+/** 弹窗行 → 申请单卡内带出行（耗材可改量；合管采血费只读） */
 function mapDialogRowToBoundConsumable(row: AdviceDraftBindDialogRow): ServiceApplyBoundConsumable {
   const targetItemId = String(row.bindItem.targetItemId ?? '').trim();
+  const targetProductTableName = String(row.bindItem.targetProductTableName ?? '').trim();
+  const isActivity = targetProductTableName === ACTIVITY_DEFINITION_TABLE;
   return {
     key: String(row.key ?? targetItemId).trim() || targetItemId,
     targetItemId,
@@ -894,10 +1079,13 @@ function mapDialogRowToBoundConsumable(row: AdviceDraftBindDialogRow): ServiceAp
     quantity: row.quantity,
     unitCode: String(row.unitCode ?? '').trim() || 'U',
     unitName: String(row.unitName ?? '').trim() || undefined,
+    targetProductTableName: targetProductTableName || undefined,
+    // 合管采血费等诊疗派生：卡内只展示，不可删改
+    readOnly: isActivity,
   };
 }
 
-/** 选中诊疗后加载模板绑定的带出耗材（仅耗材，不含诊疗带出） */
+/** 选中诊疗后加载模板/合管派生绑定（耗材 + 采血费） */
 export async function loadServiceApplyBoundConsumables(params: {
   encounterId: string;
   patientId: string;
@@ -915,7 +1103,13 @@ export async function loadServiceApplyBoundConsumables(params: {
     lines,
     apiAdapter,
   });
-  return filterDeviceBindDialogRows(dialogRows).map(mapDialogRowToBoundConsumable);
+  // 卡内展示耗材与合管采血费；库存校验仍只认耗材
+  return dialogRows
+    .filter((row) => {
+      const table = String(row.bindItem.targetProductTableName ?? '').trim();
+      return table === DEVICE_DEFINITION_TABLE || table === ACTIVITY_DEFINITION_TABLE;
+    })
+    .map(mapDialogRowToBoundConsumable);
 }
 
 /** 批量为已选清单行补齐带出耗材 */
@@ -1055,6 +1249,11 @@ function aggregateBoundConsumablesForStock(
       continue;
     }
     for (const consumable of item.boundConsumables ?? []) {
+      const targetTable = String(consumable.targetProductTableName ?? '').trim();
+      // 库存只校验耗材；合管采血费不进库房
+      if (targetTable === ACTIVITY_DEFINITION_TABLE || consumable.readOnly) {
+        continue;
+      }
       const targetItemId = String(consumable.targetItemId ?? '').trim();
       if (!targetItemId) {
         continue;
@@ -1215,15 +1414,16 @@ export async function validateServiceApplyBoundConsumablesBeforeSign(params: {
   });
 }
 
-/** 卡内已编辑耗材数量 → 签发落库用的确认绑定行 */
+/**
+ * 卡内已编辑耗材数量 + 合管派生采血费 → 签发落库用确认绑定行。
+ * 卡内只编辑耗材；采血费（wkf_activity_definition）须一并落库，不可被 filterDevice 滤掉。
+ */
 function buildServiceApplyConfirmedDeviceBindDialogRows(
   items: readonly ServiceApplySelectedItem[],
   bindLines: DoctorStationAdviceDraftLineRequest[],
   bindItems: DoctorStationAdviceDraftBindItemDto[],
 ): AdviceDraftBindDialogRow[] {
-  const dialogRows = filterDeviceBindDialogRows(
-    mapDraftBindItemsToDialogRows(bindItems, bindLines),
-  );
+  const allDialogRows = mapDraftBindItemsToDialogRows(bindItems, bindLines);
   // 活动定义 id → 用户保留的耗材 targetId 集合
   const includedTargetsByActivity = new Map<string, Set<string>>();
   const quantityByActivityTarget = new Map<string, number>();
@@ -1234,6 +1434,14 @@ function buildServiceApplyConfirmedDeviceBindDialogRows(
     }
     const targetSet = new Set<string>();
     for (const consumable of item.boundConsumables ?? []) {
+      // 卡内勾选只约束耗材；采血费只读不参与过滤
+      if (consumable.readOnly) {
+        continue;
+      }
+      const targetTable = String(consumable.targetProductTableName ?? '').trim();
+      if (targetTable === ACTIVITY_DEFINITION_TABLE) {
+        continue;
+      }
       const targetId = String(consumable.targetItemId ?? '').trim();
       if (!targetId) {
         continue;
@@ -1247,17 +1455,27 @@ function buildServiceApplyConfirmedDeviceBindDialogRows(
   }
 
   const confirmed: AdviceDraftBindDialogRow[] = [];
-  for (const row of dialogRows) {
+  for (const row of allDialogRows) {
+    const targetTable = String(row.bindItem.targetProductTableName ?? '').trim();
+    const targetId = String(row.bindItem.targetItemId ?? '').trim();
+    if (!targetId) {
+      continue;
+    }
+    // 合管采血费等诊疗派生：不经卡内编辑，原样落库
+    if (targetTable === ACTIVITY_DEFINITION_TABLE) {
+      confirmed.push(row);
+      continue;
+    }
+    // 耗材：仅 adm_device_definition，并按卡内勾选/数量覆盖
+    if (targetTable !== DEVICE_DEFINITION_TABLE) {
+      continue;
+    }
     const triggerIndex = row.bindItem.triggerLineIndex;
     const triggerLine =
       triggerIndex === undefined || triggerIndex === null ? undefined : bindLines[triggerIndex];
     const activityId = String(
       triggerLine?.servicePayload?.activityDefinitionId ?? row.bindItem.triggerDefinitionId ?? '',
     ).trim();
-    const targetId = String(row.bindItem.targetItemId ?? '').trim();
-    if (!targetId) {
-      continue;
-    }
     const includedSet = includedTargetsByActivity.get(activityId);
     if (includedSet && !includedSet.has(targetId)) {
       continue;
@@ -1325,7 +1543,7 @@ export async function persistServiceApplyDraftBindsAfterSign(params: {
   }
 }
 
-/** @deprecated 签发前弹窗确认绑定；申请单已改为卡内编辑，请用 persistServiceApplyDraftBindsAfterSign */
+/** 签发前弹窗确认绑定并落库（门诊）；住院适配器恒空 */
 export async function resolveServiceApplyDraftBindsBeforeSign(params: {
   encounterId: string;
   patientId: string;

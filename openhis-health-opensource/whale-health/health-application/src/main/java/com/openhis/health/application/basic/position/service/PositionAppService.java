@@ -9,11 +9,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openhis.health.application.basic.position.dto.*;
 import com.openhis.health.application.basic.position.mapper.PositionMapper;
 import com.openhis.health.application.basic.position.support.PositionPractitionerRoleWriteGate;
+import com.openhis.health.application.basic.position.support.WorkDepartmentClassSupport;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.session.CurrentOperatorResolver;
 import com.openhis.health.application.shared.validator.WhaleRoleResolver;
 import com.openhis.health.application.basic.position.support.StaffManagedScopeWriteGate;
-import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
+import com.openhis.health.application.shared.practitioner.PositionUserRoleSyncService;
+import com.openhis.health.application.shared.practitioner.PractitionerRoleScopeLoader;
 import com.openhis.health.infrastructure.platform.identity.UserLoginOrganizationSyncService;
 import com.openhis.health.infrastructure.platform.organization.OrganizationUnitLinkSyncService;
 import com.openhis.health.domain.administration.healthcareservice.entity.HealthcareService;
@@ -36,6 +38,7 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.AdministrativeGender;
 import com.openhis.health.domain.share.enums.LocationForm;
+import com.openhis.health.domain.share.enums.OrganizationClassification;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.dto.PagedResult;
@@ -96,6 +99,7 @@ public class PositionAppService {
     private final PositionUserRoleSyncService positionUserRoleSyncService;
     private final PositionPractitionerRoleWriteGate positionPractitionerRoleWriteGate;
     private final OrganizationQueryService organizationQueryService;
+    private final WorkDepartmentClassSupport workDepartmentClassSupport;
     private final PlatformTenantAccessPolicy platformTenantAccessPolicy;
 
     /**
@@ -691,7 +695,7 @@ public class PositionAppService {
         scopes.add(RoleStaffScopeConstants.DOCTOR_VISIT_ORG);
         scopes.add(RoleStaffScopeConstants.WAREHOUSE_LOCATION);
         scopes.add(RoleStaffScopeConstants.PHARMACY_LOCATION);
-        scopes.add(RoleStaffScopeConstants.NURSE_ORG);
+        scopes.add(RoleStaffScopeConstants.WORK_ORG);
         scopes.add(RoleStaffScopeConstants.NURSE_WARD_LOCATION);
         return scopes;
     }
@@ -767,16 +771,16 @@ public class PositionAppService {
 
             if (scopes.contains(RoleStaffScopeConstants.NURSE_WARD_LOCATION) && role.getLocationId() != null) {
                 nurseWard.add(row);
-            } else if (scopes.contains(RoleStaffScopeConstants.NURSE_ORG) && role.getOrgId() != null
+            } else if (scopes.contains(RoleStaffScopeConstants.WORK_ORG) && role.getOrgId() != null
                 && role.getLocationId() == null) {
                 nurseOrg.add(row);
             }
         }
-        detail.setDoctorVisitOrgList(doctorVisit);
-        detail.setWarehouseLocationList(warehouse);
-        detail.setPharmacyLocationList(pharmacy);
-        detail.setNurseOrgList(nurseOrg);
-        detail.setNurseWardLocationList(nurseWard);
+        detail.setDoctorVisitOrgList(dedupeStaffRowsByOrgId(doctorVisit));
+        detail.setWarehouseLocationList(dedupeStaffRowsByLocationId(warehouse));
+        detail.setPharmacyLocationList(dedupeStaffRowsByLocationId(pharmacy));
+        detail.setNurseOrgList(dedupeStaffRowsByOrgId(nurseOrg));
+        detail.setNurseWardLocationList(dedupeStaffRowsByLocationId(nurseWard));
         if (!doctorAssignmentIds.isEmpty()) {
             Map<Long, List<Long>> serviceIdsByAssignmentId = loadServiceIdsByAssignmentIds(doctorAssignmentIds);
             for (List<Long> ids : serviceIdsByAssignmentId.values()) {
@@ -786,6 +790,54 @@ public class PositionAppService {
             }
         }
         detail.setDoctorServiceIds(new ArrayList<>(doctorServiceIds));
+    }
+
+    /**
+     * 人员详情回显：按 locationId 保序去重，避免多角色同绑一个库房/药房/病区时前端多选出现重复标签。
+     *
+     * @param rows 原始岗位行
+     * @return 去重后的行；入参 null 时返回空表
+     */
+    private List<StaffOrgLocationItemDto> dedupeStaffRowsByLocationId(List<StaffOrgLocationItemDto> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return new ArrayList<>();
+        }
+        LinkedHashSet<Long> seen = new LinkedHashSet<>();
+        List<StaffOrgLocationItemDto> result = new ArrayList<>();
+        for (StaffOrgLocationItemDto row : rows) {
+            if (row == null || row.getLocationId() == null) {
+                continue;
+            }
+            // 同一物理位置只保留首次出现，保持接口列表顺序稳定
+            if (seen.add(row.getLocationId())) {
+                result.add(row);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 人员详情回显：按 orgId 保序去重，避免多角色同绑一个科室时前端多选出现重复标签。
+     *
+     * @param rows 原始岗位行
+     * @return 去重后的行；入参 null 时返回空表
+     */
+    private List<StaffOrgLocationItemDto> dedupeStaffRowsByOrgId(List<StaffOrgLocationItemDto> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return new ArrayList<>();
+        }
+        LinkedHashSet<Long> seen = new LinkedHashSet<>();
+        List<StaffOrgLocationItemDto> result = new ArrayList<>();
+        for (StaffOrgLocationItemDto row : rows) {
+            if (row == null || row.getOrgId() == null) {
+                continue;
+            }
+            // 同一科室只保留首次出现，保持接口列表顺序稳定
+            if (seen.add(row.getOrgId())) {
+                result.add(row);
+            }
+        }
+        return result;
     }
 
     /**
@@ -851,10 +903,13 @@ public class PositionAppService {
             RoleStaffScopeConstants.NURSE_WARD_LOCATION, editableScopes, roleStaffScopes)
             && request.getNurseWardLocationList() != null;
         boolean replaceNurseOrg = shouldReplaceStaffScope(
-            RoleStaffScopeConstants.NURSE_ORG, editableScopes, roleStaffScopes)
+            RoleStaffScopeConstants.WORK_ORG, editableScopes, roleStaffScopes)
             && request.getNurseOrgList() != null;
         if (replaceNurseWard || replaceNurseOrg) {
             if (replaceNurseOrg) {
+                // 工作科室：护士仅护士站、医技仅医技科室，双角色才允许两类并存
+                workDepartmentClassSupport.assertRowsMatchSelectedRoles(
+                    request.getNurseOrgList(), selectedRoleIds);
                 staffManagedScopeWriteGate.assertWritableOrganizationIds(
                     collectOrganizationIds(request.getNurseOrgList()));
             }
@@ -902,7 +957,7 @@ public class PositionAppService {
         return RoleStaffScopeConstants.DOCTOR_VISIT_ORG.equals(staffScope)
                 || RoleStaffScopeConstants.WAREHOUSE_LOCATION.equals(staffScope)
                 || RoleStaffScopeConstants.PHARMACY_LOCATION.equals(staffScope)
-                || RoleStaffScopeConstants.NURSE_ORG.equals(staffScope)
+                || RoleStaffScopeConstants.WORK_ORG.equals(staffScope)
                 || RoleStaffScopeConstants.NURSE_WARD_LOCATION.equals(staffScope);
     }
 
@@ -917,7 +972,8 @@ public class PositionAppService {
         if (roleIds == null || roleIds.isEmpty()) {
             return scopes;
         }
-        // 业务：逐角色读 StaffScope（声明优先，内置 code 模板兜底）
+        // 业务：逐角色读 StaffScope 并集（内置角色走 code 模板；自定义读声明）
+        // 例：医生+技师 → 出诊科室 + 工作科室；护士+技师 → 工作科室（NS∪TECH）+ 管理病区
         for (Long roleId : roleIds) {
             if (roleId == null) {
                 continue;
@@ -1072,7 +1128,9 @@ public class PositionAppService {
     }
 
     /**
-     * 护理科室/病区块按角色合并写入，避免同一角色声明两块时二次 replace 互相覆盖。
+     * 工作科室 / 管理病区块按角色合并写入，避免同一角色声明两块时二次 replace 互相覆盖。
+     *
+     * <p>工作科室行按角色分类拆分：护士岗只落护士站，医技岗只落医技科室。</p>
      */
     private void replaceNurseBlocksForClaimingRoles(
             Long practitionerId,
@@ -1084,7 +1142,7 @@ public class PositionAppService {
         boolean replaceOrg = nurseOrgRowsOrNull != null;
         boolean replaceWard = nurseWardRowsOrNull != null;
         List<Long> orgRoleIds = replaceOrg
-            ? this.resolveSelectedRoleIdsClaimingScope(selectedRoleIds, RoleStaffScopeConstants.NURSE_ORG)
+            ? this.resolveSelectedRoleIdsClaimingScope(selectedRoleIds, RoleStaffScopeConstants.WORK_ORG)
             : List.of();
         List<Long> wardRoleIds = replaceWard
             ? this.resolveSelectedRoleIdsClaimingScope(
@@ -1092,7 +1150,7 @@ public class PositionAppService {
             : List.of();
         if (replaceOrg && orgRoleIds.isEmpty()) {
             throw new ValidationException("所选角色未声明岗位能力，无法保存："
-                + RoleStaffScopeConstants.NURSE_ORG);
+                + RoleStaffScopeConstants.WORK_ORG);
         }
         if (replaceWard && wardRoleIds.isEmpty()) {
             throw new ValidationException("所选角色未声明岗位能力，无法保存："
@@ -1101,13 +1159,19 @@ public class PositionAppService {
         LinkedHashSet<Long> targetRoleIds = new LinkedHashSet<>();
         targetRoleIds.addAll(orgRoleIds);
         targetRoleIds.addAll(wardRoleIds);
+        // 双角色时按分类拆行：护士岗只留护士站，医技岗只留医技科室
+        Map<Long, OrganizationClassification> workOrgClassById = Map.of();
+        if (replaceOrg) {
+            workOrgClassById = workDepartmentClassSupport.mapClassByOrgId(nurseOrgRowsOrNull);
+        }
         for (Long roleId : targetRoleIds) {
             Set<String> scopes = new LinkedHashSet<>(
                 builtInBusinessRoleOptionLoader.resolveStaffScopesForRoleId(roleId));
             List<StaffOrgLocationItemDto> merged = new ArrayList<>();
-            if (scopes.contains(RoleStaffScopeConstants.NURSE_ORG)) {
+            if (scopes.contains(RoleStaffScopeConstants.WORK_ORG)) {
                 if (replaceOrg && orgRoleIds.contains(roleId)) {
-                    merged.addAll(nurseOrgRowsOrNull);
+                    merged.addAll(workDepartmentClassSupport.filterRowsForRole(
+                        roleId, nurseOrgRowsOrNull, workOrgClassById));
                 } else {
                     merged.addAll(this.listExistingNurseOrgRowsForRole(practitionerId, roleId));
                 }
@@ -1345,7 +1409,7 @@ public class PositionAppService {
             SaveStaffRequest request,
             Set<String> editableScopes) {
         List<StaffOrgLocationItemDto> merged = new ArrayList<>();
-        if (editableScopes.contains(RoleStaffScopeConstants.NURSE_ORG)) {
+        if (editableScopes.contains(RoleStaffScopeConstants.WORK_ORG)) {
             if (request.getNurseOrgList() != null) {
                 merged.addAll(request.getNurseOrgList());
             }

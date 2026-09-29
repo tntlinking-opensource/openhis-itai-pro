@@ -32,6 +32,8 @@ public class ServiceRequestListModel {
     private Long activityId;
     /** 诊疗类目 code（如出院 34、转科 32）。 */
     private String categoryEnum;
+    /** 优先级持久化码（DM-WKF-004；加急为 {@code EM}）。 */
+    private String priorityEnum;
     /** 生成来源持久化码。 */
     private String generateSourceEnum;
     /** 申请人主键。 */
@@ -88,4 +90,26 @@ public class ServiceRequestListModel {
     private String encounterDiagnosisIds;
     /** 处方/申请单号（持久化 {@code wkf_service_request.prescription_no}）。 */
     private String prescriptionNo;
+    /** 主手术标志。 */
+    private Boolean mainProcedureFlag;
+    /** 手术级别字典码。 */
+    private String procedureLevelCode;
+    /** 切口类别字典码。 */
+    private String incisionTypeCode;
+    /** 麻醉方法字典码。 */
+    private String anesthesiaMethodCode;
+    /** 手术时间。 */
+    private LocalDateTime procedureTime;
+    /** 主刀医师。 */
+    private Long surgeonId;
+    /** 一助。 */
+    private Long firstAssistantId;
+    /** 二助。 */
+    private Long secondAssistantId;
+    /** 配合护士。 */
+    private Long nurseId;
+    /** 麻醉医师。 */
+    private Long anesthetistId;
+    /** 嵌套麻醉申请单号。 */
+    private String nestedAnesthesiaPrescriptionNo;
 }

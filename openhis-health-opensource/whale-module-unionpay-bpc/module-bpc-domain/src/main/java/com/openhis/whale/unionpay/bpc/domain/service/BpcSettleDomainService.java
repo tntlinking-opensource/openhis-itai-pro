@@ -36,6 +36,10 @@ import java.util.List;
 
 /**
  * 银联 BPC 被扫落库编排（upc_bpc_order 幂等与状态迁移）。
+ *
+ * <p><b>收退双账</b>：院内 {@code txn_amt_fen} 与渠道 {@code paid_amt_fen} 分账——
+ * HIS 收退始终按下单分；Win R / {@code applyClientRefundResult} 按渠道患者实付分
+ * （有实付用实付，否则回落下单）。渠道优惠（如支付宝少收 1 分）由渠道承担，不改写医院账。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -69,7 +73,11 @@ public class BpcSettleDomainService {
         BpcOrder order = new BpcOrder();
         order.setTenantId(tenantId);
         order.setPaymentId(command.getPaymentId());
-        order.setDetailIndex(command.getDetailIndex() != null ? command.getDetailIndex() : 0);
+        Integer detailIndex = command.getDetailIndex();
+        if (detailIndex == null) {
+            detailIndex = 0;
+        }
+        order.setDetailIndex(detailIndex);
         order.setMerTradeNo(merTradeNo);
         order.setTranType(BpcTranType.CONSUMER_SCAN.getCode());
         order.setTxnAmtFen(txnAmtFen);
@@ -113,8 +121,11 @@ public class BpcSettleDomainService {
             order.setRespMsg(command.getRespMsg());
             order.setUpdatedAt(LocalDateTime.now());
             bpcOrderRepository.save(order);
-            throw new BusinessException("BPC_SCAN_FAILED", StringUtils.hasText(command.getRespMsg())
-                    ? command.getRespMsg() : "银联被扫失败");
+            String failMsg = "银联被扫失败";
+            if (StringUtils.hasText(command.getRespMsg())) {
+                failMsg = command.getRespMsg();
+            }
+            throw new BusinessException("BPC_SCAN_FAILED", failMsg);
         }
 
         order.setStatus(BpcOrderStatus.SUCCESS.getCode());
@@ -144,12 +155,14 @@ public class BpcSettleDomainService {
         if (command == null) {
             throw new BusinessException("BPC_ABANDON_INVALID", "abandon 参数不能为空");
         }
-        String reason = StringUtils.hasText(command.getReason())
-            ? command.getReason().trim()
-            : "pending abandoned";
-        String respCode = StringUtils.hasText(command.getRespCode())
-            ? trimRespCode(command.getRespCode())
-            : "AB";
+        String reason = "pending abandoned";
+        if (StringUtils.hasText(command.getReason())) {
+            reason = command.getReason().trim();
+        }
+        String respCode = "AB";
+        if (StringUtils.hasText(command.getRespCode())) {
+            respCode = trimRespCode(command.getRespCode());
+        }
         int count;
         if (StringUtils.hasText(command.getMerTradeNo())) {
             count = this.abandonPendingByMerTradeNo(command.getMerTradeNo().trim(), respCode, reason);
@@ -178,7 +191,8 @@ public class BpcSettleDomainService {
     /**
      * 下单分与 POS 实付分账：{@code txn_amt_fen} 保留院内下单；{@code paid_amt_fen} 记回传实付。
      *
-     * <p>实付可小于下单（营销优惠或渠道拆分）；禁止用实付覆盖下单，也禁止丢掉实付。</p>
+     * <p>双账：院内 {@code txn_amt_fen} 不被实付覆盖；{@code paid_amt_fen} 记渠道患者实付
+     * （可因支付宝等优惠小于下单）。银联 Win 退货按实付；医院 HIS 收退仍按下单，互不改写。</p>
      *
      * @param order             预下单/已成功 BPC 订单
      * @param returnedTxnAmtFen Win 回传实付分；null 表示不改 paid
@@ -215,14 +229,26 @@ public class BpcSettleDomainService {
     }
 
     /**
-     * 银联商户应退分：有 POS 实付用实付，否则用下单分。
+     * 银联通道应退分（患者实付口径）。
+     *
+     * <p>有 {@code paid_amt_fen} 且为正时用实付；否则回落 {@code txn_amt_fen}。
+     * 医院 HIS 冲账仍按 {@code txn_amt_fen}，本方法仅服务 Win R / BPC 退货 Gate。</p>
+     *
+     * @param order 原消费 BPC 单
+     * @return 渠道应退分；下单与实付皆空时为 0
      */
-    private static long resolveMerchantAmtFen(BpcOrder order) {
-        if (order.getPaidAmtFen() != null && order.getPaidAmtFen() > 0L) {
-            return order.getPaidAmtFen();
+    private static long resolveChannelRefundAmtFen(BpcOrder order) {
+        Long paidFen = order.getPaidAmtFen();
+        // 有 POS 回传实付：按患者/渠道实收退，不按下单分多退
+        if (paidFen != null && paidFen > 0L) {
+            return paidFen.longValue();
         }
         Long orderFen = order.getTxnAmtFen();
-        return orderFen == null ? 0L : orderFen.longValue();
+        // 无实付旁路时回落院内下单分（无优惠场景）
+        if (orderFen == null) {
+            return 0L;
+        }
+        return orderFen.longValue();
     }
 
     @Transactional(readOnly = true)
@@ -239,27 +265,42 @@ public class BpcSettleDomainService {
         return BpcOrderStatus.SUCCESS.getCode().equals(order.getStatus());
     }
 
+    /**
+     * 确认 Win 退货回传：等额校验渠道实付、幂等补记 R、原 C 置 REFUNDED。
+     *
+     * <p>Gate 比对的是渠道患者实付分，不是医院下单分。HIS 本地退费金额由 health 支付冲账决定，
+     * 本方法不改写院内应付。</p>
+     *
+     * @param command Win R 回传（refundAmount 须为渠道实付元）
+     * @return 退货确认结果（含退货单 id / merTradeNo）
+     * @throws BusinessException 原单不存在、Win 非成功、退货分与渠道实付不一致
+     */
     @Transactional
     public ApplyClientRefundResult applyClientRefundResult(ApplyClientRefundCommand command) {
+        // Pre：定位原消费单
         requireMerTradeNo(command.getMerTradeNo());
         Long tenantId = TenantUtils.getCurrentTenantId();
         BpcOrder original = bpcOrderRepository
                 .findByTenantIdAndMerTradeNoAndIsDeletedFalse(tenantId, command.getMerTradeNo())
                 .orElseThrow(() -> new BusinessException("BPC_ORDER_NOT_FOUND", "原 BPC 订单不存在"));
 
+        // Gate：Win 必须成功回传
         if (!"00".equals(StringUtils.trimAllWhitespace(command.getRespCode()))) {
-            throw new BusinessException("BPC_REFUND_FAILED", StringUtils.hasText(command.getRespMsg())
-                    ? command.getRespMsg() : "银联退货失败");
+            String failMsg = "银联退货失败";
+            if (StringUtils.hasText(command.getRespMsg())) {
+                failMsg = command.getRespMsg();
+            }
+            throw new BusinessException("BPC_REFUND_FAILED", failMsg);
         }
 
-        // Gate：退货金额须等于银联商户实收分（有 paid_amt_fen 用实付，禁止按下单分多退）
+        // Gate：Win 退货分须等于渠道患者实付（paid_amt_fen）；与 HIS 下单分互不混用
         long refundFen = toFen(command.getRefundAmount());
-        long originalFen = resolveMerchantAmtFen(original);
-        if (originalFen > 0 && refundFen != originalFen) {
+        long channelFen = resolveChannelRefundAmtFen(original);
+        if (channelFen > 0 && refundFen != channelFen) {
             throw new BusinessException(
                     "BPC_REFUND_AMOUNT_MISMATCH",
-                    "银联退货金额须等于原扫码实付（"
-                            + originalFen
+                    "银联退货金额须等于原渠道实付（"
+                            + channelFen
                             + " 分），当前为 "
                             + refundFen
                             + " 分");
@@ -277,19 +318,32 @@ public class BpcSettleDomainService {
                     break;
                 }
             }
+            // 已有 R 行：直接幂等成功，避免重复退货记账
             if (existingRefundOrderId != null) {
+                String idempotentMsg = "BPC 已退货，幂等成功";
+                if (StringUtils.hasText(command.getRespMsg())) {
+                    idempotentMsg = command.getRespMsg();
+                }
                 return new ApplyClientRefundResult()
                         .setSuccess(true)
                         .setOrderId(existingRefundOrderId)
                         .setMerTradeNo(original.getMerTradeNo())
                         .setRefundMerTradeNo(existingRefundMerTradeNo)
-                        .setRespMsg(StringUtils.hasText(command.getRespMsg())
-                                ? command.getRespMsg()
-                                : "BPC 已退货，幂等成功");
+                        .setRespMsg(idempotentMsg);
             }
-            String refundMerTradeNo = StringUtils.hasText(command.getRefundMerTradeNo())
-                    ? command.getRefundMerTradeNo()
-                    : MerTradeNoGenerator.generateRefundMerTradeNo(original.getMerTradeNo());
+            // 状态已 REFUNDED 但缺 R 行：补记一笔退货单
+            String refundMerTradeNo = command.getRefundMerTradeNo();
+            if (!StringUtils.hasText(refundMerTradeNo)) {
+                refundMerTradeNo = MerTradeNoGenerator.generateRefundMerTradeNo(original.getMerTradeNo());
+            }
+            long refundTxnFen = original.getTxnAmtFen();
+            if (refundFen > 0) {
+                refundTxnFen = refundFen;
+            }
+            String patchMsg = "BPC 已退货，补记退货单";
+            if (StringUtils.hasText(command.getRespMsg())) {
+                patchMsg = command.getRespMsg();
+            }
             BpcOrder refundOrder = new BpcOrder();
             refundOrder.setTenantId(tenantId);
             refundOrder.setPaymentId(original.getPaymentId());
@@ -297,16 +351,15 @@ public class BpcSettleDomainService {
             refundOrder.setMerTradeNo(refundMerTradeNo);
             refundOrder.setTradeNo(command.getTradeNo());
             refundOrder.setTranType(BpcTranType.REFUND.getCode());
-            refundOrder.setTxnAmtFen(refundFen > 0 ? refundFen : original.getTxnAmtFen());
+            refundOrder.setTxnAmtFen(refundTxnFen);
             refundOrder.setStatus(BpcOrderStatus.REFUNDED.getCode());
             refundOrder.setRespCode(command.getRespCode());
-            refundOrder.setRespMsg(StringUtils.hasText(command.getRespMsg())
-                    ? command.getRespMsg()
-                    : "BPC 已退货，补记退货单");
+            refundOrder.setRespMsg(patchMsg);
             refundOrder.setProfileId(original.getProfileId());
             refundOrder.setPosNo(original.getPosNo());
             refundOrder.setCreatedAt(LocalDateTime.now());
             refundOrder.setIsDeleted(false);
+            // Cmd：补记 R 行
             bpcOrderRepository.save(refundOrder);
             return new ApplyClientRefundResult()
                     .setSuccess(true)
@@ -316,9 +369,11 @@ public class BpcSettleDomainService {
                     .setRespMsg(refundOrder.getRespMsg());
         }
 
-        String refundMerTradeNo = StringUtils.hasText(command.getRefundMerTradeNo())
-                ? command.getRefundMerTradeNo()
-                : MerTradeNoGenerator.generateRefundMerTradeNo(original.getMerTradeNo());
+        // Cmd：正常路径插 R + 原 C → REFUNDED
+        String refundMerTradeNo = command.getRefundMerTradeNo();
+        if (!StringUtils.hasText(refundMerTradeNo)) {
+            refundMerTradeNo = MerTradeNoGenerator.generateRefundMerTradeNo(original.getMerTradeNo());
+        }
 
         BpcOrder refundOrder = new BpcOrder();
         refundOrder.setTenantId(tenantId);
@@ -432,10 +487,13 @@ public class BpcSettleDomainService {
         String reason) {
         requirePaymentId(paymentId);
         Long tenantId = TenantUtils.getCurrentTenantId();
-        List<BpcOrder> orders = tenantId != null
-            ? bpcOrderRepository.findByTenantIdAndPaymentIdAndIsDeletedFalseOrderByCreatedAtDesc(
-                tenantId, paymentId)
-            : bpcOrderRepository.findByPaymentIdAndIsDeletedFalseOrderByCreatedAtDesc(paymentId);
+        List<BpcOrder> orders;
+        if (tenantId != null) {
+            orders = bpcOrderRepository.findByTenantIdAndPaymentIdAndIsDeletedFalseOrderByCreatedAtDesc(
+                tenantId, paymentId);
+        } else {
+            orders = bpcOrderRepository.findByPaymentIdAndIsDeletedFalseOrderByCreatedAtDesc(paymentId);
+        }
         int count = 0;
         LocalDateTime now = LocalDateTime.now();
         String msg = truncateRespMsg(reason);
@@ -483,6 +541,12 @@ public class BpcSettleDomainService {
         return 1;
     }
 
+    /**
+     * 是否为可 abandon 的 PENDING 被扫消费单。
+     *
+     * @param order BPC 订单
+     * @return true 表示 PENDING 且 tranType=C
+     */
     private static boolean isAbandonablePendingConsumerScan(BpcOrder order) {
         if (!BpcOrderStatus.PENDING.getCode().equals(order.getStatus())) {
             return false;
@@ -490,22 +554,47 @@ public class BpcSettleDomainService {
         return BpcTranType.CONSUMER_SCAN.getCode().equals(order.getTranType());
     }
 
+    /**
+     * 规范化响应码长度（库字段上限 8）。
+     *
+     * @param respCode 原始响应码
+     * @return 非空截断码；空则 {@code AB}
+     */
     private static String trimRespCode(String respCode) {
         if (!StringUtils.hasText(respCode)) {
             return "AB";
         }
         String trimmed = respCode.trim();
-        return trimmed.length() <= 8 ? trimmed : trimmed.substring(0, 8);
+        if (trimmed.length() <= 8) {
+            return trimmed;
+        }
+        return trimmed.substring(0, 8);
     }
 
+    /**
+     * 规范化响应说明长度（库字段上限 256）。
+     *
+     * @param reason 原始原因
+     * @return 非空截断文案
+     */
     private static String truncateRespMsg(String reason) {
         if (!StringUtils.hasText(reason)) {
             return "pending abandoned";
         }
         String trimmed = reason.trim();
-        return trimmed.length() <= 256 ? trimmed : trimmed.substring(0, 256);
+        if (trimmed.length() <= 256) {
+            return trimmed;
+        }
+        return trimmed.substring(0, 256);
     }
 
+    /**
+     * 按 merTradeNo / tradeNo / paymentId 定位订单（只读查单）。
+     *
+     * @param tenantId 租户
+     * @param command  查单条件
+     * @return 命中订单；未命中 null
+     */
     private BpcOrder findOrder(Long tenantId, QueryBpcOrderCommand command) {
         if (StringUtils.hasText(command.getMerTradeNo())) {
             return bpcOrderRepository
@@ -521,7 +610,10 @@ public class BpcSettleDomainService {
             List<BpcOrder> orders = bpcOrderRepository
                     .findByTenantIdAndPaymentIdAndIsDeletedFalseOrderByCreatedAtDesc(
                             tenantId, command.getPaymentId());
-            return orders.isEmpty() ? null : orders.get(0);
+            if (orders.isEmpty()) {
+                return null;
+            }
+            return orders.get(0);
         }
         return null;
     }
@@ -555,10 +647,17 @@ public class BpcSettleDomainService {
         return config;
     }
 
+    /**
+     * 解析收单 Profile；缺省 {@code bpc-default}。
+     *
+     * @param config 院点合约配置
+     * @return 非空 profileId
+     */
     private static String resolveProfileId(BpcContractConfig config) {
-        return StringUtils.hasText(config.getAcquirerProfile())
-                ? config.getAcquirerProfile()
-                : "bpc-default";
+        if (StringUtils.hasText(config.getAcquirerProfile())) {
+            return config.getAcquirerProfile();
+        }
+        return "bpc-default";
     }
 
     private static String resolvePosNo(BpcContractConfig config) {

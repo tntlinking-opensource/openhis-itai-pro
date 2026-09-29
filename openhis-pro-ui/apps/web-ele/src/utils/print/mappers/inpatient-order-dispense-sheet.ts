@@ -6,6 +6,8 @@ export interface InpatientOrderDispenseSheetDrugRow {
   specText: string;
   doseText: string;
   totalQuantityText: string;
+  /** 接口方级付数，模板拼成「付数：N」 */
+  chineseHerbsDoseQuantity?: null | number | string;
 }
 
 /**
@@ -172,6 +174,7 @@ function mapDrugRow(row: InpatientOrderDispenseSheetDrugRow): InpatientOrderDisp
     specText: str(row.specText),
     doseText: str(row.doseText),
     totalQuantityText: str(row.totalQuantityText),
+    chineseHerbsDoseQuantity: row.chineseHerbsDoseQuantity ?? '',
   };
 }
 

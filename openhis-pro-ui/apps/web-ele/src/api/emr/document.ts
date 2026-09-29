@@ -150,10 +150,18 @@ export interface EmrPrintFooterPayload {
   showPageNumber?: boolean;
 }
 
+/** 与后端 PrintConfig.PaperConfig 对齐（宽高为竖向毫米，横向由 orientation 翻转） */
+export interface EmrPrintPaperPayload {
+  heightMm?: number;
+  orientation?: 'landscape' | 'portrait';
+  widthMm?: number;
+}
+
 export interface EmrPrintConfigPayload {
   margins?: EmrPrintMarginsMm;
   header?: EmrPrintHeaderPayload;
   footer?: EmrPrintFooterPayload;
+  paper?: EmrPrintPaperPayload;
 }
 
 export interface GenerateDocumentPdfParams {

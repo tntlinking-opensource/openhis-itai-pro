@@ -29,6 +29,7 @@ import {
 import { formatUnitPriceYuan, terminologyLabel } from './advice-format';
 import {
   isAdviceRowBoundConsumableFromService,
+  isAdviceRowServiceApplyFormBoundActivity,
   isAdviceRowServiceApplyFormBoundConsumable,
 } from './advice-row';
 import { normalizeCatalogUnitBands } from './medication-unit-bands';
@@ -411,6 +412,7 @@ export function mapAdviceListRowDto(dto: DoctorStationAdviceRowDto): AdviceRowIt
     serviceRequestDetails: dto.serviceRequestDetails ?? undefined,
     catalogCategoryCode:
       String(dto.catalogCategoryCode ?? dto.categoryCode ?? '').trim() || undefined,
+    priorityEnum: String(dto.priorityEnum ?? '').trim() || undefined,
     ...(String(dto.chrgitmLvText ?? '').trim()
       ? { chrgitmLvText: String(dto.chrgitmLvText).trim() }
       : {}),
@@ -504,6 +506,9 @@ export function mapCatalogRowToOption(row: DoctorStationAdviceCatalogRowDto): Ad
       ? { chrgitmLvText: String(row.chrgitmLvText).trim() }
       : {}),
     ...(row.injectFlag === true ? { injectFlag: true } : {}),
+    ...(String(row.categoryCode ?? '').trim()
+      ? { categoryCode: String(row.categoryCode).trim() }
+      : {}),
     ...(String(row.dosageInstruction ?? '').trim()
       ? { dosageInstruction: String(row.dosageInstruction).trim() }
       : {}),
@@ -557,13 +562,17 @@ export function filterServiceApplyFormAdviceRows(rows: readonly AdviceRowItem[])
   );
 }
 
-/** 排除检验/检查申请单行及申请单带出耗材（供「开立医嘱」列表展示） */
+/** 排除检验/检查申请单行及申请单带出耗材/采血费（供「开立医嘱」列表展示） */
 export function excludeServiceApplyFormAdviceRows(rows: readonly AdviceRowItem[]): AdviceRowItem[] {
   return rows.filter((row) => {
     if (row.applyFormNo?.trim()) {
       return false;
     }
     if (isAdviceRowServiceApplyFormBoundConsumable(row, rows)) {
+      return false;
+    }
+    // 合管采血费等申请单派生诊疗，归申请单子行展示
+    if (isAdviceRowServiceApplyFormBoundActivity(row, rows)) {
       return false;
     }
     return true;

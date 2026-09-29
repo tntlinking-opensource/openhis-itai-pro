@@ -28,6 +28,8 @@ import {
   SERVICE_CATEGORY_DISCHARGE,
   SERVICE_CATEGORY_ENTRUST,
   SERVICE_CATEGORY_NURSING,
+  SERVICE_CATEGORY_ANESTHESIA,
+  SERVICE_CATEGORY_PROCEDURE,
   SERVICE_CATEGORY_PROOF,
   SERVICE_CATEGORY_TEST,
   SERVICE_CATEGORY_TRANSFER,
@@ -120,6 +122,8 @@ export interface NurseStationOrderExecuteTableRow {
   skinTestOutcomeCode?: string;
   /** 皮试临床状态展示文案 */
   skinTestOutcomeText?: string;
+  /** 医嘱优先级 code（加急=EM；采血贴） */
+  priorityEnum?: string;
 }
 
 /** 按日期分组的槽位（用于「预计执行时点」列） */
@@ -262,7 +266,7 @@ function buildExecuteContentTitle(dto: NurseStationOrderExecuteRowDto): string {
   return title || '—';
 }
 
-/** 剂量/数量：长期「一次一片，每日三片」；中药方展示各味单次量 + 付数 */
+/** 剂量/数量：长期「一次一片，每日三片，首日…」；中药方展示各味单次量 + 付数 */
 function buildExecuteDosageDisplay(dto: NurseStationOrderExecuteRowDto): string {
   if (dto.tcmFlag === true) {
     const singleDose = String(dto.dosageDisplay ?? '').trim();
@@ -276,7 +280,7 @@ function buildExecuteDosageDisplay(dto: NurseStationOrderExecuteRowDto): string 
     }
     return singleDose || fuText || '—';
   }
-  // 长期药：单次量 + 日总量（频次在用法行）
+  // 长期药：单次量 + 日总量 + 可选首日用量（频次在用法行）
   const therapy = String(dto.therapyEnum ?? '')
     .trim()
     .toUpperCase();
@@ -284,6 +288,9 @@ function buildExecuteDosageDisplay(dto: NurseStationOrderExecuteRowDto): string 
     const longTermLine = formatLongTermMedicationDoseLine({
       dosageDisplay: dto.dosageDisplay,
       dailyDoseDisplay: dto.dailyDoseDisplay,
+      firstDose: dto.firstDose,
+      firstDoseUnitCode: dto.firstDoseUnitCode,
+      firstDoseUnitName: dto.firstDoseUnitName,
     });
     if (longTermLine) return longTermLine;
   }
@@ -694,6 +701,7 @@ export function mapExecuteRowDtoToTableRow(
     skinTestFlag: dto.skinTestFlag === true ? true : undefined,
     skinTestOutcomeCode: String(dto.skinTestOutcomeCode ?? '').trim() || undefined,
     skinTestOutcomeText: String(dto.skinTestOutcomeText ?? '').trim() || undefined,
+    priorityEnum: String(dto.priorityEnum ?? '').trim() || undefined,
   };
 }
 
@@ -702,12 +710,15 @@ function executeDtoToDrugGroupItem(dto: NurseStationOrderExecuteRowDto): DrugGro
   const therapy = String(dto.therapyEnum ?? '')
     .trim()
     .toUpperCase();
-  // 长期：单次+日总量；瓶贴打印与列表剂量列同源
+  // 长期：单次+日总量+可选首日；瓶贴打印与列表剂量列同源
   const longTermDoseLine =
     therapy === 'LONG_TERM'
       ? formatLongTermMedicationDoseLine({
           dosageDisplay: dto.dosageDisplay,
           dailyDoseDisplay: dto.dailyDoseDisplay,
+          firstDose: dto.firstDose,
+          firstDoseUnitCode: dto.firstDoseUnitCode,
+          firstDoseUnitName: dto.firstDoseUnitName,
         })
       : '';
   const doseText = longTermDoseLine || String(dto.dosageDisplay ?? '').trim();
@@ -861,14 +872,16 @@ export function indexExecuteGroupsByEncounterId(
 
 /**
  * 医嘱执行「项目类型」快捷筛选（UI code；与后端 medicineCategoryTab 不同）。
- * 检验=22、检查=23、治疗=21、嘱托=52。
+ * 检验=22、检查=23、治疗=21、嘱托=52、手术=24、麻醉=25。
  * 空选=查全部（仅排除护理=26/转科=32/出院=34）；勾选才按快捷类型收窄。
  * 会诊等未挂快捷项的医嘱不归类、也不因白名单被抹掉。
  */
 export type NurseStationOrderExecuteProjectType =
   | 'entrust'
+  | 'anesthesia'
   | 'exam'
   | 'lab'
+  | 'surgery'
   | 'tcm'
   | 'treatment'
   | 'west';
@@ -880,6 +893,8 @@ export const NURSE_STATION_ORDER_EXECUTE_PROJECT_TYPES: NurseStationOrderExecute
   'lab',
   'exam',
   'treatment',
+  'surgery',
+  'anesthesia',
   'entrust',
 ];
 
@@ -918,6 +933,12 @@ export function resolveExecuteRowProjectType(
   }
   if (category === SERVICE_CATEGORY_ENTRUST) {
     return 'entrust';
+  }
+  if (category === SERVICE_CATEGORY_PROCEDURE) {
+    return 'surgery';
+  }
+  if (category === SERVICE_CATEGORY_ANESTHESIA) {
+    return 'anesthesia';
   }
   return null;
 }

@@ -34,4 +34,16 @@ public class LoadInpatientPharmacyDailySettlementPageInitResponse {
     /** 药师岗发药人下拉（全员多选）。 */
     @Schema(description = "发药人下拉")
     private List<OptionDto> practitionerOptions;
+
+    /**
+     * 重点药类型选项（基药/监控/集采/抗生素）；与 AS-RPT-011 同构，供品规销售排名筛选。
+     */
+    @Schema(description = "重点药类型下拉")
+    private List<OptionDto> keyDrugTypeOptions;
+
+    /**
+     * 药品性质选项（麻醉/精一/精二）；与重点药类型分框，供品规销售排名筛选。
+     */
+    @Schema(description = "药品性质下拉")
+    private List<OptionDto> medicinePropertyOptions;
 }

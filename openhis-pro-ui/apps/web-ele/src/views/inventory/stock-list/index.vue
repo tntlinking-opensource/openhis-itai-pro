@@ -137,6 +137,7 @@ interface InventoryDetailFormState {
   chrgitmLvList?: string[];
   /** 重点药类型 code；undefined 表示不限 */
   keyDrugType?: string;
+  medicinePropertyCode?: string;
   zeroStockFilter?: typeof INVENTORY_RANGE_ZERO_CODE | typeof INVENTORY_RANGE_GT_ZERO_CODE;
   expireWithinDays?: string;
   warningMode?: InventoryWarningMode;
@@ -414,6 +415,7 @@ function buildPageRequest() {
     inventoryStatusEnums: emptyToUndef(queryParams.inventoryStatusEnums),
     chrgitmLvList: toChrgitmLvInts(queryParams.chrgitmLvList),
     keyDrugType: queryParams.keyDrugType,
+    medicinePropertyCode: queryParams.medicinePropertyCode,
     zeroStockOnly: z,
     expireWithinDays,
     warningMode: queryParams.warningMode,
@@ -432,6 +434,7 @@ function buildSumExportFilter(): SumInventoryDetailCurrentRequest {
     deviceCategoryCodes: p.deviceCategoryCodes,
     chrgitmLvList: p.chrgitmLvList,
     keyDrugType: p.keyDrugType,
+    medicinePropertyCode: p.medicinePropertyCode,
     zeroStockOnly: p.zeroStockOnly,
     expireWithinDays: p.expireWithinDays,
     inventoryStatusEnums: p.inventoryStatusEnums,
@@ -602,6 +605,7 @@ function handleReset() {
   queryParams.inventoryStatusEnums = undefined;
   queryParams.chrgitmLvList = undefined;
   queryParams.keyDrugType = undefined;
+  queryParams.medicinePropertyCode = undefined;
   queryParams.zeroStockFilter = INVENTORY_RANGE_GT_ZERO_CODE;
   queryParams.warningMode = undefined;
   queryParams.pageNo = 1;
@@ -1052,6 +1056,19 @@ watch(
                 <ElOption label="国家重点监控药品" value="NATIONAL_MONITOR" />
                 <ElOption label="集采药品" value="CENTRAL_PURCHASE" />
                 <ElOption label="抗生素" value="ANTIBIOTIC" />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="药品性质">
+              <ElSelect
+                v-model="queryParams.medicinePropertyCode"
+                clearable
+                placeholder="全部"
+                :class="REPORT_QUERY_CONTROL"
+                @change="handleQuery"
+              >
+                <ElOption label="麻醉药品" value="NARCOTIC" />
+                <ElOption label="一类精神药品" value="PSYCH_ONE" />
+                <ElOption label="二类精神药品" value="PSYCH_TWO" />
               </ElSelect>
             </ElFormItem>
             <ElFormItem label="库存范围">

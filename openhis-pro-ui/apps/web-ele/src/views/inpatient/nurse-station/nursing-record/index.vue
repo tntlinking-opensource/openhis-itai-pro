@@ -33,6 +33,7 @@ import {
 } from '#/utils/inventory/inventory-workbench-list';
 
 import NursingRecordPaperTable from '#/views/inpatient/nurse-station/nursing-record/components/nursing-record-paper-table.vue';
+import { canDeleteNursingRecordRow } from '#/views/inpatient/nurse-station/nursing-record/components/nursing-record-row-state';
 
 import { loadPrintPendingRows } from '../print-center/load-print-pending';
 import { printInpatientPrintCenter } from '../print-center/print-center-print';
@@ -308,23 +309,29 @@ async function handlePaperSaveAll() {
   }
 }
 
-/** 删除额外行；已落库行调删除接口 */
+/** 删除护理记录行：已落库调删除接口；骨架槽清空留白，额外行直接移除 */
 async function handlePaperDeleteRow(id: string) {
   if (props.readonly) {
     return;
   }
   const context = selectedPatientContext.value;
-  const target = recordList.value.find((item) => item.id === id);
-  if (!target || target.rowType !== 'extra') {
-    ElMessage.warning('骨架行不可删除，可清空内容后保存');
+  const index = recordList.value.findIndex((item) => item.id === id);
+  const target = index >= 0 ? recordList.value[index] : undefined;
+  if (!target || !canDeleteNursingRecordRow(target)) {
+    ElMessage.warning('空白行不可删除');
     return;
   }
 
-  if (target.vitalSignId && context) {
+  const vitalSignId = `${target.vitalSignId ?? ''}`.trim();
+  if (vitalSignId) {
+    if (!context) {
+      ElMessage.warning('请先选择患者');
+      return;
+    }
     deletingRowId.value = id;
     try {
       await httpDeleteNurseStationNursingRecord({
-        vitalSignId: target.vitalSignId,
+        vitalSignId,
         encounterId: context.encounterId,
         patientId: context.patientId,
       });
@@ -333,9 +340,20 @@ async function handlePaperDeleteRow(id: string) {
     }
   }
 
-  recordList.value = recordList.value.filter((item) => item.id !== id);
-  if (recordList.value.length === 0) {
-    recordList.value = buildWeekSkeletonRows(queryDayCount.value);
+  // 额外行整行移除；骨架槽只清内容，避免纸质单预置行被抽掉
+  if (target.rowType === 'extra') {
+    recordList.value = recordList.value.filter((item) => item.id !== id);
+    if (recordList.value.length === 0) {
+      recordList.value = buildWeekSkeletonRows(queryDayCount.value);
+    }
+  } else {
+    const next = recordList.value.slice();
+    next[index] = {
+      ...createEmptyNursingRecordRow(),
+      rowType: 'skeleton',
+      isDirty: false,
+    };
+    recordList.value = next;
   }
   ElMessage.success('已删除记录');
 }

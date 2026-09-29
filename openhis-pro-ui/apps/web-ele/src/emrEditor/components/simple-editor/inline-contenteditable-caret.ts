@@ -231,7 +231,10 @@ export function readContentEditableSelectionOffsets(
     endOffset = islandRange.endOffset;
   }
 
-  return readIslandPlainRangeEndpoints(el, startContainer, startOffset, endContainer, endOffset);
+  const a = emrIslandPlainTextOffsetBefore(el, startContainer, startOffset);
+  const b = emrIslandPlainTextOffsetBefore(el, endContainer, endOffset);
+  // 折叠光标也要 from===to；不可走非折叠助手（to<=from 会当成没选区）
+  return { from: Math.min(a, b), to: Math.max(a, b) };
 }
 
 /**
@@ -541,9 +544,8 @@ export function syncContentEditableFromValue(
   }
   if (typeof caretOffset === 'number') {
     setContentEditableCaretOffset(el, caretOffset);
-    if (options?.pinCaret) {
-      pinIslandCaret(el, Math.min(caretOffset, next.length));
-    }
+    // textContent 赋值会同步触发 input，把 pin 盖成 0；必须在设光标后再钉一次
+    pinIslandCaret(el, Math.min(caretOffset, next.length), options?.pinCaret ? 800 : 400);
   }
 }
 

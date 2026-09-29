@@ -6,7 +6,7 @@ package com.openhis.health.application.finance.cashiersettlementapproval.support
 
 import com.openhis.health.application.finance.cashiersettlementapproval.dto.CashierSettlementApprovalHeaderDto;
 import com.openhis.health.application.finance.cashiersettlementapproval.dto.CashierSettlementApprovalListItemDto;
-import com.openhis.health.application.finance.pharmacydailysettlement.support.PharmacyDailySettlementPricingSupport;
+import com.openhis.health.application.shared.pharmacydailysettlement.PharmacyDailySettlementPricingSupport;
 import com.openhis.health.application.shared.financial.cashiersettlement.CashierSettlementPartyNamesEnricher;
 import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;

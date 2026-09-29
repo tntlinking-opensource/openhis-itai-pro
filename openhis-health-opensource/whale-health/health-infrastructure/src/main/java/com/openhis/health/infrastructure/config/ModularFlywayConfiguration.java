@@ -23,7 +23,7 @@ import java.util.List;
 /**
  * 多模块 Flyway：同一数据库、各自独立的 {@code flyway_schema_history_*} 表。
  * <p>
- * health 核心脚本在 {@code db/migration/health}（V1–V10，增量接着编如 V26、V27）；
+ * health 核心脚本在 {@code db/migration/health}（V1–V10，增量自 V11 起；当前至 V38）；
  * 扩展 Module 通过 {@code META-INF/openhis/flyway-module.json} 声明 locations 与 history 表。
  * <p>
  * 链顺序：health 核心 → 业务 Module → 院点 {@code project-*} → health-dev（可选）→ health-final。

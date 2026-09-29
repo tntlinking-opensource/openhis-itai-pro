@@ -89,7 +89,7 @@ public class MrmsCaseRecordVolumeAppService {
     private void assertVolumeAccessible(CaseRecord record) {
         CaseRecordStatus status = record.getStatusEnum();
         // 质控中/已归档允许查看卷宗
-        if (status == CaseRecordStatus.ARCHIVED || status == CaseRecordStatus.QCING) {
+        if (status == CaseRecordStatus.ARCHIVED) {
             return;
         }
         // 草稿/提交中等状态禁止泄露完整卷宗

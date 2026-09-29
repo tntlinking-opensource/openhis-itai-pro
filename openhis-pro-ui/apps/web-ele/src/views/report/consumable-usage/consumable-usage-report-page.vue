@@ -53,6 +53,10 @@ import { useRequest } from '#/hooks/use-request';
 import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
 import { buildExcelExportColumns } from '#/utils/export/build-excel-export-columns';
 import { formatMoneyDisplay, sumMoneyThenSettle } from '#/utils/format/money-scale';
+import {
+  getReportPrintColumnPreference,
+  normalizeReportPrintScope,
+} from '#/utils/print/print-report-list';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
   isReportRefundBySignedFields,
@@ -67,6 +71,7 @@ import {
   ReportPageFooter,
   ReportPrintFieldDialog,
   ReportQueryBar,
+  collectPagedReportRows,
   reportPrintFieldsOf,
   ReportTableScroll,
   resolveReportDetailRowClassName,
@@ -328,11 +333,10 @@ function mapSummaryPrintRows(): Record<string, string>[] {
 }
 
 /** 将当前页明细行映射为打印单元格。 */
-function mapDetailPrintRows(): Record<string, string>[] {
+function mapDetailPrintRows(source = detailRows.value): Record<string, string>[] {
   const catalog = printColumnCatalog.value;
   const fields = reportPrintFieldsOf(catalog);
-  // 只打当前明细页行
-  return detailRows.value.map((row) =>
+  return source.map((row) =>
     mapReportPrintRow(row as Record<string, unknown>, fields, {
       sourceCode_dictText: (value, r) => String(value ?? r.sourceCode ?? '').trim(),
       quantityDisplay: (_value, r) =>
@@ -375,10 +379,45 @@ function buildPrintSummaryItems(): ReportPrintSummaryItem[] {
   if (isSummaryTab.value) {
     return toPrintAmountSummaryItems(purchaseNetTotalAmount.value, saleNetTotalAmount.value);
   }
-  // 明细只打本页：与纸面行同源加总
+  if (
+    printAllDetailSummary.value &&
+    normalizeReportPrintScope(getReportPrintColumnPreference(printReportCode.value)?.printScope) ===
+      'all'
+  ) {
+    return printAllDetailSummary.value;
+  }
   const purchaseSum = sumMoneyThenSettle(detailRows.value.map((row) => row.purchaseAmount));
   const saleSum = sumMoneyThenSettle(detailRows.value.map((row) => row.saleAmount));
   return toPrintAmountSummaryItems(purchaseSum, saleSum);
+}
+
+/** 跨页打印明细时暂存全量进价/售价合计，避免表尾仍加总本页。 */
+const printAllDetailSummary = ref<ReportPrintSummaryItem[] | undefined>();
+
+/** 跨页打印：汇总已一次返回；明细按当前筛选分页拉全量。 */
+async function fetchAllConsumablePrintRows() {
+  printAllDetailSummary.value = undefined;
+  if (isSummaryTab.value) {
+    return { rows: mapSummaryPrintRows(), truncated: false };
+  }
+  const filters = buildFilterPayload();
+  if (!filters) {
+    return { rows: [], truncated: false };
+  }
+  const collected = await collectPagedReportRows({
+    fetchPage: async (pageNo, pageSize) => {
+      const page = await pageConsumableUsageReportDetailApi(props.scope, {
+        ...filters,
+        pageNo,
+        pageSize,
+      });
+      return { rows: page.records ?? [], total: Number(page.total ?? 0) };
+    },
+  });
+  const purchaseSum = sumMoneyThenSettle(collected.rows.map((row) => row.purchaseAmount));
+  const saleSum = sumMoneyThenSettle(collected.rows.map((row) => row.saleAmount));
+  printAllDetailSummary.value = toPrintAmountSummaryItems(purchaseSum, saleSum);
+  return { rows: mapDetailPrintRows(collected.rows), truncated: collected.truncated };
 }
 
 const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrintCurrentPage } =
@@ -388,6 +427,11 @@ const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrint
     getReportTitle: () => printReportTitle.value,
     getPrintRows: () => (isSummaryTab.value ? mapSummaryPrintRows() : mapDetailPrintRows()),
     getSummaryItems: () => buildPrintSummaryItems(),
+    fetchAllPrintRows: fetchAllConsumablePrintRows,
+    hasPrintableData: () =>
+      isSummaryTab.value
+        ? summaryRows.value.length > 0
+        : total.value > 0 || detailRows.value.length > 0,
   });
 
 const { run: runInit, loading: initLoading } = useRequest(
@@ -1357,6 +1401,7 @@ onMounted(async () => {
       ref="printFieldDialogRef"
       :report-code="printReportCode"
       :column-catalog="printColumnCatalog"
+      show-print-scope
     />
   </Page>
 </template>

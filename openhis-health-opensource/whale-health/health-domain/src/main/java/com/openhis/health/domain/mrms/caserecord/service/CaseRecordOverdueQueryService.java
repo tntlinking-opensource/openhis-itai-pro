@@ -42,9 +42,7 @@ public class CaseRecordOverdueQueryService {
             predicates.add(cb.isNotNull(root.get("dscgTime")));
             predicates.add(cb.lessThanOrEqualTo(root.get("dscgTime"), dischargeBefore));
             // 仅医生侧未提交态计入逾期提交
-            predicates.add(root.get("statusEnum").in(
-                    CaseRecordStatus.DRAFT,
-                    CaseRecordStatus.RETURNED));
+            predicates.add(root.get("statusEnum").in(CaseRecordStatus.DRAFT));
             return cb.and(predicates.toArray(new Predicate[0]));
         };
         return caseRecordRepository.findAll(spec);

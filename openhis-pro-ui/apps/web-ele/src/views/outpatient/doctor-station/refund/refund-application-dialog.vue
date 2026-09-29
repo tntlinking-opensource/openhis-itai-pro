@@ -206,16 +206,23 @@ function isPaymentGroupHeadSelectable(row: RefundTableRow) {
   return row.isFirstLineInPaymentGroup;
 }
 
-/** 按组首行勾选结果展开为整单拟退行 */
+/**
+ * 按支付单首行勾选展开为整单拟退行。
+ * 合并单元格后，取消某张支付单时其明细行可能仍留在表格选中集合里，不能据此把该单勾回去。
+ */
 function expandSelectionToWholePaymentGroups(selection: RefundTableRow[]) {
   const selectedPaymentIds = new Set<string>();
+  // 只认每张支付单的首行勾选，两张单可以只退其中一张
   for (const row of selection) {
+    if (!row.isFirstLineInPaymentGroup) {
+      continue;
+    }
     selectedPaymentIds.add(row.paymentId);
   }
   return tableRows.value.filter((row) => selectedPaymentIds.has(row.paymentId));
 }
 
-/** 将勾选状态同步到 ElTable（整单拟退行一并勾选） */
+/** 将勾选状态同步到 ElTable：只勾支付单首行，避免明细行把已取消的单勾回 */
 async function applyTableSelection(rows: RefundTableRow[]) {
   await nextTick();
   const table = tableRef.value;
@@ -223,9 +230,12 @@ async function applyTableSelection(rows: RefundTableRow[]) {
 
   syncingSelection.value = true;
   table.clearSelection();
-  const selectedIds = new Set(rows.map((row) => row.chargeItemId));
+  const selectedPaymentIds = new Set(rows.map((row) => row.paymentId));
   for (const row of tableRows.value) {
-    table.toggleRowSelection(row, selectedIds.has(row.chargeItemId));
+    if (!row.isFirstLineInPaymentGroup) {
+      continue;
+    }
+    table.toggleRowSelection(row, selectedPaymentIds.has(row.paymentId));
   }
   syncingSelection.value = false;
 }
@@ -267,7 +277,7 @@ async function handleRefresh() {
   await loadRefundableLines(hadSelection);
 }
 
-/** 表格多选变更：按原支付整单展开，不支持组内半退 */
+/** 表格多选变更：按原支付整单展开，支付单之间可只选一张 */
 function handleSelectionChange(selection: RefundTableRow[]) {
   if (syncingSelection.value) {
     return;
@@ -275,11 +285,9 @@ function handleSelectionChange(selection: RefundTableRow[]) {
   const expanded = expandSelectionToWholePaymentGroups(selection);
   selectedRows.value = expanded;
 
-  const expandedIds = new Set(expanded.map((row) => row.chargeItemId));
-  const rawIds = new Set(selection.map((row) => row.chargeItemId));
-  const needsSync =
-    expandedIds.size !== rawIds.size || [...expandedIds].some((id) => !rawIds.has(id));
-  if (needsSync) {
+  // 明细行残留在选中集合时清掉，避免取消一张支付单后又被勾回
+  const hasNonHeadSelected = selection.some((row) => !row.isFirstLineInPaymentGroup);
+  if (hasNonHeadSelected) {
     void applyTableSelection(expanded);
   }
 }

@@ -4,6 +4,7 @@
  */
 package com.openhis.health.application.inpatient.nursestation.costdetail.service;
 
+import com.openhis.health.application.shared.report.ChargeItemActivityOperatorResolver;
 import com.openhis.health.application.shared.validator.CurrentManagedWardLocationIdsResolver;
 import com.openhis.health.application.shared.validator.PatientEncounterConsistencyGate;
 import com.openhis.health.application.inpatient.nursestation.costdetail.assembler.NurseStationCostDetailAssembler;
@@ -71,6 +72,7 @@ public class NurseStationCostDetailAppService {
     private final PatientEncounterConsistencyGate patientEncounterConsistencyGate;
     private final PractitionerQueryService practitionerQueryService;
     private final ServiceRequestQueryService serviceRequestQueryService;
+    private final ChargeItemActivityOperatorResolver chargeItemActivityOperatorResolver;
 
     /**
      * 费用明细页初始化：默认当日日期区间与明细/汇总展示选项。
@@ -139,11 +141,20 @@ public class NurseStationCostDetailAppService {
                 detailLines = nurseStationCostDetailAssembler.buildDetailLines(
                     displayRows, productByKey, parentChargeById, autoRollServiceRequestIds);
             } else {
-                // Pre：批量加载汇总展开明细涉及的操作人展示名
+                // Pre：操作人跟 Procedure / DeviceDispense，再批量查姓名
+                List<ChargeItem> chargesForOperator = this.collectChargeItemsFromRows(displayRows);
+                Map<Long, Long> operatorByChargeItemId =
+                    chargeItemActivityOperatorResolver.mapOperatorPractitionerIdByChargeItemId(chargesForOperator);
                 Map<Long, String> practitionerNameById =
-                    this.loadPractitionerNamesForChargeRows(displayRows);
+                    this.loadPractitionerNamesByIds(
+                        nurseStationCostDetailAssembler.collectOperatorIdsFromResolvedMap(operatorByChargeItemId));
                 summaryLines = nurseStationCostDetailAssembler.buildSummaryLines(
-                    displayRows, productByKey, parentChargeById, practitionerNameById, autoRollServiceRequestIds);
+                    displayRows,
+                    productByKey,
+                    parentChargeById,
+                    practitionerNameById,
+                    operatorByChargeItemId,
+                    autoRollServiceRequestIds);
             }
             // Asm：映射查询响应
             return nurseStationCostDetailMapper.toQueryResponse(
@@ -325,16 +336,33 @@ public class NurseStationCostDetailAppService {
     }
 
     /**
-     * 批量加载费用候选行涉及操作人的展示名（汇总展开明细用）。
+     * 从费用候选行抽出收费实体列表（供操作人解析）。
      *
      * @param chargeRows 域查询候选行
+     * @return 非空 ChargeItem 列表
+     */
+    private List<ChargeItem> collectChargeItemsFromRows(List<InpatientNurseStationCostDetailChargeRow> chargeRows) {
+        List<ChargeItem> charges = new ArrayList<>();
+        if (chargeRows == null || chargeRows.isEmpty()) {
+            return charges;
+        }
+        for (InpatientNurseStationCostDetailChargeRow row : chargeRows) {
+            if (row != null && row.getChargeItem() != null) {
+                charges.add(row.getChargeItem());
+            }
+        }
+        return charges;
+    }
+
+    /**
+     * 按操作人主键批量加载展示名。
+     *
+     * @param operatorIds 操作人 practitioner 主键
      * @return 操作人 id → 姓名；无命中时空 Map
      */
-    private Map<Long, String> loadPractitionerNamesForChargeRows(
-        List<InpatientNurseStationCostDetailChargeRow> chargeRows) {
+    private Map<Long, String> loadPractitionerNamesByIds(Set<Long> operatorIds) {
         Map<Long, String> practitionerNameById = new HashMap<>();
-        Set<Long> operatorIds = nurseStationCostDetailAssembler.collectOperatorIdsForChargeRows(chargeRows);
-        if (operatorIds.isEmpty()) {
+        if (operatorIds == null || operatorIds.isEmpty()) {
             return practitionerNameById;
         }
         List<Practitioner> practitioners = practitionerQueryService.findAllByIds(operatorIds);

@@ -192,6 +192,17 @@ export function stripDocumentStampMetadataFromContentJson(doc: unknown): JSONCon
   return stripMetadataKeysFromContentJson(doc, (key) => isDocumentStampMetadataKey(key));
 }
 
+/**
+ * 门诊病历套模板/复用前清空右下角落款（接诊医生 + 签字/记录时间）。
+ * 清空后由当前登录人与当天日期重新写入，不沿用模板或历史文书。
+ */
+export function stripOutpatientSignoffMetadataFromContentJson(doc: unknown): JSONContent {
+  return stripMetadataKeysFromContentJson(
+    doc,
+    (key) => key === 'doctorName' || isDocumentStampMetadataKey(key),
+  );
+}
+
 /** 按 fieldKey 谓词清空可填元数据 value */
 function stripMetadataKeysFromContentJson(
   doc: unknown,

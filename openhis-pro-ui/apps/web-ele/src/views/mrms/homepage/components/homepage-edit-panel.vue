@@ -38,7 +38,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  statusCode: 'draft',
+  statusCode: 'DRAFT',
   medcasno: '',
   returnReason: '',
   readonly: false,

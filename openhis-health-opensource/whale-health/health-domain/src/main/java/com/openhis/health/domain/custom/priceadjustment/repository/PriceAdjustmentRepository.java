@@ -8,6 +8,7 @@ import com.openhis.health.domain.custom.priceadjustment.entity.PriceAdjustment;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
@@ -36,6 +37,20 @@ public interface PriceAdjustmentRepository extends JpaRepository<PriceAdjustment
      * @return 存在未删匹配行时为 true
      */
     boolean existsByItemTableAndItemIdAndStatusEnumAndIsDeletedFalse(String itemTable, Long itemId, String statusEnum);
+
+    /**
+     * 判断项目集合中是否存在指定状态的调价单（签发前 pending 互斥批量预检）。
+     *
+     * @param itemTable  项目物理表
+     * @param itemIds    项目定义主键集合
+     * @param statusEnum 状态 code（如 pending）
+     * @return 存在任一未删匹配行时为 true
+     */
+    boolean existsByItemTableAndItemIdInAndStatusEnumAndIsDeletedFalse(
+        String itemTable,
+        Collection<Long> itemIds,
+        String statusEnum
+    );
 
     /**
      * 批量判断项目是否存在指定状态的调价单（大单提交 pending 互斥，避免逐条 exists）。

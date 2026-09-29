@@ -5,7 +5,7 @@
 package com.openhis.health.application.report.medicationdispense.inpatient.support;
 
 import com.openhis.health.application.outpatient.pharmacy.dispenserecord.dto.PharmacyDispenseRecordQueryRowDto;
-import com.openhis.health.application.outpatient.pharmacy.dispenserecord.support.PharmacyDispenseRecordChargePricingAssembler;
+import com.openhis.health.application.shared.pharmacy.PharmacyDispenseRecordChargePricingAssembler;
 import com.openhis.health.application.outpatient.pharmacy.dispenserecord.support.PharmacyDispenseRecordLoader;
 import com.openhis.health.application.outpatient.pharmacy.dispenserecord.support.PharmacyDispenseRecordReadAssembler;
 import com.openhis.health.application.report.medicationdispense.inpatient.dto.InpatientMedicationDispenseDetailRowDto;
@@ -230,6 +230,7 @@ public class InpatientMedicationDispenseReportQuerySupport {
      * @param patientKeyword          患者关键字
      * @param feeNatureContractNo     费用性质 bus_no
      * @param requestingOrgId         开立科室（药嘱 org_id）；空则不筛
+     * @param keyDrugType             药品性质（KeyDrugType：NARCOTIC/PSYCH_ONE/PSYCH_TWO）；空=不限
      * @param pageNo                  页码
      * @param pageSize                页大小
      * @return 领域查询入参
@@ -245,6 +246,7 @@ public class InpatientMedicationDispenseReportQuerySupport {
         String patientKeyword,
         String feeNatureContractNo,
         Long requestingOrgId,
+        String keyDrugType,
         Integer pageNo,
         Integer pageSize) {
         MedicationDispenseRecordPageQuery query = new MedicationDispenseRecordPageQuery();
@@ -261,6 +263,8 @@ public class InpatientMedicationDispenseReportQuerySupport {
         query.setPractitionerId(dispenserPractitionerId);
         this.pharmacyDispenseRecordLoader.enrichInpatientRecordFilters(
             query, medicationCategoryCodes, drugKeyword, patientKeyword);
+        // Pre：药品性质（麻醉/精一/精二）与类型多选求交
+        this.pharmacyDispenseRecordLoader.enrichKeyDrugTypeFilter(query, keyDrugType);
         this.reportPatientSettlementContextAssembler.applyFeeNatureFilterToMedicationDispenseRecordQuery(
             query, feeNatureContractNo);
         // Pre：开立科室 → 药嘱 org_id 预解析 medReqId（B.6.4）
@@ -316,6 +320,7 @@ public class InpatientMedicationDispenseReportQuerySupport {
      * @param medicationCategoryCodes 类型
      * @param drugKeyword             药品关键字
      * @param consumingOrganizationId 领用科室；空则不筛
+     * @param keyDrugType             药品性质（KeyDrugType）；空=不限
      * @param summaryDimension        汇总维；明细分页可空
      * @param pageNo                  页码
      * @param pageSize                页大小
@@ -328,6 +333,7 @@ public class InpatientMedicationDispenseReportQuerySupport {
         List<String> medicationCategoryCodes,
         String drugKeyword,
         Long consumingOrganizationId,
+        String keyDrugType,
         String summaryDimension,
         Integer pageNo,
         Integer pageSize) {
@@ -388,7 +394,8 @@ public class InpatientMedicationDispenseReportQuerySupport {
         if (consumingOrganizationId != null) {
             query.setConsumingOrganizationId(consumingOrganizationId);
         }
-        query.setResolvedItemIds(this.resolveMedicationItemIds(medicationCategoryCodes, drugKeyword));
+        query.setResolvedItemIds(
+            this.resolveMedicationItemIds(medicationCategoryCodes, drugKeyword, keyDrugType));
         return query;
     }
 
@@ -992,17 +999,22 @@ public class InpatientMedicationDispenseReportQuerySupport {
     }
 
     /**
-     * 按药品类型/关键字解析领用侧 item_id 预筛；无筛选时返回 null（不收窄）。
+     * 按药品类型/关键字/药品性质解析领用侧 item_id 预筛；无筛选时返回 null（不收窄）。
      *
      * @param medicationCategoryCodes 类型
      * @param drugKeyword             关键字
+     * @param keyDrugType             药品性质 KeyDrugType code；空=不限
      * @return 预解析 id；无筛选 null；有筛选无命中空列表
      */
-    private List<Long> resolveMedicationItemIds(List<String> medicationCategoryCodes, String drugKeyword) {
+    private List<Long> resolveMedicationItemIds(
+        List<String> medicationCategoryCodes,
+        String drugKeyword,
+        String keyDrugType) {
         boolean hasCategory = medicationCategoryCodes != null && !medicationCategoryCodes.isEmpty();
         boolean hasKeyword = StringUtils.isNotEmpty(drugKeyword);
-        // 无类型且无关键字：不写 resolvedItemIds，领用侧不过滤品规
-        if (!hasCategory && !hasKeyword) {
+        boolean hasKeyDrug = StringUtils.isNotEmpty(keyDrugType);
+        // 无类型且无关键字且无药品性质：不写 resolvedItemIds，领用侧不过滤品规
+        if (!hasCategory && !hasKeyword && !hasKeyDrug) {
             return null;
         }
         LinkedHashSet<Long> union = new LinkedHashSet<>();
@@ -1024,6 +1036,7 @@ public class InpatientMedicationDispenseReportQuerySupport {
                 if (byKeyword != null) {
                     union.addAll(byKeyword);
                 }
+                initialized = true;
             } else {
                 // 类型∩关键字：无命中则空列表拒查
                 LinkedHashSet<Long> keywordSet = new LinkedHashSet<>();
@@ -1031,6 +1044,22 @@ public class InpatientMedicationDispenseReportQuerySupport {
                     keywordSet.addAll(byKeyword);
                 }
                 union.retainAll(keywordSet);
+            }
+        }
+        // 药品性质（麻醉/精一/精二）与已解析主键求交
+        if (hasKeyDrug) {
+            List<Long> byKeyDrug =
+                this.medicationDefinitionQueryService.listIdsByKeyDrugType(keyDrugType.trim());
+            if (!initialized) {
+                if (byKeyDrug != null) {
+                    union.addAll(byKeyDrug);
+                }
+            } else {
+                LinkedHashSet<Long> keyDrugSet = new LinkedHashSet<>();
+                if (byKeyDrug != null) {
+                    keyDrugSet.addAll(byKeyDrug);
+                }
+                union.retainAll(keyDrugSet);
             }
         }
         return new ArrayList<>(union);

@@ -5,11 +5,24 @@ import type { OrderTemplateHeaderItem } from '#/api/basic/order-template';
 
 import { computed, onActivated, onDeactivated, ref, watch } from 'vue';
 
-import { ElInput, ElScrollbar, ElTooltip, ElTree } from 'element-plus';
+import {
+  ElButton,
+  ElInput,
+  ElMessage,
+  ElMessageBox,
+  ElScrollbar,
+  ElTooltip,
+  ElTree,
+} from 'element-plus';
 
-import { ORDER_TEMPLATE_KIND_GENERAL } from '#/api/basic/order-template';
+import {
+  changeOrderTemplateLifecycleApi,
+  ORDER_TEMPLATE_KIND_GENERAL,
+  ORDER_TEMPLATE_LIFECYCLE_DELETE,
+} from '#/api/basic/order-template';
 import SidePaneCollapseHandle from '#/components/layouts/side-pane-collapse-handle.vue';
 import { DOCTOR_STATION_SIDEBAR_WIDTH_PX } from '#/constants/layout/viewport-breakpoints';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import {
   buildOrderTemplateTreeFromGroups,
@@ -21,12 +34,15 @@ import {
 defineOptions({ name: 'OrderTemplateSidePanel' });
 
 interface Props {
+  /** 为 true 时，个人组套节点展示删除（住院医生站开启；门诊默认关闭） */
+  allowPersonalDelete?: boolean;
   encounterId?: string;
   patientId?: string;
   templateKindEnum?: string;
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  allowPersonalDelete: false,
   encounterId: '',
   patientId: '',
   templateKindEnum: ORDER_TEMPLATE_KIND_GENERAL,
@@ -44,6 +60,8 @@ const COLLAPSED_WIDTH = 28;
 const searchKeyword = ref('');
 const selectedNodeId = ref('');
 const listLoading = ref(false);
+/** 正在删除的个人组套 id，避免重复提交 */
+const deletingTemplateId = ref('');
 /** 小屏可收起组套树，把横向空间让给医嘱表格 */
 const isCollapsed = ref(false);
 const templateGroups =
@@ -135,6 +153,46 @@ function handleTemplateTreeNodeClick(data: OrderTemplateTreeNode) {
   emit('select', header);
 }
 
+/** 个人组套节点是否展示删除（仅住院医生站开启） */
+function showPersonalDelete(data: OrderTemplateTreeNode) {
+  return (
+    props.allowPersonalDelete && data.nodeType === 'template' && data.bindingScope === 'PERSONAL'
+  );
+}
+
+/** 删除当前医生的个人组套，成功后刷新侧栏 */
+async function handleDeletePersonalTemplate(data: OrderTemplateTreeNode) {
+  const orderTemplateId = preserveApiIdForRequest(data.templateId ?? data.header?.orderTemplateId);
+  if (!orderTemplateId || deletingTemplateId.value) {
+    return;
+  }
+  const name = String(data.header?.name ?? '').trim() || '该组套';
+  try {
+    await ElMessageBox.confirm(`确定删除个人组套「${name}」吗？`, '确认操作', {
+      type: 'warning',
+    });
+  } catch {
+    return;
+  }
+  deletingTemplateId.value = orderTemplateId;
+  try {
+    await changeOrderTemplateLifecycleApi({
+      orderTemplateId,
+      lifecycleActionCode: ORDER_TEMPLATE_LIFECYCLE_DELETE,
+    });
+    ElMessage.success('删除成功');
+    if (selectedNodeId.value === data.id) {
+      selectedNodeId.value = '';
+      emit('select', null);
+    }
+    await reloadTemplateList();
+  } catch {
+    // 请求失败由拦截器提示
+  } finally {
+    deletingTemplateId.value = '';
+  }
+}
+
 /** 供父级取消选中时同步树高亮 */
 function clearSelection() {
   selectedNodeId.value = '';
@@ -176,21 +234,41 @@ defineExpose({ clearSelection, reloadTemplateList });
           @node-click="handleTemplateTreeNodeClick"
         >
           <template #default="{ data }">
-            <div class="flex w-full items-center justify-between py-0.5">
-              <ElTooltip
-                v-if="data.nodeType === 'template'"
-                :content="data.tooltip || '暂无说明'"
-                placement="right"
-                effect="dark"
-                :show-after="400"
-                :hide-after="100"
-              >
-                <span class="truncate text-sm text-[var(--el-text-color-regular)]">
+            <div class="order-template-tree-node flex min-w-0 items-center gap-1 py-0.5">
+              <div class="min-w-0 flex-1">
+                <ElTooltip
+                  v-if="data.nodeType === 'template'"
+                  :content="data.tooltip || '暂无说明'"
+                  placement="right"
+                  effect="dark"
+                  :show-after="400"
+                  :hide-after="100"
+                >
+                  <span class="block truncate text-sm text-[var(--el-text-color-regular)]">
+                    {{ data.label }}
+                  </span>
+                </ElTooltip>
+                <span
+                  v-else
+                  class="block truncate text-sm font-medium text-[var(--el-text-color-primary)]"
+                >
                   {{ data.label }}
                 </span>
-              </ElTooltip>
-              <span v-else class="truncate text-sm font-medium text-[var(--el-text-color-primary)]">
-                {{ data.label }}
+              </div>
+              <span
+                v-if="showPersonalDelete(data)"
+                class="order-template-tree-node__delete shrink-0"
+                @mousedown.stop
+                @click.stop="handleDeletePersonalTemplate(data)"
+              >
+                <ElButton
+                  link
+                  type="danger"
+                  class="order-template-tree-node__delete-btn"
+                  :loading="deletingTemplateId === data.templateId"
+                >
+                  删除
+                </ElButton>
               </span>
             </div>
           </template>
@@ -248,6 +326,23 @@ defineExpose({ clearSelection, reloadTemplateList });
 
 .order-template-tree :deep(.el-tree-node__content) {
   height: 32px;
+}
+
+.order-template-tree-node {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.order-template-tree-node__delete {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.order-template-tree-node__delete-btn {
+  height: 24px;
+  padding: 0 4px;
+  margin-left: 0;
 }
 
 .order-template-side-panel__edge {

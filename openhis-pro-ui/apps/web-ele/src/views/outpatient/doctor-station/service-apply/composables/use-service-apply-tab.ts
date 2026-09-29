@@ -31,6 +31,7 @@ import { printServiceApplyFromAdviceRows } from '#/utils/print/print-service-app
 import { saveAdviceDraftBatchDirect } from '../../advice/services/advice-draft-save.service';
 import {
   buildServiceApplyBoundConsumableDeleteLines,
+  copyServiceApplyFormsAsNewDraft,
   expandServiceApplyResourceTargetsWithBinds,
   loadServiceApplyAdviceRowItems,
   signServiceApplyDraftAdviceRowsWithBind,
@@ -300,6 +301,48 @@ export function useServiceApplyTab(
     });
   }
 
+  /** 勾选申请单整张复制为当前就诊新草稿（与开立医嘱复制同一落库时机） */
+  async function handleCopy() {
+    const encounterId = props.encounterId?.trim() || '';
+    const patientId = props.patientId?.trim() || '';
+    if (!encounterId || !patientId) {
+      ElMessage.warning('缺少就诊或患者信息');
+      return;
+    }
+    const selectedKeys = new Set(tableSelection.value.map((row) => row.key));
+    const forms = documentGroups.value
+      .filter((group) => group.lines.some((line) => selectedKeys.has(line.key)))
+      .map((group) => ({
+        lines: group.lines.filter((line) => selectedKeys.has(line.key)),
+        boundConsumablesByRequestId: group.boundConsumablesByRequestId,
+      }));
+    if (forms.length === 0) {
+      ElMessage.warning('请先勾选要复制的申请单');
+      return;
+    }
+    const receptionOk = await ensureReceptionBeforeClinicalWork();
+    if (!receptionOk) return;
+    await withMutationLoading(async () => {
+      try {
+        await copyServiceApplyFormsAsNewDraft({
+          encounterId,
+          patientId,
+          stationScope: props.stationScope ?? 'outpatient',
+          forms,
+        });
+        ElMessage.success('已复制');
+        clearTableSelection();
+        await loadApplyFormList();
+      } catch (error: unknown) {
+        const msg =
+          error && typeof error === 'object' && 'message' in error
+            ? String((error as { message?: unknown }).message)
+            : '复制失败';
+        ElMessage.error(msg);
+      }
+    });
+  }
+
   async function handleDelete() {
     const encounterId = props.encounterId?.trim() || '';
     const patientId = props.patientId?.trim() || '';
@@ -426,6 +469,7 @@ export function useServiceApplyTab(
     documentGroups,
     getAdviceChargeStatusTagType,
     getAdviceStatusTagType,
+    handleCopy,
     handleDelete,
     handlePrint,
     handleSign,

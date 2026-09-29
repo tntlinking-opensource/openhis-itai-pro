@@ -107,6 +107,9 @@ public interface DoctorStationAdviceConstants {
     /** 出院/转科：存在未完成申请时禁止重复开立。 */
     String MSG_DUPLICATE_TRANSFER_OR_DISCHARGE_REQUEST = "同一就诊存在未完成的转科/出院申请，禁止重复开立";
 
+    /** IF-IP-DOR-21：出院医嘱开立并签发成功提示。 */
+    String MSG_DISCHARGE_ADVICE_CREATED_AND_SIGNED = "出院医嘱已开立并签发";
+
     /** 诊疗草稿：载荷或活动定义主键缺失。 */
     String MSG_SERVICE_PAYLOAD_OR_ACTIVITY_ID_REQUIRED = "诊疗载荷或活动定义主键不能为空";
 
@@ -344,6 +347,14 @@ public interface DoctorStationAdviceConstants {
 
     /** 同 group_id 药品须同一 rate_code（禁止主药 QD、溶媒 ST 异频次并组）。 */
     String MSG_GROUP_RATE_CODE_INCONSISTENT = "同组成组药品的用药频次须一致，请统一后再保存或并组";
+
+    /**
+     * EX-IP-ORD-310：分次用量不一致非法（段数≠频次日次数 / 不成对 / 非长期携带；IF-IP-DOR-14/15 · BR-IP-ORD-037）。
+     */
+    String EX_IP_ORD_310 = "EX-IP-ORD-310";
+
+    /** 分次 schedule 非法时的操作提示（对齐 AS-IP-DOR-003 异常表）。 */
+    String MSG_DOSE_QUANTITY_SCHEDULE_INVALID = "请按频次填全各次剂量，或关闭「用量不一致」";
 
     /** 护理级别（category 26）仅允许开立长期医嘱。 */
     String MSG_NURSING_LEVEL_LONG_TERM_ONLY = "护理级别医嘱仅允许开立长期医嘱";

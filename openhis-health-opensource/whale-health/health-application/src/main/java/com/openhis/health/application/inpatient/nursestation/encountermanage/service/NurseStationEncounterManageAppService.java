@@ -32,7 +32,7 @@ import com.openhis.health.application.inpatient.nursestation.encountermanage.res
 import com.openhis.health.application.inpatient.nursestation.encountermanage.response.SavePatientInfoResponse;
 import com.openhis.health.application.shared.inpatient.AdmissionVitalSignSaveContext;
 import com.openhis.health.application.shared.inpatient.AdmissionVitalSignOrchestrator;
-import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
+import com.openhis.health.application.shared.practitioner.PractitionerRoleScopeLoader;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.support.InpatientPatientQueueNursingLevelEnrichAssembler;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.support.dto.InpatientPatientQueueNursingLevelDisplayRow;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.support.NurseStationOrderViewListAssembler;
@@ -1385,6 +1385,8 @@ public class NurseStationEncounterManageAppService {
             measure.setFirstDose(row.getFirstDose());
             measure.setFirstDoseUnitCode(row.getFirstDoseUnitCode());
             measure.setMethodCode(row.getMethodCode());
+            measure.setQuantitySchedule(row.getQuantitySchedule());
+            measure.setRateCode(row.getRateCode());
             product = this.resolveMedicationProductForPendingExecute(
                 row.getMedicationId(), medicationProductByKey);
             // 统计日末作 selectionDeadline；含院点一盒一点与产品拆零下限切批（BR-IP-EXE-035/036）
@@ -1410,12 +1412,15 @@ public class NurseStationEncounterManageAppService {
             // 无可展计划槽（含不可拆硬顶未凑满盒 → 空）→ 不计待执行
             return false;
         }
-        // 单位领用剩余按天抑制：与 IF-IP-EXE-01 pending 同源（BR-IP-EXE-038 PACKAGE / MIN_SPLIT）
-        if ((packageBatchApplied || minSplitUnitBatchApplied) && product != null) {
-            StandingOrderOralPackageInventorySupport.UnitClaimMode claimMode =
+        // 单位领用剩余按天抑制：与 IF-IP-EXE-01 / 医生站 enrich 同源（BR-IP-EXE-038；schedule 只改正算量）
+        if ((packageBatchApplied
+                || minSplitUnitBatchApplied
+                || applyStandingOrderPackageBatch)
+            && product != null) {
+            StandingOrderOralPackageInventorySupport.UnitClaimMode preferredMode =
                 StandingOrderOralPackageInventorySupport.UnitClaimMode.PACKAGE;
             if (minSplitUnitBatchApplied && !packageBatchApplied) {
-                claimMode = StandingOrderOralPackageInventorySupport.UnitClaimMode.MIN_SPLIT;
+                preferredMode = StandingOrderOralPackageInventorySupport.UnitClaimMode.MIN_SPLIT;
             }
             Map<Long, List<ProcedureRecordQueryModel>> proceduresByRequestId = new HashMap<>();
             List<MedicationRequest> chain =
@@ -1438,8 +1443,19 @@ public class NurseStationEncounterManageAppService {
                     product,
                     methodLabelByCode,
                     asOf,
-                    claimMode,
+                    preferredMode,
                     applyStandingOrderPackageBatch);
+            if (!snap.isApplied()
+                && StandingOrderOralPackageInventorySupport.UnitClaimMode.PACKAGE.equals(preferredMode)) {
+                snap = standingOrderOralPackageInventorySupport.compute(
+                    row,
+                    proceduresByRequestId,
+                    product,
+                    methodLabelByCode,
+                    asOf,
+                    StandingOrderOralPackageInventorySupport.UnitClaimMode.MIN_SPLIT,
+                    applyStandingOrderPackageBatch);
+            }
             Set<LocalDateTime> filtered = new LinkedHashSet<>();
             for (LocalDateTime planTime : planned) {
                 if (planTime == null) {
@@ -1451,26 +1467,37 @@ public class NurseStationEncounterManageAppService {
                 }
                 filtered.add(planTime);
             }
-            // 与 IF-IP-EXE-01 同源：抑制假锚点后须在预计领用日补锚，否则待执计数漏计
+            // 与 IF-IP-EXE-01 同源：038⑥ 领用日仅锚首频次一点（日点残留时收成单点）
             LocalDate nextClaim = snap.getNextClaimDate();
             if (snap.getClaimedSplitQuantity() != null
                 && snap.getClaimedSplitQuantity().compareTo(BigDecimal.ZERO) > 0
                 && nextClaim != null
                 && !nextClaim.isAfter(asOf)) {
-                boolean hasOnNextClaim = false;
+                int totalKept = 0;
+                int onNextClaim = 0;
                 for (LocalDateTime planTime : filtered) {
-                    if (planTime != null && nextClaim.equals(planTime.toLocalDate())) {
-                        hasOnNextClaim = true;
-                        break;
+                    if (planTime == null) {
+                        continue;
+                    }
+                    totalKept++;
+                    if (nextClaim.equals(planTime.toLocalDate())) {
+                        onNextClaim++;
                     }
                 }
-                if (!hasOnNextClaim) {
+                if (!(totalKept == 1 && onNextClaim == 1)) {
                     LocalDateTime anchor =
                         standingOrderOralPackageInventorySupport.resolveNextClaimPendingPlanTime(
                             row, nextClaim);
                     if (anchor != null) {
-                        filtered.clear();
-                        filtered.add(anchor.withNano(0));
+                        LocalDateTime normalized = anchor.withNano(0);
+                        List<ProcedureRecordQueryModel> claimProcs =
+                            proceduresByRequestId.get(row.getId());
+                        // Gate：不执行/净已执行等同 occurrence 终态，禁止补回假 pending
+                        if (standingOrderOralPackageInventorySupport.allowsNextClaimPendingReinjection(
+                            claimProcs, normalized)) {
+                            filtered.clear();
+                            filtered.add(normalized);
+                        }
                     }
                 }
             }

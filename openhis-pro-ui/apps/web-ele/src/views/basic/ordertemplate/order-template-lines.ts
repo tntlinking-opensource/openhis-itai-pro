@@ -15,10 +15,15 @@ import { ElMessage } from 'element-plus';
 
 import {
   ORDER_TEMPLATE_KIND_PRICING,
+  ORDER_TEMPLATE_KIND_SERVICE_APPLY,
   ORDER_TEMPLATE_KIND_TCM,
   ORDER_TEMPLATE_LINE_KIND_DEVICE,
   ORDER_TEMPLATE_LINE_KIND_MEDICATION,
   ORDER_TEMPLATE_LINE_KIND_SERVICE,
+  SERVICE_APPLY_TEMPLATE_CATEGORY_EXAM,
+  SERVICE_APPLY_TEMPLATE_CATEGORY_LAB,
+  SERVICE_APPLY_TEMPLATE_CATEGORY_OPTIONS,
+  SERVICE_APPLY_TEMPLATE_CATEGORY_TREATMENT,
 } from '#/api/basic/order-template';
 import {
   pageDeviceCatalogApi,
@@ -27,6 +32,11 @@ import {
 } from '#/api/core/system/catalog';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import {
+  SERVICE_CATEGORY_PROOF,
+  SERVICE_CATEGORY_TEST,
+  SERVICE_CATEGORY_TREATMENT,
+} from '#/utils/print/constants/service-request-category-codes';
 import { parseOptionalNumberInput } from '#/views/outpatient/doctor-station/advice/services/advice-edit';
 
 import {
@@ -139,6 +149,52 @@ export function resetDraftLinesState() {
   clientKeySeed = 0;
 }
 
+/** 申请单组套明细（样本/部位主键）写在 dosageText，避免被当成药品剂量解析 */
+const SERVICE_APPLY_DETAIL_PREFIX = 'DETAIL:';
+
+/** 从申请单组套行 dosageText 取出样本或部位主键（字符串，禁止 Number） */
+export function decodeServiceApplyDetailIds(dosageText: string | undefined): string[] {
+  const text = String(dosageText ?? '').trim();
+  if (!text.startsWith(SERVICE_APPLY_DETAIL_PREFIX)) {
+    return [];
+  }
+  const unique = new Set<string>();
+  for (const part of text.slice(SERVICE_APPLY_DETAIL_PREFIX.length).split(',')) {
+    const id = part.trim();
+    if (id) {
+      unique.add(id);
+    }
+  }
+  return [...unique];
+}
+
+/** 把样本或部位主键写回 dosageText；空选择不落库 */
+export function encodeServiceApplyDetailIds(ids: readonly string[]): string | undefined {
+  const joined = ids
+    .map((id) => String(id ?? '').trim())
+    .filter(Boolean)
+    .join(',');
+  const unique = decodeServiceApplyDetailIds(`${SERVICE_APPLY_DETAIL_PREFIX}${joined}`);
+  if (unique.length === 0) {
+    return undefined;
+  }
+  return `${SERVICE_APPLY_DETAIL_PREFIX}${unique.join(',')}`;
+}
+
+/** 申请单类别名（TEST/PROOF/TREATMENT）→ 诊疗目录 categoryCode（23/22/21） */
+function resolveActivityCategoryCode(applyCategory: string): string {
+  if (applyCategory === SERVICE_APPLY_TEMPLATE_CATEGORY_EXAM) {
+    return SERVICE_CATEGORY_TEST;
+  }
+  if (applyCategory === SERVICE_APPLY_TEMPLATE_CATEGORY_LAB) {
+    return SERVICE_CATEGORY_PROOF;
+  }
+  if (applyCategory === SERVICE_APPLY_TEMPLATE_CATEGORY_TREATMENT) {
+    return SERVICE_CATEGORY_TREATMENT;
+  }
+  return '';
+}
+
 /** 组套明细行编辑逻辑 */
 export function useOrderTemplateLines(options: {
   /** 当前行内编辑键，用于按行类型切换列 */
@@ -147,12 +203,17 @@ export function useOrderTemplateLines(options: {
   initOptions: () => OrderTemplateInitResponse;
   methodCodeOptions: () => ApiOptionItem[];
   templateKindEnum: () => string;
+  /** 申请单组套整单类别（检查/检验/治疗），行上不再单独选 */
+  applyCategoryCode?: () => string;
   unitCodeOptions: () => ApiOptionItem[];
 }) {
   const draftLines = ref<DraftLine[]>([]);
 
   const isPricingKind = computed(() => options.templateKindEnum() === ORDER_TEMPLATE_KIND_PRICING);
   const isTcmKind = computed(() => options.templateKindEnum() === ORDER_TEMPLATE_KIND_TCM);
+  const isServiceApplyKind = computed(
+    () => options.templateKindEnum() === ORDER_TEMPLATE_KIND_SERVICE_APPLY,
+  );
 
   const lineKindOptions = computed(() => {
     const all = buildLineKindSelectOptions(options.initOptions()?.lineKindOptions ?? []);
@@ -164,7 +225,9 @@ export function useOrderTemplateLines(options: {
 
   const visibleLines = computed(() => draftLines.value.filter((line) => !line._deleted));
 
-  const showMedicationColumns = computed(() => !isPricingKind.value && !isTcmKind.value);
+  const showMedicationColumns = computed(
+    () => !isPricingKind.value && !isTcmKind.value && !isServiceApplyKind.value,
+  );
   const canGroupLines = computed(() => showMedicationColumns.value);
 
   /** 是否诊疗行 */
@@ -386,37 +449,53 @@ export function useOrderTemplateLines(options: {
   }
 
   const tableColumns = computed<TableColumn[]>(() => {
-    if (isPricingKind.value) {
+    if (isServiceApplyKind.value) {
+      const category = String(options.applyCategoryCode?.() ?? '').trim();
+      const detailLabel = category === SERVICE_APPLY_TEMPLATE_CATEGORY_LAB ? '样本' : '部位';
       return [
-        { type: 'index', label: '序号', width: 48, align: 'center' },
+        { type: 'index', label: '序号', width: '8%', align: 'center' },
         {
           prop: 'productName',
           label: '项目名称',
-          minWidth: 180,
+          width: '38%',
           showOverflowTooltip: true,
           slot: 'product',
         },
-        { prop: 'defaultQuantity', label: '数量', width: 160, slot: 'quantityWithUnit' },
-        { label: '操作', width: 64, fixed: 'right', slot: 'actions', align: 'center' },
+        { prop: 'defaultQuantity', label: '数量', width: '16%', slot: 'serviceQuantity' },
+        { prop: 'dosageText', label: detailLabel, width: '26%', slot: 'applyDetail' },
+        { label: '操作', width: '12%', slot: 'actions', align: 'center' },
+      ];
+    }
+    if (isPricingKind.value) {
+      return [
+        { type: 'index', label: '序号', width: '10%', align: 'center' },
+        {
+          prop: 'productName',
+          label: '项目名称',
+          width: '52%',
+          showOverflowTooltip: true,
+          slot: 'product',
+        },
+        { prop: 'defaultQuantity', label: '数量', width: '26%', slot: 'quantityWithUnit' },
+        { label: '操作', width: '12%', slot: 'actions', align: 'center' },
       ];
     }
 
     const baseCols: TableColumn[] = [
-      { type: 'selection', width: 42, align: 'center' },
-      { type: 'index', label: '序号', width: 48, align: 'center' },
-      { prop: 'lineKindEnum', label: '项目类型', width: 110, slot: 'lineKind' },
+      { type: 'selection', width: '6%', align: 'center' },
+      { type: 'index', label: '序号', width: '8%', align: 'center' },
+      { prop: 'lineKindEnum', label: '项目类型', width: '12%', slot: 'lineKind' },
       {
         prop: 'productName',
         label: '项目名称',
-        minWidth: 180,
+        width: '28%',
         showOverflowTooltip: true,
         slot: 'product',
       },
     ];
     const actionCol: TableColumn = {
       label: '操作',
-      width: 64,
-      fixed: 'right',
+      width: '8%',
       slot: 'actions',
       align: 'center',
     };
@@ -425,27 +504,36 @@ export function useOrderTemplateLines(options: {
     if (profile === 'SERVICE') {
       return [
         ...baseCols,
-        { prop: 'defaultQuantity', label: '数量', width: 160, slot: 'serviceQuantity' },
-        { prop: 'defaultDays', label: '执行次数', width: 130, slot: 'serviceExecutionCount' },
+        { prop: 'defaultQuantity', label: '数量', width: '20%', slot: 'serviceQuantity' },
+        { prop: 'defaultDays', label: '执行次数', width: '18%', slot: 'serviceExecutionCount' },
         actionCol,
       ];
     }
     if (profile === 'DEVICE') {
       return [
         ...baseCols,
-        { prop: 'defaultQuantity', label: '数量', width: 200, slot: 'deviceQuantity' },
+        { prop: 'defaultQuantity', label: '数量', width: '38%', slot: 'deviceQuantity' },
         actionCol,
       ];
     }
 
     return [
-      ...baseCols,
-      { prop: 'dosageText', label: '单次剂量', width: 280, slot: 'dose' },
-      { prop: 'routeCode', label: '给药途径', width: 200, slot: 'routeCode' },
-      { prop: 'frequencyId', label: '频次', width: 160, slot: 'frequencyId' },
-      { prop: 'defaultDays', label: '用药天数', width: 170, slot: 'defaultDays' },
-      { prop: 'defaultQuantity', label: '总量', width: 160, slot: 'totalAmount' },
-      actionCol,
+      { type: 'selection', width: '4%', align: 'center' },
+      { type: 'index', label: '序号', width: '6%', align: 'center' },
+      { prop: 'lineKindEnum', label: '项目类型', width: '10%', slot: 'lineKind' },
+      {
+        prop: 'productName',
+        label: '项目名称',
+        width: '18%',
+        showOverflowTooltip: true,
+        slot: 'product',
+      },
+      { prop: 'dosageText', label: '单次剂量', width: '16%', slot: 'dose' },
+      { prop: 'routeCode', label: '给药途径', width: '12%', slot: 'routeCode' },
+      { prop: 'frequencyId', label: '频次', width: '10%', slot: 'frequencyId' },
+      { prop: 'defaultDays', label: '用药天数', width: '10%', slot: 'defaultDays' },
+      { prop: 'defaultQuantity', label: '总量', width: '8%', slot: 'totalAmount' },
+      { label: '操作', width: '6%', slot: 'actions', align: 'center' },
     ];
   });
 
@@ -469,6 +557,17 @@ export function useOrderTemplateLines(options: {
 
   /** 新增空白行（可沿用上一行用法/天数；不自动写入 groupKey，须手动并组） */
   function handleAddLine() {
+    if (isServiceApplyKind.value) {
+      draftLines.value.push({
+        _clientKey: nextLineClientKey(),
+        lineKindEnum: ORDER_TEMPLATE_LINE_KIND_SERVICE,
+        groupKey: options.applyCategoryCode?.() || undefined,
+        sortOrder: visibleLines.value.length + 1,
+        defaultQuantity: 1,
+        defaultDays: 1,
+      });
+      return;
+    }
     if (isTcmKind.value) {
       draftLines.value.push({
         _clientKey: nextLineClientKey(),
@@ -632,10 +731,19 @@ export function useOrderTemplateLines(options: {
         return { content, totalCount: parsed.totalCount };
       }
       if (line.lineKindEnum === ORDER_TEMPLATE_LINE_KIND_SERVICE) {
+        const applyCategory = isServiceApplyKind.value
+          ? String(options.applyCategoryCode?.() ?? '').trim()
+          : '';
+        const catalogCategoryCode = resolveActivityCategoryCode(applyCategory);
+        // 申请单组套须先选定检查/检验/治疗，再按目录类别码检索
+        if (isServiceApplyKind.value && !catalogCategoryCode) {
+          return { content: [], totalCount: 0 };
+        }
         // 组套选品同医生站：隐藏已被套餐引用的明细子项
         const res = await pageServiceCatalogApi({
           ...requestParams,
           includeReferencedPackageChildren: false,
+          ...(catalogCategoryCode ? { categoryCode: catalogCategoryCode } : {}),
         });
         const parsed = parsePagedRowsFromApiData<Record<string, unknown>>(res?.data);
         const content = parsed.content
@@ -789,6 +897,17 @@ export function useOrderTemplateLines(options: {
       ElMessage.error(`${label}：划价组套不允许药品行`);
       return false;
     }
+    if (isServiceApplyKind.value) {
+      const category = String(options.applyCategoryCode?.() ?? '').trim();
+      row.groupKey = category || undefined;
+      if (
+        category === SERVICE_APPLY_TEMPLATE_CATEGORY_EXAM &&
+        decodeServiceApplyDetailIds(row.dosageText).length === 0
+      ) {
+        ElMessage.error(`${label}：请选择部位`);
+        return false;
+      }
+    }
     if (isServiceLineRow(row)) {
       const qty = Number(row.defaultQuantity);
       if (!Number.isFinite(qty) || qty <= 0) {
@@ -827,6 +946,16 @@ export function useOrderTemplateLines(options: {
 
   /** 校验全部有效行 */
   function validateAllLines(): boolean {
+    if (isServiceApplyKind.value) {
+      const category = String(options.applyCategoryCode?.() ?? '').trim();
+      const allowed = SERVICE_APPLY_TEMPLATE_CATEGORY_OPTIONS.some(
+        (item) => item.value === category,
+      );
+      if (!allowed) {
+        ElMessage.error('请选择申请类型（检查、检验或治疗）');
+        return false;
+      }
+    }
     const activeLines = draftLines.value.filter((line) => !line._deleted);
     if (activeLines.length === 0) {
       ElMessage.warning('请至少添加一条组套明细');
@@ -841,8 +970,35 @@ export function useOrderTemplateLines(options: {
   }
 
   /** 组装 IF-05 全量对齐行（OrderTemplateLineEditDto） */
+  /** 整单切换申请类型：类别写入每一行，并清掉与新类别不一致的已选项目 */
+  function applyServiceApplyCategory(categoryCode: string) {
+    const category = categoryCode.trim();
+    for (const row of draftLines.value) {
+      if (row._deleted) {
+        continue;
+      }
+      if (getLineGroupKey(row) === category) {
+        continue;
+      }
+      row.groupKey = category || undefined;
+      row.activityDefinitionId = undefined;
+      row._productLabel = '';
+      row.productName = undefined;
+      row.defaultUnitCode = undefined;
+      row.dosageText = undefined;
+    }
+  }
+
+  /** 申请单行写入样本或部位主键（检查部位必填，检验样本与治疗部位选填） */
+  function writeServiceApplyDetailIds(row: DraftLine, ids: null | string[] | undefined) {
+    resolveDraftLine(row).dosageText = encodeServiceApplyDetailIds(Array.isArray(ids) ? ids : []);
+  }
+
   function buildSubmitLines(): OrderTemplateLineEditItem[] {
-    syncAllGroupSharedFields();
+    // 申请单行的 groupKey 是检查/检验/治疗类别，不能按药品成组回写用法
+    if (!isServiceApplyKind.value) {
+      syncAllGroupSharedFields();
+    }
     let visibleOrder = 0;
     return draftLines.value.map((row) => ({
       lineId: preserveApiIdForRequest(row.lineId),
@@ -858,7 +1014,9 @@ export function useOrderTemplateLines(options: {
       defaultDays: row.defaultDays,
       frequencyId: preserveApiIdForRequest(row.frequencyId),
       routeCode: row.routeCode,
-      dosageText: buildDosageText(row),
+      dosageText: isServiceApplyKind.value
+        ? encodeServiceApplyDetailIds(decodeServiceApplyDetailIds(row.dosageText))
+        : buildDosageText(row),
       defaultPerformOrgId: isServiceLineRow(row)
         ? undefined
         : preserveApiIdForRequest(row.defaultPerformOrgId),
@@ -887,8 +1045,14 @@ export function useOrderTemplateLines(options: {
         line.defaultQuantity = 1;
       }
     }
-    reorderDraftLinesByGroup();
-    syncAllGroupSharedFields();
+    if (isServiceApplyKind.value) {
+      draftLines.value.forEach((line, index) => {
+        line.sortOrder = index + 1;
+      });
+    } else {
+      reorderDraftLinesByGroup();
+      syncAllGroupSharedFields();
+    }
     await enrichMedicationLinesUnitBands(draftLines.value, options.unitCodeOptions());
     if (visibleLines.value.length === 0) {
       handleAddLine();
@@ -1021,6 +1185,7 @@ export function useOrderTemplateLines(options: {
     activeLineColumnProfile,
     showMedicationColumns,
     isTcmKind,
+    isServiceApplyKind,
     canGroupLines,
     lineSelection,
     isMedicationLineRow,
@@ -1032,6 +1197,8 @@ export function useOrderTemplateLines(options: {
     handleAddLine,
     handleRemoveLine,
     handleLineKindChange,
+    applyServiceApplyCategory,
+    writeServiceApplyDetailIds,
     handleLineSelectionChange,
     handleAssignGroup,
     handleUngroup,

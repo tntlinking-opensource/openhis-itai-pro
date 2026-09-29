@@ -18,6 +18,7 @@ import {
   getRegistrationTypeListApi,
   isRegistrationTypeActive,
 } from '#/api/core/system/registration';
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
 
 import { BASIC_TABLE_MAX_HEIGHT } from '../basic-table-max-height';
 import EditDialog from './edit-dialog.vue';
@@ -46,7 +47,7 @@ const formItems = ref<FormItemConfig[]>([
     type: 'input',
     prop: 'keyword',
     label: '关键词',
-    placeholder: '请输入名称、医保编码或业务编码',
+    placeholder: '名称、诊查费或业务编码',
     clearable: true,
   },
 ]);
@@ -60,23 +61,31 @@ const tableColumns: TableColumn[] = [
   {
     prop: 'name',
     label: '名称',
-    minWidth: 200,
+    minWidth: 160,
     showOverflowTooltip: true,
   },
   {
-    prop: 'ybNo',
-    label: '医保编码',
-    width: 150,
+    prop: 'activityNames',
+    label: '诊查费',
+    minWidth: 220,
+    showOverflowTooltip: true,
   },
   {
     prop: 'busNo',
     label: '业务编码',
-    width: 150,
+    width: 140,
   },
   {
     prop: 'amount',
     label: '金额',
     width: 100,
+    align: 'right',
+    formatter: (_row, _column, cellValue) => {
+      if (cellValue === null || cellValue === undefined || cellValue === '') {
+        return formatMoneyDisplay(0);
+      }
+      return formatMoneyDisplay(cellValue);
+    },
   },
   {
     prop: 'activeFlag',
@@ -95,17 +104,17 @@ const tableColumns: TableColumn[] = [
   },
 ];
 
-/** 按关键词过滤本地列表 */
+/** 按关键词过滤本地列表（名称 / 诊查费摘要 / 业务编码） */
 const applyFilters = () => {
   let filtered = [...allData.value];
 
   const keyword = queryParams.keyword?.toLowerCase().trim() || '';
   if (keyword) {
-    // 名称 / 医保编码 / 业务编码模糊匹配
+    // 名称、诊查费绑定摘要、业务编码模糊匹配
     filtered = filtered.filter((item) => {
       return (
         item.name?.toLowerCase().includes(keyword) ||
-        item.ybNo?.toLowerCase().includes(keyword) ||
+        item.activityNames?.toLowerCase().includes(keyword) ||
         item.busNo?.toLowerCase().includes(keyword)
       );
     });

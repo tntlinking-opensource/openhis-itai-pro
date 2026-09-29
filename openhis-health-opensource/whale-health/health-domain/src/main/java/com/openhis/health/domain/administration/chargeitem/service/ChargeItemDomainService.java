@@ -10,10 +10,12 @@ import com.openhis.health.domain.share.constants.ChargeItemDmConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.administration.chargeitem.command.ActivateChargeByExeCommand;
+import com.openhis.health.domain.administration.chargeitem.command.ApplySettleDiscountLinesCommand;
 import com.openhis.health.domain.administration.chargeitem.command.BatchChargeItemIdsCommand;
 import com.openhis.health.domain.administration.chargeitem.command.CreateChargeItemsLinkingRegeneratedAnchorsCommand;
 import com.openhis.health.domain.administration.chargeitem.command.CreateChargeItemCommand;
 import com.openhis.health.domain.administration.chargeitem.command.StampChargeItemPrescriptionSnapshotCommand;
+import com.openhis.health.domain.administration.chargeitem.command.StampMedicalTechFeeConfirmationCommand;
 import com.openhis.health.domain.administration.chargeitem.command.SwitchChargeItemAccountCommand;
 import com.openhis.health.domain.administration.chargeitem.command.DeactivateChargeByExeCommand;
 import com.openhis.health.domain.administration.chargeitem.command.ManualOverridePlannedChargeItemPricesCommand;
@@ -145,7 +147,7 @@ public class ChargeItemDomainService {
      * <p>住院临时医嘱签发后费用行已为 {@code PLANNED}（待收费）；护士站执行时须从该态激活为 {@code PENDING_SETTLEMENT}。
      * {@code DRAFT} 仍兼容未签发升位的历史/门诊对齐路径。</p>
      *
-     * @param cmd 执行激活命令（含 chargeItemId、procedureId、performedAt、performerId）
+     * @param cmd 执行激活命令（含 chargeItemId、procedureId、performedAt）
      */
     public void activateChargeByExe(ActivateChargeByExeCommand cmd) {
         List<ActivateChargeByExeCommand.Item> items = cmd.resolveItems();
@@ -169,10 +171,7 @@ public class ChargeItemDomainService {
             if (item.getPerformedAt() != null) {
                 row.setOccurrenceTime(item.getPerformedAt());
             }
-            // 执行激活不写 enterer_*（收费人）；命令携带的执行护士可落 performer_id 供费用明细「操作人」展示
-            if (item.getPerformerId() != null) {
-                row.setPerformerId(item.getPerformerId());
-            }
+            // 执行激活不写 enterer_*（收费人）；执行人真源在 Procedure，不写收费行操作人戳
             row.setStatusEnum(ChargeItemStatus.PENDING_SETTLEMENT.getCode());
             toSave.add(row);
         }
@@ -555,17 +554,18 @@ public class ChargeItemDomainService {
     }
 
     /**
-     * 按上游请求锚点冲销护士划价待结算收费明细（generate_source=nurse-pricing，AS-IP-NUR-005 IF-IP-PRC-06）。
+     * 按上游请求锚点冲销护士/医技划价待结算收费明细
+     *（{@code nurse-pricing} / {@code medical-tech-pricing}，AS-IP-NUR-005 IF-IP-PRC-06 / AS-MT-CHG-001）。
      *
      * <p>保留原正向 {@code PENDING_SETTLEMENT} 行；对尚未冲销的正向行插入数量/金额取反的冲销行，
-     * {@code refund_id} 链回原行。同锚点下若存在已结算/退费链路行则整批拒绝（BR-CHG-002）；无待冲销行时静默跳过。</p>
+     * {@code refund_id} 链回原行（冲销行继承原 {@code generate_source}）。同锚点下若存在已结算/退费链路行则整批拒绝（BR-CHG-002）；无待冲销行时静默跳过。</p>
      *
      * @param cmd 就诊、上游表名与主键集合
      */
     public void offsetNursePricingChargeItemsByServiceAnchors(OffsetNursePricingChargeItemsByServiceAnchorsCommand cmd) {
         if (cmd == null || cmd.getEncounterId() == null || StringUtils.isEmpty(cmd.getServiceTable())
             || cmd.getServiceIds() == null || cmd.getServiceIds().isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "冲销护士划价费用锚点参数不完整");
+            throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "冲销划价费用锚点参数不完整");
         }
         LinkedHashSet<Long> distinctIds = new LinkedHashSet<>();
         for (Long serviceId : cmd.getServiceIds()) {
@@ -602,8 +602,7 @@ public class ChargeItemDomainService {
             if (!ChargeItemStatus.PENDING_SETTLEMENT.getCode().equals(row.getStatusEnum())) {
                 continue;
             }
-            if (row.getGenerateSourceEnum() == null
-                || !GenerateSource.NURSE_PRICING.getCode().equals(row.getGenerateSourceEnum())) {
+            if (!this.isStationPricingGenerateSource(row.getGenerateSourceEnum())) {
                 continue;
             }
             alreadyOffsetSourceIds.add(row.getRefundId());
@@ -616,8 +615,7 @@ public class ChargeItemDomainService {
             if (!ChargeItemStatus.PENDING_SETTLEMENT.getCode().equals(row.getStatusEnum())) {
                 continue;
             }
-            if (row.getGenerateSourceEnum() == null
-                || !GenerateSource.NURSE_PRICING.getCode().equals(row.getGenerateSourceEnum())) {
+            if (!this.isStationPricingGenerateSource(row.getGenerateSourceEnum())) {
                 continue;
             }
             // 冲销行本身（refund_id 非空）不再作为冲销源。
@@ -634,7 +632,7 @@ public class ChargeItemDomainService {
             }
             sourcesToOffset.add(row);
         }
-        // 无待冲销正向护士划价行时静默跳过（可能已整行冲销）。
+        // 无待冲销正向划价行时静默跳过（可能已整行冲销）。
         if (sourcesToOffset.isEmpty()) {
             return;
         }
@@ -660,7 +658,7 @@ public class ChargeItemDomainService {
      *
      * @param src        原正向待结算护士划价行
      * @param busNo      冲销行业务流水号
-     * @param operatorId 冲销操作人（写入 performer_id；非收费人）
+     * @param operatorId 冲销操作人（编排审计用；不落收费行操作人列）
      * @param now        冲销发生时刻（写入 occurrence）
      * @return 可落库的冲销行实体
      */
@@ -702,13 +700,7 @@ public class ChargeItemDomainService {
         row.setDispenseId(src.getDispenseId());
         row.setPrescriptionNo(src.getPrescriptionNo());
         row.setParentId(src.getParentId());
-        // 操作人：冲销护士优先；否则沿用源行 performer（非 enterer 收费人）
-        if (operatorId != null) {
-            row.setPerformerId(operatorId);
-        } else {
-            row.setPerformerId(src.getPerformerId());
-        }
-        row.setPerformingOrgId(src.getPerformingOrgId());
+        // 冲销负向行不拷贝/不写确费态；操作人展示跟 Procedure/Dispense 真源（operatorId 仅编排审计）
         row.setCostOrgId(src.getCostOrgId());
         row.setOrgId(src.getOrgId());
         row.setRequestingOrgId(src.getRequestingOrgId());
@@ -766,11 +758,64 @@ public class ChargeItemDomainService {
     }
 
     /**
+     * 批量写入收费折扣结算快照（不改状态；BR-OPC-032 / BR-IP-STL-025）。
+     *
+     * <p>能力门控与命中解析由应用层完成；本方法仅持久化折后应收、优惠额与快照列。</p>
+     *
+     * @param command 折扣行清单
+     * @throws BusinessException 入参为空、行不存在或状态不可结算时
+     */
+    public void applySettleDiscountLines(ApplySettleDiscountLinesCommand command) {
+        // 前置校验：空批直接返回（门控关闭或本批无打折时应用层可不调）
+        if (command == null) {
+            return;
+        }
+        List<ApplySettleDiscountLinesCommand.Item> items = command.resolveItems();
+        if (items.isEmpty()) {
+            return;
+        }
+        List<Long> ids = new ArrayList<>();
+        for (ApplySettleDiscountLinesCommand.Item item : items) {
+            // 行主键缺失无法落快照
+            if (item == null || item.getChargeItemId() == null) {
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "折扣落账失败：收费明细主键不能为空");
+            }
+            ids.add(item.getChargeItemId());
+        }
+        // 加载/组装：批量取行
+        Map<Long, ChargeItem> map = this.loadMap(ids);
+        List<ChargeItem> toSave = new ArrayList<>();
+        for (ApplySettleDiscountLinesCommand.Item item : items) {
+            ChargeItem row = require(map, item.getChargeItemId());
+            // 仅 PLANNED / PENDING_SETTLEMENT 可写折扣快照，避免改写已结历史
+            String status = row.getStatusEnum();
+            boolean planned = ChargeItemStatus.PLANNED.getCode().equals(status);
+            boolean pendingSettlement = ChargeItemStatus.PENDING_SETTLEMENT.getCode().equals(status);
+            if (!planned && !pendingSettlement) {
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_INVALID_STATUS,
+                    "收费明细 " + item.getChargeItemId() + " 状态不允许写入折扣快照");
+            }
+            row.applySettleDiscountSnapshot(
+                item.getDiscountedReceivable(),
+                item.getDiscountGap(),
+                item.getSettleDiscountRate(),
+                item.getSettleDiscountSourceEnum());
+            toSave.add(row);
+        }
+        // 持久化
+        if (!toSave.isEmpty()) {
+            repository.saveAll(toSave);
+        }
+    }
+
+    /**
      * 门诊结算收费明细，状态迁移至已结算（statusEnum=SETTLED），落库收费人/收费时间并发布 SETTLED 事件。
      *
      * <p>收费人/收费时间写入 {@code enterer_id}/{@code entered_date}（{@code adm_practitioner.id} +
      * 与 payment {@code bill_date} 同值的 {@code billDate}，**BR-OPC-016**）。
-     * <strong>不再</strong>将收款人写入 {@code performer_id}。</p>
+     * <strong>不再</strong>将收款人写入已移除的收费行操作人戳；收款人仅 {@code enterer_*}。</p>
      *
      * @param cmd 批量收费明细主键命令，须含非空 {@code operatorId}（收费人医务人员主键）
      * @throws BusinessException 入参为空或缺少收费人
@@ -859,6 +904,53 @@ public class ChargeItemDomainService {
             toSave.add(row);
         }
         // 持久化：先落库；无独立事件（随后 settle 会发 SETTLED）。
+        if (!toSave.isEmpty()) {
+            repository.saveAll(toSave);
+        }
+    }
+
+    /**
+     * 医技费用清单一键确费：批量写入 {@code fee_confirmer_id}/{@code fee_confirmed_at}（不改收费状态）。
+     *
+     * <p>应用层仅住院可调（门诊无确费业务）。已确费行（确费人非空）跳过，保证幂等。
+     * 无独立领域事件；住院出院门禁按行字段读。</p>
+     *
+     * @param command 确费人、确费时刻与收费行主键批次
+     */
+    public void stampMedicalTechFeeConfirmation(StampMedicalTechFeeConfirmationCommand command) {
+        // 前置校验：空命令或空批直接返回。
+        if (command == null) {
+            return;
+        }
+        List<Long> ids = command.resolveChargeItemIds();
+        if (ids.isEmpty()) {
+            return;
+        }
+        // 前置校验：确费人与时刻必填。
+        if (command.getFeeConfirmerId() == null) {
+            throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "确费人不能为空");
+        }
+        if (command.getFeeConfirmedAt() == null) {
+            throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "确费时刻不能为空");
+        }
+        // 加载/组装：按主键装载收费明细。
+        Map<Long, ChargeItem> map = this.loadMap(ids);
+        List<ChargeItem> toSave = new ArrayList<>();
+        for (Long id : ids) {
+            if (id == null) {
+                continue;
+            }
+            ChargeItem row = require(map, id);
+            // Pre：已确费则跳过（一键幂等）。
+            if (row.getFeeConfirmerId() != null) {
+                continue;
+            }
+            // Cmd：仅写确费戳，不改收费状态与收款人。
+            row.setFeeConfirmerId(command.getFeeConfirmerId());
+            row.setFeeConfirmedAt(command.getFeeConfirmedAt());
+            toSave.add(row);
+        }
+        // 持久化：先落库；无独立事件。
         if (!toSave.isEmpty()) {
             repository.saveAll(toSave);
         }
@@ -1379,10 +1471,7 @@ public class ChargeItemDomainService {
             row.setOrgId(item.getOrgId());
             row.setRequestingOrgId(item.getRequestingOrgId());
             // 创建不写 enterer_*：收费人/收费时间仅 settle / 退费完成时落库；开单医生在 Request.requester_id
-            // 护士划价/滚费/执行计费：操作人落 performer_id（非收费人），供护士站费用明细「操作人」展示
-            if (cmd.getOperatorId() != null && this.isNurseOperatorPerformerEvent(eventType)) {
-                row.setPerformerId(cmd.getOperatorId());
-            }
+            // 划价/滚费/执行计费操作人真源在 Procedure / DeviceDispense，不写收费行戳
             // 生成来源与收费上下文：命令可覆盖，否则按事件类型补全 DM 存储码。
             this.fillGenerateAndContext(row, item, eventType);
             row.setStatusEnum(status.getCode());
@@ -1518,22 +1607,6 @@ public class ChargeItemDomainService {
      * @param eventType 事件类型
      * @throws BusinessException ID 列表为空
      */
-    /**
-     * 创建事件是否应将命令操作人写入 {@code performer_id}（划价/滚费/执行计费操作人，非收费人）。
-     *
-     * @param eventType 创建事件类型
-     * @return 护士操作人事件时 true
-     */
-    private boolean isNurseOperatorPerformerEvent(ChargeItemEventType eventType) {
-        if (eventType == ChargeItemEventType.NURSE_PRICING_CREATED) {
-            return true;
-        }
-        if (eventType == ChargeItemEventType.AUTO_ROLL_CREATED) {
-            return true;
-        }
-        return eventType == ChargeItemEventType.ACTIVATED_BY_EXECUTION;
-    }
-
     /**
      * 结算/退费完成：将收费人与收费时间写入 {@code enterer_id}/{@code entered_date}。
      *
@@ -1792,8 +1865,7 @@ public class ChargeItemDomainService {
         row.setDispenseId(src.getDispenseId());
         row.setPrescriptionNo(src.getPrescriptionNo());
         row.setParentId(src.getParentId());
-        row.setPerformerId(src.getPerformerId());
-        row.setPerformingOrgId(src.getPerformingOrgId());
+        // 反结再生不拷贝确费态；待医技重新确费
         row.setCostOrgId(src.getCostOrgId());
         row.setOrgId(src.getOrgId());
         row.setRequestingOrgId(src.getRequestingOrgId());
@@ -1896,6 +1968,22 @@ public class ChargeItemDomainService {
             return true;
         }
         return false;
+    }
+
+    /**
+     * 是否为护士/医技站划价来源（冲销锚点筛选共用）。
+     *
+     * @param generateSourceEnum 生成来源持久化码
+     * @return true 表示护士划价或医技划价
+     */
+    private boolean isStationPricingGenerateSource(String generateSourceEnum) {
+        if (generateSourceEnum == null) {
+            return false;
+        }
+        if (GenerateSource.NURSE_PRICING.getCode().equals(generateSourceEnum)) {
+            return true;
+        }
+        return GenerateSource.MEDICAL_TECH_PRICING.getCode().equals(generateSourceEnum);
     }
 
     /**

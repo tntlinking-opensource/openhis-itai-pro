@@ -111,6 +111,48 @@ public class Procedure extends BaseAuditedEntity {
     private Boolean occurrenceSlotActive = true;
 
     /**
+     * 手术时间（医师申请可填；执行拷贝后护士可改；禁止与 {@code occurrence_time} 混用）。
+     */
+    @Column(name = "procedure_time")
+    private LocalDateTime procedureTime;
+
+    /**
+     * 麻醉开始时间（护士站麻醉执行弹窗登记；医生开立不填；可空）。
+     */
+    @Column(name = "anesthesia_start_time")
+    private LocalDateTime anesthesiaStartTime;
+
+    /**
+     * 麻醉结束时间（护士站麻醉执行弹窗登记；医生开立不填；可空）。
+     */
+    @Column(name = "anesthesia_end_time")
+    private LocalDateTime anesthesiaEndTime;
+
+    /**
+     * 切口类别（术中可填；可空）。
+     */
+    @Column(name = "incision_type_code")
+    private String incisionTypeCode;
+
+    /**
+     * 是否送检（术中可填；可空）。
+     */
+    @Column(name = "send_lab_flag")
+    private Boolean sendLabFlag;
+
+    /**
+     * 样本（护士可填；与备注分列；可空）。
+     */
+    @Column(name = "specimen")
+    private String specimen;
+
+    /**
+     * 备注（护士可填；与样本分列；可空）。
+     */
+    @Column(name = "note")
+    private String note;
+
+    /**
      * 校验请求、患者与就诊锚点已绑定。
      *
      * @throws BusinessException 锚点缺失
@@ -189,6 +231,22 @@ public class Procedure extends BaseAuditedEntity {
         this.assertStateTransitionAllowed(EventStatus.IN_PROGRESS.getCode());
         if (StringUtils.isEmpty(this.resultText) && StringUtils.isEmpty(this.reportJson)) {
             throw new BusinessException(ErrorCodeConstants.PROCEDURE_RULE_CONFLICT, "完成执行需要结果或报告");
+        }
+    }
+
+    /**
+     * 断言当前允许维护执行人（DM-CLN-004 §6.1.3 / SDD {@code assertPerformerAppendable}）。
+     *
+     * <p>仅 {@code PREPARATION} / {@code IN_PROGRESS} 可挂入或更新 {@code cln_procedure_performer}。</p>
+     *
+     * @throws BusinessException 状态不允许维护执行人时
+     */
+    public void assertPerformerAppendable() {
+        boolean appendable = EventStatus.PREPARATION.getCode().equals(this.statusEnum)
+            || EventStatus.IN_PROGRESS.getCode().equals(this.statusEnum);
+        // 终态（COMPLETED/CANCEL/STOPPED 等）禁止再挂执行人
+        if (!appendable) {
+            throw new BusinessException(ErrorCodeConstants.PROCEDURE_INVALID_STATUS, "当前状态不允许维护执行人");
         }
     }
 

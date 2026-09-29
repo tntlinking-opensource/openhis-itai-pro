@@ -1655,7 +1655,7 @@ const [Form, formApi] = useVbenForm(
         // 四列网格下强制换行，使默认/最大/最小剂量同一行
         formItemClass: 'col-start-1',
         componentProps: {
-          precision: 2,
+          precision: 3,
           min: 0,
         },
       },

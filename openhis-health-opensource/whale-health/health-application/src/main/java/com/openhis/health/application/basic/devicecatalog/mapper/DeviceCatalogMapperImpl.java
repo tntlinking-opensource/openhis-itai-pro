@@ -8,7 +8,7 @@ import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.application.basic.devicecatalog.dto.DeviceCatalogDto;
 import com.openhis.health.application.basic.devicecatalog.request.CreateDeviceCatalogRequest;
 import com.openhis.health.application.basic.devicecatalog.request.UpdateDeviceCatalogRequest;
-import com.openhis.health.application.basic.catalog.support.BatchCommandItemAssembler;
+import com.openhis.health.application.shared.catalog.BatchCommandItemAssembler;
 import com.openhis.health.application.shared.converter.TextValueConverter;
 import com.openhis.health.domain.administration.devicedefinition.command.*;
 import com.openhis.health.domain.administration.devicedefinition.entity.DeviceDefinition;

@@ -8,6 +8,9 @@ import com.openhis.health.application.outpatient.financial.charge.dto.*;
 import com.openhis.health.application.outpatient.financial.charge.mapper.OutpatientChargeMapper;
 import com.openhis.health.application.outpatient.financial.charge.request.*;
 import com.openhis.health.application.outpatient.financial.charge.response.*;
+import com.openhis.health.application.shared.chargediscount.ChargeDiscountApplySupport;
+import com.openhis.health.application.shared.chargediscount.ChargeDiscountBatchResult;
+import com.openhis.health.application.shared.chargediscount.ChargeDiscountLineResult;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogUnitBandDto;
 import com.openhis.health.application.shared.pagination.PageQueryBinder;
@@ -179,6 +182,8 @@ public class OutpatientChargeAppService {
     private final OutpatientChargeSettlementGate outpatientChargeSettlementGate;
     private final OutpatientPaymentDraftLifecycleOrchestrator outpatientPaymentDraftLifecycleOrchestrator;
     private final OutpatientChargePrescriptionSnapshotStamper outpatientChargePrescriptionSnapshotStamper;
+    /** 收费折扣：能力门控关闭时零侵入；开启时试算/落快照/DISCOUNT 旁证。 */
+    private final ChargeDiscountApplySupport chargeDiscountApplySupport;
 
     /**
      * IF-OPC-01：加载收费页初始化数据。
@@ -191,7 +196,13 @@ public class OutpatientChargeAppService {
             // Pre：初始化页签所需状态选项统一走术语服务。
             List<OptionDto> options = codeSystemQueryService.getOptionListByEnum(ChargeItemStatus.class);
             List<OptionDto> paymentChannels = paymentChannelOptionProvider.loadUserSelectableOptions();
-            return outpatientChargeMapper.toLoadChargePageInitResponse(options, paymentChannels);
+            // Pre：折扣能力门控（BR-OPC-027）；未配置时 false，UI 不展示折扣相关控件
+            boolean discountFeatureEnabled = chargeDiscountApplySupport.isDiscountFeatureEnabled();
+            // Asm：装配初始化响应
+            LoadChargePageInitResponse response =
+                outpatientChargeMapper.toLoadChargePageInitResponse(options, paymentChannels);
+            response.setDiscountFeatureEnabled(discountFeatureEnabled);
+            return response;
         } catch (BusinessException ex) {
             throw ex;
         } catch (Exception ex) {
@@ -446,9 +457,19 @@ public class OutpatientChargeAppService {
             outpatientChargeMapper.toBatchChargeItemIdsCommand(request.getChargeItemIds(), operatorId);
         // 预结算前先作废同就诊遗留草稿（BR-OPC-012）；半成功 BPC SUCCESS 草稿拒绝作废（BR-OPC-025）。
         this.outpatientPaymentDraftLifecycleOrchestrator.cancelAllDraftsForEncounter(request.getEncounterId(), null);
+        // Gate：门控关闭禁止折扣率入参；开启时解析命中/费率冲突（BR-OPC-027～030）；关闭或未打折 → applied=false 零侵入
+        chargeDiscountApplySupport.assertCashierRateAllowedByFeatureGate(request.getCashierDiscountRate());
+        ChargeDiscountBatchResult discountBatch =
+            chargeDiscountApplySupport.resolveBatch(chargeItems, request.getCashierDiscountRate());
         // 先落收费项预结算快照，再创建支付草稿，保证“费用事实在前、支付草稿在后”的时序。
         chargeItemDomainService.preSettleChargeItems(preSettleCommand);
-        BigDecimal totalAmount = this.sumChargeItemAmount(chargeItems);
+        // 折后应收合计；未打折时与原价 totalPrice 合计一致
+        BigDecimal totalAmount;
+        if (discountBatch.isApplied()) {
+            totalAmount = discountBatch.getDiscountedReceivableTotal();
+        } else {
+            totalAmount = this.sumChargeItemAmount(chargeItems);
+        }
         // BR-OPC-003：请求未显式传 contractId 时，从收费项账户聚合 contract_no 写入支付草稿（对齐住院结算写侧）。
         String contractNo = this.resolvePaymentContractBusNoForPreSettle(contract, chargeItems, request.getEncounterId());
         // 先装配支付头命令；明细不入 Mapper，避免与「按收费项事实汇总账户金额」的编排职责混放。
@@ -460,7 +481,8 @@ public class OutpatientChargeAppService {
             operatorId,
             contractNo);
         // 领域 replaceDetails 对空列表执行「删尽不插」，故此处必须给出至少一行占位明细，否则 IF-OPC-07 读明细为空报 EX-OPC-402。
-        paymentDraftCommand.setPaymentDetails(this.buildPreSettlePaymentDetailDraftLines(request.getEncounterId(), chargeItems));
+        paymentDraftCommand.setPaymentDetails(
+            this.buildPreSettlePaymentDetailDraftLines(request.getEncounterId(), chargeItems, discountBatch));
         // 主单从单行级与预结算金额对齐；正式结算时 SettleOutpatientPaymentCommand 携带的回执可覆盖替换明细。
         Long paymentDraftId = paymentReconciliationDomainService.createPaymentDraftFromPreSettle(paymentDraftCommand);
         // 预览文案与 IF-OPC-03 待收费列表同口径：批量加载定价与目录，避免收银端与明细页名称不一致。
@@ -487,7 +509,17 @@ public class OutpatientChargeAppService {
             PreSettleChargeLinePreviewDto preview = new PreSettleChargeLinePreviewDto();
             preview.setChargeItemId(chargeItem.getId());
             preview.setItemLabel(this.resolveOutpatientChargeLineDisplayLabel(chargeItem, definitionMap, productMap));
-            preview.setLineAmount(chargeItem.getTotalPrice());
+            // 行金额：打折时用折后，否则原价
+            ChargeDiscountLineResult discountLine = null;
+            if (discountBatch.isApplied()) {
+                discountLine = discountBatch.getLineByChargeItemId().get(chargeItem.getId());
+            }
+            if (discountLine != null) {
+                preview.setLineAmount(discountLine.getDiscountedReceivable());
+                preview.setDiscountRate(discountLine.getEffectiveRate());
+            } else {
+                preview.setLineAmount(chargeItem.getTotalPrice());
+            }
             Account previewAccount = accountByIdForPreview.get(chargeItem.getAccountId());
             if (previewAccount != null && StringUtils.isNotBlank(previewAccount.getContractNo())) {
                 String contractBusNo = previewAccount.getContractNo().trim();
@@ -498,6 +530,12 @@ public class OutpatientChargeAppService {
         }
         PreSettleOutpatientChargesResponse response =
             outpatientChargeMapper.toPreSettleOutpatientChargesResponse(paymentDraftId, totalAmount, previews);
+        // Asm：优惠合计；未打折为 0
+        if (discountBatch.isApplied()) {
+            response.setDiscountAmountTotal(discountBatch.getDiscountGapTotal());
+        } else {
+            response.setDiscountAmountTotal(BigDecimal.ZERO);
+        }
         this.applyInsurancePreSettleIfNeeded(request, paymentDraftId, response, chargeItems);
         // TODO(ADR-CMP-001 D5/D12)：若 request.gfChargeMode 非空，可选注入 CampusChargeCalcReader#previewSplit，
         // 将公费/自付写入支付明细两行（PUBLIC_EXPENSE_ACCOUNT + PERSONAL_CASH_ACCOUNT）；不选 mode 则跳过。
@@ -899,6 +937,16 @@ public class OutpatientChargeAppService {
         this.assertNotSettledChargeItems(chargeItems);
         // Gate（GAP-STALE-001）：须 PLANNED 且锚点医嘱/发放仍可收费；须在支付落账前执行。
         this.outpatientChargeSettlementGate.assertChargeItemsSettleable(chargeItems);
+        // Gate/Pre：折扣门控与试算；门控关闭或未打折 → applied=false，不改金额路径
+        chargeDiscountApplySupport.assertCashierRateAllowedByFeatureGate(request.getCashierDiscountRate());
+        ChargeDiscountBatchResult discountBatch =
+            chargeDiscountApplySupport.resolveBatch(chargeItems, request.getCashierDiscountRate());
+        // Cmd：正式结算前落行折后与折扣快照（BR-OPC-029/032）；未打折跳过
+        chargeDiscountApplySupport.persistLineDiscounts(discountBatch);
+        // 落快照后重载，使应收口径与 discount_amount 一致
+        if (discountBatch.isApplied()) {
+            chargeItems = chargeItemQueryService.loadChargeItemsByIds(chargeItemQueryCommand);
+        }
         // 计算收费项总金额作为预期金额基准；医保预结算后以草稿 displayAmount 为准。
         BigDecimal expected = this.resolveExpectedPayableAmount(payment, chargeItems);
         // 医保权威现金与过期草稿分桶漂移时先重刷草稿，再做金额门禁
@@ -958,6 +1006,15 @@ public class OutpatientChargeAppService {
                 operatorId,
                 null);
             this.attachDraftAccountsToPayReceiptDetails(settleCommand.getPayReceiptDetails(), details);
+            // Pre：优惠合计>0 时追加 DISCOUNT 旁证（不进实付勾稽分子，方案甲）
+            PaymentDetailItemCommand discountRecDetail =
+                chargeDiscountApplySupport.buildDiscountRecDetail(discountBatch);
+            if (discountRecDetail != null) {
+                if (settleCommand.getPayReceiptDetails() == null) {
+                    settleCommand.setPayReceiptDetails(new ArrayList<>());
+                }
+                settleCommand.getPayReceiptDetails().add(discountRecDetail);
+            }
             // Gate：扫码/账户拆行后的终态勾稽；纯自费与医保混结均须明细合计=收费项（BR-OPC-024 终态）
             this.assertSettleCommandDetailSumMatchedCharge(
                 settleCommand,
@@ -1784,8 +1841,13 @@ public class OutpatientChargeAppService {
     private BigDecimal sumChargeItemAmount(List<ChargeItem> chargeItems) {
         BigDecimal total = BigDecimal.ZERO;
         for (ChargeItem chargeItem : chargeItems) {
-            if (chargeItem.getTotalPrice() != null) {
-                total = total.add(chargeItem.getTotalPrice());
+            // 应收优先 discount_amount（打折后为折后；未打折创建时=totalPrice）
+            BigDecimal lineAmount = chargeItem.getDiscountAmount();
+            if (lineAmount == null) {
+                lineAmount = chargeItem.getTotalPrice();
+            }
+            if (lineAmount != null) {
+                total = total.add(lineAmount);
             }
         }
         return total;
@@ -1829,6 +1891,22 @@ public class OutpatientChargeAppService {
      * @throws BusinessException 当收费项未带账户且无法解析默认自费账户时抛出，语义码 {@code EX-OPC-308}
      */
     private List<PaymentDetailItemCommand> buildPreSettlePaymentDetailDraftLines(Long encounterId, List<ChargeItem> chargeLines) {
+        return this.buildPreSettlePaymentDetailDraftLines(encounterId, chargeLines, null);
+    }
+
+    /**
+     * 按收费项账户分桶装配预结算支付草稿明细；打折时用折后行额。
+     *
+     * @param encounterId   就诊主键
+     * @param chargeLines   收费行
+     * @param discountBatch 折扣试算；null 或未应用时按原价
+     * @return 草稿明细行
+     */
+    private List<PaymentDetailItemCommand> buildPreSettlePaymentDetailDraftLines(
+        Long encounterId,
+        List<ChargeItem> chargeLines,
+        ChargeDiscountBatchResult discountBatch
+    ) {
         // 默认自费账户与收费项上的 accountId 同源：医生站/收费项开立时已锚定，预结算仅做缺失回落。
         Long defaultSelfPayAccountId = accountQueryService.getSelfPayAccount(encounterId);
         Map<Long, BigDecimal> amountByAccountId = new LinkedHashMap<>();
@@ -1846,6 +1924,14 @@ public class OutpatientChargeAppService {
                         "收费项未绑定结算账户且就诊未开立默认自费账户，无法生成支付草稿"));
             }
             BigDecimal linePrice = chargeLine.getTotalPrice();
+            // 打折：按试算折后替换行额
+            if (discountBatch != null && discountBatch.isApplied()) {
+                ChargeDiscountLineResult discountLine =
+                    discountBatch.getLineByChargeItemId().get(chargeLine.getId());
+                if (discountLine != null && discountLine.getDiscountedReceivable() != null) {
+                    linePrice = discountLine.getDiscountedReceivable();
+                }
+            }
             if (linePrice == null) {
                 linePrice = BigDecimal.ZERO;
             }

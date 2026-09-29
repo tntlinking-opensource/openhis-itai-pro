@@ -74,9 +74,22 @@ public class HealthcareService extends BaseAuditedEntity {
     @Column(name = "appointment_required_flag")
     private Boolean appointmentRequiredFlag;
 
-    /** 医保编号（yb_no），对接医保结算使用，可为空。 */
+    /**
+     * 医保编号列（yb_no）。
+     *
+     * <p><b>产品废弃</b>：新业务禁止读写依赖；挂号费医保码取自绑定诊查费 ActivityDefinition。
+     * 存量列可保留至迁移清空。</p>
+     */
     @Column(name = "yb_no")
     private String ybNo;
+
+    /**
+     * 诊查费 ActivityDefinition 主键 CSV（activity_ids）。
+     *
+     * <p>逗号分隔；可多绑；零元号可空（BR-HCS-010～012）。顺序即展示/落费顺序。</p>
+     */
+    @Column(name = "activity_ids", length = 512)
+    private String activityIds;
 
     /** 业务编号（bus_no），系统内唯一标识医疗服务的人读编码，可为空。 */
     @Column(name = "bus_no")
@@ -159,6 +172,72 @@ public class HealthcareService extends BaseAuditedEntity {
             && !HealthcareServiceStatus.RETIRED.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.HEALTHCARE_SERVICE_INVALID_STATUS, "仅草稿/停用可废弃");
         }
+    }
+
+    /**
+     * 断言 ACTIVE 态禁止修改服务类别与服务类型（BR-HCS-008）。
+     *
+     * @param nextCategoryCode 拟写入的类别；与当前相同或均为空视为未改
+     * @param nextTypeCode     拟写入的类型；与当前相同视为未改
+     * @throws BusinessException 已发布且类别/类型发生变更时
+     */
+    public void assertActiveImmutableCategoryAndType(String nextCategoryCode, String nextTypeCode) {
+        if (!HealthcareServiceStatus.ACTIVE.getCode().equals(this.statusEnum)) {
+            return;
+        }
+        // 已发布号源改类别/类型会破坏已引用语义，拒绝。
+        if (!java.util.Objects.equals(this.normalizeCode(this.categoryCode), this.normalizeCode(nextCategoryCode))
+            || !java.util.Objects.equals(this.normalizeCode(this.typeCode), this.normalizeCode(nextTypeCode))) {
+            throw new BusinessException(ErrorCodeConstants.HEALTHCARE_SERVICE_RULE_CONFLICT,
+                "已启用号源不允许修改服务类别或服务类型");
+        }
+    }
+
+    /**
+     * 断言诊查费绑定串格式合法（BR-HCS-010～012 的领域侧格式门禁）。
+     *
+     * <p>空串允许（零元号）；非空时须为逗号分隔的正整数主键。AD 是否诊查费/ACTIVE 由应用层强校验（跨聚合）。</p>
+     *
+     * @param activityIdsCsv 拟写入的绑定串
+     * @throws BusinessException 格式非法时
+     */
+    public void assertActivityIdsBindingAllowed(String activityIdsCsv) {
+        if (activityIdsCsv == null || activityIdsCsv.isBlank()) {
+            return;
+        }
+        String[] tokens = activityIdsCsv.split(",");
+        for (String raw : tokens) {
+            // 空段（连续逗号）视为非法绑定串。
+            if (raw == null || raw.isBlank()) {
+                throw new BusinessException(ErrorCodeConstants.HEALTHCARE_SERVICE_INVALID_ARGUMENT,
+                    "诊查费绑定串格式非法");
+            }
+            String token = raw.trim();
+            try {
+                long id = Long.parseLong(token);
+                // 主键须为正数。
+                if (id <= 0L) {
+                    throw new BusinessException(ErrorCodeConstants.HEALTHCARE_SERVICE_INVALID_ARGUMENT,
+                        "诊查费绑定主键须为正整数");
+                }
+            } catch (NumberFormatException ex) {
+                throw new BusinessException(ErrorCodeConstants.HEALTHCARE_SERVICE_INVALID_ARGUMENT,
+                    "诊查费绑定串含非数字主键");
+            }
+        }
+    }
+
+    /**
+     * 归一字典/编码比较值：空白视为 {@code null}。
+     *
+     * @param code 原始编码
+     * @return trim 后编码或 null
+     */
+    private String normalizeCode(String code) {
+        if (code == null || code.isBlank()) {
+            return null;
+        }
+        return code.trim();
     }
 
     /**

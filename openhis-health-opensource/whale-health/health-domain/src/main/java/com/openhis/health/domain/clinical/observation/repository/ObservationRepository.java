@@ -39,4 +39,14 @@ public interface ObservationRepository extends JpaRepository<Observation, Long> 
      * @return 未软删列表
      */
     List<Observation> findByServiceRequestIdAndIsDeletedFalse(Long srId);
+
+    /**
+     * 按外源模块与源报告主键列出投影行（PACS 取消审核回滚）。
+     *
+     * @param sourceModuleEnum   来源模块（如 PACS）
+     * @param sourceObservationId 源报告/观察主键
+     * @return 未软删列表
+     */
+    List<Observation> findBySourceModuleEnumAndSourceObservationIdAndIsDeletedFalse(
+        String sourceModuleEnum, Long sourceObservationId);
 }

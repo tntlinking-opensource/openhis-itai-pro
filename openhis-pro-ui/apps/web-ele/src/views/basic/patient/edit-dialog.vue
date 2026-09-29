@@ -32,7 +32,7 @@ import { useVbenForm, z } from '#/adapter/form';
 import { createPatientApi, editPatientApi } from '#/api/basic/patient';
 import { loadArchiveApi, saveArchiveApi } from '#/api/peis/health-archive';
 import SelectArea from '#/components/select-area.vue';
-import { parseChineseIdCard18 } from '#/utils/format/id-card-cn';
+import { isAcceptableChineseIdCardInput, parseChineseIdCard18 } from '#/utils/format/id-card-cn';
 
 const props = withDefaults(defineProps<Props>(), {
   visible: false,
@@ -156,17 +156,6 @@ function parseChineseIdBirth(idRaw: string): null | string {
     return `${y}-${m}-${d}`;
   }
   return null;
-}
-
-/** 18 位 / 15 位大陆居民身份证格式（与表单校验一致） */
-const ID_CARD_18_REGEX =
-  /^[1-9]\d{5}(?:18|19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dX]$/i;
-const ID_CARD_15_REGEX = /^[1-9]\d{7}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}$/;
-
-function isValidChineseIdCard(value: unknown): boolean {
-  const t = String(value ?? '').trim();
-  if (!t) return false;
-  return ID_CARD_18_REGEX.test(t) || ID_CARD_15_REGEX.test(t);
 }
 
 /** 后端 Boolean JSON；兼容列表缓存中的 0/1 */
@@ -487,7 +476,7 @@ const formConfig = reactive({
         z
           .string()
           .min(1, { message: '请输入证件号' })
-          .refine((t) => isValidChineseIdCard(t), {
+          .refine((t) => isAcceptableChineseIdCardInput(t), {
             message: '请输入正确的身份证号格式（15位或18位）',
           }),
       ),

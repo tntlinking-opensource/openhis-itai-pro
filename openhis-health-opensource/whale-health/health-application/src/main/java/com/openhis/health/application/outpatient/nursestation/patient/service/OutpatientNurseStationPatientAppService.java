@@ -12,6 +12,11 @@ import com.openhis.health.application.outpatient.nursestation.treatment.support.
 import com.openhis.health.application.shared.advice.AdviceChargeDisplayStatusAssembler;
 import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.application.shared.financial.EncounterContractDisplayAssembler;
+import com.openhis.health.domain.administration.location.entity.Location;
+import com.openhis.health.domain.administration.location.service.LocationQueryService;
+import com.openhis.health.domain.administration.organization.entity.Organization;
+import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
+import com.openhis.health.domain.share.enums.OrganizationClassification;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
@@ -63,6 +68,10 @@ public class OutpatientNurseStationPatientAppService {
     private final ChargeItemQueryService chargeItemQueryService;
     /** 队列红点：收费锚点归并时药品发放 id→申请 id（与处置单同源）。 */
     private final MedicationDispenseQueryService medicationDispenseQueryService;
+    /** 队列红点：耗材库位→组织，排除 TECH 耗材房。 */
+    private final LocationQueryService locationQueryService;
+    /** 队列红点：组织分类判定 TECH。 */
+    private final OrganizationQueryService organizationQueryService;
 
     /**
      * IF-NUR-01：分页查询门诊护士站患者队列。
@@ -200,9 +209,28 @@ public class OutpatientNurseStationPatientAppService {
             bucket.add(dispense);
         }
         // 逐条已收费非退单请求：须仍有效计费且无发放或仍有待发态则点亮该就诊
+        Set<Long> deviceLocationIds = new LinkedHashSet<>();
+        for (DeviceRequestListModel request : deviceRequests) {
+            if (request != null && request.getLocationId() != null) {
+                deviceLocationIds.add(request.getLocationId());
+            }
+        }
+        Map<Long, Location> locationById =
+            this.locationQueryService.loadLocationEntityMapByIds(deviceLocationIds);
+        Set<Long> orgIds = new LinkedHashSet<>();
+        for (Location location : locationById.values()) {
+            if (location != null && location.getOrganizationId() != null) {
+                orgIds.add(location.getOrganizationId());
+            }
+        }
+        Map<Long, Organization> orgById = this.organizationQueryService.mapByIds(orgIds);
         for (DeviceRequestListModel request : deviceRequests) {
             // 非处置单纳入口径的请求不点亮红点
             if (!this.isNurseStationDeviceRequestEligible(request)) {
+                continue;
+            }
+            // 业务：TECH 耗材房发放由医技站处理，护士站队列红点跳过
+            if (this.isTechDeviceLocation(request.getLocationId(), locationById, orgById)) {
                 continue;
             }
             // Skip：收费已退费/无有效计费（对齐侧栏 BR-NUR-018）
@@ -215,6 +243,32 @@ public class OutpatientNurseStationPatientAppService {
             }
         }
         return pendingEncounterIds;
+    }
+
+    /**
+     * 耗材请求库位上级是否为 TECH（医技站轴，护士站队列红点排除）。
+     *
+     * @param locationId   库位主键
+     * @param locationById 库位索引
+     * @param orgById      组织索引
+     * @return TECH 时 true
+     */
+    private boolean isTechDeviceLocation(
+        Long locationId,
+        Map<Long, Location> locationById,
+        Map<Long, Organization> orgById) {
+        if (locationId == null || locationById == null || orgById == null) {
+            return false;
+        }
+        Location location = locationById.get(locationId);
+        if (location == null || location.getOrganizationId() == null) {
+            return false;
+        }
+        Organization org = orgById.get(location.getOrganizationId());
+        if (org == null || org.getClassEnum() == null) {
+            return false;
+        }
+        return org.getClassEnum() == OrganizationClassification.TECH;
     }
 
     /**

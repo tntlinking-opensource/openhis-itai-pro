@@ -23,8 +23,11 @@ public interface RoleStaffScopeConstants {
     /** 管理药房（物理位置）。 */
     String PHARMACY_LOCATION = "PHARMACY_LOCATION";
 
-    /** 护士管理科室。 */
-    String NURSE_ORG = "NURSE_ORG";
+    /**
+     * 工作科室。
+     * 护士角色候选为护士站，技师角色候选为医技科室；与管理病区无关。
+     */
+    String WORK_ORG = "WORK_ORG";
 
     /** 管理病区（物理位置）。 */
     String NURSE_WARD_LOCATION = "NURSE_WARD_LOCATION";

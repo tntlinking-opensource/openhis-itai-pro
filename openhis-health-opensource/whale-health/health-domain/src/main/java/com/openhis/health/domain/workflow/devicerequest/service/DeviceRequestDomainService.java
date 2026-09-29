@@ -12,16 +12,7 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
-import com.openhis.health.domain.share.events.workflow.devicerequest.DeviceOrderDraftCreatedEvent;
-import com.openhis.health.domain.share.events.workflow.devicerequest.DeviceOrderDraftEditedEvent;
-import com.openhis.health.domain.share.events.workflow.devicerequest.DeviceOrderDraftRemovedEvent;
-import com.openhis.health.domain.share.events.workflow.devicerequest.DeviceOrderRefundRequestedEvent;
-import com.openhis.health.domain.share.events.workflow.devicerequest.DeviceOrderSignOffEvent;
-import com.openhis.health.domain.share.events.workflow.devicerequest.DeviceOrderSignedEvent;
-import com.openhis.health.domain.share.events.workflow.devicerequest.NursePricingDeviceRequestCreatedEvent;
-import com.openhis.health.domain.share.events.workflow.devicerequest.NursePricingDeviceRequestRemovedEvent;
-import com.openhis.health.domain.share.events.workflow.devicerequest.OutpatientDeviceDispenseConfirmationCancelledEvent;
-import com.openhis.health.domain.share.events.workflow.devicerequest.OutpatientDeviceDispenseConfirmedEvent;
+import com.openhis.health.domain.share.events.workflow.devicerequest.*;
 import com.openhis.health.domain.workflow.devicerequest.command.*;
 import com.openhis.health.domain.workflow.devicerequest.entity.DeviceRequest;
 import com.openhis.health.domain.workflow.devicerequest.repository.DeviceRequestRepository;
@@ -274,6 +265,36 @@ public class DeviceRequestDomainService {
         request.setIsDeleted(Boolean.TRUE);
         deviceRequestRepository.save(request);
         domainEventPublisher.publish(new DeviceOrderDraftRemovedEvent(request.getId(), request.getEncounterId()));
+    }
+
+    /**
+     * 废弃耗材草稿：DRAFT → CANCELLED（保留行，不软删；调价在途配套）。
+     *
+     * <p>已非草稿（如并发已签发）时静默跳过，避免误伤医嘱。</p>
+     *
+     * @param command 草稿主键与操作人
+     * @return 实际废弃时 true；已非草稿时 false
+     */
+    public boolean cancelDeviceOrderDraft(CancelDeviceOrderDraftCommand command) {
+        // 前置校验：主键不可空
+        if (command == null || command.getId() == null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "废弃耗材草稿时 id 不能为空");
+        }
+        // 加载/组装：装载申请
+        DeviceRequest request = this.requireDeviceRequest(command.getId());
+        // Gate：已非草稿或已写签发时刻则跳过（防调价并发误伤已签发耗材申请）
+        if (!RequestStatus.DRAFT.getCode().equals(request.getStatusEnum())
+            || request.getReqAuthoredTime() != null) {
+            return false;
+        }
+        // 持久化：状态迁 CANCELLED（不软删）
+        request.ensureDraftCancellable();
+        request.toCancelled();
+        deviceRequestRepository.save(request);
+        // 发布事件：通知费用/列表侧感知废弃
+        domainEventPublisher.publish(new DeviceOrderCancelledEvent(
+            request.getId(), command.getCancelReason(), command.getOperatorId()));
+        return true;
     }
 
     /**
@@ -565,13 +586,14 @@ public class DeviceRequestDomainService {
             request.setReqAuthoredTime(authoredTime);
             request.assertSourceAllowedForCompletedCreate();
             request.assertRequiredForCreate();
-            // BR-DR-012：护士划价路径库房必填。
+            // BR-DR-012：护士/医技划价路径库房必填。
             if (item.getGenerateSourceEnum() != null
-                && GenerateSource.NURSE_PRICING.getCode().equals(item.getGenerateSourceEnum())) {
+                && (GenerateSource.NURSE_PRICING.getCode().equals(item.getGenerateSourceEnum())
+                    || GenerateSource.MEDICAL_TECH_PRICING.getCode().equals(item.getGenerateSourceEnum()))) {
                 if (request.getPerformLocation() == null) {
                     throw new BusinessException(
                         ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT,
-                        "护士划价路径发放库房 performLocation 不能为空");
+                        "划价路径发放库房 performLocation 不能为空");
                 }
             }
             request.toCompleted();

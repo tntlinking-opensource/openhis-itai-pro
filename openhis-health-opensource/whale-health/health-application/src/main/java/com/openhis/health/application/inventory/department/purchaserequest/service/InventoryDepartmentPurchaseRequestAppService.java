@@ -4,7 +4,7 @@
  */
 package com.openhis.health.application.inventory.department.purchaserequest.service;
 
-import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
+import com.openhis.health.application.shared.practitioner.PractitionerRoleScopeLoader;
 import com.openhis.health.application.inventory.department.purchaserequest.dto.DeptPurchaseRequestDetailLineDto;
 import com.openhis.health.application.inventory.department.purchaserequest.dto.DeptPurchaseRequestListRowDto;
 import com.openhis.health.application.inventory.department.purchaserequest.dto.ProductDefinitionItemDto;

@@ -12,8 +12,8 @@ import java.time.LocalDateTime;
 /**
  * 就诊读模型快照（自动取值中间结构，非 QueryModel）。
  *
- * <p>由 {@link com.openhis.health.domain.mrms.caserecord.support.CaseRecordAutoFillSupport#loadEncounter}
- * 从就诊、位置轨迹、参与者组装。</p>
+     * <p>由 {@link com.openhis.health.domain.mrms.caserecord.support.CaseRecordAutoFillSupport#loadEncounter}
+     * 从就诊、账户（付费方式）、位置轨迹、参与者组装。</p>
  */
 @Getter
 @Setter
@@ -51,6 +51,13 @@ public class EncounterSnapshot {
 
     /** 入院途径字典码（4401 adm_way；与登记 in_way_code 同口径）。 */
     private String admWayCode;
+
+    /**
+     * 医疗付费方式码（国标 1～9）。
+     *
+     * <p>自就诊医保账户 {@code insutype} 映射；无医保户时为全自费 {@code 7}。</p>
+     */
+    private String payWayCode;
 
     /** 入院病区名称（最早 WARD 轨迹）。 */
     private String admWardName;

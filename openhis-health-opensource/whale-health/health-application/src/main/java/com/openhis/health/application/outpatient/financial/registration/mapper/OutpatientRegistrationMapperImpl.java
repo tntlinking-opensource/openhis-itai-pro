@@ -487,15 +487,21 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
     }
 
     /**
-     * 根据收费定义生成收费预览。
+     * 根据多条收费定义生成收费预览（一号多诊查费）。
      *
-     * @param saleLine 收费定义
+     * @param saleLines 收费定义列表（可含 null，跳过）
      * @return 收费预览列表
      */
     @Override
-    public List<ChargeItemPreviewDto> toChargeItemPreviewDtoListBySaleLine(ChargeItemDefinition saleLine) {
+    public List<ChargeItemPreviewDto> toChargeItemPreviewDtoListBySaleLines(List<ChargeItemDefinition> saleLines) {
         List<ChargeItemPreviewDto> list = new ArrayList<>();
-        if (saleLine != null) {
+        if (saleLines == null) {
+            return list;
+        }
+        for (ChargeItemDefinition saleLine : saleLines) {
+            if (saleLine == null) {
+                continue;
+            }
             BigDecimal price = saleLine.getPriceValue();
             if (price == null) {
                 price = BigDecimal.ZERO;
@@ -505,6 +511,19 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
                 .setAmount(price));
         }
         return list;
+    }
+
+    /**
+     * 单行预览：委托多行方法。
+     *
+     * @param saleLine 收费定义
+     * @return 收费预览列表
+     */
+    @Override
+    public List<ChargeItemPreviewDto> toChargeItemPreviewDtoListBySaleLine(ChargeItemDefinition saleLine) {
+        List<ChargeItemDefinition> lines = new ArrayList<>();
+        lines.add(saleLine);
+        return this.toChargeItemPreviewDtoListBySaleLines(lines);
     }
 
     /**
@@ -621,11 +640,12 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
     }
 
     /**
-     * 将预结算请求与挂号费定价行装配为「创建收费项」命令：金额取自已解析的定价行，服务锚定为号源类型（healthcare_service），
-     * 并写入就诊、账户、机构等必填外键以满足挂号读模型与 BR-CHG-001 追溯。
+     * 将预结算请求与挂号费定价行装配为「创建收费项」命令：金额取自已解析的定价行，
+     * {@code service_*} 锚定号源，{@code product_*} 锚定诊查费 AD（BR-REG-022 / BR-HCS-007）。
      *
      * @param request     预结算请求（患者、号源类型等）
-     * @param saleLine    已选中的销售价定价行
+     * @param saleLine    已选中的 AD 销售价定价行
+     * @param activityId  诊查费 ActivityDefinition 主键（写入 product_id）；空绑零元可传 null
      * @param encounterId 已开立就诊主键
      * @param occurredAt  费用发生时刻，空则落库为当前时刻
      * @param accountId   挂号结算账户主键
@@ -634,7 +654,8 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
      */
     @Override
     public CreateChargeItemCommand toCreateChargeItemCommand(PreRegisterSettlementRequest request,
-        ChargeItemDefinition saleLine, Long encounterId, LocalDateTime occurredAt, Long accountId, Long orgId) {
+        ChargeItemDefinition saleLine, Long activityId, Long encounterId, LocalDateTime occurredAt, Long accountId,
+        Long orgId) {
         CreateChargeItemCommand command = new CreateChargeItemCommand();
         CreateChargeItemCommand.Item item = new CreateChargeItemCommand.Item();
         item.setPatientId(request.getPatientId());
@@ -657,9 +678,13 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
             occurrenceAt = LocalDateTime.now();
         }
         item.setOccurrenceTime(occurrenceAt);
-        // 挂号费锚定号源类型定义行（与定价 healthcare_service 实例一致），满足 BR-CHG-001 可追溯。
+        // 挂号费：service 锚号源；有诊查费 AD 时 product 锚 AD（BR-REG-022）；空绑零元可不写 product
         item.setServiceTable(TableNameConstants.ADM_HEALTHCARE_SERVICE);
         item.setServiceId(request.getServiceTypeId());
+        if (activityId != null) {
+            item.setProductTable(TableNameConstants.WKF_ACTIVITY_DEFINITION);
+            item.setProductId(activityId);
+        }
         item.setOrgId(orgId);
         item.setRequestingOrgId(orgId);
         command.setItem(item);
@@ -694,18 +719,41 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
     }
 
     /**
-     * 将单个收费项 ID 转换为批量命令。
+     * 将收费项 ID 集合封装为批量命令。
+     *
+     * @param chargeItemIds 收费项 ID 列表
+     * @return 批量收费项命令
+     */
+    @Override
+    public BatchChargeItemIdsCommand toBatchChargeItemIdsCommand(List<Long> chargeItemIds) {
+        BatchChargeItemIdsCommand command = new BatchChargeItemIdsCommand();
+        if (chargeItemIds == null || chargeItemIds.isEmpty()) {
+            return command;
+        }
+        List<BatchChargeItemIdsCommand.Item> items = new ArrayList<>();
+        for (Long chargeItemId : chargeItemIds) {
+            if (chargeItemId == null) {
+                continue;
+            }
+            BatchChargeItemIdsCommand.Item item = new BatchChargeItemIdsCommand.Item();
+            item.setChargeItemId(chargeItemId);
+            items.add(item);
+        }
+        command.setItems(items);
+        return command;
+    }
+
+    /**
+     * 将单收费项 ID 封装为批量命令。
      *
      * @param chargeItemId 收费项 ID
      * @return 批量收费项命令
      */
     @Override
     public BatchChargeItemIdsCommand toSingleChargeItemBatchCommand(Long chargeItemId) {
-        BatchChargeItemIdsCommand command = new BatchChargeItemIdsCommand();
-        BatchChargeItemIdsCommand.Item item = new BatchChargeItemIdsCommand.Item();
-        item.setChargeItemId(chargeItemId);
-        command.setItem(item);
-        return command;
+        List<Long> ids = new ArrayList<>();
+        ids.add(chargeItemId);
+        return this.toBatchChargeItemIdsCommand(ids);
     }
 
     /**
@@ -854,19 +902,19 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
     public CreatePaymentDraftFromPreSettleCommand toCreatePaymentDraftFromPreSettleCommand(
         PreRegisterSettlementRequest request,
         Long encounterId,
-        Long chargeItemId,
+        List<Long> chargeItemIds,
         BigDecimal chargeItemAmount,
         List<PaymentDetailItemCommand> details,
         String contractBusNo) {
         CreatePaymentDraftFromPreSettleCommand command = new CreatePaymentDraftFromPreSettleCommand();
-        // display/tendered 与 ChargeItem.totalPrice 对齐：支付草稿跟随已生成的收费事实，不回头取 ChargeItemDefinition。
+        // display/tendered 与 ChargeItem 合计对齐：支付草稿跟随已生成的收费事实。
         BigDecimal amount = chargeItemAmount;
         if (amount == null) {
             amount = BigDecimal.ZERO;
         }
         command.setEncounterId(encounterId);
         command.setPatientId(request.getPatientId());
-        command.setChargeItemIds(String.valueOf(chargeItemId));
+        command.setChargeItemIds(this.joinChargeItemIds(chargeItemIds));
         command.setDisplayAmount(amount);
         command.setTenderedAmount(amount);
         // 门诊挂号预结算阶段统一按收款方向落草稿，支付方式在后续支付回执阶段补充明细。
@@ -880,6 +928,29 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
             command.setContractNo(contractBusNo.trim());
         }
         return command;
+    }
+
+    /**
+     * 将收费明细主键列表拼为支付草稿 {@code charge_item_ids} CSV。
+     *
+     * @param chargeItemIds 主键列表
+     * @return 逗号串；空列表返回空串
+     */
+    private String joinChargeItemIds(List<Long> chargeItemIds) {
+        if (chargeItemIds == null || chargeItemIds.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Long id : chargeItemIds) {
+            if (id == null) {
+                continue;
+            }
+            if (sb.length() > 0) {
+                sb.append(',');
+            }
+            sb.append(id);
+        }
+        return sb.toString();
     }
 
     /**

@@ -40,6 +40,8 @@ export function mapDoctorStationPatientQueueRow(
     genderEnum: dto.genderEnum,
     genderEnumText: dto.genderEnumText,
     houseName: dto.houseName,
+    idCard: dto.idCard,
+    phone: dto.phone,
     lowBalanceWarning: dto.lowBalanceWarning === true,
     nursingLevelActivityId: toOptionalIdString(dto.nursingLevelActivityId),
     nursingLevelName: dto.nursingLevelName,

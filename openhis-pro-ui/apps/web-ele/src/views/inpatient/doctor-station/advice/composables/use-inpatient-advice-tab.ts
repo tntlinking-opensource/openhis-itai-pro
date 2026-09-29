@@ -68,6 +68,7 @@ import {
   mergeCatalogIntoAdviceDrugItemForEdit,
   prepickedKeyFromListRow,
 } from '../services/advice-edit-hydrate';
+import { hydrateDoseScheduleSlots } from '../services/medication-unit-bands';
 import {
   defaultContractSelection,
   defaultMedicationRateCode,
@@ -136,6 +137,10 @@ export interface UseInpatientAdviceTabProps {
    * 开立 Tab 不传，保持与中医处方 Tab 分域。
    */
   includeTcmPrescriptions?: boolean;
+  /**
+   * 列表行展示「执行记录」入口（病案首页医嘱侧栏为 true；医生站开立不传）。
+   */
+  showExecutionRecord?: boolean;
 }
 
 /** 住院医生站「开立医嘱」页签：与门诊同构的独立实现，对接住院医嘱开立应用服务 */
@@ -152,6 +157,8 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
   );
 
   const medicationRateOptions = ref<TerminologyOptionDto[]>([]);
+  /** 频次码 → day_times 段数（用量不一致展开框） */
+  const dayTimesCountByRateCode = ref<Record<string, number>>({});
   const medicationRouteOptions = ref<TerminologyOptionDto[]>([]);
   const medicationSpeedOptions = ref<TerminologyOptionDto[]>([]);
   const feeNatureOptions = ref<FeeNatureOption[]>([]);
@@ -1564,6 +1571,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     const patientId = props.patientId?.trim() || '';
     if (!encounterId || !patientId) {
       medicationRateOptions.value = [];
+      dayTimesCountByRateCode.value = {};
       medicationRouteOptions.value = [];
       medicationSpeedOptions.value = [];
       feeNatureOptions.value = [];
@@ -1575,6 +1583,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
         getChargeTypeListApi().catch(() => []),
       ]);
       medicationRateOptions.value = res.medicationRateOptions ?? [];
+      dayTimesCountByRateCode.value = res.dayTimesCountByRateCode ?? {};
       medicationRouteOptions.value = res.medicationRouteOptions ?? [];
       medicationSpeedOptions.value = res.medicationSpeedOptions ?? [];
       feeNatureOptions.value = enrichFeeNatureOptionsWithCategory(
@@ -1583,6 +1592,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
       );
     } catch {
       medicationRateOptions.value = [];
+      dayTimesCountByRateCode.value = {};
       medicationRouteOptions.value = [];
       medicationSpeedOptions.value = [];
       feeNatureOptions.value = [];
@@ -1699,7 +1709,11 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
             therapyTypeCode: row.therapyTypeCode,
             totalUnitDefaultKind: therapyCode === 'TEMPORARY' ? 'PACKAGE' : 'SALES',
           })
-        : seed;
+        : {
+            ...seed,
+            // 无目录时仍回显分次 schedule，避免撤回后再编辑丢「用量不一致」
+            ...hydrateDoseScheduleSlots({ doseSchedule: seed.listDoseSchedule }),
+          };
       // 临时：后端可能清空 rate_code，回填时默认「立即」
       const frequency =
         String(merged.frequency ?? seed.frequency ?? base.frequency ?? '').trim() ||
@@ -2117,10 +2131,12 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     loadAdviceInit,
     loadAdviceList,
     medicationRateOptions,
+    dayTimesCountByRateCode,
     setListTherapyFilter,
     medicationRouteOptions,
     medicationSpeedOptions,
     onAdviceSelectionChange,
+    tableSelection,
     orderSelectExpandNonce,
     orderSelectFocusNonce,
     patientId: computed(() => props.patientId ?? ''),

@@ -39,7 +39,7 @@ import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConsta
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
-import com.openhis.health.application.basic.administration.support.PractitionerCashierOptionProvider;
+import com.openhis.health.application.shared.practitioner.PractitionerCashierOptionProvider;
 import com.openhis.health.application.shared.financial.PaymentEntererMatchResolver;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.application.outpatient.financial.feedetail.support.OutpatientFeeDetailLoader;
@@ -48,6 +48,7 @@ import com.openhis.health.application.shared.pricing.ChargeItemPackageUnitRatioS
 import com.openhis.health.application.shared.pricing.HistoricalChargeItemPurchasePriceSupport;
 import com.openhis.health.application.shared.product.ChargeItemProductLookupHelper;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.application.shared.report.ChargeItemActivityOperatorResolver;
 import com.openhis.health.application.shared.report.PatientSettlementContextRow;
 import com.openhis.health.application.shared.report.ChargeItemOrderingDoctorFromRequestSupport;
 import com.openhis.health.application.shared.report.FeeDetailMatchedScopePurchaseTotalSupport;
@@ -135,6 +136,9 @@ public class OutpatientFeeDetailAppService {
 
     /** 开单医生自三类 Request 批量解析。 */
     private final ChargeItemOrderingDoctorFromRequestSupport chargeItemOrderingDoctorFromRequestSupport;
+
+    /** 收费行活动操作人（Procedure / DeviceDispense）。 */
+    private final ChargeItemActivityOperatorResolver chargeItemActivityOperatorResolver;
 
     /** 定价行 fin_type 解析（与日结口径一致）。 */
     private final DailySettlementFinTypeAmountLoader dailySettlementFinTypeAmountLoader;
@@ -651,8 +655,11 @@ public class OutpatientFeeDetailAppService {
             lineDto.setOrderingDoctorId(orderingDoctorId);
             lineDto.setOrderingDoctorName(bundle.practitionerNameById.get(orderingDoctorId));
         }
-        // Asm：执行人取账单 performer_id（门诊执行计费偶发）
-        Long performerId = row.getChargeItem().getPerformerId();
+        // Asm：执行人跟 Procedure / DeviceDispense（不再读收费行操作人戳）
+        Long performerId = null;
+        if (chargeItemId != null && bundle.performerByChargeItemId != null) {
+            performerId = bundle.performerByChargeItemId.get(chargeItemId);
+        }
         if (performerId != null) {
             lineDto.setPerformerId(performerId);
             lineDto.setPerformerName(bundle.practitionerNameById.get(performerId));
@@ -797,9 +804,6 @@ public class OutpatientFeeDetailAppService {
                         practitionerIds.add(row.getChargeItem().getEntererId());
                     }
                 }
-                if (row.getChargeItem().getPerformerId() != null) {
-                    practitionerIds.add(row.getChargeItem().getPerformerId());
-                }
                 if (row.getPaymentContext() != null && row.getPaymentContext().getCashierId() != null) {
                     practitionerIds.add(row.getPaymentContext().getCashierId());
                 }
@@ -815,6 +819,14 @@ public class OutpatientFeeDetailAppService {
         for (Long orderingDoctorId : bundle.orderingDoctorByChargeItemId.values()) {
             if (orderingDoctorId != null) {
                 practitionerIds.add(orderingDoctorId);
+            }
+        }
+        // Pre：执行人跟 Procedure / DeviceDispense
+        bundle.performerByChargeItemId =
+            this.chargeItemActivityOperatorResolver.mapOperatorPractitionerIdByChargeItemId(chargeItemsForFinType);
+        for (Long performerId : bundle.performerByChargeItemId.values()) {
+            if (performerId != null) {
+                practitionerIds.add(performerId);
             }
         }
         // Pre：SDD §3.3 步骤 7 — EncounterQueryService#listEncounterEntitiesByIds
@@ -1115,6 +1127,9 @@ public class OutpatientFeeDetailAppService {
 
         /** chargeItemId → 开单医生（Request.requester_id）。 */
         private Map<Long, Long> orderingDoctorByChargeItemId = Map.of();
+
+        /** chargeItemId → 活动操作人（Procedure / DeviceDispense）。 */
+        private Map<Long, Long> performerByChargeItemId = Map.of();
 
         /** 产品复合键 → 展示 DTO。 */
         private Map<String, ProductDefinitionDisplayDto> productByCompositeKey = Map.of();

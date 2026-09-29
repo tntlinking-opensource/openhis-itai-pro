@@ -4,7 +4,7 @@
  */
 package com.openhis.health.application.basic.inventoryopening.service;
 
-import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
+import com.openhis.health.application.shared.practitioner.PractitionerRoleScopeLoader;
 import com.openhis.health.application.basic.inventoryopening.dto.InventoryOpeningDetailLineDto;
 import com.openhis.health.application.basic.inventoryopening.dto.InventoryOpeningImportErrorDto;
 import com.openhis.health.application.basic.inventoryopening.dto.InventoryOpeningLineDto;

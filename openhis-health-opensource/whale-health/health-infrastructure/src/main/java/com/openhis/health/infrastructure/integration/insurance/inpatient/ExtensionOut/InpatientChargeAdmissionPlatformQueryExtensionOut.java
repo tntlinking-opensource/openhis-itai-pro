@@ -25,4 +25,7 @@ public class InpatientChargeAdmissionPlatformQueryExtensionOut {
 
     /** 是否已在平台完成入院登记。 */
     private Boolean platformAdmitted;
+
+    /** 参保地医保区划（来自住院预结算快照）。 */
+    private String insuplcAdmdvs;
 }

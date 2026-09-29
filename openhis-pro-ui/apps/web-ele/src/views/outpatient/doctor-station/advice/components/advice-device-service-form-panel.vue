@@ -9,17 +9,21 @@ import type { PerformOrgOption } from '#/views/doctor-station/advice-shared/perf
 
 import { computed, ref, watch } from 'vue';
 
-import { ElInput, ElInputNumber, ElOption, ElSelect } from 'element-plus';
+import { ElCheckbox, ElInput, ElInputNumber, ElOption, ElSelect } from 'element-plus';
 
 import { AdviceDiagnosisBindPanel } from '#/components/doctor-station/diagnosis';
 import { httpListActivityExecutionLocations } from '#/api/doctor-station/advice.http';
 import {
-  loadAllDepartmentPerformOrgOptions,
   mapActivityExecutionRulesToPerformOrgOptions,
   mergeCurrentPerformOrgIntoOptions,
 } from '#/views/doctor-station/advice-shared/perform-org-options.service';
 
 import { calcMoneyLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
+import {
+  SERVICE_CATEGORY_PROOF,
+  SERVICE_CATEGORY_TEST,
+} from '#/utils/print/constants/service-request-category-codes';
+import { SERVICE_REQUEST_PRIORITY_EM } from '#/utils/print/constants/service-request-priority';
 
 import { parseOptionalNumberInput } from '../services/advice-edit';
 import {
@@ -111,6 +115,20 @@ const serviceUnitLabel = computed(() => {
   return label || '—';
 });
 
+/** 单独开诊疗：仅检验(22/PROOF)/检查(23/TEST)目录出「急」 */
+const showServiceUrgentCheckbox = computed(() => {
+  if (props.editorKind !== 'SERVICE') {
+    return false;
+  }
+  const code = String(props.item.catalogCategoryCode ?? '').trim();
+  return (
+    code === SERVICE_CATEGORY_PROOF ||
+    code === SERVICE_CATEGORY_TEST ||
+    code === 'PROOF' ||
+    code === 'TEST'
+  );
+});
+
 /** 耗材：计量带单位下拉（包装/售卖/拆零）；无带时回落当前单位单选项。 */
 const deviceUnitOptions = computed(() => {
   const fromBands = totalUnitSelectOptions(props.item);
@@ -155,12 +173,12 @@ function onDeviceTotalAmountUnitSelect(value: unknown) {
   }
 }
 
-/** 接口返回的诊疗可执行科室（去重后）；无配置时回落全院科室。 */
+/** 接口返回的诊疗可执行科室；无配置时后端回落开立科室。 */
 const serviceExecutionOrgOptions = ref<PerformOrgOption[]>([]);
 const serviceExecutionOrgLoading = ref(false);
 let serviceFetchToken = 0;
 
-/** 诊疗行：按就诊 + 诊疗定义拉取执行科室规则，填充下拉；耗材不请求。 */
+/** 诊疗行：按就诊 + 诊疗定义拉取执行科室；无配置时后端回落开立科室，前端不再拉全院。 */
 async function refreshServiceExecutionOrgOptions() {
   const token = ++serviceFetchToken;
   serviceExecutionOrgOptions.value = [];
@@ -188,13 +206,12 @@ async function refreshServiceExecutionOrgOptions() {
     if (token !== serviceFetchToken) return;
 
     const ruleOpts = mapActivityExecutionRulesToPerformOrgOptions(res.rules);
-    const opts = ruleOpts.length > 0 ? ruleOpts : await loadAllDepartmentPerformOrgOptions();
-    serviceExecutionOrgOptions.value = opts;
+    serviceExecutionOrgOptions.value = ruleOpts;
 
     if (token !== serviceFetchToken) return;
     const cur = String(props.item.performOrgId ?? '').trim();
-    if (opts.length === 1) {
-      const only = opts[0];
+    if (ruleOpts.length === 1) {
+      const only = ruleOpts[0];
       if (!only) {
         return;
       }
@@ -202,13 +219,8 @@ async function refreshServiceExecutionOrgOptions() {
         props.setField('performOrgId', only.value as AdviceDrugItem['performOrgId']);
         props.setField('performOrgName', only.label as AdviceDrugItem['performOrgName']);
       }
-    } else if (
-      ruleOpts.length > 0 &&
-      opts.length > 1 &&
-      cur &&
-      !opts.some((o) => o.value === cur)
-    ) {
-      const first = opts[0];
+    } else if (ruleOpts.length > 1 && cur && !ruleOpts.some((o) => o.value === cur)) {
+      const first = ruleOpts[0];
       if (!first) {
         return;
       }
@@ -217,7 +229,7 @@ async function refreshServiceExecutionOrgOptions() {
     }
   } catch {
     if (token === serviceFetchToken) {
-      serviceExecutionOrgOptions.value = await loadAllDepartmentPerformOrgOptions();
+      serviceExecutionOrgOptions.value = [];
     }
   } finally {
     if (token === serviceFetchToken) {
@@ -441,6 +453,17 @@ function patchEncounterDiagnosisIds(value: unknown) {
               )
           "
         />
+      </div>
+      <div v-if="showServiceUrgentCheckbox" class="field-item urgent-field">
+        <ElCheckbox
+          :model-value="item.priorityEnum === SERVICE_REQUEST_PRIORITY_EM"
+          @update:model-value="
+            (checked: boolean | string | number) =>
+              setField('priorityEnum', checked ? SERVICE_REQUEST_PRIORITY_EM : '')
+          "
+        >
+          急
+        </ElCheckbox>
       </div>
       <div class="field-item perform-org-item">
         <span class="meta-label">执行科室</span>

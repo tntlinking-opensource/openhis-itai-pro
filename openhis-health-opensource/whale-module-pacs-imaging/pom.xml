@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.openhis</groupId>
+        <artifactId>whale</artifactId>
+        <version>2.0.8</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>whale-module-pacs-imaging</artifactId>
+    <packaging>pom</packaging>
+
+    <name>Whale Module PACS Imaging</name>
+    <description>Whale PACS 影像扩展 Module（影像索引 / 关键图 / 阅片端点）</description>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.openhis</groupId>
+                <artifactId>whale-core</artifactId>
+                <version>${whale.framework.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.openhis</groupId>
+                <artifactId>health-domain-shared</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.openhis</groupId>
+                <artifactId>module-pacs-imaging-domain</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.openhis</groupId>
+                <artifactId>module-pacs-imaging-application</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.openhis</groupId>
+                <artifactId>module-pacs-imaging-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.openhis</groupId>
+                <artifactId>health-domain</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <modules>
+        <module>imaging-domain</module>
+        <module>imaging-application</module>
+        <module>imaging-starter</module>
+    </modules>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

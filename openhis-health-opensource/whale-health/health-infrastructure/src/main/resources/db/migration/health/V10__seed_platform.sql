@@ -44,7 +44,7 @@ VALUES
 ('105015', '1', 'StaffScope', 'DOCTOR_VISIT_ORG', NULL, '2026-06-09 12:03:45.933+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
 ('105016', '1', 'StaffScope', 'WAREHOUSE_LOCATION', NULL, '2026-06-09 12:03:45.933+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
 ('105017', '1', 'StaffScope', 'PHARMACY_LOCATION', NULL, '2026-06-09 12:03:45.933+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
-('105018', '1', 'StaffScope', 'NURSE_ORG', NULL, '2026-06-09 12:03:45.933+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105018', '1', 'StaffScope', 'WORK_ORG', NULL, '2026-06-09 12:03:45.933+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
 ('105019', '1', 'StaffScope', 'NURSE_WARD_LOCATION', NULL, '2026-06-09 12:03:45.933+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
 ('105021', '13', 'AssignmentScope', 'PHARMACY', NULL, '2026-06-10 03:51:26.617+00', '2026-06-10 03:51:26.617+00', NULL, NULL, false, NULL, NULL),
 ('105022', '13', 'StaffScope', 'PHARMACY_LOCATION', NULL, '2026-06-10 03:51:26.617+00', '2026-06-10 03:51:26.617+00', NULL, NULL, false, NULL, NULL),
@@ -178,20 +178,19 @@ VALUES
 ('323100000000000002', 'doctorStationWesternDiagnosisSources', 'hospital_dx,general_dx', 'G', NULL, '1', '医生站西医诊断检索目录来源（逗号分隔 source_enum）', '2026-07-18 00:00:00.000+00', '2026-07-18 00:00:00.000+00', '1', '1', false, NULL, NULL),
 ('323100000000000003', 'outpatientPrescriptionAmountLimitYuan', '1000', 'G', NULL, '1', '门诊处方金额上限（元；种子默认1000）', '2026-07-22 00:00:00.000+00', '2026-07-22 00:00:00.000+00', '1', '1', false, NULL, NULL),
 ('323100000000000004', 'inventoryExpireWarningDays', '90', 'G', NULL, '1', '库存效期预警天数（种子默认90）', '2026-07-22 00:00:00.000+00', '2026-07-22 00:00:00.000+00', '1', '1', false, NULL, NULL),
-('323100000000000005', 'inventoryMinPackageQuantityWarning', '30', 'G', NULL, '1', '库存预警包装单位数量（种子默认30）', '2026-07-22 00:00:00.000+00', '2026-07-22 00:00:00.000+00', '1', '1', false, NULL, NULL),
-('323100000000000006', 'inpatientStopVerifyAutoSkipPending', '0', 'G', NULL, '1', '住院停嘱校对后自动不执行剩余待执行时点（全局G；1开/0关；种子默认关闭）', '2026-09-11 00:00:00.000+00', '2026-09-11 00:00:00.000+00', '1', '1', false, NULL, NULL)
+('323100000000000005', 'inventoryMinPackageQuantityWarning', '30', 'G', NULL, '1', '库存预警包装单位数量（种子默认30）', '2026-07-22 00:00:00.000+00', '2026-07-22 00:00:00.000+00', '1', '1', false, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
 
 INSERT INTO whale_roles (
     id, name, display_name, code, description, is_default, is_static,
     tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
 ) VALUES
-    ('15', 'medical_technician', '医技', 'ROLE_MEDICAL_TECH', '医技人员，负责检验检查等医技工作', true, true, NULL,
+    ('15', 'medical_technician', '技师', 'ROLE_MEDICAL_TECH', '技师人员，负责检验检查等医技工作', true, true, NULL,
      '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL),
     ('16', 'staff_other', '其他', 'ROLE_STAFF_OTHER', '其他岗位人员（老库 STAFF_TYPE=1）', true, true, NULL,
      '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL),
-    ('17', 'finance_approver', '财务审批', 'ROLE_FINANCE_APPROVER', '财务审批岗位，负责动账类供应单与调价单的审批与驳回', true, true, NULL,
-     '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL)
+    ('19', 'cashier', '款员', 'ROLE_CASHIER', '款员角色，负责门诊与住院收款', true, true, NULL,
+     '2026-09-19 04:35:00.000+00', '2026-09-19 04:35:00.000+00', NULL, NULL, false, NULL, NULL)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO whale_role_claims (
@@ -200,12 +199,14 @@ INSERT INTO whale_role_claims (
 ) VALUES
     ('105023', '15', 'AssignmentScope', 'ORG', NULL,
      '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL),
-    ('105024', '15', 'StaffScope', 'DOCTOR_VISIT_ORG', NULL,
+    ('105024', '15', 'StaffScope', 'WORK_ORG', NULL,
      '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL),
     ('105025', '16', 'AssignmentScope', 'ORG', NULL,
      '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL),
-    ('105026', '11', 'StaffScope', 'NURSE_ORG', NULL,
-     '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL)
+    ('105026', '11', 'StaffScope', 'WORK_ORG', NULL,
+     '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL),
+    ('190190000000000000', '19', 'AssignmentScope', 'ORG', NULL,
+     '2026-09-19 04:35:00.000+00', '2026-09-19 04:35:00.000+00', NULL, NULL, false, NULL, NULL)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO "adm_organization" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "name", "bus_no", "parent_id", "type_enum", "class_enum", "status_enum", "active_flag", "display_order", "def_doctor_id", "py_str", "wb_str", "yb_no", "yb_name", "medins_id", "medins_admdvs", "medins_type", "medins_lv", "caty")
@@ -248,8 +249,6 @@ VALUES
 ('203', 'patient_gender_enum', '病人性别', '病人性别列表', '1.0', '2', '1', '2025-02-23 23:46:32.685+00', NULL, '1', '1', false, NULL, NULL),
 ('204', 'sys_idtype', '证件类别', NULL, '1.0', '2', '1', '2025-02-24 00:30:27.155+00', NULL, '1', '1', false, NULL, NULL),
 ('205', 'prfs_enum', '职业类别', NULL, '1.0', '2', '1', '2025-02-24 01:01:10.582+00', NULL, '1', '1', false, NULL, NULL),
-('206', 'blood_abo', '血型ABO', NULL, '1.0', '2', '1', '2025-02-24 18:06:12.519+00', '2025-02-24 23:13:07.768+00', '1', '1', false, NULL, NULL),
-('207', 'blood_rh', '血型RH', NULL, '1.0', '2', '1', '2025-02-24 18:08:00.272+00', '2025-02-24 23:12:59.475+00', '1', '1', false, NULL, NULL),
 ('208', 'marital_status_enum', '婚姻状态', '婚姻状态', '1.0', '2', '1', '2025-02-24 18:32:48.001+00', '2025-02-24 23:46:14.210+00', '1', '1', false, NULL, NULL),
 ('209', 'patient_temp_flag', '临时标记', NULL, '1.0', '2', '1', '2025-02-24 18:58:09.892+00', NULL, '1', '1', false, NULL, NULL),
 ('210', 'link_relation_code', '联系人关系', NULL, '1.0', '2', '1', '2025-02-24 19:15:27.453+00', NULL, '1', '1', false, NULL, NULL),
@@ -401,8 +400,8 @@ VALUES
 ('367', 'mrg_stas', '婚姻状况类别代码', '婚姻状况类别代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
 ('368', 'drug_dicm', '药物过敏标志', '药物过敏标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
 ('369', 'die_autp', '死亡患者尸检标志', '死亡患者尸检标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
-('370', 'blotype_abo', 'ABO血型代码', 'ABO血型代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
-('371', 'blotype_rh', 'Rh血型代码', 'Rh血型代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('370', 'blotype_abo', 'ABO血型代码', '医保 ABO血型代码（V1.6.8 blotype_abo：1 A型/2 B型/3 O型/4 AB型/5 不详/9 未查）', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('371', 'blotype_rh', 'Rh血型代码', '医保 Rh血型代码（V1.6.8 blotype_rh：1 阴性/2 阳性/3 不详/4 未查）', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
 ('372', 'die_code', '死亡标识', '死亡标识列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
 ('373', 'medcas_qlt_code', '住院病例病案质量代码', '住院病例病案质量代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
 ('374', 'days_rinp_flag_31', '出院 31天内再住院计划标志', '出院 31天内再住院计划标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
@@ -657,16 +656,6 @@ VALUES
 ('223', '205', '70', '无业人员', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-02-24 01:10:21.156+00', NULL, '1', '1', false, NULL, NULL),
 ('224', '205', '80', '退（离）休人员', NULL, NULL, '12', true, NULL, 'default', NULL, '1', '2025-02-24 01:10:53.178+00', NULL, '1', '1', false, NULL, NULL),
 ('225', '205', '90', '其他', NULL, NULL, '13', true, NULL, 'default', NULL, '1', '2025-02-24 01:11:03.963+00', NULL, '1', '1', false, NULL, NULL),
-('226', '206', '1', 'A型', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-02-24 18:06:41.656+00', NULL, '1', '1', false, NULL, NULL),
-('227', '206', '2', 'B型', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-02-24 18:06:55.619+00', NULL, '1', '1', false, NULL, NULL),
-('228', '206', '3', 'O型', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-02-24 18:07:07.455+00', NULL, '1', '1', false, NULL, NULL),
-('229', '206', '4', 'AB型', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-02-24 18:07:20.830+00', NULL, '1', '1', false, NULL, NULL),
-('230', '206', '5', '不详', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2025-02-24 18:07:33.423+00', NULL, '1', '1', false, NULL, NULL),
-('231', '206', '9', '未查', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2025-02-24 18:07:46.424+00', NULL, '1', '1', false, NULL, NULL),
-('232', '207', '1', 'Rh阴性', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-02-24 18:08:20.334+00', NULL, '1', '1', false, NULL, NULL),
-('233', '207', '2', 'Rh阳性', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-02-24 18:08:42.799+00', NULL, '1', '1', false, NULL, NULL),
-('234', '207', '3', '不详', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-02-24 18:08:55.075+00', NULL, '1', '1', false, NULL, NULL),
-('235', '207', '4', '未查', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-02-24 18:09:04.791+00', NULL, '1', '1', false, NULL, NULL),
 ('236', '208', '10', '未婚', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-02-24 18:32:59.334+00', NULL, '1', '1', false, NULL, NULL),
 ('237', '208', '20', '已婚', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-02-24 18:33:09.449+00', NULL, '1', '1', false, NULL, NULL),
 ('238', '208', '21', '初婚', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-02-24 18:33:26.972+00', NULL, '1', '1', false, NULL, NULL),
@@ -2914,22 +2903,24 @@ VALUES
 ('2894', '368', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
 ('2895', '369', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
 ('2896', '369', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
-('2897', '370', '1', 'A 型', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
-('2898', '370', '4', 'AB 型', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
-('2899', '370', '2', 'B 型', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
-('2900', '370', '5', '不详', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
-('2901', '370', '3', 'O 型', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+-- blotype_abo / blotype_rh：对齐医保 V1.6.8（不可少不可多；未查 ABO=9 RH=4）
+('2897', '370', '1', 'A 型', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2899', '370', '2', 'B 型', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2901', '370', '3', 'O 型', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2898', '370', '4', 'AB 型', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2900', '370', '5', '不详', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2902', '370', '9', '未查', NULL, NULL, '9', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2903', '371', '1', 'Rh 阴性', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2905', '371', '2', 'Rh 阳性', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2904', '371', '3', '不详', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2906', '371', '4', '未查', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
 
 
 
 INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
 VALUES
-('2902', '370', '9', '未查', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
-('2903', '371', '1', 'Rh 阴性', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
-('2904', '371', '3', '不详', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
-('2905', '371', '2', 'Rh 阳性', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
-('2906', '371', '4', '未查', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+
 ('2907', '372', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
 ('2908', '372', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
 ('2909', '373', '1', '甲', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
@@ -4011,6 +4002,11 @@ INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definitio
 VALUES ('3681', '255', '52', '嘱托', '住院嘱托医嘱（自由文本正文，执行不计费）', NULL, '31', true, NULL, 'default', NULL, '1', '2026-07-16 03:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
 
+-- 诊疗目录类别 activity_category_code=53「诊查费」（门诊/急诊/住院/互联网诊查费目录）
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('3682', '255', '53', '诊查费', '门诊/急诊/住院/互联网诊查费目录类别', NULL, '32', true, NULL, 'default', NULL, '1', '2026-09-25 02:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
 
 
 INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
@@ -4298,6 +4294,7 @@ VALUES
 ('24', 'Navigation.OperationCatalog', '手术', 'Navigation', '菜单入口: OperationCatalog', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('25', 'Navigation.Outpatientnursestation', '门诊护士站', 'Navigation', '菜单入口: OutpatientNurseStation', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('26', 'Navigation.Inpatientnursestation', '住院护士站', 'Navigation', '菜单入口: InpatientNurseStation', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('890020000000000034', 'Navigation.Medicaltechworkstation', '医技工作站', 'Navigation', '菜单入口: MedicalTechWorkstation — AS-MT-EXE/FEE/CHG 三 Tab', NULL, '2026-09-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('27', 'Navigation.Reportfinance', '财务报表', 'Navigation', '菜单入口: ReportFinance', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('28', 'Navigation.Chargeopregister', '门诊挂号', 'Navigation', '菜单入口: ChargeOpRegister', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('29', 'Navigation.Chargeopcharge', '门诊收费', 'Navigation', '菜单入口: ChargeOpCharge', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
@@ -4399,6 +4396,8 @@ VALUES
 ('10025', 'Navigation.HealthcareServiceManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('10026', 'Navigation.Inpatientdoctorstation', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('10027', 'Navigation.Inpatientnursestation', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('890030000000000044', 'Navigation.Medicaltechworkstation', 'R', '1', NULL, '2026-09-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('890030000000000045', 'Navigation.Medicaltechworkstation', 'R', '15', '1', '2026-09-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('10028', 'Navigation.Invstocklist', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('10029', 'Navigation.Medicine', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('10031', 'Navigation.Medicinereturnop', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
@@ -4446,20 +4445,11 @@ VALUES
 ('322733572207677440', 'Navigation.Medicine', 'R', '13', '1', '2026-06-09 13:47:59.714+00', '2026-06-09 13:47:59.714+00', '1', '1', false, NULL, NULL),
 ('322733572220260352', 'Navigation.Whstocktakeorder', 'R', '13', '1', '2026-06-09 13:47:59.717+00', '2026-06-09 13:47:59.717+00', '1', '1', false, NULL, NULL),
 ('322733614511427584', 'Navigation.Reportclinical', 'R', '14', '1', '2026-06-09 13:48:09.800+00', '2026-06-09 13:48:09.800+00', '1', '1', false, NULL, NULL),
-('322733614519816192', 'Navigation.Chargeipfee', 'R', '14', '1', '2026-06-09 13:48:09.802+00', '2026-06-09 13:48:09.802+00', '1', '1', false, NULL, NULL),
-('322733614528204800', 'Navigation.Chargeipprepay', 'R', '14', '1', '2026-06-09 13:48:09.804+00', '2026-06-09 13:48:09.804+00', '1', '1', false, NULL, NULL),
-('322733614544982016', 'Navigation.Chargeoprefund', 'R', '14', '1', '2026-06-09 13:48:09.808+00', '2026-06-09 13:48:09.808+00', '1', '1', false, NULL, NULL),
 ('322733614553370624', 'Navigation.Reporthome', 'R', '14', '1', '2026-06-09 13:48:09.810+00', '2026-06-09 13:48:09.810+00', '1', '1', false, NULL, NULL),
-('322733614561759232', 'Navigation.Chargeopdayclose', 'R', '14', '1', '2026-06-09 13:48:09.812+00', '2026-06-09 13:48:09.812+00', '1', '1', false, NULL, NULL),
-('322733614561759233', 'Navigation.Chargeipdayclose', 'R', '14', '1', '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL),
 ('322733614561759234', 'Navigation.Opfeedetail', 'R', '14', '1', '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL),
 ('322733438157721601', 'Navigation.Dispenserecordop', 'R', '12', '1', '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL),
 ('322733438157721602', 'Navigation.Dispenserecordip', 'R', '12', '1', '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL),
-('322733614574342144', 'Navigation.Chargeipregister', 'R', '14', '1', '2026-06-09 13:48:09.815+00', '2026-06-09 13:48:09.815+00', '1', '1', false, NULL, NULL),
-('322733614582730752', 'Navigation.Chargeopregister', 'R', '14', '1', '2026-06-09 13:48:09.817+00', '2026-06-09 13:48:09.817+00', '1', '1', false, NULL, NULL),
-('322733614586925056', 'Navigation.Chargeopcharge', 'R', '14', '1', '2026-06-09 13:48:09.818+00', '2026-06-09 13:48:09.818+00', '1', '1', false, NULL, NULL),
 ('322733614599507968', 'Navigation.Reportdean', 'R', '14', '1', '2026-06-09 13:48:09.821+00', '2026-06-09 13:48:09.821+00', '1', '1', false, NULL, NULL),
-('322733614612090880', 'Navigation.Chargeipsettle', 'R', '14', '1', '2026-06-09 13:48:09.824+00', '2026-06-09 13:48:09.824+00', '1', '1', false, NULL, NULL),
 ('322733614620479488', 'Navigation.Reportfinance', 'R', '14', '1', '2026-06-09 13:48:09.826+00', '2026-06-09 13:48:09.826+00', '1', '1', false, NULL, NULL),
 ('322973244809809920', 'Navigation.Analytics', 'R', '10', '1', '2026-06-10 05:40:22.115+00', '2026-06-10 05:40:22.115+00', '1', '1', false, NULL, NULL),
 ('322973259494068224', 'Navigation.Analytics', 'R', '11', '1', '2026-06-10 05:40:25.616+00', '2026-06-10 05:40:25.616+00', '1', '1', false, NULL, NULL),
@@ -4527,6 +4517,7 @@ VALUES
 ('284519592148602900', 'OperationCatalog', 'OperationCatalog', '手术', 'lucide:scissors', '/basic/procedurecatalog', '/basic/procedurecatalog/index', 'Navigation.OperationCatalog', '2000', 13, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('301665359451131904', 'OutpatientNurseStation', 'OutpatientNurseStation', '门诊护士站', 'lucide:clipboard-list', '/outpatient/nurse-station', '/outpatient/nurse-station/index', 'Navigation.Outpatientnursestation', NULL, 6, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('301666596158443520', 'InpatientNurseStation', 'InpatientNurseStation', '住院护士站', 'lucide:bed-double', '/inpatient/nurse-station', '/inpatient/nurse-station/index', 'Navigation.Inpatientnursestation', NULL, 7, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('890010000000000034', 'MedicalTechWorkstation', 'MedicalTechWorkstation', '医技工作站', 'lucide:microscope', '/medical-tech/workstation', '/medical-tech/workstation/index', 'Navigation.Medicaltechworkstation', NULL, 8, true, false, false, '', 'menu', '医技执行 / 费用清单 / 医技计费（计费仅住院）', NULL, '2026-09-21 00:00:00.000+00', '2026-09-21 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('301696493912330240', 'Pharmacy', 'Pharmacy', '药房单据管理', 'lucide:store', '/pharmacy', '', NULL, NULL, 10, true, false, false, '', 'directory', '', '1', '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000125', 'DeptPharmacy', 'DeptPharmacy', '科室单据管理', 'lucide:building', '/inventory/department', '', NULL, NULL, 10, true, false, false, '', 'directory', '科室进销存单据', NULL, '2026-07-01 00:00:00.000+00', '2026-07-01 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000100', 'ReportManagement', 'ReportManagement', '报表管理', 'lucide:layout-dashboard', '/reports', '', NULL, NULL, 11, true, false, false, '', 'directory', 'HIS清单-报表管理', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
@@ -4549,7 +4540,7 @@ VALUES
 ('310400000000000121', 'OpFeeDetail', 'OpFeeDetail', '门诊费用明细', 'lucide:receipt', '/report/fee-detail/outpatient', '/report/fee-detail/outpatient/index', 'Navigation.Opfeedetail', '310400000000000122', 1, true, false, false, '', 'menu', 'AS-RPT-008 · OutpatientFeeDetailReportAppService', NULL, '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000020', 'OutpatientDoctorStation', 'OutpatientDoctorStation', '门诊医生站', 'lucide:user-round-pen', '/outpatient/doctor-station', '/outpatient/doctor-station/index', 'Navigation.Outpatientdoctorstation', NULL, 4, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000040', 'InpatientDoctorStation', 'InpatientDoctorStation', '住院医生站', 'lucide:hospital', '/inpatient/doctor-station', '/inpatient/doctor-station/index', 'Navigation.Inpatientdoctorstation', NULL, 5, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
-('310400000000000060', 'MedicationDispense', 'MedicationDispense', '发药管理', 'lucide:pill-bottle', '/pharmacy/dispense', '', NULL, NULL, 8, true, false, false, '', 'directory', 'HIS清单-发药管理', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000060', 'MedicationDispense', 'MedicationDispense', '发药管理', 'lucide:pill-bottle', '/pharmacy/dispense', '', NULL, NULL, 9, true, false, false, '', 'directory', 'HIS清单-发药管理', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000061', 'DispenseOp', 'DispenseOp', '门诊发药', 'lucide:package-open', '/outpatient/dispense', '/outpatient/dispense/index', 'Navigation.Dispenseop', '310400000000000060', 1, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000062', 'DispenseIp', 'DispenseIp', '住院发药', 'lucide:truck', '/inpatient/dispense', '/inpatient/dispense/index', 'Navigation.Dispenseip', '310400000000000060', 2, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000063', 'DispenseDoc', 'DispenseDoc', '发药单据', 'lucide:file-box', '/pharmacy/dispense/documents', '/pharmacy/dispense/documents/index', 'Navigation.Dispensedoc', '310400000000000060', 3, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
@@ -6578,6 +6569,8 @@ VALUES
     ('332763045473292288', 'Navigation.PractitionerWorkload', 'R', '14', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
     ('332763045485875200', 'Navigation.PriceAdjustment', 'R', '14', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
     ('332763045494263808', 'Navigation.PriceAdjustmentDetail', 'R', '14', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('190194000000000001', 'Navigation.FinanceApproval', 'R', '14', '1', TIMESTAMP '2026-09-19 05:20:00+00', TIMESTAMP '2026-09-19 05:20:00+00', 1, 1, FALSE, NULL, NULL),
+    ('190194000000000002', 'Navigation.CashierSettlementApproval', 'R', '14', '1', TIMESTAMP '2026-09-19 05:20:00+00', TIMESTAMP '2026-09-19 05:20:00+00', 1, 1, FALSE, NULL, NULL),
     ('332762686579281920', 'Navigation.BodystructureManagement', 'R', '15', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
     ('332762686612836352', 'Navigation.Device', 'R', '15', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
     ('332762686629613568', 'Navigation.Diagnosistreatment', 'R', '15', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
@@ -8496,6 +8489,7 @@ ON CONFLICT (id) DO UPDATE SET
     sort_order = EXCLUDED.sort_order,
     updated_at = EXCLUDED.updated_at;
 
+-- 医技工作站：紧挨住院护士站之后（sort_order = 护士站 + 1）
 INSERT INTO whale_menus (
     id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
 )
@@ -8510,6 +8504,43 @@ SELECT
     permission_name,
     parent_id,
     7,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-09-21 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '890010000000000034'
+  AND code = 'MedicalTechWorkstation'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    8,
     is_enabled,
     is_hidden,
     is_external,
@@ -8546,7 +8577,7 @@ SELECT
     component,
     permission_name,
     parent_id,
-    8,
+    9,
     is_enabled,
     is_hidden,
     is_external,
@@ -8584,7 +8615,7 @@ SELECT
     component,
     permission_name,
     parent_id,
-    9,
+    10,
     is_enabled,
     is_hidden,
     is_external,
@@ -8622,7 +8653,7 @@ SELECT
     component,
     permission_name,
     parent_id,
-    11,
+    12,
     is_enabled,
     is_hidden,
     is_external,
@@ -8659,7 +8690,7 @@ SELECT
     component,
     permission_name,
     parent_id,
-    12,
+    13,
     is_enabled,
     is_hidden,
     is_external,
@@ -8696,7 +8727,7 @@ SELECT
     component,
     permission_name,
     parent_id,
-    13,
+    14,
     is_enabled,
     is_hidden,
     is_external,
@@ -8733,7 +8764,7 @@ SELECT
     component,
     permission_name,
     parent_id,
-    14,
+    15,
     is_enabled,
     is_hidden,
     is_external,
@@ -8770,7 +8801,7 @@ SELECT
     component,
     permission_name,
     parent_id,
-    15,
+    16,
     is_enabled,
     is_hidden,
     is_external,
@@ -13330,7 +13361,7 @@ INSERT INTO "public"."prt_template" (
     'PT202608310002',
     '住院采血贴',
     'published',
-    2,
+    3,
     $ip_specimen_json$
 {
   "engine": "Print",
@@ -13353,7 +13384,7 @@ INSERT INTO "public"."prt_template" (
             "width": 79,
             "height": 136,
             "hideTitle": true,
-            "formatter": "function(title,value,options,printData){var d=printData||{};function e(k){var x=d[k];return x==null?'':String(x);}function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}function barcodeSvg(text){var t=String(text||'');if(!t)return '';var JB=typeof JsBarcode==='function'?JsBarcode:(typeof window!=='undefined'?window.JsBarcode:undefined);if(typeof JB==='function'&&typeof document!=='undefined'){try{var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');JB(svg,t,{format:'CODE128',displayValue:false,fontSize:8,width:1.1,height:28,margin:0});svg.setAttribute('width','100%');svg.setAttribute('height','10mm');svg.setAttribute('preserveAspectRatio','none');return svg.outerHTML;}catch(err){}}var C='212222,222122,222221,121223,121322,131222,122213,122312,132212,221213,221312,231212,112232,122132,122231,113222,123122,123221,223211,221132,221231,213212,223112,312131,311222,321122,321221,312212,322112,322211,212123,212321,232121,111323,131123,131321,112313,132113,132311,211313,231113,231311,112133,112331,132131,113123,113321,133121,313121,211331,231131,213113,213311,213131,311123,311321,331121,312113,312311,332111,314111,221411,431111,111224,111422,121124,121421,141122,141221,112214,112412,122114,122411,142112,142211,241211,221114,413111,241112,134111,111242,121142,121241,114212,124112,124211,411212,421112,421211,212141,214121,412121,111143,111341,131141,114113,114311,411113,411311,113141,114131,311141,411131,211412,211214,211232,2331112'.split(',');var codes=[104];for(var i=0;i<t.length;i++){var v=t.charCodeAt(i)-32;if(v<0||v>94)v=16;codes.push(v);}var sum=104;for(var j=1;j<codes.length;j++)sum+=codes[j]*j;codes.push(sum%103);codes.push(106);var x=10,rects='',h=28;for(var k=0;k<codes.length;k++){var p=C[codes[k]]||'';for(var n=0;n<p.length;n++){var w=p.charCodeAt(n)-48;if(n%2===0)rects+='<rect x=\"'+x+'\" y=\"0\" width=\"'+w+'\" height=\"'+h+'\"/>';x+=w;}}x+=10;return '<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100%\" height=\"10mm\" viewBox=\"0 0 '+x+' '+h+'\" preserveAspectRatio=\"none\">'+rects+'</svg>';}var code=e('barcode');return '<div style=\"width:100%;height:100%;overflow:visible;position:relative;\"><div style=\"width:48mm;height:26mm;transform:rotate(90deg) translate(0,-100%);transform-origin:top left;font-family:SimHei,黑体,SimSun,宋体,sans-serif;color:#000;box-sizing:border-box;padding:1mm 1.2mm;display:flex;flex-direction:column;\"><div style=\"font-size:9pt;font-weight:700;white-space:nowrap;overflow:hidden;\">'+esc(e('bedNo'))+'　'+esc(e('patientName'))+'　'+esc(e('genderEnumText'))+'　'+esc(e('ageText'))+'</div><div style=\"font-size:8pt;font-weight:700;margin-top:0.8mm;white-space:nowrap;overflow:hidden;\">'+esc(e('itemName'))+'</div><div style=\"flex:1;min-height:12mm;display:flex;flex-direction:column;justify-content:flex-end;\">'+barcodeSvg(code)+'<div style=\"font-size:7pt;text-align:center;margin-top:0.3mm;white-space:nowrap;overflow:hidden;\">'+esc(code)+'</div></div></div></div>';}"
+            "formatter": "function(title,value,options,printData){var d=printData||{};function e(k){var x=d[k];return x==null?'':String(x);}function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}function barcodeSvg(text){var t=String(text||'');if(!t)return '';var JB=typeof JsBarcode==='function'?JsBarcode:(typeof window!=='undefined'?window.JsBarcode:undefined);if(typeof JB==='function'&&typeof document!=='undefined'){try{var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');JB(svg,t,{format:'CODE128',displayValue:false,fontSize:8,width:1.1,height:28,margin:0});svg.setAttribute('width','100%');svg.setAttribute('height','10mm');svg.setAttribute('preserveAspectRatio','none');return svg.outerHTML;}catch(err){}}var C='212222,222122,222221,121223,121322,131222,122213,122312,132212,221213,221312,231212,112232,122132,122231,113222,123122,123221,223211,221132,221231,213212,223112,312131,311222,321122,321221,312212,322112,322211,212123,212321,232121,111323,131123,131321,112313,132113,132311,211313,231113,231311,112133,112331,132131,113123,113321,133121,313121,211331,231131,213113,213311,213131,311123,311321,331121,312113,312311,332111,314111,221411,431111,111224,111422,121124,121421,141122,141221,112214,112412,122114,122411,142112,142211,241211,221114,413111,241112,134111,111242,121142,121241,114212,124112,124211,411212,421112,421211,212141,214121,412121,111143,111341,131141,114113,114311,411113,411311,113141,114131,311141,411131,211412,211214,211232,2331112'.split(',');var codes=[104];for(var i=0;i<t.length;i++){var v=t.charCodeAt(i)-32;if(v<0||v>94)v=16;codes.push(v);}var sum=104;for(var j=1;j<codes.length;j++)sum+=codes[j]*j;codes.push(sum%103);codes.push(106);var x=10,rects='',h=28;for(var k=0;k<codes.length;k++){var p=C[codes[k]]||'';for(var n=0;n<p.length;n++){var w=p.charCodeAt(n)-48;if(n%2===0)rects+='<rect x=\"'+x+'\" y=\"0\" width=\"'+w+'\" height=\"'+h+'\"/>';x+=w;}}x+=10;return '<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100%\" height=\"10mm\" viewBox=\"0 0 '+x+' '+h+'\" preserveAspectRatio=\"none\">'+rects+'</svg>';}var code=e('barcode');var urg=e('urgencyText');var urgHtml=urg?'<span style=\"font-weight:700;margin-left:1mm;\">'+esc(urg)+'</span>':'';return '<div style=\"width:100%;height:100%;overflow:visible;position:relative;\"><div style=\"width:48mm;height:26mm;transform:rotate(90deg) translate(0,-100%);transform-origin:top left;font-family:SimHei,黑体,SimSun,宋体,sans-serif;color:#000;box-sizing:border-box;padding:1mm 1.2mm;display:flex;flex-direction:column;\"><div style=\"font-size:9pt;font-weight:700;white-space:nowrap;overflow:hidden;\">'+esc(e('bedNo'))+'　'+esc(e('patientName'))+'　'+esc(e('genderEnumText'))+'　'+esc(e('ageText'))+urgHtml+'</div><div style=\"font-size:8pt;font-weight:700;margin-top:0.8mm;white-space:nowrap;overflow:hidden;\">'+esc(e('itemName'))+'</div><div style=\"flex:1;min-height:12mm;display:flex;flex-direction:column;justify-content:flex-end;\">'+barcodeSvg(code)+'<div style=\"font-size:7pt;text-align:center;margin-top:0.3mm;white-space:nowrap;overflow:hidden;\">'+esc(code)+'</div></div></div></div>';}"
           },
           "printElementType": { "type": "longText", "title": "采血贴" }
         }
@@ -13384,7 +13415,7 @@ INSERT INTO "public"."prt_template" (
 }
 $ip_specimen_json$::jsonb,
     1,
-    '{"bedNo":"308-30","patientName":"张三","genderEnumText":"男","ageText":"35岁","itemName":"血常规","barcode":"331800190001000099"}'::jsonb,
+    '{"bedNo":"308-30","patientName":"张三","genderEnumText":"男","ageText":"35岁","itemName":"血常规","barcode":"331800190001000099","urgencyText":"急"}'::jsonb,
     TIMESTAMP '2026-08-31 15:20:00+08',
     TIMESTAMP '2026-09-01 12:30:00+08',
     1,
@@ -13403,7 +13434,7 @@ ON CONFLICT ("id") DO UPDATE SET
     "version" = EXCLUDED."version",
     "updated_at" = EXCLUDED."updated_at";
 
--- 门诊采血贴（50×30mm；姓名/性别/年龄/项目 + 条码，无 label）
+-- 门诊采血贴（50×30mm；姓名/性别/年龄/急/项目 + 条码，无 label）
 -- scenario_code = op-specimenBarcode-print；bus_no = PT202607300001
 INSERT INTO "public"."prt_template" (
     "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
@@ -13417,10 +13448,10 @@ INSERT INTO "public"."prt_template" (
     'PT202607300001',
     '采血贴',
     'published',
-    5,
-    '{"engine":"Print","panels":[{"name":"1","index":0,"width":50,"height":30,"paperType":"other","paperFooter":80,"paperHeader":0,"printElements":[{"options":{"top":2,"left":4,"field":"patientName","title":"姓名","width":52,"height":13,"fontSize":9,"testData":"张三","hideTitle":true,"textAlign":"left","fontWeight":"bold"},"printElementType":{"type":"text","title":"姓名"}},{"options":{"top":2,"left":57,"field":"genderEnumText","title":"性别","width":28,"height":13,"fontSize":9,"testData":"男","hideTitle":true,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"性别"}},{"options":{"top":2,"left":88,"field":"ageText","title":"年龄","width":48,"height":13,"fontSize":9,"testData":"35岁","hideTitle":true,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"年龄"}},{"options":{"top":16,"left":4,"field":"itemName","title":"项目","width":132,"height":13,"fontSize":8,"testData":"血常规","hideTitle":true,"textAlign":"left","fontWeight":"bold"},"printElementType":{"type":"text","title":"项目"}},{"options":{"top":32,"left":10,"field":"barcode","title":"条码","width":122,"height":46,"fontSize":8,"testData":"331800190001000099","hideTitle":true,"textType":"barcode","barcodeMode":"CODE128","barWidth":2,"barAutoWidth":"false","textAlign":"center","fontWeight":"normal"},"printElementType":{"type":"text","title":"条形码"}}],"watermarkOptions":{"width":60,"format":"YYYY-MM-DD HH:mm","height":60,"rotate":25,"content":"","fontSize":"10px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":false,"paperNumberDisabled":true}],"schemaVersion":1}'::jsonb,
+    6,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":50,"height":30,"paperType":"other","paperFooter":80,"paperHeader":0,"printElements":[{"options":{"top":2,"left":4,"field":"patientName","title":"姓名","width":48,"height":13,"fontSize":9,"testData":"张三","hideTitle":true,"textAlign":"left","fontWeight":"bold"},"printElementType":{"type":"text","title":"姓名"}},{"options":{"top":2,"left":53,"field":"genderEnumText","title":"性别","width":22,"height":13,"fontSize":9,"testData":"男","hideTitle":true,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"性别"}},{"options":{"top":2,"left":76,"field":"ageText","title":"年龄","width":40,"height":13,"fontSize":9,"testData":"35岁","hideTitle":true,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"年龄"}},{"options":{"top":1,"left":120,"field":"urgencyText","title":"急","width":20,"height":14,"fontSize":12,"testData":"急","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"急"}},{"options":{"top":16,"left":4,"field":"itemName","title":"项目","width":132,"height":13,"fontSize":8,"testData":"血常规","hideTitle":true,"textAlign":"left","fontWeight":"bold"},"printElementType":{"type":"text","title":"项目"}},{"options":{"top":32,"left":10,"field":"barcode","title":"条码","width":122,"height":46,"fontSize":8,"testData":"331800190001000099","hideTitle":true,"textType":"barcode","barcodeMode":"CODE128","barWidth":2,"barAutoWidth":"false","textAlign":"center","fontWeight":"normal"},"printElementType":{"type":"text","title":"条形码"}}],"watermarkOptions":{"width":60,"format":"YYYY-MM-DD HH:mm","height":60,"rotate":25,"content":"","fontSize":"10px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":false,"paperNumberDisabled":true}],"schemaVersion":1}'::jsonb,
     1,
-    '{"patientName":"张三","genderEnumText":"男","ageText":"35岁","itemName":"血常规","barcode":"331800190001000099"}'::jsonb,
+    '{"patientName":"张三","genderEnumText":"男","ageText":"35岁","itemName":"血常规","barcode":"331800190001000099","urgencyText":"急"}'::jsonb,
     TIMESTAMP '2026-07-30 00:00:00+08',
     TIMESTAMP '2026-07-30 16:54:00+08',
     1,
@@ -14755,3 +14786,567 @@ ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
     deleted_at = NULL,
     deleted_by = NULL,
     updated_at = TIMESTAMP '2026-09-10 00:00:00+00';
+
+-- 内置角色「款员」页面权限（对齐国基开发库自定义角色「收款款员」快照）
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key, tenant_id,
+    created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    v.id,
+    v.permission_name,
+    'R',
+    r.id::text,
+    1,
+    TIMESTAMP '2026-09-19 04:35:00+00',
+    TIMESTAMP '2026-09-19 04:35:00+00',
+    1,
+    1,
+    false,
+    NULL,
+    NULL
+FROM whale_roles r
+JOIN (
+    VALUES
+        (190190000000000001::bigint, 'Booking.HealthCheckupRegister.View'),
+        (190190000000000002::bigint, 'Booking.OutpatientSchedule.View'),
+        (190190000000000003::bigint, 'Booking.SlotCalendar.View'),
+        (190190000000000004::bigint, 'Booking.Template.View'),
+        (190190000000000005::bigint, 'einvoice-boss.common.issue'),
+        (190190000000000006::bigint, 'einvoice-boss.compensation.view'),
+        (190190000000000007::bigint, 'einvoice-boss.contrast.view'),
+        (190190000000000008::bigint, 'einvoice-boss.document.view'),
+        (190190000000000009::bigint, 'einvoice-boss.reconcile.view'),
+        (190190000000000010::bigint, 'einvoice-boss.writeoff.view'),
+        (190190000000000011::bigint, 'Navigation.Analytics'),
+        (190190000000000012::bigint, 'Navigation.Chargeipdayclose'),
+        (190190000000000013::bigint, 'Navigation.Chargeipprepay'),
+        (190190000000000014::bigint, 'Navigation.Chargeipregister'),
+        (190190000000000015::bigint, 'Navigation.Chargeipsettle'),
+        (190190000000000016::bigint, 'Navigation.Chargeopcharge'),
+        (190190000000000017::bigint, 'Navigation.Chargeopdayclose'),
+        (190190000000000018::bigint, 'Navigation.Chargeoprefund'),
+        (190190000000000019::bigint, 'Navigation.Chargeopregister'),
+        (190190000000000020::bigint, 'Navigation.Chsreconciliation'),
+        (190190000000000021::bigint, 'Navigation.ConsumableUsageReportIp'),
+        (190190000000000022::bigint, 'Navigation.ConsumableUsageReportOp'),
+        (190190000000000023::bigint, 'Navigation.Dispenserecordip'),
+        (190190000000000024::bigint, 'Navigation.Dispenserecordop'),
+        (190190000000000025::bigint, 'Navigation.InpatientFeeDetail'),
+        (190190000000000026::bigint, 'Navigation.InpatientInOutDetail'),
+        (190190000000000027::bigint, 'Navigation.InpatientInsuranceFeeDetail'),
+        (190190000000000028::bigint, 'Navigation.Opfeedetail'),
+        (190190000000000029::bigint, 'Navigation.OutpatientInsuranceFeeDetail'),
+        (190190000000000030::bigint, 'Navigation.OutpatientRegistrationDetail'),
+        (190190000000000031::bigint, 'Navigation.PatientManagement'),
+        (190190000000000032::bigint, 'Print.PrintBinding.View'),
+        (190190000000000033::bigint, 'Print.Templates.View'),
+        (190190000000000034::bigint, 'unionpay-bpc.order.view')
+) AS v(id, permission_name) ON TRUE
+WHERE r.code = 'ROLE_CASHIER'
+  AND r.is_deleted = false
+ON CONFLICT (permission_name, provider_name, provider_key) DO NOTHING;
+
+-- 执行地点：急诊科/体检科单独分类；历史误配规则软删（DM-CUS-001 BR-ACT-EXEC-004）
+UPDATE adm_organization
+SET class_enum = 'EMERGENCY',
+    updated_at = TIMESTAMP '2026-09-19 05:40:00+00'
+WHERE is_deleted = false
+  AND type_enum = 'DEPARTMENT'
+  AND name = '急诊科'
+  AND class_enum IN ('OTHER', 'CLINIC');
+
+UPDATE adm_organization
+SET class_enum = 'PEIS',
+    updated_at = TIMESTAMP '2026-09-19 05:40:00+00'
+WHERE is_deleted = false
+  AND type_enum = 'DEPARTMENT'
+  AND name = '体检科'
+  AND class_enum IN ('OTHER', 'CLINIC');
+
+UPDATE cus_activity_execution_location AS rule
+SET is_deleted = true,
+    deleted_at = TIMESTAMP '2026-09-19 05:40:00+00',
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-09-19 05:40:00+00'
+WHERE rule.is_deleted = false
+  AND (
+    NOT EXISTS (
+      SELECT 1
+      FROM adm_organization ordering_org
+      WHERE ordering_org.id = rule.organization_id
+        AND ordering_org.is_deleted = false
+        AND ordering_org.class_enum IN ('CLINIC', 'INPATIENT')
+    )
+    OR NOT EXISTS (
+      SELECT 1
+      FROM adm_organization execution_org
+      WHERE execution_org.id = rule.execution_org_id
+        AND execution_org.is_deleted = false
+        AND execution_org.class_enum IN ('NS', 'TECH')
+    )
+  );
+
+-- =============================================================================
+-- 以下由原 V11/V12/V13/V14/V26/V28 增量迁移并入（幂等；新库种子已是终态时多为空操作）
+-- =============================================================================
+
+-- 原 V11：技师 StaffScope 去掉误挂出诊科室，确保 WORK_ORG
+UPDATE whale_role_claims
+SET is_deleted = true,
+    deleted_at = TIMESTAMP '2026-09-19 04:00:00+00'
+WHERE id = '105024'
+  AND role_id = '15'
+  AND claim_type = 'StaffScope'
+  AND claim_value = 'DOCTOR_VISIT_ORG'
+  AND is_deleted = false;
+
+INSERT INTO whale_role_claims (
+    id, role_id, claim_type, claim_value, tenant_id,
+    created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT '105027', '15', 'StaffScope', 'WORK_ORG', NULL,
+       TIMESTAMP '2026-09-19 04:00:00+00', TIMESTAMP '2026-09-19 04:00:00+00',
+       NULL, NULL, false, NULL, NULL
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM whale_role_claims
+    WHERE id = '105027'
+       OR (
+            role_id = '15'
+            AND claim_type = 'StaffScope'
+            AND claim_value = 'WORK_ORG'
+            AND is_deleted = false
+       )
+);
+
+-- 原 V12：人员主档默认登录科室写入工作科室岗位（护士 NS / 技师 TECH）
+INSERT INTO adm_pr_assign (
+    id, tenant_id, created_at, updated_at, created_by, updated_by,
+    is_deleted, deleted_at, deleted_by, version, name, active_flag,
+    practitioner_id, org_id, location_id, specialty_code, type_code, role_id
+)
+SELECT
+    base.max_id + src.rn,
+    src.tenant_id,
+    TIMESTAMP '2026-09-19 04:30:00+00',
+    TIMESTAMP '2026-09-19 04:30:00+00',
+    NULL,
+    NULL,
+    false,
+    NULL,
+    NULL,
+    0,
+    src.practitioner_name,
+    true,
+    src.practitioner_id,
+    src.org_id,
+    NULL,
+    NULL,
+    NULL,
+    src.role_id
+FROM (
+    SELECT
+        p.tenant_id,
+        p.id AS practitioner_id,
+        p.name AS practitioner_name,
+        p.org_id,
+        r.id AS role_id,
+        ROW_NUMBER() OVER (ORDER BY p.id, r.id) AS rn
+    FROM adm_practitioner p
+    INNER JOIN adm_organization o
+        ON o.id = p.org_id
+       AND o.is_deleted = false
+    INNER JOIN whale_user_roles ur
+        ON ur.user_id = p.user_id
+       AND ur.is_deleted = false
+    INNER JOIN whale_roles r
+        ON r.id = ur.role_id
+       AND r.is_deleted = false
+       AND (
+            (r.code = 'ROLE_NURSE' AND o.class_enum = 'NS')
+            OR (r.code = 'ROLE_MEDICAL_TECH' AND o.class_enum = 'TECH')
+       )
+    WHERE p.is_deleted = false
+      AND p.org_id IS NOT NULL
+      AND p.user_id IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1
+          FROM adm_pr_assign a
+          WHERE a.practitioner_id = p.id
+            AND a.role_id = r.id
+            AND a.org_id = p.org_id
+            AND a.is_deleted = false
+      )
+) src
+CROSS JOIN (
+    SELECT COALESCE(MAX(id), 0) AS max_id FROM adm_pr_assign
+) base;
+
+-- 原 V13：财务去掉收款台菜单（归款员）
+UPDATE whale_permission_grants AS grant_row
+SET is_deleted = true,
+    deleted_at = TIMESTAMP '2026-09-19 05:00:00+00',
+    updated_at = TIMESTAMP '2026-09-19 05:00:00+00'
+FROM whale_roles AS role_row
+WHERE grant_row.provider_name = 'R'
+  AND grant_row.provider_key = role_row.id::text
+  AND role_row.code = 'ROLE_ACCOUNTANT'
+  AND grant_row.is_deleted = false
+  AND grant_row.permission_name IN (
+      'Navigation.Chargeipfee',
+      'Navigation.Chargeipprepay',
+      'Navigation.Chargeipregister',
+      'Navigation.Chargeipsettle',
+      'Navigation.Chargeipdayclose',
+      'Navigation.Chargeopcharge',
+      'Navigation.Chargeopregister',
+      'Navigation.Chargeoprefund',
+      'Navigation.Chargeopdayclose'
+  );
+
+-- 原 V14：财务审批角色并入 ROLE_ACCOUNTANT 后软删
+UPDATE whale_permission_grants AS kept
+SET is_deleted = false,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-09-19 05:20:00+00'
+FROM whale_permission_grants AS src
+JOIN whale_roles AS src_role
+    ON src.provider_name = 'R'
+   AND src.provider_key = src_role.id::text
+JOIN whale_roles AS dst_role
+    ON dst_role.code = 'ROLE_ACCOUNTANT'
+   AND dst_role.is_deleted = false
+WHERE src_role.code = 'ROLE_FINANCE_APPROVER'
+  AND src_role.is_deleted = false
+  AND src.is_deleted = false
+  AND kept.permission_name = src.permission_name
+  AND kept.provider_name = 'R'
+  AND kept.provider_key = dst_role.id::text
+  AND kept.is_deleted = true;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key, tenant_id,
+    created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    190194100000000000 + ROW_NUMBER() OVER (ORDER BY src.id),
+    src.permission_name,
+    'R',
+    dst_role.id::text,
+    src.tenant_id,
+    TIMESTAMP '2026-09-19 05:20:00+00',
+    TIMESTAMP '2026-09-19 05:20:00+00',
+    src.created_by,
+    src.updated_by,
+    false,
+    NULL,
+    NULL
+FROM whale_permission_grants src
+JOIN whale_roles src_role
+    ON src.provider_name = 'R'
+   AND src.provider_key = src_role.id::text
+JOIN whale_roles dst_role
+    ON dst_role.code = 'ROLE_ACCOUNTANT'
+   AND dst_role.is_deleted = false
+WHERE src_role.code = 'ROLE_FINANCE_APPROVER'
+  AND src_role.is_deleted = false
+  AND src.is_deleted = false
+  AND NOT EXISTS (
+      SELECT 1
+      FROM whale_permission_grants existing
+      WHERE existing.permission_name = src.permission_name
+        AND existing.provider_name = 'R'
+        AND existing.provider_key = dst_role.id::text
+  );
+
+UPDATE whale_user_roles AS kept
+SET is_deleted = false,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-09-19 05:20:00+00'
+FROM whale_user_roles AS old_link
+JOIN whale_roles AS old_role ON old_role.id = old_link.role_id
+JOIN whale_roles AS accountant
+    ON accountant.code = 'ROLE_ACCOUNTANT'
+   AND accountant.is_deleted = false
+WHERE kept.user_id = old_link.user_id
+  AND kept.role_id = accountant.id
+  AND kept.is_deleted = true
+  AND old_link.is_deleted = false
+  AND old_role.code = 'ROLE_FINANCE_APPROVER'
+  AND old_role.is_deleted = false;
+
+INSERT INTO whale_user_roles (
+    id, user_id, role_id, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    190195000000000000 + ROW_NUMBER() OVER (ORDER BY old_link.id),
+    old_link.user_id,
+    accountant.id,
+    old_link.tenant_id,
+    TIMESTAMP '2026-09-19 05:20:00+00',
+    TIMESTAMP '2026-09-19 05:20:00+00',
+    old_link.created_by,
+    old_link.updated_by,
+    false,
+    NULL,
+    NULL
+FROM whale_user_roles old_link
+JOIN whale_roles old_role ON old_role.id = old_link.role_id
+JOIN whale_roles accountant
+    ON accountant.code = 'ROLE_ACCOUNTANT'
+   AND accountant.is_deleted = false
+WHERE old_link.is_deleted = false
+  AND old_role.code = 'ROLE_FINANCE_APPROVER'
+  AND old_role.is_deleted = false
+  AND NOT EXISTS (
+      SELECT 1
+      FROM whale_user_roles existing
+      WHERE existing.user_id = old_link.user_id
+        AND existing.role_id = accountant.id
+  );
+
+UPDATE adm_pr_assign AS old_assign
+SET is_deleted = true,
+    deleted_at = TIMESTAMP '2026-09-19 05:20:00+00',
+    updated_at = TIMESTAMP '2026-09-19 05:20:00+00'
+FROM whale_roles AS old_role
+JOIN whale_roles AS accountant
+    ON accountant.code = 'ROLE_ACCOUNTANT'
+   AND accountant.is_deleted = false
+WHERE old_assign.role_id = old_role.id
+  AND old_assign.is_deleted = false
+  AND old_role.code = 'ROLE_FINANCE_APPROVER'
+  AND old_role.is_deleted = false
+  AND EXISTS (
+      SELECT 1
+      FROM adm_pr_assign AS kept
+      WHERE kept.practitioner_id = old_assign.practitioner_id
+        AND kept.role_id = accountant.id
+        AND kept.is_deleted = false
+        AND kept.org_id IS NOT DISTINCT FROM old_assign.org_id
+        AND kept.location_id IS NOT DISTINCT FROM old_assign.location_id
+  );
+
+UPDATE adm_pr_assign AS assign_row
+SET role_id = accountant.id,
+    updated_at = TIMESTAMP '2026-09-19 05:20:00+00'
+FROM whale_roles AS old_role
+JOIN whale_roles AS accountant
+    ON accountant.code = 'ROLE_ACCOUNTANT'
+   AND accountant.is_deleted = false
+WHERE assign_row.role_id = old_role.id
+  AND assign_row.is_deleted = false
+  AND old_role.code = 'ROLE_FINANCE_APPROVER'
+  AND old_role.is_deleted = false;
+
+UPDATE whale_user_roles AS old_link
+SET is_deleted = true,
+    deleted_at = TIMESTAMP '2026-09-19 05:20:00+00',
+    updated_at = TIMESTAMP '2026-09-19 05:20:00+00'
+FROM whale_roles AS old_role
+WHERE old_link.role_id = old_role.id
+  AND old_link.is_deleted = false
+  AND old_role.code = 'ROLE_FINANCE_APPROVER'
+  AND old_role.is_deleted = false;
+
+UPDATE whale_permission_grants AS grant_row
+SET is_deleted = true,
+    deleted_at = TIMESTAMP '2026-09-19 05:20:00+00',
+    updated_at = TIMESTAMP '2026-09-19 05:20:00+00'
+FROM whale_roles AS old_role
+WHERE grant_row.provider_name = 'R'
+  AND grant_row.provider_key = old_role.id::text
+  AND grant_row.is_deleted = false
+  AND old_role.code = 'ROLE_FINANCE_APPROVER'
+  AND old_role.is_deleted = false;
+
+UPDATE whale_role_claims AS claim_row
+SET is_deleted = true,
+    deleted_at = TIMESTAMP '2026-09-19 05:20:00+00',
+    updated_at = TIMESTAMP '2026-09-19 05:20:00+00'
+FROM whale_roles AS old_role
+WHERE claim_row.role_id = old_role.id
+  AND claim_row.is_deleted = false
+  AND old_role.code = 'ROLE_FINANCE_APPROVER'
+  AND old_role.is_deleted = false;
+
+UPDATE whale_roles
+SET is_deleted = true,
+    deleted_at = TIMESTAMP '2026-09-19 05:20:00+00',
+    updated_at = TIMESTAMP '2026-09-19 05:20:00+00'
+WHERE code = 'ROLE_FINANCE_APPROVER'
+  AND is_deleted = false;
+
+-- 原 V26：款员角色占位校验 + 恢复软删 + 自定义「收款款员」改挂后软删
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM whale_roles
+        WHERE (id = 19 OR name = 'cashier')
+          AND code IS DISTINCT FROM 'ROLE_CASHIER'
+    ) THEN
+        RAISE EXCEPTION 'whale_roles id=19 or name=cashier is occupied by another role';
+    END IF;
+END $$;
+
+UPDATE whale_roles
+SET is_deleted = false,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    display_name = '款员',
+    description = '款员角色，负责门诊与住院收款',
+    is_static = true,
+    is_default = true,
+    tenant_id = NULL,
+    updated_at = TIMESTAMP '2026-09-19 04:35:00+00'
+WHERE code = 'ROLE_CASHIER';
+
+UPDATE whale_user_roles kept
+SET is_deleted = false,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-09-19 04:35:00+00'
+FROM whale_user_roles old_link
+JOIN whale_roles old_role ON old_role.id = old_link.role_id
+JOIN whale_roles cashier ON cashier.code = 'ROLE_CASHIER' AND cashier.is_deleted = false
+WHERE kept.user_id = old_link.user_id
+  AND kept.role_id = cashier.id
+  AND kept.is_deleted = true
+  AND old_link.is_deleted = false
+  AND old_role.display_name = '收款款员'
+  AND old_role.is_static = false
+  AND old_role.is_deleted = false
+  AND old_role.code IS DISTINCT FROM 'ROLE_CASHIER';
+
+INSERT INTO whale_user_roles (
+    id, user_id, role_id, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    190192000000000000 + ROW_NUMBER() OVER (ORDER BY old_link.id),
+    old_link.user_id,
+    cashier.id,
+    old_link.tenant_id,
+    TIMESTAMP '2026-09-19 04:35:00+00',
+    TIMESTAMP '2026-09-19 04:35:00+00',
+    old_link.created_by,
+    old_link.updated_by,
+    false,
+    NULL,
+    NULL
+FROM whale_user_roles old_link
+JOIN whale_roles old_role ON old_role.id = old_link.role_id
+JOIN whale_roles cashier ON cashier.code = 'ROLE_CASHIER' AND cashier.is_deleted = false
+WHERE old_link.is_deleted = false
+  AND old_role.display_name = '收款款员'
+  AND old_role.is_static = false
+  AND old_role.is_deleted = false
+  AND old_role.code IS DISTINCT FROM 'ROLE_CASHIER'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM whale_user_roles x
+      WHERE x.user_id = old_link.user_id
+        AND x.role_id = cashier.id
+  );
+
+UPDATE adm_pr_assign assign_row
+SET role_id = cashier.id,
+    updated_at = TIMESTAMP '2026-09-19 04:35:00+00'
+FROM whale_roles old_role
+JOIN whale_roles cashier ON cashier.code = 'ROLE_CASHIER' AND cashier.is_deleted = false
+WHERE assign_row.role_id = old_role.id
+  AND assign_row.is_deleted = false
+  AND old_role.display_name = '收款款员'
+  AND old_role.is_static = false
+  AND old_role.is_deleted = false
+  AND old_role.code IS DISTINCT FROM 'ROLE_CASHIER';
+
+UPDATE whale_user_roles old_link
+SET is_deleted = true,
+    deleted_at = TIMESTAMP '2026-09-19 04:35:00+00',
+    updated_at = TIMESTAMP '2026-09-19 04:35:00+00'
+FROM whale_roles old_role
+WHERE old_link.role_id = old_role.id
+  AND old_link.is_deleted = false
+  AND old_role.display_name = '收款款员'
+  AND old_role.is_static = false
+  AND old_role.is_deleted = false
+  AND old_role.code IS DISTINCT FROM 'ROLE_CASHIER';
+
+UPDATE whale_permission_grants grant_row
+SET is_deleted = true,
+    deleted_at = TIMESTAMP '2026-09-19 04:35:00+00',
+    updated_at = TIMESTAMP '2026-09-19 04:35:00+00'
+FROM whale_roles old_role
+WHERE grant_row.provider_name = 'R'
+  AND grant_row.provider_key = old_role.id::text
+  AND grant_row.is_deleted = false
+  AND old_role.display_name = '收款款员'
+  AND old_role.is_static = false
+  AND old_role.is_deleted = false
+  AND old_role.code IS DISTINCT FROM 'ROLE_CASHIER';
+
+UPDATE whale_role_claims claim_row
+SET is_deleted = true,
+    deleted_at = TIMESTAMP '2026-09-19 04:35:00+00',
+    updated_at = TIMESTAMP '2026-09-19 04:35:00+00'
+FROM whale_roles old_role
+WHERE claim_row.role_id = old_role.id
+  AND claim_row.is_deleted = false
+  AND old_role.display_name = '收款款员'
+  AND old_role.is_static = false
+  AND old_role.is_deleted = false
+  AND old_role.code IS DISTINCT FROM 'ROLE_CASHIER';
+
+UPDATE whale_roles
+SET is_deleted = true,
+    deleted_at = TIMESTAMP '2026-09-19 04:35:00+00',
+    updated_at = TIMESTAMP '2026-09-19 04:35:00+00'
+WHERE display_name = '收款款员'
+  AND is_static = false
+  AND is_deleted = false
+  AND code IS DISTINCT FROM 'ROLE_CASHIER';
+
+-- 原 V28：技师显示名 + StaffScope NURSE_ORG→WORK_ORG + 去掉出诊科室
+UPDATE whale_roles
+SET display_name = '技师',
+    description = '技师人员，负责检验检查等医技工作',
+    updated_at = TIMESTAMP '2026-09-19 05:50:00+00'
+WHERE code = 'ROLE_MEDICAL_TECH'
+  AND is_deleted = false
+  AND (display_name IS DISTINCT FROM '技师'
+       OR description IS DISTINCT FROM '技师人员，负责检验检查等医技工作');
+
+UPDATE whale_role_claims
+SET claim_value = 'WORK_ORG',
+    updated_at = TIMESTAMP '2026-09-19 05:50:00+00'
+WHERE claim_type = 'StaffScope'
+  AND claim_value = 'NURSE_ORG'
+  AND is_deleted = false;
+
+UPDATE whale_role_claims
+SET is_deleted = true,
+    deleted_at = TIMESTAMP '2026-09-19 05:50:00+00'
+WHERE role_id = '15'
+  AND claim_type = 'StaffScope'
+  AND claim_value = 'DOCTOR_VISIT_ORG'
+  AND is_deleted = false;
+
+INSERT INTO whale_role_claims (
+    id, role_id, claim_type, claim_value, tenant_id,
+    created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT '105028', '15', 'StaffScope', 'WORK_ORG', NULL,
+       TIMESTAMP '2026-09-19 05:50:00+00', TIMESTAMP '2026-09-19 05:50:00+00',
+       NULL, NULL, false, NULL, NULL
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM whale_role_claims
+    WHERE role_id = '15'
+      AND claim_type = 'StaffScope'
+      AND claim_value = 'WORK_ORG'
+      AND is_deleted = false
+);

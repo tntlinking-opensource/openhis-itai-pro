@@ -137,36 +137,86 @@ public class KeyMedicationUsageReportQuerySupport {
     }
 
     /**
-     * 解析重点药类型集合：空=四类全开；非法码忽略；按枚举 sort 序。
+     * 解析矩阵行类型：重点药类型码 ∪ 药品性质码；两侧皆空=七类全开。
      *
-     * @param keyDrugTypeCodes 请求多选
+     * <p>两框独立：只选重点药不自动带麻/精行；只选药品性质不自动带四旗行；皆选则并集。</p>
+     *
+     * @param keyDrugTypeCodes      重点药类型多选（四旗）
+     * @param medicinePropertyCodes 药品性质多选（麻/精一/精二 KeyDrugType code）
      * @return 非空有序集合
      */
-    public List<KeyDrugType> resolveKeyDrugTypes(List<String> keyDrugTypeCodes) {
+    public List<KeyDrugType> resolveKeyDrugTypes(
+        List<String> keyDrugTypeCodes,
+        List<String> medicinePropertyCodes) {
         LinkedHashSet<KeyDrugType> resolved = new LinkedHashSet<>();
-        if (keyDrugTypeCodes != null) {
-            // Loop：映射 KeyDrugType，忽略未知码
-            for (String rawCode : keyDrugTypeCodes) {
-                // 空白项跳过
-                if (StringUtils.isEmpty(rawCode)) {
-                    continue;
-                }
-                KeyDrugType keyDrugType = EnumUtil.fromCode(KeyDrugType.class, rawCode.trim());
-                // 未知枚举码不纳入
-                if (keyDrugType != null) {
-                    resolved.add(keyDrugType);
-                }
-            }
-        }
-        // 空筛选 = 全部四类（含抗生素）
-        if (resolved.isEmpty()) {
+        boolean hasKeyDrugSelection = this.appendResolvedKeyDrugTypes(resolved, keyDrugTypeCodes, true);
+        boolean hasMedicinePropertySelection =
+            this.appendResolvedKeyDrugTypes(resolved, medicinePropertyCodes, false);
+        // 两侧皆空 = 全部七类
+        if (!hasKeyDrugSelection && !hasMedicinePropertySelection) {
             resolved.add(KeyDrugType.BASIC);
             resolved.add(KeyDrugType.NATIONAL_MONITOR);
             resolved.add(KeyDrugType.CENTRAL_PURCHASE);
             resolved.add(KeyDrugType.ANTIBIOTIC);
+            resolved.add(KeyDrugType.NARCOTIC);
+            resolved.add(KeyDrugType.PSYCH_ONE);
+            resolved.add(KeyDrugType.PSYCH_TWO);
         }
+        return this.orderKeyDrugTypes(resolved);
+    }
+
+    /**
+     * 将请求码列表写入集合；{@code flagTypesOnly=true} 仅收四旗，否则仅收麻/精。
+     *
+     * @param target         目标集合
+     * @param rawCodes       请求码
+     * @param flagTypesOnly  true=仅基药/监控/集采/抗生素
+     * @return 是否至少写入一项有效码
+     */
+    private boolean appendResolvedKeyDrugTypes(
+        LinkedHashSet<KeyDrugType> target,
+        List<String> rawCodes,
+        boolean flagTypesOnly) {
+        if (rawCodes == null || rawCodes.isEmpty()) {
+            return false;
+        }
+        boolean any = false;
+        for (String rawCode : rawCodes) {
+            if (StringUtils.isEmpty(rawCode)) {
+                continue;
+            }
+            KeyDrugType keyDrugType = EnumUtil.fromCode(KeyDrugType.class, rawCode.trim());
+            if (keyDrugType == null) {
+                continue;
+            }
+            boolean isFlagType = keyDrugType == KeyDrugType.BASIC
+                || keyDrugType == KeyDrugType.NATIONAL_MONITOR
+                || keyDrugType == KeyDrugType.CENTRAL_PURCHASE
+                || keyDrugType == KeyDrugType.ANTIBIOTIC;
+            boolean isMedicineProperty = keyDrugType == KeyDrugType.NARCOTIC
+                || keyDrugType == KeyDrugType.PSYCH_ONE
+                || keyDrugType == KeyDrugType.PSYCH_TWO;
+            // 重点药框只收四旗；药品性质框只收麻/精
+            if (flagTypesOnly && isFlagType) {
+                target.add(keyDrugType);
+                any = true;
+            }
+            if (!flagTypesOnly && isMedicineProperty) {
+                target.add(keyDrugType);
+                any = true;
+            }
+        }
+        return any;
+    }
+
+    /**
+     * 固定输出序：基药 → 监控 → 集采 → 抗生素 → 麻醉 → 精一 → 精二。
+     *
+     * @param resolved 已解析集合
+     * @return 有序列表
+     */
+    private List<KeyDrugType> orderKeyDrugTypes(LinkedHashSet<KeyDrugType> resolved) {
         List<KeyDrugType> ordered = new ArrayList<>();
-        // Asm：固定基药 → 监控 → 集采 → 抗生素
         if (resolved.contains(KeyDrugType.BASIC)) {
             ordered.add(KeyDrugType.BASIC);
         }
@@ -178,6 +228,15 @@ public class KeyMedicationUsageReportQuerySupport {
         }
         if (resolved.contains(KeyDrugType.ANTIBIOTIC)) {
             ordered.add(KeyDrugType.ANTIBIOTIC);
+        }
+        if (resolved.contains(KeyDrugType.NARCOTIC)) {
+            ordered.add(KeyDrugType.NARCOTIC);
+        }
+        if (resolved.contains(KeyDrugType.PSYCH_ONE)) {
+            ordered.add(KeyDrugType.PSYCH_ONE);
+        }
+        if (resolved.contains(KeyDrugType.PSYCH_TWO)) {
+            ordered.add(KeyDrugType.PSYCH_TWO);
         }
         return ordered;
     }
@@ -195,7 +254,7 @@ public class KeyMedicationUsageReportQuerySupport {
     }
 
     /**
-     * 构建重点药类型下拉。
+     * 构建重点药类型下拉（仅基药/监控/集采/抗生素；麻/精见 {@link #buildMedicinePropertyOptions}）。
      *
      * @return OptionDto 列表
      */
@@ -207,6 +266,19 @@ public class KeyMedicationUsageReportQuerySupport {
         options.add(this.toOption(
             KeyDrugType.CENTRAL_PURCHASE.getCode(), KeyDrugType.CENTRAL_PURCHASE.getDisplay()));
         options.add(this.toOption(KeyDrugType.ANTIBIOTIC.getCode(), KeyDrugType.ANTIBIOTIC.getDisplay()));
+        return options;
+    }
+
+    /**
+     * 构建药品性质下拉（仅麻醉 / 一类精神 / 二类精神；与重点药类型分框）。
+     *
+     * @return OptionDto 列表（value=KeyDrugType code）
+     */
+    public List<OptionDto> buildMedicinePropertyOptions() {
+        List<OptionDto> options = new ArrayList<>();
+        options.add(this.toOption(KeyDrugType.NARCOTIC.getCode(), KeyDrugType.NARCOTIC.getDisplay()));
+        options.add(this.toOption(KeyDrugType.PSYCH_ONE.getCode(), KeyDrugType.PSYCH_ONE.getDisplay()));
+        options.add(this.toOption(KeyDrugType.PSYCH_TWO.getCode(), KeyDrugType.PSYCH_TWO.getDisplay()));
         return options;
     }
 

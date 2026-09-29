@@ -28,6 +28,12 @@ public class QueryServiceCatalogRequest extends AbstractHealthPageRequest {
     private String statusEnum;
 
     /**
+     * 是否已绑定套餐子项筛选（对齐 {@code children_flag}）。
+     * <p>{@code true}=仅组套父项；{@code false}=仅未绑子项；{@code null}=不限。</p>
+     */
+    private Boolean childrenFlag;
+
+    /**
      * 是否包含已被套餐引用的子诊疗行。
      *
      * <p>{@code null}：本 IF（诊疗目录）按维护语义默认含明细；

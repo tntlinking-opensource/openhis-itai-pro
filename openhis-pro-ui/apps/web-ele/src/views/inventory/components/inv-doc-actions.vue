@@ -25,7 +25,7 @@ const props = withDefaults(
     removeDisabled?: boolean;
     /**
      * 财务审批族单据为 true：原业务页默认隐藏审批/驳回；
-     * 财务审批深链时仅展示审驳（有无 ROLE_FINANCE_APPROVER 由后端校验）。
+     * 财务审批深链时仅展示审驳（有无财务角色由后端校验）。
      */
     requireFinanceApprovalRole?: boolean;
     saveAndSubmitDisabled?: boolean;

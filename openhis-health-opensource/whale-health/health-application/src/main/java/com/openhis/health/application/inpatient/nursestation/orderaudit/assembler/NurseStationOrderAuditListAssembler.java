@@ -212,6 +212,12 @@ public class NurseStationOrderAuditListAssembler {
         line.setPackageSplitRatioText(core.getPackageSplitRatioText());
         line.setDosageDisplay(core.getDosageDisplay());
         line.setDailyDoseDisplay(core.getDailyDoseDisplay());
+        // 首日用量：与 OrderView 内核同字段拷贝，供校对列表剂量列展示
+        line.setFirstDose(core.getFirstDose());
+        line.setFirstDoseUnitCode(core.getFirstDoseUnitCode());
+        line.setFirstDoseUnitName(core.getFirstDoseUnitName());
+        line.setDoseSchedule(core.getDoseSchedule());
+        line.setQuantitySchedule(core.getQuantitySchedule());
         line.setUsageDisplay(core.getUsageDisplay());
         line.setFrequencyDisplay(core.getFrequencyDisplay());
         line.setSpeedCode(core.getSpeedCode());
@@ -235,6 +241,9 @@ public class NurseStationOrderAuditListAssembler {
         line.setBasedOnMedicationRequestId(core.getBasedOnMedicationRequestId());
         line.setSkinTestOutcomeCode(core.getSkinTestOutcomeCode());
         line.setSkinTestOutcomeText(core.getSkinTestOutcomeText());
+        // 出院医嘱：计划出院时间与原因（医生填写；校对列表内容扩展行展示）
+        line.setPlannedDischargeTime(core.getPlannedDischargeTime());
+        line.setReasonText(core.getReasonText());
     }
 
     /**

@@ -23,15 +23,17 @@ public interface KeyMedicationUsageReportMapper {
      *
      * @param defaultDateFrom         默认起日
      * @param defaultDateTo           默认止日
-     * @param encounterClassOptions 就诊类型选项
-     * @param keyDrugTypeOptions    重点药类型选项
+     * @param encounterClassOptions   就诊类型选项
+     * @param keyDrugTypeOptions      重点药类型选项（四旗）
+     * @param medicinePropertyOptions 药品性质选项（麻/精）
      * @return 初始化响应
      */
     LoadKeyMedicationUsageReportPageInitResponse toLoadPageInitResponse(
         String defaultDateFrom,
         String defaultDateTo,
         List<OptionDto> encounterClassOptions,
-        List<OptionDto> keyDrugTypeOptions);
+        List<OptionDto> keyDrugTypeOptions,
+        List<OptionDto> medicinePropertyOptions);
 
     /**
      * 装配汇总响应。

@@ -84,4 +84,11 @@ public class ServiceCatalogDto {
     private Integer statusEnum;
     /** 器材状态枚举（0=停用，1=启用）。 */
     private String statusEnum_enumText;
+
+    /**
+     * 是否已绑定套餐子项（对齐 {@code wkf_activity_definition.children_flag} / BR-ACTDEF-006）。
+     * <p>{@code true}：子表存在有效子项；{@code false}/{@code null}：未绑定子项。</p>
+     */
+    @Schema(description = "是否已绑定套餐子项")
+    private Boolean childrenFlag;
 }

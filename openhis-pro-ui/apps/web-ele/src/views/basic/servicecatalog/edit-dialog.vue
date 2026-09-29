@@ -46,6 +46,11 @@ import {
   isServiceCatalogFieldLocked,
 } from '#/views/basic/catalog/catalog-editability';
 import {
+  BUILT_IN_ACTIVITY_EDIT_HINT,
+  BUILT_IN_ACTIVITY_LOCKED_FORM_FIELDS,
+  isBuiltInActivityName,
+} from '#/constants/domain/built-in-activity-definition';
+import {
   resolveCatalogRecordNavState,
   type CatalogRecordNavDirection,
 } from '#/views/basic/catalog/catalog-record-nav';
@@ -109,6 +114,24 @@ const editabilityMessage = ref('');
 
 const catalogStructureLocked = computed(() => isCatalogStructureLocked(editabilityCode.value));
 
+/** 当前编辑行是否为产品内置诊疗（按名称识别） */
+const isBuiltInActivity = computed(() =>
+  isBuiltInActivityName(String(originalData.value?.name ?? props.formData?.name ?? '')),
+);
+
+/** 顶部提示：内置优先，其次业务引用锁定 */
+const structureLockAlertTitle = computed(() => {
+  if (isBuiltInActivity.value) {
+    return BUILT_IN_ACTIVITY_EDIT_HINT;
+  }
+  return editabilityMessage.value || '该诊疗项目已产生业务引用，名称/分类/单位/价格等字段不可修改';
+});
+
+/** 是否展示结构锁定提示条 */
+const showStructureLockAlert = computed(
+  () => isBuiltInActivity.value || catalogStructureLocked.value,
+);
+
 type OptionItem = {
   children?: OptionItem[];
   info?: string;
@@ -137,6 +160,50 @@ const convertOptions = (options: null | OptionItem[] | undefined | unknown) => {
       value: String(item.value),
     }));
 };
+
+/**
+ * 合并 init 下拉与「已知新码」及当前行孤儿值，避免 Select 只回显裸 code。
+ *
+ * <p>场景：SQL 已写入 `activity_category_code=53` / `ActivityType=7`，但进程字典缓存未刷或后端未发版时，
+ * 仍保证编辑页能显示「诊查费」「诊查」。</p>
+ *
+ * @param options init 下拉（已规范化为 string value）
+ * @param current 当前表单值（可空）
+ * @param knownLabels 已知新码 → 展示名（如 53→诊查费）
+ * @returns 合并后的下拉选项
+ */
+const withOrphanSelectOption = (
+  options: Array<{ label: string; value: string }>,
+  current: unknown,
+  knownLabels: Record<string, string> = {},
+) => {
+  const merged = [...options];
+  // 已出现过的 value，避免重复 push
+  const seen = new Set(merged.map((item) => item.value));
+  // 先把已知新码常驻进下拉（不依赖当前行是否已选）
+  for (const [code, label] of Object.entries(knownLabels)) {
+    if (!seen.has(code)) {
+      merged.push({ value: code, label });
+      seen.add(code);
+    }
+  }
+  // 无当前值：只返回 init+已知新码
+  if (current === undefined || current === null || current === '') {
+    return merged;
+  }
+  const value = String(current);
+  // 已在选项中：无需再补孤儿行
+  if (seen.has(value)) {
+    return merged;
+  }
+  // 未知当前值：补一条（优先用 knownLabels，否则回落裸 code）
+  return [...merged, { value, label: knownLabels[value] || value }];
+};
+
+/** 目录分类：53=诊查费（activity_category_code） */
+const CATEGORY_ORPHAN_LABELS: Record<string, string> = { '53': '诊查费' };
+/** 业务类型：7=诊查（ActivityType.CONSULTATION） */
+const TYPE_ORPHAN_LABELS: Record<string, string> = { '7': '诊查' };
 
 /** 病案结算类型候选项（依赖列表页 init） */
 const mrSettlementTypeCodeOptions = computed(() =>
@@ -256,6 +323,13 @@ function parsePriceUplmt(value: string | undefined | null): number | undefined {
 /** 字段未锁定且目录有值时写入 */
 function canApplyServiceCatalogField(fieldName: string, catalogHasValue: boolean): boolean {
   if (!catalogHasValue) {
+    return false;
+  }
+  // 内置项禁止选码回填改写名称/类目/类型
+  if (
+    isBuiltInActivity.value &&
+    (BUILT_IN_ACTIVITY_LOCKED_FORM_FIELDS as readonly string[]).includes(fieldName)
+  ) {
     return false;
   }
   return !isServiceCatalogFieldLocked(editabilityCode.value, fieldName);
@@ -567,6 +641,15 @@ function syncServiceEditabilitySchema() {
     return;
   }
   formApi.updateSchema(buildCatalogEditabilitySchemaPatches('service', editabilityCode.value));
+  // 产品内置：强制锁定名称/类目/类型（叠在业务引用锁之上）
+  if (isBuiltInActivity.value) {
+    formApi.updateSchema(
+      BUILT_IN_ACTIVITY_LOCKED_FORM_FIELDS.map((fieldName) => ({
+        fieldName,
+        componentProps: { disabled: true },
+      })),
+    );
+  }
 }
 
 /** 售价禁用态：业务引用锁定优先，其次有子项时自动合计 */
@@ -586,7 +669,10 @@ function syncRetailPriceFieldSchema() {
   ]);
 }
 
-/** 病案结算类型下拉：保证 options 已挂到 schema（与药品目录 updateFormOptions 同序） */
+/**
+ * 病案结算类型下拉：保证 options 已挂到 schema（与药品目录 updateFormOptions 同序）。
+ * 锁定态仍可改（BR-CAT-008），禁止再绑 editability disabled。
+ */
 function syncMrSettlementTypeOptions() {
   if (!formApi?.isMounted) {
     return;
@@ -599,7 +685,7 @@ function syncMrSettlementTypeOptions() {
         filterable: true,
         placeholder: '请选择病案结算类型',
         clearable: true,
-        disabled: isServiceCatalogFieldLocked(editabilityCode.value, 'mrSettlementTypeCode'),
+        disabled: false,
       },
     },
   ]);
@@ -950,7 +1036,11 @@ const [Form, formApi] = useVbenForm(
         label: '目录分类',
         rules: 'required',
         componentProps: {
-          options: convertOptions(props.initOptions?.diagnosisCategoryOptions),
+          options: withOrphanSelectOption(
+            convertOptions(props.initOptions?.diagnosisCategoryOptions),
+            props.formData?.categoryCode,
+            CATEGORY_ORPHAN_LABELS,
+          ),
           filterable: true,
           placeholder: '请选择目录分类',
           clearable: true,
@@ -962,7 +1052,11 @@ const [Form, formApi] = useVbenForm(
         label: '业务类型',
         rules: 'required',
         componentProps: {
-          options: convertOptions(props.initOptions?.typeEnumOptions),
+          options: withOrphanSelectOption(
+            convertOptions(props.initOptions?.typeEnumOptions),
+            props.formData?.typeEnum,
+            TYPE_ORPHAN_LABELS,
+          ),
           placeholder: '请选择业务类型',
           clearable: true,
         },
@@ -1200,12 +1294,12 @@ watch(
     :close-on-press-escape="false"
   >
     <ElAlert
-      v-if="catalogStructureLocked"
+      v-if="showStructureLockAlert"
       class="mb-3"
       type="warning"
       :closable="false"
       show-icon
-      :title="editabilityMessage || '该诊疗项目已产生业务引用，名称/分类/单位/价格等字段不可修改'"
+      :title="structureLockAlertTitle"
     />
     <div ref="formAreaRef" @keydown.capture="handleServiceFormKeydown">
       <Form>

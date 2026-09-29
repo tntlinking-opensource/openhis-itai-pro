@@ -76,6 +76,8 @@ import {
   ReportPageFooter,
   ReportPrintFieldDialog,
   ReportQueryBar,
+  collectPagedReportRows,
+  REPORT_PRINT_ALL_MAX_ROWS,
   reportPrintFieldsOf,
   ReportTableScroll,
   resolveReportRefundRowClassName,
@@ -414,10 +416,9 @@ function mapSummaryPrintRows(): Record<string, string>[] {
 }
 
 /** 将当前页明细行映射为打印单元格。 */
-function mapDetailPrintRows(): Record<string, string>[] {
+function mapDetailPrintRows(source = tableData.value): Record<string, string>[] {
   const fields = reportPrintFieldsOf(DETAIL_PRINT_COLUMNS.value);
-  // 只打当前明细页可见行（含小计行）
-  return tableData.value.map((row) =>
+  return source.map((row) =>
     mapReportPrintRow(row as Record<string, unknown>, fields, {
       quantityDisplay: (_value, r) =>
         formatQuantityWithUnit(r.quantityValue, r.quantityUnitDisplay),
@@ -441,7 +442,42 @@ const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrint
     getColumnCatalog: () => printColumnCatalog.value,
     getReportTitle: () => printReportTitle.value,
     getPrintRows: () => (isSummaryTab.value ? mapSummaryPrintRows() : mapDetailPrintRows()),
+    fetchAllPrintRows: fetchAllFeePrintRows,
+    hasPrintableData: () =>
+      isSummaryTab.value
+        ? summaryRows.value.length > 0
+        : detailTotal.value > 0 || tableData.value.length > 0,
   });
+
+/** 跨页打印：汇总已一次返回；明细按就诊块分页拉全量后再展平。 */
+async function fetchAllFeePrintRows() {
+  if (isSummaryTab.value) {
+    return { rows: mapSummaryPrintRows(), truncated: false };
+  }
+  const filters = buildFilterPayload();
+  if (!filters) {
+    return { rows: [], truncated: false };
+  }
+  const collected = await collectPagedReportRows({
+    fetchPage: async (pageNo, pageSize) => {
+      const page = await pageFeeDetailReportApi(props.scope, {
+        ...filters,
+        pageNo,
+        pageSize,
+      });
+      return { rows: page.content ?? [], total: Number(page.totalCount ?? 0) };
+    },
+  });
+  const flattened = flattenEncounterBlocksToTableRows(collected.rows);
+  const capped =
+    flattened.length > REPORT_PRINT_ALL_MAX_ROWS
+      ? flattened.slice(0, REPORT_PRINT_ALL_MAX_ROWS)
+      : flattened;
+  return {
+    rows: mapDetailPrintRows(capped),
+    truncated: collected.truncated || flattened.length > capped.length,
+  };
+}
 
 const { run: runInit, loading: initLoading } = useRequest(
   () => loadFeeDetailReportPageInitApi(props.scope),
@@ -1519,6 +1555,7 @@ onMounted(async () => {
       ref="printFieldDialogRef"
       :report-code="printReportCode"
       :column-catalog="printColumnCatalog"
+      show-print-scope
     />
   </Page>
 </template>

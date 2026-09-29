@@ -12,6 +12,7 @@ import com.openhis.health.domain.custom.prescriptionreview.queries.model.Prescri
 import com.openhis.health.domain.custom.prescriptionreview.service.PrescriptionReviewQueryService;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.OutpatientPharmacyPrescriptionReviewConstants;
+import com.openhis.health.domain.share.enums.KeyDrugType;
 import com.openhis.health.domain.share.enums.PrescriptionReviewStatus;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -75,6 +76,51 @@ public class OutpatientPharmacyPrescriptionReviewSupport {
         unreasonable.setLabel(OutpatientPharmacyPrescriptionReviewConstants.REASONABLE_FALSE_LABEL);
         options.add(unreasonable);
         return options;
+    }
+
+    /**
+     * 装配重点药类型下拉（基药 / 监控 / 集采 / 抗生素）；麻/精见 {@link #buildMedicinePropertyOptions}。
+     *
+     * @return 重点药类型选项（四旗）
+     */
+    public List<OptionDto> buildKeyDrugTypeOptions() {
+        List<OptionDto> options = new ArrayList<>();
+        options.add(this.toSpecialDrugOption(KeyDrugType.BASIC.getCode(), KeyDrugType.BASIC.getDisplay()));
+        options.add(this.toSpecialDrugOption(
+            KeyDrugType.NATIONAL_MONITOR.getCode(),
+            KeyDrugType.NATIONAL_MONITOR.getDisplay()));
+        options.add(this.toSpecialDrugOption(
+            KeyDrugType.CENTRAL_PURCHASE.getCode(),
+            KeyDrugType.CENTRAL_PURCHASE.getDisplay()));
+        options.add(this.toSpecialDrugOption(KeyDrugType.ANTIBIOTIC.getCode(), KeyDrugType.ANTIBIOTIC.getDisplay()));
+        return options;
+    }
+
+    /**
+     * 装配药品性质下拉（麻醉 / 精一 / 精二）；与重点药类型分框。
+     *
+     * @return 药品性质选项
+     */
+    public List<OptionDto> buildMedicinePropertyOptions() {
+        List<OptionDto> options = new ArrayList<>();
+        options.add(this.toSpecialDrugOption(KeyDrugType.NARCOTIC.getCode(), KeyDrugType.NARCOTIC.getDisplay()));
+        options.add(this.toSpecialDrugOption(KeyDrugType.PSYCH_ONE.getCode(), KeyDrugType.PSYCH_ONE.getDisplay()));
+        options.add(this.toSpecialDrugOption(KeyDrugType.PSYCH_TWO.getCode(), KeyDrugType.PSYCH_TWO.getDisplay()));
+        return options;
+    }
+
+    /**
+     * 特殊药品类型 → OptionDto。
+     *
+     * @param code  KeyDrugType code
+     * @param label 展示文案
+     * @return 下拉选项
+     */
+    private OptionDto toSpecialDrugOption(String code, String label) {
+        OptionDto option = new OptionDto();
+        option.setValue(code);
+        option.setLabel(label);
+        return option;
     }
 
     /**

@@ -14,6 +14,7 @@ import com.openhis.health.domain.administration.encounter.entity.EncounterPartic
 import com.openhis.health.domain.administration.encounter.queries.EncounterProjectionQuery;
 import com.openhis.health.domain.administration.encounter.queries.InpatientInOutDetailReportPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.HistoricalFollowUpEligibilityQuery;
+import com.openhis.health.domain.administration.encounter.queries.MedicalTechWorkstationQueueQuery;
 import com.openhis.health.domain.administration.encounter.queries.OutpatientDuplicateCheckQuery;
 import com.openhis.health.domain.administration.encounter.queries.OutpatientRegistrationReportPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientAutoRollEncounterQueryModel;
@@ -88,7 +89,8 @@ import java.util.Set;
  * <p>职责：加载就诊主档与参与者/位置/诊断等子集查询模型，提供分页投影、完诊校验与门诊重复挂号校验等只读能力。</p>
  *
  * <p>边界：不写库；强一致详情以聚合仓储为准；投影列表中患者姓名等字段若与读模型不一致，以代码内 DOC-CONFLICT 为准。</p>
- * <p>聚合边界：仅本聚合 {@link EncounterRepository} 及子表仓储。</p>
+ * <p>聚合边界：仅本聚合 {@link EncounterRepository} 及子表仓储；医技/护士站队列跨表 EXISTS 经
+ * {@link EncounterContextCriteriaSupport} 产出 Spec 后由本类分页（B.6.4）。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -98,6 +100,7 @@ public class EncounterQueryService {
     private final EncounterParticipantRepository participantRepository;
     private final EncounterLocationRepository locationRepository;
     private final EncounterDiagnosisRepository diagnosisRepository;
+    private final EncounterContextCriteriaSupport encounterContextCriteriaSupport;
     private final EntityManager entityManager;
 
     /**
@@ -2021,6 +2024,42 @@ public class EncounterQueryService {
      */
     public Page<Encounter> pageEncounterEntities(Specification<Encounter> specification, Pageable pageable) {
         return encounterRepository.findAll(specification, pageable);
+    }
+
+    /**
+     * 医技工作站患者队列分页（仅 Encounter 实体页；人口学由应用层上下文组装）。
+     *
+     * <p>对齐 DM-ADM-002 §6.2.17b / AS-MT-EXE-001 IF-MT-EXE-01：按登录 TECH 与门诊/住院 scope
+     * 过滤「有活」，可选仅待发耗材；规约见 {@link EncounterContextCriteriaSupport#medicalTechWorkstationSpecification}。</p>
+     *
+     * @param query 医技队列入参；null 时返回空页
+     * @return 就诊实体分页
+     */
+    public Page<Encounter> pageMedicalTechWorkstationQueue(MedicalTechWorkstationQueueQuery query) {
+        // Gate：空入参直接空页，避免缺 TECH 科扫全库
+        if (query == null) {
+            return Page.empty();
+        }
+        int pageIndex = query.springPageIndex();
+        int pageSize = 20;
+        if (query.getPageSize() != null && query.getPageSize() > 0) {
+            pageSize = query.getPageSize();
+        }
+        if (pageSize > 100) {
+            pageSize = 100;
+        }
+        Sort sort = Sort.by(
+            Sort.Order.desc(FieldNameConstants.START_TIME),
+            Sort.Order.desc(FieldNameConstants.ID));
+        // B.2.1：关键字非空时无 Sort，保留 Spec 精确优先 ORDER BY
+        Pageable pageable;
+        if (StringUtils.isNotEmpty(query.getKeyword())) {
+            pageable = PageRequest.of(pageIndex, pageSize);
+        } else {
+            pageable = PageRequest.of(pageIndex, pageSize, sort);
+        }
+        return this.pageEncounterEntities(
+            this.encounterContextCriteriaSupport.medicalTechWorkstationSpecification(query), pageable);
     }
 
     /**

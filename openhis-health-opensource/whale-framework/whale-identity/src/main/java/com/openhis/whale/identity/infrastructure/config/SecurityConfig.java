@@ -55,6 +55,7 @@ public class SecurityConfig {
                 auth.requestMatchers("/api/auth/refresh").permitAll();
                 auth.requestMatchers("/api/auth/logout").permitAll();
                 auth.requestMatchers("/api/app/frameworkRuntime/ingest").permitAll();
+                auth.requestMatchers("/api/integration/pacs-imaging/**").permitAll();
                 auth.requestMatchers("/api/health").permitAll();
                 auth.requestMatchers("/actuator/health", "/actuator/health/**").permitAll();
                 auth.anyRequest().authenticated();

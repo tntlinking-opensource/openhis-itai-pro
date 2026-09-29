@@ -1,7 +1,7 @@
 /**
  * 编辑器页边距 + 页眉页脚 → OpenPDF PrintConfig（与医生站、模板页共用）。
  */
-import type { EmrPrintConfigPayload } from '#/api/emr/document';
+import type { EmrPrintConfigPayload, EmrPrintPaperPayload } from '#/api/emr/document';
 
 import {
   adjustPageMarginMmForPdfBand,
@@ -35,11 +35,54 @@ export interface ScreenPrintMetrics {
   bandHeightsMm?: { footerMm?: number; headerMm?: number };
 }
 
+export type EmrPrintPaperSizeKey = 'A4' | 'A5';
+
+export type EmrPrintPaperOrientation = NonNullable<EmrPrintPaperPayload['orientation']>;
+
+/** 预览弹窗纸张选项；宽高为竖向毫米，横向由后端 orientation 翻转 */
+export const EMR_PRINT_PAPER_SIZE_OPTIONS: Array<{
+  key: EmrPrintPaperSizeKey;
+  label: string;
+}> = [
+  { key: 'A4', label: 'A4（210×297mm）' },
+  { key: 'A5', label: 'A5（148×210mm）' },
+];
+
+export const EMR_PRINT_PAPER_ORIENTATION_OPTIONS: Array<{
+  label: string;
+  value: EmrPrintPaperOrientation;
+}> = [
+  { label: '纵向', value: 'portrait' },
+  { label: '横向', value: 'landscape' },
+];
+
+const EMR_PRINT_PAPER_MM: Record<EmrPrintPaperSizeKey, { heightMm: number; widthMm: number }> = {
+  A4: { widthMm: 210, heightMm: 297 },
+  A5: { widthMm: 148, heightMm: 210 },
+};
+
+/**
+ * 预览所选纸型 → PrintConfig.paper（不要把横向宽高对调后再传，后端会按 orientation 翻转）。
+ */
+export function buildEmrPrintPaperPayload(
+  size: EmrPrintPaperSizeKey,
+  orientation: EmrPrintPaperOrientation,
+): EmrPrintPaperPayload {
+  const mm = EMR_PRINT_PAPER_MM[size];
+  return {
+    widthMm: mm.widthMm,
+    heightMm: mm.heightMm,
+    orientation,
+  };
+}
+
 export interface BuildEmrPrintConfigOptions {
   isOutpatientRecord?: boolean;
   outpatientSmokeFreeFooter?: string;
   /** 传入时 PDF 正文区顶/底与编辑器屏显对齐，避免预览多页 */
   screenMetrics?: ScreenPrintMetrics | null;
+  /** 预览弹窗所选纸张；不传则后端默认 A4 纵向 */
+  paper?: EmrPrintPaperPayload;
 }
 
 function pxToMm(px: number): number {
@@ -148,13 +191,15 @@ export function buildEmrPrintConfigPayload(
     };
   }
 
+  const paper = options.paper;
   if (
     topMm == null &&
     rightMm == null &&
     bottomMm == null &&
     leftMm == null &&
     !header.enabled &&
-    !footer.enabled
+    !footer.enabled &&
+    !paper
   ) {
     return undefined;
   }
@@ -187,5 +232,6 @@ export function buildEmrPrintConfigPayload(
     ...(Object.keys(marginPayload).length > 0 ? { margins: marginPayload } : {}),
     header,
     footer,
+    ...(paper ? { paper } : {}),
   };
 }

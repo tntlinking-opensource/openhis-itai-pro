@@ -9,9 +9,10 @@ import com.openhis.health.domain.share.constants.CatalogEditabilityConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.PriceType;
-import com.openhis.health.application.basic.catalog.dto.CatalogLotPriceRowDto;
-import com.openhis.health.application.basic.catalog.support.CatalogEditWriteGate;
-import com.openhis.health.application.basic.catalog.support.CatalogLotPriceAssembler;
+import com.openhis.health.application.shared.catalog.CatalogLotPriceRowDto;
+import com.openhis.health.application.shared.catalog.CatalogEditWriteGate;
+import com.openhis.health.application.shared.catalog.CatalogLotPriceAssembler;
+import com.openhis.health.application.shared.catalog.MedicationCatalogEditMutation;
 import com.openhis.health.application.basic.medicationcatalog.dto.ExportMedicationCatalogResponse;
 import com.openhis.health.application.basic.medicationcatalog.dto.MedicationCatalogImportFileResponse;
 import com.openhis.health.application.basic.medicationcatalog.dto.MedicationCatalogImportProgressResponse;
@@ -33,8 +34,8 @@ import com.openhis.health.domain.share.constants.MedicationCatalogImportConstant
 import com.openhis.health.domain.share.utils.GatewayIdParseUtil;
 import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
-import com.openhis.health.application.basic.catalog.support.CatalogEditabilityQueryModel;
-import com.openhis.health.application.basic.catalog.support.CatalogEditabilityResolver;
+import com.openhis.health.application.shared.catalog.CatalogEditabilityQueryModel;
+import com.openhis.health.application.shared.catalog.CatalogEditabilityResolver;
 import com.openhis.health.application.shared.option.OptionDtoAssembler;
 import com.openhis.health.application.shared.option.FrequencyOptionLoader;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
@@ -319,6 +320,7 @@ public class MedicationCatalogAppService {
         pageQuery.setPageSize(query.getPageSize());
         pageQuery.setCategoryCode(query.getCategoryCode());
         pageQuery.setKeyDrugType(query.getKeyDrugType());
+        pageQuery.setMedicinePropertyCode(query.getMedicinePropertyCode());
         pageQuery.setStatusEnum(query.getStatusEnum());
         pageQuery.setKeyword(query.getKeyword());
         // Pre：读侧分页查询主表
@@ -428,7 +430,7 @@ public class MedicationCatalogAppService {
         catalogEditWriteGate.assertMedicationCatalogUpdateAllowed(
             existing,
             this.loadPriceLines(request.getId()),
-            request,
+            this.toMedicationCatalogEditMutation(request),
             editability.getEditabilityCode());
         // Pre：药品目录不再采集供应商，写路径清空 supplyId（忽略请求入参与历史回显）
         request.setSupplyId(null);
@@ -589,6 +591,7 @@ public class MedicationCatalogAppService {
         pageQuery.setKeyword(safeRequest.getKeyword());
         pageQuery.setCategoryCode(safeRequest.getCategoryCode());
         pageQuery.setKeyDrugType(safeRequest.getKeyDrugType());
+        pageQuery.setMedicinePropertyCode(safeRequest.getMedicinePropertyCode());
         pageQuery.setStatusEnum(safeRequest.getStatusEnum());
         int fetchLimit = MedicationCatalogImportConstants.EXPORT_MAX_ROWS + 1;
         List<MedicationDefinitionDetailQueryModel> details =
@@ -1250,6 +1253,36 @@ public class MedicationCatalogAppService {
         if (value.compareTo(BigDecimal.ZERO) <= 0) {
             throw new ValidationException(errPrefix + "：" + fieldCn + "须大于 0");
         }
+    }
+
+    /**
+     * 将药品目录更新请求投影为 shared 写侧 Mutation（禁 shared 依赖 Feature Request）。
+     *
+     * @param request 更新请求
+     * @return 中性 Mutation；{@code null} 入参返回 null
+     */
+    private MedicationCatalogEditMutation toMedicationCatalogEditMutation(UpdateMedicationCatalogRequest request) {
+        if (request == null) {
+            return null;
+        }
+        MedicationCatalogEditMutation mutation = new MedicationCatalogEditMutation();
+        mutation.setName(request.getName());
+        mutation.setMerchandiseName(request.getMerchandiseName());
+        mutation.setBusNo(request.getBusNo());
+        mutation.setCategoryCode(request.getCategoryCode());
+        mutation.setTypeCode(request.getTypeCode());
+        mutation.setYbType(request.getYbType());
+        mutation.setPurchaseUnitCode(request.getPurchaseUnitCode());
+        mutation.setSplitUnitCode(request.getSplitUnitCode());
+        mutation.setPackageUnitCode(request.getPackageUnitCode());
+        mutation.setStockUnitCode(request.getStockUnitCode());
+        mutation.setPurchaseUnitRatio(request.getPurchaseUnitRatio());
+        mutation.setStockUnitRatio(request.getStockUnitRatio());
+        mutation.setPackageUnitRatio(request.getPackageUnitRatio());
+        mutation.setPharmacologyCategoryCode(request.getPharmacologyCategoryCode());
+        mutation.setDoseFrom(request.getDoseFrom());
+        mutation.setDoseUnitCode(request.getDoseUnitCode());
+        return mutation;
     }
 
 }

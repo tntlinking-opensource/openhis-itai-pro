@@ -59,19 +59,26 @@ import lombok.RequiredArgsConstructor;
  * 库存项读侧查询服务（DM-WKF-008）。
  *
  * <p>
- * 职责：可用库存筛选（含效期与锁定）、多维检索、乐观锁版本比对及分页维护；过滤条件下推 Specification，不写库。
+ * 职责：可用库存筛选（含效期与锁定）、库房可操作量 / 账面量分流、多维检索、乐观锁版本比对及分页维护；过滤条件下推 Specification，不写库。
  * </p>
  *
  * <p>
- * <strong>可用量读取契约（出入库、发药、医嘱目录共用真源）</strong>：凡「是否够扣/够发」均须与本类下列路径之一对齐，禁止在应用层另写一套过期/锁定/状态过滤。
+ * <strong>临床可用量读取契约（医嘱开立 / 发药 / FEFO）</strong>：过期批不可开、不可发；凡「是否够开/够发」须与下列路径对齐，禁止削弱效期谓词。
  * </p>
  * <ul>
- * <li><strong>推荐（行级）</strong>：{@link #findAvailableCatalogRowsForInventoryItemIds} — 按 {@code wkf_inventory_item.id}
- * 批量取可用行， 与选品/扫码/行绑定场景一致，避免仅靠批号字符串聚合。</li>
- * <li><strong>目录 / 多品 × 多库位（批号行级）</strong>：{@link #findAvailableCatalogRowsForOrder} — 按物品表 + 物品主键集合 × 库位集合批量取可用行，
- * 供医嘱开立、FIFO 分配、跨库加总前装配。</li>
- * <li><strong>单品全批汇总（少数总闸门）</strong>：{@link #findAvailableInventories} / {@link #calculateTotalAvailableInventory} —
- * 同一物品在单（或可空）库位上全部可用批次；仅在业务明确「不按批号拆行」时使用。</li>
+ * <li><strong>推荐（行级）</strong>：{@link #findAvailableCatalogRowsForInventoryItemIds}</li>
+ * <li><strong>目录 / 多品 × 多库位</strong>：{@link #findAvailableCatalogRowsForOrder}</li>
+ * <li><strong>单品全批汇总</strong>：{@link #findAvailableInventories} / {@link #calculateTotalAvailableInventory}</li>
+ * </ul>
+ *
+ * <p>
+ * <strong>库房单据契约（过期 / 锁定均不门禁）</strong>：药库 / 药房 / 科室全部单据选品、数量回填与草稿断言按账面结存；
+ * 禁止误用临床 {@code findAvailableCatalogRows*}。
+ * </p>
+ * <ul>
+ * <li><strong>可操作量 / 账面量</strong>：{@link #findWarehouseOperableCatalogRowsForOrder} /
+ * {@link #findWarehouseOperableCatalogRowsForInventoryItemIds} /
+ * {@link #findWarehouseBookCatalogRowsForOrder} — 可用品、数量 &gt;= 0，<strong>不过期、不剔锁定</strong></li>
  * </ul>
  *
  * <p>
@@ -473,34 +480,139 @@ public class InventoryItemQueryService {
     }
 
     /**
-     * 将「可用目录行」共通谓词追加到 {@link Specification} 条件列表。
+     * 库房单据可操作量（多品 × 多库位批号行）：未删、可用品、库位 IN；<strong>不过滤效期、不剔除锁定</strong>。
      *
      * <p>
-     * 本方法表达的是<strong>与具体业务入口无关</strong>的库存可用事实：
-     * </p>
-     * <ul>
-     * <li>未逻辑删除；</li>
-     * <li>库位落在调用方给出的集合内；</li>
-     * <li>库存状态为「可用品」持久化码；</li>
-     * <li>账面数量大于零；</li>
-     * <li>效期为空或晚于当前时刻（未过期）。</li>
-     * </ul>
-     *
-     * <p>
-     * 调用方在追加本段后，还须自行追加物品表、物品 id 或库存主键等<strong>入口差异</strong>条件。
+     * 业务口径：过期 / 锁定仅约束医生开立 / 发药等临床路径；药库 / 药房 / 科室全部单据选品与数量回填看账面结存，
+     * 与 {@link #findWarehouseBookCatalogRowsForOrder} 同口径（数量 &gt;= 0）。
      * </p>
      *
-     * @param root 库存项根
-     * @param cb 条件构建器
-     * @param now 「当前时刻」，与效期列比较用
-     * @param locationIds 允许参与聚合的库位主键集合
-     * @param predicates 输出列表；本方法向其 append
+     * <p>仅本聚合 {@code InventoryItemRepository}；规模风险：itemIds/locationIds 须为当前页与单据库位（禁止全库扫）。</p>
+     *
+     * @param itemTable   物品主表名
+     * @param itemIds     物品定义主键集合
+     * @param locationIds 候选库位主键集合
+     * @return 账面行列表；入参缺表名或任一集合为空时返回空列表
      */
+    public List<InventoryCatalogAvailabilityRowModel> findWarehouseOperableCatalogRowsForOrder(String itemTable,
+        List<Long> itemIds, List<Long> locationIds) {
+        // 库房单据与账面量同口径：不过期、不剔锁定
+        return this.findWarehouseBookCatalogRowsForOrder(itemTable, itemIds, locationIds);
+    }
+
+    /**
+     * 库房单据可操作量（按库存项主键批量）：未删、可用品、库位 IN；<strong>不过滤效期、不剔除锁定</strong>。
+     *
+     * <p>供出库 / 调出 / 请领等草稿行断言与选品回填；与账面量同口径。</p>
+     *
+     * @param inventoryItemIds 库存项主键集合；空或 null 时返回空列表
+     * @param locationIds      候选库位主键集合；空或 null 时返回空列表
+     * @return 账面行列表；入参非法时返回空列表
+     */
+    public List<InventoryCatalogAvailabilityRowModel> findWarehouseOperableCatalogRowsForInventoryItemIds(
+        List<Long> inventoryItemIds, List<Long> locationIds) {
+        List<InventoryCatalogAvailabilityRowModel> result = new ArrayList<>();
+        if (inventoryItemIds == null || inventoryItemIds.isEmpty()) {
+            return result;
+        }
+        if (locationIds == null || locationIds.isEmpty()) {
+            return result;
+        }
+        Specification<InventoryItem> specification = (root, cq, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            // 与账面共通谓词一致：不过期；数量 >= 0
+            this.appendCoreWarehouseBookInventoryCatalogRowPredicates(root, cb, locationIds, predicates);
+            predicates.add(root.get(FieldNameConstants.ID).in(inventoryItemIds));
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+        // 不剔除锁定行
+        return this.loadBookInventoryCatalogRowsBySpecification(specification);
+    }
+
+    /**
+     * 库房账面量目录行（多品 × 多库位）：未删、可用品、库位 IN；<strong>不过滤效期、不剔除锁定、数量 &gt;= 0</strong>。
+     *
+     * <p>
+     * 供损益 / 盘点 / 出库等全部库房单据展示与断言：过期、锁定批号仍按账面剩余数量回填。
+     * </p>
+     *
+     * <p>仅本聚合 {@code InventoryItemRepository}；规模风险：itemIds/locationIds 须为当前页与单据库位。</p>
+     *
+     * @param itemTable   物品主表名
+     * @param itemIds     物品定义主键集合
+     * @param locationIds 候选库位主键集合
+     * @return 账面行列表；入参缺表名或任一集合为空时返回空列表
+     */
+    public List<InventoryCatalogAvailabilityRowModel> findWarehouseBookCatalogRowsForOrder(String itemTable,
+        List<Long> itemIds, List<Long> locationIds) {
+        List<InventoryCatalogAvailabilityRowModel> result = new ArrayList<>();
+        if (StringUtils.isEmpty(itemTable) || itemIds == null || itemIds.isEmpty()) {
+            return result;
+        }
+        if (locationIds == null || locationIds.isEmpty()) {
+            return result;
+        }
+        Specification<InventoryItem> specification = (root, cq, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            this.appendCoreWarehouseBookInventoryCatalogRowPredicates(root, cb, locationIds, predicates);
+            predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_TABLE), itemTable.trim()));
+            predicates.add(root.get(FieldNameConstants.ITEM_ID).in(itemIds));
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+        return this.loadBookInventoryCatalogRowsBySpecification(specification);
+    }
+
+    /**
+     * 将「库房账面目录行」共通谓词追加到条件列表（未删、库位 IN、可用品、数量 &gt;= 0；不含效期、不含锁定）。
+     *
+     * @param root        库存项根
+     * @param cb          条件构建器
+     * @param locationIds 允许参与聚合的库位主键集合
+     * @param predicates  输出列表；本方法向其 append
+     */
+    private void appendCoreWarehouseBookInventoryCatalogRowPredicates(
+        jakarta.persistence.criteria.Root<InventoryItem> root, jakarta.persistence.criteria.CriteriaBuilder cb,
+        List<Long> locationIds, List<jakarta.persistence.criteria.Predicate> predicates) {
+        predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+        predicates
+            .add(cb.equal(root.get(FieldNameConstants.INVENTORY_STATUS_ENUM), PublicationStatus.ACTIVE.getCode()));
+        predicates.add(cb.greaterThanOrEqualTo(root.get(FieldNameConstants.QUANTITY), BigDecimal.ZERO));
+        predicates.add(root.get(FieldNameConstants.LOCATION_ID).in(locationIds));
+    }
+
+    /**
+     * 执行账面目录行查询：按效期、创建时间排序后映射为读侧 DTO，<strong>不剔除锁定行</strong>。
+     *
+     * @param specification 已含完整谓词的库存项规格
+     * @return 账面行列表；无命中时为空列表
+     */
+    private List<InventoryCatalogAvailabilityRowModel>
+        loadBookInventoryCatalogRowsBySpecification(Specification<InventoryItem> specification) {
+        Sort sort =
+            Sort.by(Sort.Order.asc(FieldNameConstants.EXPIRATION_DATE), Sort.Order.asc(FieldNameConstants.CREATED_AT));
+        List<InventoryItem> rows = inventoryItemRepository.findAll(specification, sort);
+        List<InventoryCatalogAvailabilityRowModel> result = new ArrayList<>();
+        // Loop：账面行逐条装配读模型（保留锁定行，库房单据一律按账面展示）
+        for (InventoryItem row : rows) {
+            InventoryCatalogAvailabilityRowModel model = new InventoryCatalogAvailabilityRowModel();
+            model.setId(row.getId());
+            model.setItemTable(row.getItemTable());
+            model.setItemId(row.getItemId());
+            model.setLocationId(row.getLocationId());
+            model.setLotNumber(row.getLotNumber());
+            model.setExpirationDate(row.getExpirationDate());
+            model.setCreatedAt(row.getCreatedAt());
+            model.setQuantity(row.getQuantity());
+            result.add(model);
+        }
+        return result;
+    }
+
     /**
      * 将「可用目录行」共通谓词追加到 {@link Specification} 条件列表。
      *
      * <p>
-     * 本方法表达的是<strong>与具体业务入口无关</strong>的库存可用事实：
+     * 本方法表达的是<strong>与具体业务入口无关</strong>的库存可用事实（<strong>临床可用量</strong>）：
      * </p>
      * <ul>
      * <li>未逻辑删除；</li>
@@ -509,6 +621,11 @@ public class InventoryItemQueryService {
      * <li>账面数量大于零；</li>
      * <li>效期为空或晚于当前时刻（未过期）。</li>
      * </ul>
+     *
+     * <p>
+     * 库房单据请改用 {@link #findWarehouseOperableCatalogRowsForOrder} /
+     * {@link #findWarehouseBookCatalogRowsForOrder}，勿削弱本方法效期谓词。
+     * </p>
      *
      * <p>
      * 调用方在追加本段后，还须自行追加物品表、物品 id 或库存主键等<strong>入口差异</strong>条件。
@@ -1106,8 +1223,9 @@ public class InventoryItemQueryService {
                 chrgitmOr.add(this.deviceDefinitionItemPredicate(root, cb, query.getResolvedDeviceDefinitionIds()));
                 predicates.add(cb.or(chrgitmOr.toArray(new jakarta.persistence.criteria.Predicate[0])));
             }
-            // 重点药类型：仅药品行且 item_id 落在预解析定义主键（耗材无该标识，直接排除）
-            if (StringUtils.isNotEmpty(query.getKeyDrugType())) {
+            // 重点药类型 / 药品性质：仅药品行且 item_id 落在预解析定义主键（耗材无该标识，直接排除）
+            if (StringUtils.isNotEmpty(query.getKeyDrugType())
+                || StringUtils.isNotEmpty(query.getMedicinePropertyCode())) {
                 predicates.add(this.medicationDefinitionItemPredicate(
                     root, cb, query.getResolvedMedicationDefinitionIds()));
             }

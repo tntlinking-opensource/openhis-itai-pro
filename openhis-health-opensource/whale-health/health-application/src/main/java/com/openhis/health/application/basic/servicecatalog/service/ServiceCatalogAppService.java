@@ -16,7 +16,8 @@ import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.PriceType;
-import com.openhis.health.application.basic.catalog.support.CatalogEditWriteGate;
+import com.openhis.health.application.shared.catalog.CatalogEditWriteGate;
+import com.openhis.health.application.shared.catalog.ServiceCatalogEditMutation;
 import com.openhis.health.application.basic.servicecatalog.dto.ExportServiceCatalogResponse;
 import com.openhis.health.application.basic.servicecatalog.dto.ImportServiceCatalogErrorItemDto;
 import com.openhis.health.application.basic.servicecatalog.dto.ServiceCatalogChildDto;
@@ -70,8 +71,8 @@ import com.openhis.health.domain.workflow.activitydefinition.entity.ActivityDefi
 import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionDomainService;
 import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
-import com.openhis.health.application.basic.catalog.support.CatalogEditabilityQueryModel;
-import com.openhis.health.application.basic.catalog.support.CatalogEditabilityResolver;
+import com.openhis.health.application.shared.catalog.CatalogEditabilityQueryModel;
+import com.openhis.health.application.shared.catalog.CatalogEditabilityResolver;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.dto.PagedResult;
 import com.openhis.whale.core.application.exception.ValidationException;
@@ -202,6 +203,8 @@ public class ServiceCatalogAppService {
         pageQuery.setCategoryCode(query.getCategoryCode());
         pageQuery.setStatusEnum(query.getStatusEnum());
         pageQuery.setKeyword(query.getKeyword());
+        // 可选：按是否绑定套餐子项收窄（领域已支持 childrenFlag 等值过滤）
+        pageQuery.setChildrenFlag(query.getChildrenFlag());
         // 本 IF 主场景是目录维护：未传参时默认含明细子项；组套等复用须显式传 false
         Boolean includePackageChildren = query.getIncludeReferencedPackageChildren();
         if (includePackageChildren == null) {
@@ -224,6 +227,8 @@ public class ServiceCatalogAppService {
                 dto.setCategoryCode(model.getCategoryCode());
                 dto.setPackageUnitCode(model.getPackageUnitCode());
                 dto.setDefEncounterUnitCode(model.getDefEncounterUnitCode());
+                // 列表直接下发子项标记，避免仅靠再拉详情 children 才能判断是否组套
+                dto.setChildrenFlag(model.getChildrenFlag());
                 this.applyPublicationStatus(model.getStatusEnum(), dto::setStatusEnum, dto::setStatusEnum_enumText);
                 return dto;
             })
@@ -328,6 +333,7 @@ public class ServiceCatalogAppService {
         ActivityDefinitionDetailQueryModel model = activityDefinitionQueryService.getServiceCatalog(id);
         ActivityDefinitionBaseQueryModel baseInfo = model.getBaseInfo();
         ServiceCatalogDetailDto dto = new ServiceCatalogDetailDto();
+        // 聚合无主表基础信息时视为数据异常，禁止半空详情回前端
         if (baseInfo == null) {
             throw new ValidationException("查询诊疗目录详情失败：基础信息不存在");
         }
@@ -361,6 +367,8 @@ public class ServiceCatalogAppService {
         dto.setYbFlag(this.toWhetherInteger(baseInfo.getYbFlag()));
         dto.setPricingFlag(this.toWhetherInteger(baseInfo.getPricingFlag()));
         dto.setYbMatchFlag(this.toWhetherInteger(baseInfo.getYbMatchFlag()));
+        // 子项标记与子表列表同向下发，供前端无需遍历 children 即可识别组套
+        dto.setChildrenFlag(this.toWhetherInteger(baseInfo.getChildrenFlag()));
         this.applyPublicationStatus(baseInfo.getStatusEnum(), dto::setStatusEnum, null);
         dto.setChildren(this.toServiceCatalogChildDtos(model.getChildren()));
         // 定价行从收费定义表加载，与药品/耗材目录维护页口径一致。
@@ -568,6 +576,8 @@ public class ServiceCatalogAppService {
         pageQuery.setKeyword(safeRequest.getKeyword());
         pageQuery.setCategoryCode(safeRequest.getCategoryCode());
         pageQuery.setStatusEnum(safeRequest.getStatusEnum());
+        // 导出筛选与列表同口径：可按是否绑定子项收窄
+        pageQuery.setChildrenFlag(safeRequest.getChildrenFlag());
         pageQuery.setIncludeReferencedPackageChildren(Boolean.TRUE);
         int fetchLimit = ServiceCatalogImportConstants.EXPORT_MAX_ROWS + 1;
         List<ActivityDefinitionBaseQueryModel> details =
@@ -710,7 +720,7 @@ public class ServiceCatalogAppService {
         catalogEditWriteGate.assertServiceCatalogUpdateAllowed(
             existing,
             this.loadPriceLines(request.getId()),
-            request,
+            this.toServiceCatalogEditMutation(request),
             editability.getEditabilityCode());
         // Cmd：领域更新主数据
         activityDefinitionDomainService.updateActivityDefinition(serviceCatalogMapper.converterToUpdateParam(request));
@@ -966,5 +976,32 @@ public class ServiceCatalogAppService {
             ));
         }
         return result;
+    }
+
+    /**
+     * 将诊疗目录更新请求投影为 shared 写侧 Mutation（禁 shared 依赖 Feature Request）。
+     *
+     * @param request 更新请求
+     * @return 中性 Mutation；{@code null} 入参返回 null
+     */
+    private ServiceCatalogEditMutation toServiceCatalogEditMutation(UpdateServiceCatalogRequest request) {
+        if (request == null) {
+            return null;
+        }
+        ServiceCatalogEditMutation mutation = new ServiceCatalogEditMutation();
+        mutation.setName(request.getName());
+        mutation.setBusNo(request.getBusNo());
+        mutation.setCategoryCode(request.getCategoryCode());
+        // 请求未传 typeEnum：按 null 比对，避免 NPE
+        if (request.getTypeEnum() == null) {
+            mutation.setTypeEnum(null);
+        } else {
+            mutation.setTypeEnum(String.valueOf(request.getTypeEnum()));
+        }
+        mutation.setPackageUnitCode(request.getPackageUnitCode());
+        mutation.setItemTypeCode(request.getItemTypeCode());
+        mutation.setYbType(request.getYbType());
+        mutation.setRetailPrice(request.getRetailPrice());
+        return mutation;
     }
 }

@@ -25,10 +25,11 @@ public class KeyMedicationUsageReportMapperImpl implements KeyMedicationUsageRep
     /**
      * 装配页初始化响应。
      *
-     * @param defaultDateFrom       默认起日
-     * @param defaultDateTo         默认止日
-     * @param encounterClassOptions 就诊类型选项
-     * @param keyDrugTypeOptions    重点药类型选项
+     * @param defaultDateFrom         默认起日
+     * @param defaultDateTo           默认止日
+     * @param encounterClassOptions   就诊类型选项
+     * @param keyDrugTypeOptions      重点药类型选项（四旗）
+     * @param medicinePropertyOptions 药品性质选项（麻/精）
      * @return 初始化响应
      */
     @Override
@@ -36,13 +37,15 @@ public class KeyMedicationUsageReportMapperImpl implements KeyMedicationUsageRep
         String defaultDateFrom,
         String defaultDateTo,
         List<OptionDto> encounterClassOptions,
-        List<OptionDto> keyDrugTypeOptions) {
+        List<OptionDto> keyDrugTypeOptions,
+        List<OptionDto> medicinePropertyOptions) {
         LoadKeyMedicationUsageReportPageInitResponse response =
             new LoadKeyMedicationUsageReportPageInitResponse();
         response.setDefaultDateFrom(defaultDateFrom);
         response.setDefaultDateTo(defaultDateTo);
         response.setEncounterClassOptions(encounterClassOptions);
         response.setKeyDrugTypeOptions(keyDrugTypeOptions);
+        response.setMedicinePropertyOptions(medicinePropertyOptions);
         return response;
     }
 

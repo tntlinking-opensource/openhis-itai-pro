@@ -33,23 +33,23 @@ public class SurplusRetentionReportRowDto {
     @Schema(description = "患者姓名")
     private String patientName;
 
-    /** 参保地区（v1 可空）。 */
+    /** 参保地区（发放挂账合同分类：省医保/市医保/自费）。 */
     @Excel(name = "*参保地区", sort = 3)
     @Schema(description = "参保地区")
     private String insuredRegion;
 
-    /** 参保类型（v1 可空）。 */
+    /** 参保类型（与参保地区同口径：省医保/市医保/自费）。 */
     @Excel(name = "*参保类型", sort = 4)
     @Schema(description = "参保类型")
     private String insuredType;
 
-    /** 入院时间（住院 Encounter.startTime；门诊空）。 */
+    /** 入院时间（住院 Encounter.startTime；门诊与处方日期一致；缺省回落处方日期）。 */
     @Excel(name = "*入院时间", sort = 5)
     @JsonFormat(pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "入院时间")
     private LocalDateTime admissionTime;
 
-    /** 出院时间（住院 Encounter.endTime；门诊空）。 */
+    /** 出院时间（住院 Encounter.endTime；门诊与处方日期一致；缺省回落处方日期）。 */
     @Excel(name = "*出院时间", sort = 6)
     @JsonFormat(pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "出院时间")
@@ -66,7 +66,7 @@ public class SurplusRetentionReportRowDto {
     @Schema(description = "药品通用名")
     private String drugGenericName;
 
-    /** 产品名称（目录 merchandiseName）。 */
+    /** 产品名称（目录商品名 merchandiseName，原样输出）。 */
     @Excel(name = "*产品名称", sort = 9)
     @Schema(description = "产品名称")
     private String productName;

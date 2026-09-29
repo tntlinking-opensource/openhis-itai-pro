@@ -7,7 +7,10 @@ package com.openhis.health.application.mrms.inpatientemr.service;
 import com.openhis.health.application.mrms.inpatientemr.dto.InpatientEmrListItemDto;
 import com.openhis.health.application.mrms.inpatientemr.mapper.InpatientEmrListMapper;
 import com.openhis.health.application.mrms.inpatientemr.request.ArchiveInpatientClinicalCaseRequest;
+import com.openhis.health.application.mrms.inpatientemr.request.CreateInpatientDocumentEditApplicationRequest;
 import com.openhis.health.application.mrms.inpatientemr.request.QueryInpatientEmrListRequest;
+import com.openhis.health.application.mrms.inpatientemr.request.SubmitInpatientDocumentArchiveBatchRequest;
+import com.openhis.health.application.mrms.inpatientemr.request.SubmitInpatientDocumentArchiveRequest;
 import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.application.shared.financial.EncounterContractDisplayAssembler;
 import com.openhis.health.application.shared.financial.EncounterInsutypeDisplayAssembler;
@@ -26,7 +29,16 @@ import com.openhis.health.domain.mrms.caserecord.service.CaseRecordQueryService;
 import com.openhis.health.domain.share.constants.InpatientRegistrationConstants;
 import com.openhis.health.domain.share.constants.MrmsConstants;
 import com.openhis.health.domain.share.constants.MrmsErrorCodes;
+import com.openhis.health.domain.share.enums.EncounterClass;
+import com.openhis.health.infrastructure.integration.emr.EmrDocumentArchiveWorkflowExtension;
+import com.openhis.health.infrastructure.integration.emr.EmrDocumentEditApplicationExtension;
+import com.openhis.health.infrastructure.integration.emr.ExtensionIn.EmrDocumentArchiveBatchExtensionIn;
+import com.openhis.health.infrastructure.integration.emr.ExtensionIn.EmrDocumentArchiveWriteExtensionIn;
+import com.openhis.health.infrastructure.integration.emr.ExtensionIn.EmrDocumentEditCreateExtensionIn;
+import com.openhis.health.infrastructure.integration.emr.ExtensionOut.EmrDocumentArchiveWriteExtensionOut;
+import com.openhis.health.infrastructure.integration.emr.ExtensionOut.EmrDocumentEditApplicationExtensionOut;
 import com.openhis.whale.core.application.dto.PagedResult;
+import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -97,6 +109,12 @@ public class MrmsInpatientEmrQueryAppService {
 
     /** 临床病例归档/解档编排。 */
     private final MrmsClinicalCaseArchiveSupport clinicalCaseArchiveSupport;
+
+    /** 文书归档三态工作流（增量）。 */
+    private final EmrDocumentArchiveWorkflowExtension documentArchiveWorkflowExtension;
+
+    /** 文书编辑申请（增量）。 */
+    private final EmrDocumentEditApplicationExtension documentEditApplicationExtension;
 
     /** 业务出院时间（出院医嘱计划时间优先）。 */
     private final BusinessDischargeTimeResolver businessDischargeTimeResolver;
@@ -180,7 +198,7 @@ public class MrmsInpatientEmrQueryAppService {
             }
             items.add(item);
         }
-        // Asm：回填病例归档态（就诊下 LOCKED 文书）
+        // Asm：回填病例归档态（就诊下 PENDING_ARCHIVE/ARCHIVED 文书）
         Set<Long> clinicallyArchived = clinicalCaseArchiveSupport.filterClinicallyArchivedEncounterIds(encounterIds);
         for (InpatientEmrListItemDto item : items) {
             if (item.getEncounterId() != null && clinicallyArchived.contains(item.getEncounterId())) {
@@ -203,7 +221,7 @@ public class MrmsInpatientEmrQueryAppService {
     }
 
     /**
-     * 解档病例：解锁 LOCKED 文书（仅病案管理员；病案主档已归档时拒绝）。
+     * 解档病例：ARCHIVED → DRAFT（仅病案管理员；病案主档已归档时拒绝）。
      *
      * @param request 含就诊主键
      */
@@ -212,6 +230,96 @@ public class MrmsInpatientEmrQueryAppService {
         Long tenantId = operatorResolver.requireTenantId();
         // Cmd：按就诊解锁文书
         clinicalCaseArchiveSupport.unarchiveClinicalCase(request.getEncounterId(), tenantId);
+    }
+
+    /**
+     * 单份住院文书提交归档（IF-MRMS-IEMR-03）。
+     *
+     * <p><strong>增量</strong>：不改动 {@link #archiveClinicalCase}/{@link #unarchiveClinicalCase}。</p>
+     *
+     * @param request 文书主键
+     */
+    public void submitDocumentArchive(SubmitInpatientDocumentArchiveRequest request) {
+        // Gate：EMR 归档 SPI 可用 + 文书主键 + 登录操作人
+        assertArchiveWorkflowEnabled();
+        if (request == null || request.getDocumentId() == null) {
+            throw new ValidationException("文书主键不能为空");
+        }
+        Long operatorId = operatorResolver.requireOperatorId();
+        // Pre：组装 Extension 写 In
+        EmrDocumentArchiveWriteExtensionIn in = new EmrDocumentArchiveWriteExtensionIn();
+        in.setDocumentId(request.getDocumentId());
+        in.setOperatorId(operatorId);
+        // Cmd：DRAFT → PENDING_ARCHIVE
+        EmrDocumentArchiveWriteExtensionOut out = documentArchiveWorkflowExtension.submitArchive(in);
+        if (!out.isSuccess()) {
+            throw new BusinessException(MrmsErrorCodes.CLINICAL_ARCHIVE_EMR_DISABLED, out.getMessage());
+        }
+    }
+
+    /**
+     * 批量住院文书提交归档（IF-MRMS-IEMR-04）。
+     *
+     * @param request 文书 id 列表
+     */
+    public void submitDocumentArchiveBatch(SubmitInpatientDocumentArchiveBatchRequest request) {
+        // Gate：EMR 可用 + 列表非空
+        assertArchiveWorkflowEnabled();
+        if (request == null || request.getDocumentIds() == null || request.getDocumentIds().isEmpty()) {
+            throw new ValidationException("文书主键列表不能为空");
+        }
+        Long operatorId = operatorResolver.requireOperatorId();
+        // Pre：批量 In
+        EmrDocumentArchiveBatchExtensionIn in = new EmrDocumentArchiveBatchExtensionIn();
+        in.setDocumentIds(request.getDocumentIds());
+        in.setOperatorId(operatorId);
+        // Cmd：批量 DRAFT → PENDING_ARCHIVE
+        EmrDocumentArchiveWriteExtensionOut out = documentArchiveWorkflowExtension.submitArchiveBatch(in);
+        if (!out.isSuccess()) {
+            throw new BusinessException(MrmsErrorCodes.CLINICAL_ARCHIVE_EMR_DISABLED, out.getMessage());
+        }
+    }
+
+    /**
+     * 创建住院文书编辑申请（IF-MRMS-IEMR-05）。
+     *
+     * @param request 文书 + 原因
+     * @return 申请主键
+     */
+    public Long createDocumentEditApplication(CreateInpatientDocumentEditApplicationRequest request) {
+        // Gate：编辑 SPI 可用 + 文书主键 + 申请原因
+        if (!documentEditApplicationExtension.isEnabled()) {
+            throw new BusinessException(MrmsErrorCodes.CLINICAL_ARCHIVE_EMR_DISABLED, "电子病历未启用");
+        }
+        if (request == null || request.getDocumentId() == null) {
+            throw new ValidationException("文书主键不能为空");
+        }
+        String reason = trimToNull(request.getApplyReason());
+        if (reason == null) {
+            throw new ValidationException("申请原因不能为空");
+        }
+        Long operatorId = operatorResolver.requireOperatorId();
+        // Pre：组装创建 In（住院 IMP）
+        EmrDocumentEditCreateExtensionIn in = new EmrDocumentEditCreateExtensionIn();
+        in.setTenantId(operatorResolver.requireTenantId());
+        in.setDocumentId(request.getDocumentId());
+        in.setEncounterClassCode(EncounterClass.IMP.getCode());
+        in.setApplyReason(reason);
+        in.setApplicantId(operatorId);
+        in.setOperatorId(operatorId);
+        // Cmd：SPI 创建申请
+        EmrDocumentEditApplicationExtensionOut out = documentEditApplicationExtension.create(in);
+        // Asm：返回申请主键
+        return out.getApplicationId();
+    }
+
+    /**
+     * 文书归档工作流可用门禁。
+     */
+    private void assertArchiveWorkflowEnabled() {
+        if (!documentArchiveWorkflowExtension.isEnabled()) {
+            throw new BusinessException(MrmsErrorCodes.CLINICAL_ARCHIVE_EMR_DISABLED, "电子病历未启用，无法提交文书归档");
+        }
     }
 
     /**

@@ -58,11 +58,44 @@ public class Document extends BaseAuditedEntity implements IMultiTenant {
     private String content;
 
     /**
-     * 文档状态：DRAFT / SUBMITTED / LOCKED / ARCHIVED 等
+     * 文档状态：DRAFT / PENDING_ARCHIVE / ARCHIVED（DM-EMR-001）。
      */
     @Size(max = 32)
     @Column(name = "status", length = 32)
     private String status;
+
+    /**
+     * 书写时科室（创建写入；转科不改写）。
+     */
+    @Column(name = "organization_id")
+    private Long organizationId;
+
+    /**
+     * 业务版本号：创建=1；首次归档不升；编辑审核通过 +1。
+     */
+    @Column(name = "version_no", nullable = false)
+    private Integer versionNo;
+
+    /** 提交归档人。 */
+    @Column(name = "archive_submitted_by")
+    private Long archiveSubmittedBy;
+
+    /** 提交归档时间。 */
+    @Column(name = "archive_submitted_at")
+    private java.time.LocalDateTime archiveSubmittedAt;
+
+    /** 归档审批同意人。 */
+    @Column(name = "archive_approved_by")
+    private Long archiveApprovedBy;
+
+    /** 归档审批同意时间。 */
+    @Column(name = "archive_approved_at")
+    private java.time.LocalDateTime archiveApprovedAt;
+
+    /** 归档驳回原因。 */
+    @Size(max = 500)
+    @Column(name = "archive_reject_reason", length = 500)
+    private String archiveRejectReason;
 
     /**
      * 创建文书时使用的模板 ID（如首次病程 PN_FIRST 溯源与唯一性校验）

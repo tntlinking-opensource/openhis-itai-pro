@@ -231,13 +231,15 @@ public interface NurseStationATDManagerMapper {
      * @param medicationName      药品名称；可 null
      * @param performLocationName 库房名称；可 null
      * @param statusEnumText      状态展示文案；可 null
+     * @param unitCodeText        单位展示名；可 null（术语解析失败时回落 code）
      * @return 行 DTO；row 为 null 时返回 null
      */
     DischargePendingMedicationItemDto toDischargePendingMedicationItemDto(
         MedicationDispenseListQueryModel row,
         String medicationName,
         String performLocationName,
-        String statusEnumText);
+        String statusEnumText,
+        String unitCodeText);
 
     /**
      * 办理出院请求 → 领域命令。

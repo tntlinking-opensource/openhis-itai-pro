@@ -89,40 +89,87 @@ export const DEFAULT_EDITOR_PAGE_MARGINS: {
   left: '15mm',
 };
 
+export type EditorPageMargins = {
+  bottom: string;
+  left: string;
+  right: string;
+  top: string;
+};
+
+export type EditorPageMarginPresetKey = 'moderate' | 'narrow' | 'normal' | 'wide';
+
+function parsePresetMarginMm(raw: string, fallback: number): number {
+  const mm = String(raw)
+    .trim()
+    .match(/^([\d.]+)\s*mm$/i);
+  if (!mm) return fallback;
+  const n = Number(mm[1]);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/** 毫米 → 下拉/对话框用的厘米文案（2.54、1.27） */
+export function formatEditorMarginCm(mm: number): string {
+  const cm = Math.round((mm / 10) * 100) / 100;
+  return String(cm);
+}
+
+export function describeEditorPageMargins(value: EditorPageMargins): {
+  line1: string;
+  line2: string;
+} {
+  const top = formatEditorMarginCm(parsePresetMarginMm(value.top, 15));
+  const bottom = formatEditorMarginCm(parsePresetMarginMm(value.bottom, 15));
+  const left = formatEditorMarginCm(parsePresetMarginMm(value.left, 15));
+  const right = formatEditorMarginCm(parsePresetMarginMm(value.right, 15));
+  return {
+    line1: `上: ${top} 厘米  下: ${bottom} 厘米`,
+    line2: `左: ${left} 厘米  右: ${right} 厘米`,
+  };
+}
+
 /**
- * 工具栏「页边距」预设。
- * 「打印标准」= PrintConfig 国标（上/下 25.4mm，左/右 31.8mm）。
- * 文书/模板默认用 {@link DEFAULT_EDITOR_PAGE_MARGINS}，勿再硬编码 31.8mm。
+ * 工具栏「页边距」预设，对齐 Word 页面布局：普通 / 窄 / 适中 / 宽。
+ * 数值按 Word 厘米换算毫米。文书默认仍用 {@link DEFAULT_EDITOR_PAGE_MARGINS}（15mm）。
  */
 export const EDITOR_PAGE_MARGIN_PRESETS: {
+  key: EditorPageMarginPresetKey;
   label: string;
-  value: { bottom: string; left: string; right: string; top: string };
+  value: EditorPageMargins;
 }[] = [
   {
-    label: '紧凑',
-    value: { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' },
-  },
-  {
-    label: 'Word 常用',
-    value: { ...DEFAULT_EDITOR_PAGE_MARGINS },
-  },
-  {
-    label: '标准',
-    value: { top: '25.4mm', right: '25.4mm', bottom: '25.4mm', left: '25.4mm' },
-  },
-  {
-    label: '适中',
-    value: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' },
-  },
-  {
-    label: '宽松',
-    value: { top: '25mm', right: '25mm', bottom: '25mm', left: '25mm' },
-  },
-  {
-    label: '打印标准',
+    key: 'normal',
+    label: '普通',
     value: { top: '25.4mm', right: '31.8mm', bottom: '25.4mm', left: '31.8mm' },
   },
+  {
+    key: 'narrow',
+    label: '窄',
+    value: { top: '12.7mm', right: '12.7mm', bottom: '12.7mm', left: '12.7mm' },
+  },
+  {
+    key: 'moderate',
+    label: '适中',
+    value: { top: '25.4mm', right: '19.1mm', bottom: '25.4mm', left: '19.1mm' },
+  },
+  {
+    key: 'wide',
+    label: '宽',
+    value: { top: '25.4mm', right: '50.8mm', bottom: '25.4mm', left: '50.8mm' },
+  },
 ];
+
+export function matchEditorPageMarginPreset(
+  margins: EditorPageMargins,
+): EditorPageMarginPresetKey | null {
+  const hit = EDITOR_PAGE_MARGIN_PRESETS.find(
+    (p) =>
+      p.value.top === margins.top &&
+      p.value.right === margins.right &&
+      p.value.bottom === margins.bottom &&
+      p.value.left === margins.left,
+  );
+  return hit?.key ?? null;
+}
 
 /** 工具栏「纸张大小」：屏上 CSS 宽高，打印仍以院内 PrintConfig 为准 */
 export const EDITOR_PAPER_SIZE_PRESETS: {

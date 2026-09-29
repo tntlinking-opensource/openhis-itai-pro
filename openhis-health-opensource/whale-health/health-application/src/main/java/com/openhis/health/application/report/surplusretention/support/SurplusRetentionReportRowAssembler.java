@@ -4,15 +4,18 @@
  */
 package com.openhis.health.application.report.surplusretention.support;
 
-import com.openhis.health.application.outpatient.pharmacy.dispenserecord.support.PharmacyDispenseRecordChargePricingAssembler;
+import com.openhis.health.application.shared.pharmacy.PharmacyDispenseRecordChargePricingAssembler;
 import com.openhis.health.application.report.surplusretention.dto.SurplusRetentionReportRowDto;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.domain.administration.account.entity.Account;
+import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.entity.Encounter;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.administration.patient.service.PatientQueryService;
 import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
+import com.openhis.health.domain.financial.contract.service.ContractQueryService;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
 import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
@@ -23,16 +26,28 @@ import com.openhis.health.domain.medication.medicationrequest.queries.model.Medi
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.SurplusRetentionReportConstants;
+import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
+import com.openhis.health.domain.share.enums.ChargeTypeCategory;
+import com.openhis.health.domain.share.enums.ContractCategory;
 import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.enums.MedicationDispenseType;
+import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionIn.InpatientChargeAdmissionPlatformQueryExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionOut.InpatientChargeAdmissionPlatformQueryExtensionOut;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.InpatientChargeInsuranceExtension;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientRegistrationPlatformQueryExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionOut.OutpatientRegistrationPlatformQueryExtensionOut;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.OutpatientRegistrationInsuranceExtension;
+import com.openhis.health.infrastructure.integration.insurance.platformdict.InsurancePlatformDictDisplayExtension;
 import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -40,7 +55,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 药品结余留用报表行装配：页内主键批量装载后映射 19 列（AS-RPT-015；#4M-RFND 退药售价补价）。
+ * 药品结余留用报表行装配：页内主键批量装载后映射 19 列（AS-RPT-015；#4M-RFND 退药售价补价；
+ * BR-RPT-SRB-007 参保类型=合同三值、参保地区自费写「自费」/医保写参保地；BR-RPT-SRB-008 门诊入出院=处方日期）。
  */
 @Component
 @RequiredArgsConstructor
@@ -64,14 +80,29 @@ public class SurplusRetentionReportRowAssembler {
     /** 供应商读侧（生产企业名称）。 */
     private final SupplierQueryService supplierQueryService;
 
-    /** 收费明细读侧（发放锚点售价）。 */
+    /** 收费明细读侧（发放锚点售价与挂账账户）。 */
     private final ChargeItemQueryService chargeItemQueryService;
+
+    /** 记账账户读侧（账户 → 合同号）。 */
+    private final AccountQueryService accountQueryService;
+
+    /** 费用性质合同读侧（合同号 → 分类码）。 */
+    private final ContractQueryService contractQueryService;
 
     /** 退药售价补价（#4M-RFND，写正额绝对值）。 */
     private final PharmacyDispenseRecordChargePricingAssembler pharmacyDispenseRecordChargePricingAssembler;
 
     /** 术语标签批量翻译（类别/剂型/单位）。 */
     private final TerminologyOptionLoader terminologyOptionLoader;
+
+    /** 门诊平台挂号快照（参保地区划）。 */
+    private final OutpatientRegistrationInsuranceExtension outpatientRegistrationInsuranceExtension;
+
+    /** 住院平台入院快照（参保地区划，来自预结算）。 */
+    private final InpatientChargeInsuranceExtension inpatientChargeInsuranceExtension;
+
+    /** 1901 参保地区划码 → 展示名。 */
+    private final InsurancePlatformDictDisplayExtension platformDictDisplayExtension;
 
     /**
      * 将患者发退药实体装配为结余留用 19 列行。
@@ -113,21 +144,32 @@ public class SurplusRetentionReportRowAssembler {
             if (dispense.getPatientId() != null) {
                 row.setPatientName(ctx.patientNameById.get(dispense.getPatientId()));
             }
-            // 参保地区/类型：v1 允许空
-            row.setInsuredRegion(GeneralSharedConstants.EMPTY_STRING);
-            row.setInsuredType(GeneralSharedConstants.EMPTY_STRING);
-            // 入出院：仅住院 IMP 填 start/end；门诊空
-            if (encounter != null && EncounterClass.IMP.getCode().equals(encounter.getClassEnum())) {
-                row.setAdmissionTime(encounter.getStartTime());
-                row.setDischargeTime(encounter.getEndTime());
-            }
-            // 处方日期 ← 申请签发时间
+            // 处方日期 ← 申请签发时间（门诊入出院回落依赖此值，须先写）
+            LocalDateTime prescriptionDate = null;
             if (request != null) {
-                row.setPrescriptionDate(request.getReqAuthoredTime());
+                prescriptionDate = request.getReqAuthoredTime();
+                row.setPrescriptionDate(prescriptionDate);
             }
+            // 参保类型 ← 发放挂账合同分类（省医保/市医保/自费）；无挂账默认自费
+            String insuredCategoryText = SurplusRetentionReportConstants.INSURED_CATEGORY_SELF_PAY;
+            if (dispense.getId() != null) {
+                String resolved = ctx.insuredCategoryTextByDispenseId.get(dispense.getId());
+                if (resolved != null) {
+                    insuredCategoryText = resolved;
+                }
+            }
+            row.setInsuredType(insuredCategoryText);
+            // 参保地区：自费写「自费」；医保写就诊平台参保地展示名
+            row.setInsuredRegion(this.resolveInsuredRegionText(
+                insuredCategoryText,
+                dispense.getEncounterId(),
+                ctx.insuredRegionTextByEncounterId));
+            // 入出院：住院取 Encounter；门诊无时刻时与处方日期一致（BR-RPT-SRB-008）
+            this.fillAdmissionDischargeTimes(row, encounter, prescriptionDate);
             // 目录列
             if (def != null) {
                 row.setDrugGenericName(StringUtils.trimToNull(def.getName()));
+                // 产品名称 ← 目录商品名（必填字段原样输出，不做占位替换）
                 row.setProductName(StringUtils.trimToNull(def.getMerchandiseName()));
                 row.setDrugCategoryText(this.labelOf(ctx.categoryLabelByCode, def.getCategoryCode()));
                 row.setDoseFormText(this.labelOf(ctx.doseFormLabelByCode, def.getDoseFormCode()));
@@ -266,6 +308,10 @@ public class SurplusRetentionReportRowAssembler {
             this.chargeItemQueryService.listChargeItemsForMedicationDispensePricingByDispenseIds(
                 dispenseIds, false);
         this.mergeChargePricingFromChargeItems(chargeRows, unitPriceByDispenseId, totalPriceByDispenseId);
+        // Pre：发放挂账合同 → 参保分类文案（省医保/市医保/自费）
+        ctx.insuredCategoryTextByDispenseId = this.buildInsuredCategoryTextByDispenseId(chargeRows);
+        // Pre：就诊 → 参保地展示名（门诊平台挂号 / 住院预结算区划 + 1901 字典）
+        ctx.insuredRegionTextByEncounterId = this.buildInsuredRegionTextByEncounterId(encounterById);
         // Pre：#4M-RFND 退药补原正向售价（写入为正额，行装配再取负）
         Map<Long, MedicationRequestListQueryModel> medicationRequestByMedReqId =
             this.indexMedicationRequestsForRefundSupplement(slipRows);
@@ -277,6 +323,241 @@ public class SurplusRetentionReportRowAssembler {
         ctx.unitPriceByDispenseId = unitPriceByDispenseId;
         ctx.totalPriceByDispenseId = totalPriceByDispenseId;
         return ctx;
+    }
+
+    /**
+     * 解析参保地区展示文案：自费固定「自费」；医保取就诊平台参保地（缺省空串）。
+     *
+     * @param insuredCategoryText          参保类型三值
+     * @param encounterId                  就诊主键；可空
+     * @param insuredRegionTextByEncounter 就诊 → 参保地展示名
+     * @return 非空文案或空串
+     */
+    private String resolveInsuredRegionText(
+        String insuredCategoryText,
+        Long encounterId,
+        Map<Long, String> insuredRegionTextByEncounter) {
+        // 自费：参保地与类型同写「自费」
+        if (SurplusRetentionReportConstants.INSURED_CATEGORY_SELF_PAY.equals(insuredCategoryText)) {
+            return SurplusRetentionReportConstants.INSURED_CATEGORY_SELF_PAY;
+        }
+        if (encounterId == null || insuredRegionTextByEncounter == null) {
+            return GeneralSharedConstants.EMPTY_STRING;
+        }
+        String region = insuredRegionTextByEncounter.get(encounterId);
+        if (region == null) {
+            return GeneralSharedConstants.EMPTY_STRING;
+        }
+        return region;
+    }
+
+    /**
+     * 按就诊批量解析参保地展示名（门诊挂号快照 / 住院入院快照 → 区划码 → 1901 标签）。
+     *
+     * @param encounterById 页内就诊实体
+     * @return encounterId → 展示名（字典未命中时回落区划码）
+     */
+    private Map<Long, String> buildInsuredRegionTextByEncounterId(Map<Long, Encounter> encounterById) {
+        if (encounterById == null || encounterById.isEmpty()) {
+            return Map.of();
+        }
+        LinkedHashSet<Long> ambulatoryEncounterIds = new LinkedHashSet<>();
+        LinkedHashSet<Long> inpatientEncounterIds = new LinkedHashSet<>();
+        for (Encounter encounter : encounterById.values()) {
+            if (encounter == null || encounter.getId() == null) {
+                continue;
+            }
+            if (EncounterClass.IMP.getCode().equals(encounter.getClassEnum())) {
+                inpatientEncounterIds.add(encounter.getId());
+            } else {
+                ambulatoryEncounterIds.add(encounter.getId());
+            }
+        }
+        Map<Long, String> codeByEncounterId = new HashMap<>();
+        // Pre：门诊平台挂号快照参保地
+        if (!ambulatoryEncounterIds.isEmpty()) {
+            OutpatientRegistrationPlatformQueryExtensionIn opQuery =
+                new OutpatientRegistrationPlatformQueryExtensionIn();
+            opQuery.setEncounterIds(new ArrayList<>(ambulatoryEncounterIds));
+            opQuery.setPaymentDraftIdByEncounter(Map.of());
+            for (OutpatientRegistrationPlatformQueryExtensionOut snap
+                : this.outpatientRegistrationInsuranceExtension.findPlatformSnapshots(opQuery)) {
+                if (snap == null || snap.getEncounterId() == null) {
+                    continue;
+                }
+                String code = StringUtils.trimToNull(snap.getInsuplcAdmdvs());
+                if (code != null) {
+                    codeByEncounterId.putIfAbsent(snap.getEncounterId(), code);
+                }
+            }
+        }
+        // Pre：住院平台入院快照参保地（预结算）
+        if (!inpatientEncounterIds.isEmpty()) {
+            InpatientChargeAdmissionPlatformQueryExtensionIn ipQuery =
+                new InpatientChargeAdmissionPlatformQueryExtensionIn();
+            ipQuery.setEncounterIds(new ArrayList<>(inpatientEncounterIds));
+            for (InpatientChargeAdmissionPlatformQueryExtensionOut snap
+                : this.inpatientChargeInsuranceExtension.findAdmissionPlatformSnapshots(ipQuery)) {
+                if (snap == null || snap.getEncounterId() == null) {
+                    continue;
+                }
+                String code = StringUtils.trimToNull(snap.getInsuplcAdmdvs());
+                if (code != null) {
+                    codeByEncounterId.putIfAbsent(snap.getEncounterId(), code);
+                }
+            }
+        }
+        if (codeByEncounterId.isEmpty()) {
+            return Map.of();
+        }
+        LinkedHashSet<String> admdvsCodes = new LinkedHashSet<>(codeByEncounterId.values());
+        Map<String, String> labelByCode = Map.of();
+        // Pre：仅 Module 启用时查 1901；未装配/未命中走吉林前缀回落（同挂号历史）
+        if (this.platformDictDisplayExtension.isEnabled()) {
+            Map<String, String> lookedUp =
+                this.platformDictDisplayExtension.lookupInsuplcAdmdvsLabels(admdvsCodes);
+            if (lookedUp != null) {
+                labelByCode = lookedUp;
+            }
+        }
+        Map<Long, String> out = new HashMap<>();
+        for (Map.Entry<Long, String> entry : codeByEncounterId.entrySet()) {
+            String code = entry.getValue();
+            String dictLabel = labelByCode.get(code);
+            out.put(entry.getKey(), InsuplcAdmdvsDisplaySupport.formatDisplay(code, dictLabel));
+        }
+        return out;
+    }
+
+    /**
+     * 按发放挂账账户解析参保分类展示文案（省医保 / 市医保 / 自费）。
+     *
+     * @param chargeRows 发放锚点收费行
+     * @return dispenseId → 分类文案；无挂账合同的发放不含键
+     */
+    private Map<Long, String> buildInsuredCategoryTextByDispenseId(List<ChargeItem> chargeRows) {
+        if (chargeRows == null || chargeRows.isEmpty()) {
+            return Map.of();
+        }
+        LinkedHashSet<Long> accountIds = new LinkedHashSet<>();
+        for (ChargeItem chargeRow : chargeRows) {
+            if (chargeRow != null && chargeRow.getAccountId() != null) {
+                accountIds.add(chargeRow.getAccountId());
+            }
+        }
+        Map<Long, Account> accountById = this.accountQueryService.mapAccountsByIds(accountIds);
+        LinkedHashSet<String> contractNos = new LinkedHashSet<>();
+        for (Account account : accountById.values()) {
+            if (account == null) {
+                continue;
+            }
+            String contractNo = StringUtils.trimToNull(account.getContractNo());
+            if (contractNo != null) {
+                contractNos.add(contractNo);
+            }
+        }
+        Map<String, String> categoryEnumByBusNo =
+            this.contractQueryService.mapCategoryEnumByBusNoIn(contractNos);
+        Map<Long, String> out = new HashMap<>();
+        for (ChargeItem chargeRow : chargeRows) {
+            if (chargeRow == null || chargeRow.getAccountId() == null) {
+                continue;
+            }
+            Long dispenseKey = chargeRow.getDispenseId();
+            // 药发放也可能锚在 service_id
+            if (dispenseKey == null
+                && TableNameConstants.MED_MEDICATION_DISPENSE.equals(chargeRow.getServiceTable())) {
+                dispenseKey = chargeRow.getServiceId();
+            }
+            if (dispenseKey == null) {
+                continue;
+            }
+            // 同发放多段费用取首个账户分类
+            if (out.containsKey(dispenseKey)) {
+                continue;
+            }
+            Account account = accountById.get(chargeRow.getAccountId());
+            if (account == null) {
+                continue;
+            }
+            String contractNo = StringUtils.trimToNull(account.getContractNo());
+            String categoryEnum = null;
+            if (contractNo != null) {
+                categoryEnum = categoryEnumByBusNo.get(contractNo);
+            }
+            out.put(dispenseKey, this.resolveInsuredCategoryText(categoryEnum));
+        }
+        return out;
+    }
+
+    /**
+     * 合同 category_enum → 参保展示三值（省医保 / 市医保 / 自费）。
+     *
+     * <p>兼容 {@link ContractCategory} 字母码与 {@link ChargeTypeCategory} 数字码；公费/工伤等非三值回落自费。</p>
+     *
+     * @param categoryEnum 合同分类码；可空
+     * @return 非空三值之一
+     */
+    private String resolveInsuredCategoryText(String categoryEnum) {
+        String code = StringUtils.trimToNull(categoryEnum);
+        // 无分类：按自费
+        if (code == null) {
+            return SurplusRetentionReportConstants.INSURED_CATEGORY_SELF_PAY;
+        }
+        ChargeTypeCategory chargeType = EnumUtil.fromCode(ChargeTypeCategory.class, code);
+        if (chargeType == ChargeTypeCategory.PROVINCIAL_INSURANCE) {
+            return SurplusRetentionReportConstants.INSURED_CATEGORY_PROVINCIAL;
+        }
+        if (chargeType == ChargeTypeCategory.MUNICIPAL_INSURANCE) {
+            return SurplusRetentionReportConstants.INSURED_CATEGORY_MUNICIPAL;
+        }
+        if (chargeType == ChargeTypeCategory.SELF_PAY) {
+            return SurplusRetentionReportConstants.INSURED_CATEGORY_SELF_PAY;
+        }
+        ContractCategory contractCategory = EnumUtil.fromCode(ContractCategory.class, code);
+        if (contractCategory == ContractCategory.PROVINCIAL_INSURANCE) {
+            return SurplusRetentionReportConstants.INSURED_CATEGORY_PROVINCIAL;
+        }
+        if (contractCategory == ContractCategory.MUNICIPAL_INSURANCE) {
+            return SurplusRetentionReportConstants.INSURED_CATEGORY_MUNICIPAL;
+        }
+        if (contractCategory == ContractCategory.SELF_CHARGE) {
+            return SurplusRetentionReportConstants.INSURED_CATEGORY_SELF_PAY;
+        }
+        // 公费/工伤等：本报表仅三值口径，回落自费
+        return SurplusRetentionReportConstants.INSURED_CATEGORY_SELF_PAY;
+    }
+
+    /**
+     * 填充入院/出院时间：住院取就诊起止；门诊无时刻时与处方日期一致。
+     *
+     * @param row              目标行
+     * @param encounter        就诊；可空
+     * @param prescriptionDate 处方（签发）时刻；可空
+     */
+    private void fillAdmissionDischargeTimes(
+        SurplusRetentionReportRowDto row,
+        Encounter encounter,
+        LocalDateTime prescriptionDate) {
+        // 住院：优先就诊入/出院时刻
+        if (encounter != null && EncounterClass.IMP.getCode().equals(encounter.getClassEnum())) {
+            LocalDateTime admission = encounter.getStartTime();
+            LocalDateTime discharge = encounter.getEndTime();
+            // 住院缺入院时刻：回落处方日期，避免导出/列表出现空占位
+            if (admission == null) {
+                admission = prescriptionDate;
+            }
+            // 住院缺出院时刻：回落处方日期
+            if (discharge == null) {
+                discharge = prescriptionDate;
+            }
+            row.setAdmissionTime(admission);
+            row.setDischargeTime(discharge);
+            return;
+        }
+        // 门诊（及非住院）：无入出院业务时刻，与处方日期一致
+        row.setAdmissionTime(prescriptionDate);
+        row.setDischargeTime(prescriptionDate);
     }
 
     /**
@@ -445,5 +726,11 @@ public class SurplusRetentionReportRowAssembler {
 
         /** 发放 id → 售价行额。 */
         private Map<Long, BigDecimal> totalPriceByDispenseId = Map.of();
+
+        /** 发放 id → 参保分类文案（省医保/市医保/自费）。 */
+        private Map<Long, String> insuredCategoryTextByDispenseId = Map.of();
+
+        /** 就诊 id → 参保地展示名（医保行用；自费行不读此图）。 */
+        private Map<Long, String> insuredRegionTextByEncounterId = Map.of();
     }
 }

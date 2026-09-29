@@ -53,7 +53,9 @@ public class MrmsCaseRecordCodingAppService {
     }
 
     /**
-     * 按关键字检索 ICD-9-CM-3 手术编码（首页手术 picker）。
+     * 按关键字检索 ICD-9-CM-3 手术编码（首页手术 picker；AS-MRMS-HP-001 IF-MRMS-HP-PR-02）。
+     *
+     * <p>仅 ACTIVE 国临 PD；回传 id/国临码/名/ybNo（可空提示未对码）。</p>
      *
      * @param request 关键字与条数上限
      * @return 编码项列表；关键字为空时返回空列表
@@ -68,7 +70,7 @@ public class MrmsCaseRecordCodingAppService {
         // Pre：仅国家临床版手术 3.0（病案首页用国临码，医保上传另映射 yb_no）
         List<ProcedureDefinitionSearchItemQueryModel> items =
                 procedureDefinitionQueryService.searchClinicalProcV3ByKeyword(key);
-        // Asm：截断并映射 picker 行
+        // Asm：截断并映射 picker 行（含 PD id / ybNo）
         return toIcd9Cm3Dtos(items, limit);
     }
 
@@ -91,30 +93,42 @@ public class MrmsCaseRecordCodingAppService {
     }
 
     /**
+     * 国临手术检索结果转 picker DTO（含 PD id / ybNo），按 limit 截断。
+     *
+     * @param items 手术定义检索行
+     * @param limit 最大条数
+     * @return picker 行列表
+     */
+    private List<IcdItemDto> toIcd9Cm3Dtos(List<ProcedureDefinitionSearchItemQueryModel> items, int limit) {
+        List<IcdItemDto> result = new ArrayList<>();
+        // 无检索命中时返回空列表供 picker 展示「无数据」
+        if (items == null || items.isEmpty()) {
+            return result;
+        }
+        for (ProcedureDefinitionSearchItemQueryModel item : items) {
+            // 达到条数上限后截断，避免 picker 一次过大
+            if (result.size() >= limit) {
+                break;
+            }
+            IcdItemDto dto = new IcdItemDto();
+            dto.setId(item.getId());
+            dto.setCode(item.getProcedureCode());
+            dto.setName(item.getName());
+            dto.setPyStr(item.getPyStr());
+            // 可空：未对码仍可选入首页；上传侧阻断（BR-MRMS-HP-PR-008）
+            dto.setYbNo(item.getYbNo());
+            result.add(dto);
+        }
+        return result;
+    }
+
+    /**
      * ICD-10 检索结果转 picker DTO，按 limit 截断。
      *
      * @param items 疾病定义检索行
      * @param limit 最大条数
      * @return picker 行列表
      */
-    private List<IcdItemDto> toIcd9Cm3Dtos(List<ProcedureDefinitionSearchItemQueryModel> items, int limit) {
-        List<IcdItemDto> result = new ArrayList<>();
-        if (items == null || items.isEmpty()) {
-            return result;
-        }
-        for (ProcedureDefinitionSearchItemQueryModel item : items) {
-            if (result.size() >= limit) {
-                break;
-            }
-            IcdItemDto dto = new IcdItemDto();
-            dto.setCode(item.getProcedureCode());
-            dto.setName(item.getName());
-            dto.setPyStr(item.getPyStr());
-            result.add(dto);
-        }
-        return result;
-    }
-
     private List<IcdItemDto> toIcd10Dtos(List<ConditionDefinitionSearchItemQueryModel> items, int limit) {
         List<IcdItemDto> result = new ArrayList<>();
         if (items == null || items.isEmpty()) {

@@ -240,7 +240,7 @@ public class DefaultQcRuleExecutor implements QcRuleExecutor {
     }
 
     /**
-     * 评估首页提交逾期（{@link MrmsQcRuleCodes#SUBMIT_OVERDUE}，draft/returned 态）。
+     * 评估首页提交逾期（{@link MrmsQcRuleCodes#SUBMIT_OVERDUE}，仅 DRAFT 态）。
      *
      * @param rule 规则元数据
      * @param record 病案主档
@@ -254,7 +254,7 @@ public class DefaultQcRuleExecutor implements QcRuleExecutor {
         }
         CaseRecordStatus status = record.getStatusEnum();
         // 已提交或进入病案室流程后不再计提交逾期
-        if (status != CaseRecordStatus.DRAFT && status != CaseRecordStatus.RETURNED) {
+        if (status != CaseRecordStatus.DRAFT) {
             return Optional.empty();
         }
         int maxDays = readMaxDays(rule, MrmsQcRuleCodes.DEFAULT_SUBMIT_OVERDUE_DAYS);

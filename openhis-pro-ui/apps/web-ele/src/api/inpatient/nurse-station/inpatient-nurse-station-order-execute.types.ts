@@ -129,6 +129,16 @@ export interface NurseStationOrderExecuteRowDto {
    * 日剂量友好展示（如 `每日三片`；长期药且频次可解析每日次数时有值）。
    */
   dailyDoseDisplay?: string | null;
+  /** 首日/首次用量（仅长期药品；BR-IP-ORD-030 / BR-IP-EXE-012） */
+  firstDose?: number | string | null;
+  /** 首日用量单位编码 */
+  firstDoseUnitCode?: string | null;
+  /** 首日用量单位展示名 */
+  firstDoseUnitName?: string | null;
+  /** 分次剂量序列（计量；BR-IP-EXE-012/040） */
+  doseSchedule?: string | null;
+  /** 分次用量序列（拆零） */
+  quantitySchedule?: string | null;
   usageDisplay?: string;
   /** 给药途径/用法编码（仅药嘱；筛选输液等须用 code，禁止用 usageDisplay） */
   methodCode?: string;
@@ -185,6 +195,8 @@ export interface NurseStationOrderExecuteRowDto {
   activityDefinitionId?: string;
   /** 合管检验设备主键（采血贴分组） */
   specimenTubeMergeDeviceId?: string;
+  /** 医嘱优先级 code（加急=EM） */
+  priorityEnum?: string;
   /** 是否皮试药（仅药嘱） */
   skinTestFlag?: boolean;
   /** 皮试临床状态 code（如 active=阳性） */

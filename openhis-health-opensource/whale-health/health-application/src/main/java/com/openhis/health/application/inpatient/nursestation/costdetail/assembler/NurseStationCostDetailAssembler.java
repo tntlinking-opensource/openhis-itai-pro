@@ -321,7 +321,7 @@ public class NurseStationCostDetailAssembler {
         Map<Long, ChargeItem> parentChargeById,
         Map<Long, String> practitionerNameById) {
         return this.buildSummaryLines(
-            rows, productByKey, parentChargeById, practitionerNameById, Collections.emptySet());
+            rows, productByKey, parentChargeById, practitionerNameById, Map.of(), Collections.emptySet());
     }
 
     /**
@@ -331,6 +331,7 @@ public class NurseStationCostDetailAssembler {
      * @param productByKey              产品读模型索引
      * @param parentChargeById          组套父行索引
      * @param practitionerNameById      操作人 id → 展示名
+     * @param operatorByChargeItemId    chargeItemId → 操作人（Procedure / DeviceDispense）
      * @param autoRollServiceRequestIds 床位自动计费 SR 主键集合
      * @return 汇总行列表
      */
@@ -339,6 +340,7 @@ public class NurseStationCostDetailAssembler {
         Map<String, ProductDefinitionDisplayDto> productByKey,
         Map<Long, ChargeItem> parentChargeById,
         Map<Long, String> practitionerNameById,
+        Map<Long, Long> operatorByChargeItemId,
         Set<Long> autoRollServiceRequestIds) {
         List<NurseStationCostSummaryLineDto> lines = new ArrayList<>();
         if (rows == null || rows.isEmpty()) {
@@ -409,7 +411,7 @@ public class NurseStationCostDetailAssembler {
             summaryLine.setExpenseBlockCode(expenseBlockCode);
             summaryLine.setExpenseBlockDisplay(this.resolveExpenseBlockDisplay(expenseBlockCode));
             summaryLine.setActivityLines(this.buildSummaryActivityLines(
-                groupRows, product, practitionerNameById, autoRollServiceRequestIds));
+                groupRows, product, practitionerNameById, operatorByChargeItemId, autoRollServiceRequestIds));
             lines.add(summaryLine);
         }
         // 汇总块顺序：药品 → 诊疗 → 耗材（BR-IP-CDT-008）
@@ -420,19 +422,18 @@ public class NurseStationCostDetailAssembler {
     /**
      * 从候选收费行收集操作人主键（汇总展开明细批量查 Practitioner 用）。
      *
-     * @param rows 域查询候选行
+     * <p>操作人由调用方经 {@code ChargeItemActivityOperatorResolver} 解析后传入，
+     * 本方法仅汇总 map 的 value（兼容旧调用方先 collect 再查姓名）。</p>
+     *
+     * @param operatorByChargeItemId chargeItemId → 操作人 practitionerId
      * @return 去重后的操作人 id 集合
      */
-    public Set<Long> collectOperatorIdsForChargeRows(List<InpatientNurseStationCostDetailChargeRow> rows) {
+    public Set<Long> collectOperatorIdsFromResolvedMap(Map<Long, Long> operatorByChargeItemId) {
         Set<Long> operatorIds = new LinkedHashSet<>();
-        if (rows == null || rows.isEmpty()) {
+        if (operatorByChargeItemId == null || operatorByChargeItemId.isEmpty()) {
             return operatorIds;
         }
-        for (InpatientNurseStationCostDetailChargeRow row : rows) {
-            if (row == null || row.getChargeItem() == null) {
-                continue;
-            }
-            Long operatorId = this.resolveActivityOperatorId(row.getChargeItem());
+        for (Long operatorId : operatorByChargeItemId.values()) {
             if (operatorId != null) {
                 operatorIds.add(operatorId);
             }
@@ -446,6 +447,7 @@ public class NurseStationCostDetailAssembler {
      * @param groupRows                 同 product 分组内的候选行
      * @param product                   展示用产品读模型
      * @param practitionerNameById      操作人 id → 展示名
+     * @param operatorByChargeItemId    chargeItemId → 操作人（Procedure / DeviceDispense）
      * @param autoRollServiceRequestIds 床位自动计费 SR 主键集合
      * @return 展开明细列表
      */
@@ -453,6 +455,7 @@ public class NurseStationCostDetailAssembler {
         List<InpatientNurseStationCostDetailChargeRow> groupRows,
         ProductDefinitionDisplayDto product,
         Map<Long, String> practitionerNameById,
+        Map<Long, Long> operatorByChargeItemId,
         Set<Long> autoRollServiceRequestIds) {
         List<NurseStationCostSummaryActivityLineDto> activityLines = new ArrayList<>();
         if (groupRows == null || groupRows.isEmpty()) {
@@ -504,7 +507,7 @@ public class NurseStationCostDetailAssembler {
             // 组内倒序/列展示：客户可见轴（recorded / 发放 / 滚费 occurrence）
             activityLine.setActivityDateTime(row.getBusinessDateTime());
             activityLine.setDisplayDateTime(row.getDisplayDateTime());
-            Long operatorId = this.resolveActivityOperatorId(charge);
+            Long operatorId = this.resolveActivityOperatorId(charge.getId(), operatorByChargeItemId);
             if (operatorId != null && practitionerNameById != null) {
                 activityLine.setOperatorName(practitionerNameById.get(operatorId));
             }
@@ -521,28 +524,32 @@ public class NurseStationCostDetailAssembler {
     }
 
     /**
-     * 解析汇总展开明细操作人：仅读 {@code performer_id}（划价护士/执行人）。
+     * 解析汇总展开明细操作人：只读预解析 map（Procedure 主执行人 / DeviceDispense 发放或配药人）。
      *
      * <p>{@code enterer_*} 语义为收费人/收费时间（BR-OPC-016），禁止再当作划价/执行操作人。</p>
      *
-     * @param charge 收费明细
+     * @param chargeItemId           收费明细主键
+     * @param operatorByChargeItemId 预解析操作人 map
      * @return 操作人 Practitioner 主键；无则 null
      */
-    private Long resolveActivityOperatorId(ChargeItem charge) {
-        if (charge == null) {
+    private Long resolveActivityOperatorId(Long chargeItemId, Map<Long, Long> operatorByChargeItemId) {
+        if (chargeItemId == null || operatorByChargeItemId == null || operatorByChargeItemId.isEmpty()) {
             return null;
         }
-        return charge.getPerformerId();
+        return operatorByChargeItemId.get(chargeItemId);
     }
 
     /**
-     * 判定是否为划价/滚费配置来源码（历史 auto-roll-fees Charge；现行滚费 Charge 为 order-execute）。
+     * 判定是否为站内划价/滚费配置来源码。
+     *
+     * <p>含护士划价、医技划价；历史 {@code auto-roll-fees} Charge（现行滚费 Charge 为 order-execute）。</p>
      *
      * @param generateSourceEnum 生成来源 code
-     * @return true 表示划价类活动
+     * @return true 表示站内划价或历史滚费配置源
      */
     private boolean isPricingGenerateSource(String generateSourceEnum) {
         return GenerateSource.NURSE_PRICING.getCode().equals(generateSourceEnum)
+            || GenerateSource.MEDICAL_TECH_PRICING.getCode().equals(generateSourceEnum)
             || GenerateSource.AUTO_ROLL_FEES.getCode().equals(generateSourceEnum);
     }
 

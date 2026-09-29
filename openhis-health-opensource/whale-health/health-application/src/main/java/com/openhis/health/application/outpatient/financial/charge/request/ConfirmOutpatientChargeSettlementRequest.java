@@ -10,6 +10,7 @@ import lombok.Data;
 import lombok.experimental.Accessors;
 
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -45,4 +46,9 @@ public class ConfirmOutpatientChargeSettlementRequest {
 
     /** 银联被扫 Win 回传（扫码 settle 时必填，与 paymentDetails 并列）。 */
     private ClientScanResultDto clientScanResult;
+
+    /**
+     * 款员所选折扣率 (0,1]；须与预结算一致；仅能力门控开启时可传（BR-OPC-027～032）。
+     */
+    private BigDecimal cashierDiscountRate;
 }

@@ -67,7 +67,7 @@ function handleStatusFilterChange(value: PatientStatusFilter) {
   changeStatusFilter(value);
 }
 
-/** 切换入科状态筛选（本地过滤）。 */
+/** 切换入科状态筛选并拉取队列。 */
 function handleAdmissionFilterChange(value: PatientAdmissionFilter) {
   changeAdmissionFilter(value);
 }

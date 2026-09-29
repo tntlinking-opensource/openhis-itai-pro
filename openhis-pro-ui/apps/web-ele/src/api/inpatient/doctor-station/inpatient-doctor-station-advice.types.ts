@@ -78,6 +78,14 @@ export interface InpatientDoctorStationAdviceRowDto extends DoctorStationAdviceR
   oralPackageSplitUnitDisplay?: string;
   /** 预计下次领盒日 yyyy-MM-dd */
   oralPackageNextClaimDate?: string;
+  /** 出院方式 code（出院医嘱；EncounterHistory 里程碑） */
+  outWayCode?: string;
+  /** 出院方式展示名 */
+  outWayName?: string;
+  /** 出院/转科原因 */
+  reasonText?: string;
+  /** 计划出院时间（occurrence_start_time；医生填写） */
+  plannedDischargeTime?: string;
 }
 
 /** 长期药品改量（IF-IP-DOR-28：停旧+同药草稿，待签发） */

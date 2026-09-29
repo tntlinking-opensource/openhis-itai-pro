@@ -829,8 +829,9 @@ public class InventoryPharmacyReturnToWarehouseAppService {
             // —— 选品为批号行级展开：可用量按 inventoryItemId 回填，与 assert 行级键一致。——
             Map<Long, BigDecimal> availableQtyByInventoryItemId = new HashMap<>();
             if (!pageItemIds.isEmpty()) {
+                // Pre：库房账面量回填（不过期、不剔锁定；药库/药房/科室同口径）
                 List<InventoryCatalogAvailabilityRowModel> availRows =
-                    this.inventoryItemQueryService.findAvailableCatalogRowsForOrder(
+                    this.inventoryItemQueryService.findWarehouseOperableCatalogRowsForOrder(
                         itemTable, new ArrayList<>(pageItemIds), List.of(request.getSourceLocationId()));
                 for (InventoryCatalogAvailabilityRowModel ar : availRows) {
                     if (ar == null || ar.getId() == null || ar.getQuantity() == null) {
@@ -1252,8 +1253,9 @@ public class InventoryPharmacyReturnToWarehouseAppService {
             if (itemIds.isEmpty()) {
                 continue;
             }
+            // Pre：库房账面量回填（不过期、不剔锁定；药库/药房/科室同口径）
             List<InventoryCatalogAvailabilityRowModel> rows =
-                this.inventoryItemQueryService.findAvailableCatalogRowsForOrder(
+                this.inventoryItemQueryService.findWarehouseOperableCatalogRowsForOrder(
                     itemTable, new ArrayList<>(itemIds), List.of(sourceLocationId));
             Map<Long, Map<String, BigDecimal>> availableByItemLot = new HashMap<>();
             for (InventoryCatalogAvailabilityRowModel row : rows) {
@@ -1459,8 +1461,9 @@ public class InventoryPharmacyReturnToWarehouseAppService {
             if (itemIds.isEmpty()) {
                 continue;
             }
+            // Pre：库房账面量回填（不过期、不剔锁定；药库/药房/科室同口径）
             List<InventoryCatalogAvailabilityRowModel> rows =
-                this.inventoryItemQueryService.findAvailableCatalogRowsForOrder(
+                this.inventoryItemQueryService.findWarehouseOperableCatalogRowsForOrder(
                     itemTable, new ArrayList<>(itemIds), locationIds);
             Map<Long, Map<String, BigDecimal>> availableByItemLot = new HashMap<>();
             Map<Long, BigDecimal> availableByItemId = new HashMap<>();

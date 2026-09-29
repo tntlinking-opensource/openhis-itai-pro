@@ -98,8 +98,11 @@ public class ChargeReceiptSlipDto {
     @Schema(description = "支付宝实收展示")
     private String alipayPayText;
 
-    /** 医保个账余额展示文案。 */
-    @Schema(description = "医保个账余额展示")
+    /**
+     * 医保个账余额展示文案（本笔扣款后剩余；由 {@code balc − acct_pay} 装配，见
+     * {@code InsuranceReceiptAccountBalanceSupport}）。
+     */
+    @Schema(description = "医保个账余额展示（扣款后）")
     private String accountBalanceText;
 
     /** 收费员展示名。 */

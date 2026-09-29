@@ -70,7 +70,8 @@ export const PLATFORM_ROLE_CODE = {
   PHARMACIST: 'ROLE_PHARMACIST',
   WAREHOUSE: 'ROLE_WAREHOUSE',
   ACCOUNTANT: 'ROLE_ACCOUNTANT',
-  FINANCE_APPROVER: 'ROLE_FINANCE_APPROVER',
+  /** 款员：收款页面权限，替换自定义角色「收款款员」 */
+  CASHIER: 'ROLE_CASHIER',
   /** 病案管理员：门诊/住院「归档病例 / 解档病例」 */
   MRMS_ADMIN: 'ROLE_MRMS_ADMIN',
 } as const;

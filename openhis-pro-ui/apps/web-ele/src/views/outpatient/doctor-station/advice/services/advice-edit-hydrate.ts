@@ -111,6 +111,8 @@ export function buildAdviceDrugItemSeedFromListRow(
               : {}),
             performOrgId: String(row.performOrgId ?? '').trim() || undefined,
             performOrgName: String(row.performOrgName ?? '').trim() || undefined,
+            catalogCategoryCode: String(row.catalogCategoryCode ?? '').trim() || undefined,
+            priorityEnum: String(row.priorityEnum ?? '').trim() || undefined,
           };
         })()
       : {
@@ -176,6 +178,9 @@ export function mergeCatalogIntoAdviceDrugItemForEdit(
       performOrgId,
       performOrgName,
       selectedDrugPrice: catalog.price ?? seed.selectedDrugPrice ?? '',
+      catalogCategoryCode:
+        String(seed.catalogCategoryCode ?? catalog.categoryCode ?? '').trim() || undefined,
+      priorityEnum: String(seed.priorityEnum ?? '').trim() || undefined,
       ...(uCode
         ? {
             totalAmountUnit: uCode,

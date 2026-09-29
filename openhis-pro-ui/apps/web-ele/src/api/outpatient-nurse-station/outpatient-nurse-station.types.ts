@@ -119,6 +119,8 @@ export interface NurseStationTreatmentLineDto {
   wbStr?: null | string;
   /** 合管检验设备主键（采血贴分组） */
   specimenTubeMergeDeviceId?: null | string;
+  /** 医嘱优先级 code（加急=EM） */
+  priorityEnum?: null | string;
 }
 
 export interface QueryEncounterTreatmentSheetResponse {

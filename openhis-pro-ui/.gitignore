@@ -23,5 +23,8 @@ apps/web-ele/dist.zip
 # Hospital customization (kept in private repo only)
 projects/
 
+# Private export tooling / msfx stubs (kept in private repo only)
+tools/
+
 # Private agent / editor tooling
 .cursor/

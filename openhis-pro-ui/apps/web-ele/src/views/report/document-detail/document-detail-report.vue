@@ -59,6 +59,7 @@ import {
   ReportPrintFieldDialog,
   ReportQueryBar,
   ReportTableScroll,
+  collectPagedReportRows,
   mapReportPrintRow,
   reportPrintFieldsOf,
   useReportListPrint,
@@ -571,47 +572,72 @@ function mapSummaryPrintRows() {
   );
 }
 
+/** 将明细行（含小计）映射为打印单元格。 */
+function mapDetailPrintRows(source: DocumentDetailTableRow[]) {
+  return source.map((r) =>
+    mapReportPrintRow(
+      r as unknown as Record<string, unknown>,
+      reportPrintFieldsOf(DETAIL_PRINT_COLUMNS),
+      {
+        busNo: (v, row) => formatPrintDetailText(v, row),
+        typeEnumText: (v, row) => formatPrintDetailText(v, row),
+        sourceLocationName: (v, row) => formatPrintDetailText(v, row),
+        purposeLocationName: (v, row) => formatPrintDetailText(v, row),
+        consumingOrganizationName: (v, row) => formatPrintDetailText(v, row),
+        supplierName: (v, row) => formatPrintDetailText(v, row),
+        productName: (v) => formatPrintProductName(v),
+        productBusNo: (v, row) => formatPrintDetailText(v, row),
+        specification: (v, row) => formatPrintDetailText(v, row),
+        lotNumber: (v, row) => formatPrintDetailText(v, row),
+        packageQuantityDisplay: (_v, row) => formatPackageQuantity(row as DocumentDetailTableRow),
+        minUnitQuantityDisplay: (_v, row) => formatMinUnitQuantity(row as DocumentDetailTableRow),
+        priceDisplay: (_v, row) => formatPriceWithUnit(row as DocumentDetailTableRow),
+        totalPriceDisplay: (_v, row) => formatAmountWithUnit(row as DocumentDetailTableRow),
+        bookQuantity: (v, row) => formatQtyOrDash(v, row as DocumentDetailTableRow),
+        actualQuantity: (v, row) => formatQtyOrDash(v, row as DocumentDetailTableRow),
+        gainLossQuantity: (v, row) => formatQtyOrDash(v, row as DocumentDetailTableRow),
+        applicantName: (v, row) => formatPrintDetailText(v, row),
+        approverName: (v, row) => formatPrintDetailText(v, row),
+        approvalTime: (v, row) =>
+          formatApprovalTime(v as string | undefined, row as DocumentDetailTableRow),
+      },
+    ),
+  );
+}
+
+/** 跨页打印：汇总已一次返回；明细按筛选分页拉全量后再插小计。 */
+async function fetchAllDocumentPrintRows() {
+  if (isSummaryTab.value) {
+    return { rows: mapSummaryPrintRows(), truncated: false };
+  }
+  const filter = buildFilterRequest();
+  if (!filter) {
+    return { rows: [], truncated: false };
+  }
+  const collected = await collectPagedReportRows({
+    fetchPage: async (pageNo, pageSize) => {
+      const page = await pageDocumentDetailsApi({ ...filter, pageNo, pageSize });
+      return { rows: page.records ?? [], total: Number(page.total ?? 0) };
+    },
+  });
+  return {
+    rows: mapDetailPrintRows(buildRowsWithSubtotals(collected.rows)),
+    truncated: collected.truncated,
+  };
+}
+
 const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrintCurrentPage } =
   useReportListPrint({
     getReportCode: () => printReportCode.value,
     getColumnCatalog: () => printColumnCatalog.value,
     getReportTitle: () => `${props.pageTitle} · ${isSummaryTab.value ? '汇总' : '明细'}`,
-    getPrintRows: () => {
-      if (isSummaryTab.value) {
-        return mapSummaryPrintRows();
-      }
-      return tableData.value.map((r) =>
-        mapReportPrintRow(
-          r as unknown as Record<string, unknown>,
-          reportPrintFieldsOf(DETAIL_PRINT_COLUMNS),
-          {
-            busNo: (v, row) => formatPrintDetailText(v, row),
-            typeEnumText: (v, row) => formatPrintDetailText(v, row),
-            sourceLocationName: (v, row) => formatPrintDetailText(v, row),
-            purposeLocationName: (v, row) => formatPrintDetailText(v, row),
-            consumingOrganizationName: (v, row) => formatPrintDetailText(v, row),
-            supplierName: (v, row) => formatPrintDetailText(v, row),
-            productName: (v) => formatPrintProductName(v),
-            productBusNo: (v, row) => formatPrintDetailText(v, row),
-            specification: (v, row) => formatPrintDetailText(v, row),
-            lotNumber: (v, row) => formatPrintDetailText(v, row),
-            packageQuantityDisplay: (_v, row) =>
-              formatPackageQuantity(row as DocumentDetailTableRow),
-            minUnitQuantityDisplay: (_v, row) =>
-              formatMinUnitQuantity(row as DocumentDetailTableRow),
-            priceDisplay: (_v, row) => formatPriceWithUnit(row as DocumentDetailTableRow),
-            totalPriceDisplay: (_v, row) => formatAmountWithUnit(row as DocumentDetailTableRow),
-            bookQuantity: (v, row) => formatQtyOrDash(v, row as DocumentDetailTableRow),
-            actualQuantity: (v, row) => formatQtyOrDash(v, row as DocumentDetailTableRow),
-            gainLossQuantity: (v, row) => formatQtyOrDash(v, row as DocumentDetailTableRow),
-            applicantName: (v, row) => formatPrintDetailText(v, row),
-            approverName: (v, row) => formatPrintDetailText(v, row),
-            approvalTime: (v, row) =>
-              formatApprovalTime(v as string | undefined, row as DocumentDetailTableRow),
-          },
-        ),
-      );
-    },
+    getPrintRows: () =>
+      isSummaryTab.value ? mapSummaryPrintRows() : mapDetailPrintRows(tableData.value),
+    fetchAllPrintRows: fetchAllDocumentPrintRows,
+    hasPrintableData: () =>
+      isSummaryTab.value
+        ? summaryRows.value.length > 0
+        : total.value > 0 || tableData.value.length > 0,
   });
 
 const tableLoading = computed(
@@ -1177,6 +1203,7 @@ onMounted(async () => {
       ref="printFieldDialogRef"
       :report-code="printReportCode"
       :column-catalog="printColumnCatalog"
+      show-print-scope
     />
   </Page>
 </template>

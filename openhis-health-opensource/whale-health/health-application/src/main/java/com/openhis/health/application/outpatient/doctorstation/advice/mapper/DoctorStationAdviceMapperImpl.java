@@ -369,6 +369,8 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
             servicePayload.getExecutionCount(), servicePayload.getChildOverridesJson(), TherapyType.TEMPORARY.getCode()));
         item.setCategoryEnum(StringUtils.firstNonBlank(productRm.getCategoryCode(), "1"));
         item.setTherapyEnum(TherapyType.TEMPORARY.getCode());
+        // Cmd：检验/检查加急（EM）；空串/空表示非急
+        item.setPriorityEnum(servicePayload.getPriorityEnum());
         item.setOrgId(servicePayload.getPerformOrgId());
         item.setContractId(servicePayload.getContractId());
         item.setRequesterId(operatorId);
@@ -423,6 +425,12 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
                 servicePayload.getExecutionCount(), servicePayload.getChildOverridesJson());
             if (executionCount != null) {
                 item.setExecutionCount(executionCount);
+            }
+            // Cmd：加急与 CREATE 同源；null 按空串清空（医生未勾急）
+            if (servicePayload.getPriorityEnum() == null) {
+                item.setPriorityEnum("");
+            } else {
+                item.setPriorityEnum(servicePayload.getPriorityEnum());
             }
         }
         item.setSortNumber(line.getSortNumber());

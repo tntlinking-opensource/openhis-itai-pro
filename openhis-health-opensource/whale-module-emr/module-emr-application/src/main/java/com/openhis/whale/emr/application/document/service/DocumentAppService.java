@@ -105,8 +105,11 @@ public class DocumentAppService {
         this.encounterMetadataAppService = encounterMetadataAppService;
         this.emrEditorImageStore = emrEditorImageStore;
         this.admissionContextLoader = admissionContextLoader;
-        this.linkedEncounterResolver =
-                linkedEncounterResolver != null ? linkedEncounterResolver : EmrLinkedEncounterResolver.noop();
+        if (linkedEncounterResolver != null) {
+            this.linkedEncounterResolver = linkedEncounterResolver;
+        } else {
+            this.linkedEncounterResolver = EmrLinkedEncounterResolver.noop();
+        }
         this.userRepository = userRepository;
         this.currentUser = currentUser;
     }
@@ -205,7 +208,10 @@ public class DocumentAppService {
                 }
             }
         }
-        return ids.isEmpty() ? null : new ArrayList<>(ids);
+        if (ids.isEmpty()) {
+            return null;
+        }
+        return new ArrayList<>(ids);
     }
 
     /**
@@ -331,12 +337,13 @@ public class DocumentAppService {
         // Cmd：保存并可选版本快照
         Document doc = documentManager.saveContent(documentId, request.getContent(), saveVersion);
         // Asm：计算新版本号并返回
-        int newVer = saveVersion
-                ? documentManager.getVersionList(doc.getId()).stream()
-                .map(DocumentVersion::getVersionNumber)
-                .max(Integer::compareTo)
-                .orElse(0)
-                : 0;
+        int newVer = 0;
+        if (saveVersion) {
+            newVer = documentManager.getVersionList(doc.getId()).stream()
+                    .map(DocumentVersion::getVersionNumber)
+                    .max(Integer::compareTo)
+                    .orElse(0);
+        }
         SaveDocumentResponse response = new SaveDocumentResponse();
         response.setDocumentId(doc.getId());
         response.setNewVersionNumber(newVer);
@@ -599,10 +606,10 @@ public class DocumentAppService {
      * @param request documentId 与目标 lockState
      */
     public void changeLockState(@Valid ChangeLockStateRequest request) {
-        // Gate：action 映射为领域 status（LOCK→LOCKED，否则回 DRAFT）
+        // Gate：LOCK→ARCHIVED（归档只读），否则回 DRAFT
         String status;
         if ("LOCK".equalsIgnoreCase(request.getAction())) {
-            status = DocumentManager.STATUS_LOCKED;
+            status = DocumentManager.STATUS_ARCHIVED;
         } else {
             status = DocumentManager.STATUS_DRAFT;
         }
@@ -637,8 +644,12 @@ public class DocumentAppService {
     }
 
     private boolean isDocumentReadOnly(Document doc) {
-        if (DocumentManager.STATUS_LOCKED.equals(doc.getStatus())
-                || DocumentManager.STATUS_ARCHIVED.equals(doc.getStatus())) {
+        String status = "";
+        if (doc.getStatus() != null) {
+            status = doc.getStatus().trim();
+        }
+        if (DocumentManager.STATUS_ARCHIVED.equals(status)
+                || DocumentManager.STATUS_PENDING_ARCHIVE.equals(status)) {
             return true;
         }
         // 住院病历 / 病程 / 会诊：多人可编；门诊文书仍仅创建者可编
@@ -783,9 +794,29 @@ public class DocumentAppService {
         return currentUserId.equals(createdBy);
     }
 
+    /**
+     * 是否处于不可直接改内容的归档相关态（待审/已归档/历史 locked）。
+     *
+     * @param doc 文书
+     * @return true 表示须经编辑申请或不可改
+     */
+    private boolean isArchiveLockedStatus(Document doc) {
+        String status = "";
+        if (doc.getStatus() != null) {
+            status = doc.getStatus().trim();
+        }
+        return DocumentManager.STATUS_ARCHIVED.equals(status)
+                || DocumentManager.STATUS_PENDING_ARCHIVE.equals(status);
+    }
+
+    /**
+     * 编辑闸门：待审/已归档不可改；住院侧多人可编，门诊仅创建者。
+     *
+     * @param doc 已落库文书
+     */
     private void assertCanEditDocument(Document doc) {
-        if (DocumentManager.STATUS_LOCKED.equals(doc.getStatus())
-                || DocumentManager.STATUS_ARCHIVED.equals(doc.getStatus())) {
+        // 待审/已归档（含历史 locked）不可直接改内容
+        if (isArchiveLockedStatus(doc)) {
             throw new ValidationException("文书已锁定或归档，不可修改");
         }
         if (allowsMultiUserEdit(doc)) {
@@ -803,8 +834,7 @@ public class DocumentAppService {
      */
     private void assertCanDeleteDocument(Document doc) {
         // 锁定/归档后任何人都不能删
-        if (DocumentManager.STATUS_LOCKED.equals(doc.getStatus())
-                || DocumentManager.STATUS_ARCHIVED.equals(doc.getStatus())) {
+        if (isArchiveLockedStatus(doc)) {
             throw new ValidationException("文书已锁定或归档，不可删除");
         }
         // 住院就诊/住院分类文书：删除也不限创建者
@@ -840,7 +870,10 @@ public class DocumentAppService {
         documentManager.getDocumentTypeByCode(doc.getDocumentTypeCode())
                 .ifPresent(t -> dto.setDocumentTypeName(t.getName()));
         dto.setDeptName(resolveDeptName(doc.getEncounterId(), deptNameByEncounter));
-        Long saverId = doc.getUpdatedBy() != null ? doc.getUpdatedBy() : doc.getCreatedBy();
+        Long saverId = doc.getUpdatedBy();
+        if (saverId == null) {
+            saverId = doc.getCreatedBy();
+        }
         dto.setSavedByName(resolveUserDisplayName(saverId, userNameById));
         // Asm：列表已加载 content，就地提取主诉，不额外查库
         dto.setChiefComplaint(
@@ -890,7 +923,10 @@ public class DocumentAppService {
         if (!StringUtils.hasText(name) && StringUtils.hasText(user.getSurname())) {
             name = user.getSurname().trim();
         }
-        return StringUtils.hasText(name) ? name.trim() : null;
+        if (!StringUtils.hasText(name)) {
+            return null;
+        }
+        return name.trim();
     }
 
     private static String firstNonBlank(String... values) {

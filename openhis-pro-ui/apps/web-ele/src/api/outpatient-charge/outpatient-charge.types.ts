@@ -379,7 +379,7 @@ export interface ChargeReceiptSlipDto {
   cashPayText?: string;
   wechatPayText?: string;
   alipayPayText?: string;
-  accountBalanceText?: string;
+  accountBalanceText?: string; // 医保个账余额（扣款后展示文案）
   cashierName?: string;
   chargeTimeText?: string;
 }

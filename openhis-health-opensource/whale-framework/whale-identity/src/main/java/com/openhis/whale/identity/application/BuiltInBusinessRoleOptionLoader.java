@@ -61,8 +61,10 @@ public class BuiltInBusinessRoleOptionLoader {
     }
 
     /**
-     * 解析角色人员维护块 StaffScope：优先读声明（含自定义角色），无声明时回退内置 code 模板。
-     * <p>供岗位/用户维护编排调用，避免走带 REST 权限的 {@code RoleAppService.getStaffScopes}。</p>
+     * 解析角色人员维护块 StaffScope。
+     * <p>内置业务角色以 code 模板为准（与 AssignmentScope 同构），避免库内旧声明
+     * （如技师误挂 {@code DOCTOR_VISIT_ORG}、护士仍挂已废弃 {@code NURSE_ORG}）导致人员维护显示「出诊科室」而非「工作科室」。
+     * 自定义角色仍读声明。</p>
      *
      * @param roleId 平台角色主键
      * @return StaffScope code 列表（可能为空）
@@ -71,17 +73,17 @@ public class BuiltInBusinessRoleOptionLoader {
         if (roleId == null) {
             return List.of();
         }
-        // 业务：声明优先（自定义角色在角色管理勾选的管理药房/库房等）
-        List<String> fromClaims = readClaimValues(roleId, RoleStaffScopeConstants.CLAIM_TYPE);
-        if (!fromClaims.isEmpty()) {
-            return fromClaims;
-        }
-        // 业务续：内置角色种子缺失时按 code 模板兜底
         Role role = roleRepository.findById(roleId).orElse(null);
-        if (role == null || role.getCode() == null || role.getCode().isBlank()) {
+        if (role == null) {
             return List.of();
         }
-        return defaultStaffScopesForCode(role.getCode());
+        // 内置业务角色：模板优先，与界面「系统固定」口径一致
+        List<String> fromTemplate = defaultStaffScopesForCode(role.getCode());
+        if (!fromTemplate.isEmpty()) {
+            return fromTemplate;
+        }
+        // 自定义角色：读角色管理勾选的声明
+        return readClaimValues(role.getId(), RoleStaffScopeConstants.CLAIM_TYPE);
     }
 
     private List<String> defaultAssignmentScopesForCode(String roleCode) {
@@ -95,16 +97,23 @@ public class BuiltInBusinessRoleOptionLoader {
         if ("ROLE_NURSE".equals(normalized)) {
             return List.of(RoleAssignmentScopeConstants.ORG, RoleAssignmentScopeConstants.WARD);
         }
+        if ("ROLE_MEDICAL_TECH".equals(normalized)) {
+            return List.of(RoleAssignmentScopeConstants.ORG);
+        }
         if ("ROLE_PHARMACIST".equals(normalized)) {
             return List.of(RoleAssignmentScopeConstants.PHARMACY);
         }
         if ("ROLE_WAREHOUSE".equals(normalized)) {
-            return List.of(RoleAssignmentScopeConstants.WAREHOUSE);
+            // 库管：药库 + 药房（与种子 claim、前端 BUILTIN_ROLE_STAFF_SCOPES 一致）
+            return List.of(
+                RoleAssignmentScopeConstants.WAREHOUSE,
+                RoleAssignmentScopeConstants.PHARMACY);
         }
         if ("ROLE_ACCOUNTANT".equals(normalized)) {
             return List.of(RoleAssignmentScopeConstants.ORG);
         }
-        if ("ROLE_FINANCE_APPROVER".equals(normalized)) {
+        // 款员与财务一样只挂科室，不维护库房/药房/病区
+        if ("ROLE_CASHIER".equals(normalized)) {
             return List.of(RoleAssignmentScopeConstants.ORG);
         }
         if ("ROLE_MRMS_ADMIN".equals(normalized)) {
@@ -125,14 +134,21 @@ public class BuiltInBusinessRoleOptionLoader {
             return List.of(RoleStaffScopeConstants.DOCTOR_VISIT_ORG);
         }
         if ("ROLE_NURSE".equals(normalized)) {
-            return List.of(RoleStaffScopeConstants.NURSE_WARD_LOCATION);
+            return List.of(
+                RoleStaffScopeConstants.NURSE_WARD_LOCATION,
+                RoleStaffScopeConstants.WORK_ORG);
+        }
+        if ("ROLE_MEDICAL_TECH".equals(normalized)) {
+            return List.of(RoleStaffScopeConstants.WORK_ORG);
         }
         if ("ROLE_PHARMACIST".equals(normalized)) {
             return List.of(RoleStaffScopeConstants.PHARMACY_LOCATION);
         }
         if ("ROLE_WAREHOUSE".equals(normalized)) {
-            // 库管只管库房；管理药房不是药师岗，不得因库管声明 PHARMACY_LOCATION 而写入 ROLE_PHARMACIST。
-            return List.of(RoleStaffScopeConstants.WAREHOUSE_LOCATION);
+            // 库管：管理库房 + 管理药房（与种子 claim、前端模板一致；不等于药师岗）
+            return List.of(
+                RoleStaffScopeConstants.WAREHOUSE_LOCATION,
+                RoleStaffScopeConstants.PHARMACY_LOCATION);
         }
         return List.of();
     }

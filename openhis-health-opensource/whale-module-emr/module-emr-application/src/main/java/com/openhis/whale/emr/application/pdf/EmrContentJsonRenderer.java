@@ -54,6 +54,12 @@ public class EmrContentJsonRenderer {
      * 工具栏 1.5 倍 × 1.55 ≈ 2.33，小四约 28pt；直接用 fontSize×1.5 会看成单倍。
      */
     private static final float CJK_SINGLE_SPACING_FACTOR = 1.55f;
+    /**
+     * 无 fillRemainShare 的行预留高度。一行 12pt×2.33 加格 padding，估矮会把末行踢到第 2 页。
+     */
+    private static final float FILL_REMAIN_NON_WRITE_ROW_MM = 16f;
+    /** fillRemain 垫高后相对页底再留的空隙，抵 setSplitLate 差 1pt 就整行翻页。 */
+    private static final float FILL_REMAIN_PAGE_SLACK_MM = 8f;
 
     /**
      * 签字位常见角色 label（无「签名」二字，但落款处用于手写姓名）。
@@ -693,6 +699,10 @@ public class EmrContentJsonRenderer {
             if ("multiline".equals(widget)) {
                 return;
             }
+            // 空自由文本不打下划线。签字位已在上面留手写线，不走这里。
+            if ("emrfreetext".equals(normalizeType(inline.path(TYPE).asText(null)))) {
+                return;
+            }
             addPrintText(phrase, "______", baseFont);
             return;
         }
@@ -743,7 +753,8 @@ public class EmrContentJsonRenderer {
      */
     private void appendTextNode(Paragraph p, JsonNode textNode, Font baseFont) {
         String text = textNode.path("text").asText("");
-        if (text.isEmpty()) {
+        // 空槽 placeholder 不进 PDF（B17）；空串同样跳过
+        if (text.isEmpty() || isUnfilledPlaceholderText(text)) {
             return;
         }
         if (!renderOptions.isIncludeTrackChanges() && hasMark(textNode, "deletion")) {
@@ -883,28 +894,27 @@ public class EmrContentJsonRenderer {
         table.setSpacingBefore(4f);
         table.setSpacingAfter(4f);
         table.setSplitLate(false);
-        applyDischargeFormColumnWidths(table, colCount, node);
-        applyAdmissionSafetySignTableLayout(table, colCount, node);
-        applyRiskFormTableLayout(table, colCount, node);
-        applyOutpatientHistoryTableLayout(table, colCount, node);
-        String tableName = attrText(node, "name");
-        boolean riskForm = "riskForm".equals(tableName);
-        boolean outpatientHistory = "outpatientHistory".equals(tableName);
-        boolean dischargeForm = "dischargeDiagnosisForm".equals(tableName)
-                || "consultRequestForm".equals(tableName);
-        boolean safetySign = "admissionSafetySign".equals(tableName);
-        boolean patientHeader = "patientHeader".equals(tableName);
-        boolean pageHeader = "pageHeader".equals(tableName);
-        boolean verifyBlock = "verifyBlock".equals(tableName);
-        boolean signBlock = "signBlock".equals(tableName);
-        boolean cardiacBorder = "relativeCardiacBorder".equals(tableName);
-        // 入院 patientHeader 打印无框（编辑器可有格子线）；续页简表/核实/签名同样无框
-        boolean borderlessEmrTable = patientHeader || pageHeader || verifyBlock || signBlock;
-        if (borderlessEmrTable) {
-            table.setSpacingBefore(2f);
-            table.setSpacingAfter(2f);
+        EmrTableLayoutSupport.TableLayout tableLayout = EmrTableLayoutSupport.parseTable(node, colCount);
+        // 有 colWidths 按协议画；缺省按角色/均分，不再按表名写死毫米
+        boolean usedProtocolWidths = EmrTableLayoutSupport.applyColumnWidths(table, tableLayout);
+        if (!usedProtocolWidths) {
+            applyRoleDefaultColumnWidths(table, colCount, node);
         }
-        if (cardiacBorder) {
+        FillRemainRowHeights fillRemainHeights = null;
+        // 长书写表整行切页，避免记录从格子中间横切把落款孤到下一页
+        if (EmrTableLayoutSupport.shouldSplitLate(tableLayout) || tableHasNamedWriteArea(node)) {
+            table.setSplitLate(true);
+            table.setSpacingBefore(2f);
+            table.setSpacingAfter(0f);
+        }
+        if (tableLayout.hasFillRemain()) {
+            fillRemainHeights = measureFillRemainRowHeights(node, rows, colCount);
+        }
+        // 无框：attrs.border=false，或 patientHeader 等角色没写 border（09 §4 缺省无框）
+        String tableName = attrText(node, "name");
+        boolean borderlessEmrTable = EmrTableLayoutSupport.isBorderless(tableLayout)
+                || (isBorderlessTableRole(tableName) && tableLayout.border() == null);
+        if (borderlessEmrTable) {
             table.setSpacingBefore(2f);
             table.setSpacingAfter(2f);
         }
@@ -928,84 +938,44 @@ public class EmrContentJsonRenderer {
                         colspan = remain;
                     }
                     String rowLabel = firstRowLabel(row);
-                    boolean rowSignCue = signBlock || textHasSignCue(rowLabel);
+                    String cellName = attrText(cell, "name");
+                    boolean rowSignCue = textHasSignCue(rowLabel) || isSignParagraphName(cellName);
                     Phrase phrase = buildCellPhrase(cell, rowSignCue);
-                    PdfPCell pdfCell = new PdfPCell(phrase);
+                    float cellLeading = cellLeadingPt(cell);
+                    EmrTableLayoutSupport.CellLayout cellLayout = EmrTableLayoutSupport.parseCell(cell);
+                    boolean protocolCell = EmrTableLayoutSupport.hasCellLayout(cellLayout);
+                    // 有表就 composite 折行 + 显式 leading。PdfPCell(Phrase) 会按内容撑宽，多列竖排（B20）
+                    PdfPCell pdfCell = createColumnWrappingCell(phrase, cellLeading);
                     pdfCell.setPadding(5f);
-                    // 风险评估表、入院 patientHeader：格 leading 强制正文 1.5×；其它表沿用 buildCellPhrase
-                    if (riskForm || patientHeader) {
-                        pdfCell.setLeading(cellLeadingPt(cell), 0f);
-                    }
-                    if (cardiacBorder) {
-                        pdfCell.setPaddingTop(3f);
-                        pdfCell.setPaddingBottom(3f);
-                        pdfCell.setPaddingLeft(4f);
-                        pdfCell.setPaddingRight(4f);
-                        pdfCell.setHorizontalAlignment(Element.ALIGN_CENTER);
-                        pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
-                    }
+                    pdfCell.setLeading(cellLeading, 0f);
                     pdfCell.setColspan(colspan);
                     if (rowspan > 1) {
                         pdfCell.setRowspan(rowspan);
                     }
-                    applyNamedCellLayout(pdfCell, cell, tableName);
-                    if (outpatientHistory) {
-                        applyOutpatientHistoryCellLayout(pdfCell, cell);
-                    }
-                    if (riskForm) {
-                        applyRiskFormCellLayout(pdfCell, cell, row);
-                    }
-                    // 会诊申请单：按当前页剩余高度撑满「会诊记录」行，吃掉页底空白
-                    if ("consultRequestForm".equals(tableName) && "tallBody".equals(attrText(cell, "name"))) {
-                        applyConsultTallBodyFillPage(pdfCell);
-                    }
-                    // 首行姓名/性别/年龄/住院号：标签与值居中
-                    if (dischargeForm && rowIndex == 0) {
-                        pdfCell.setHorizontalAlignment(Element.ALIGN_CENTER);
-                        pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
-                    }
-                    if (safetySign) {
-                        pdfCell.setBorder(PdfPCell.NO_BORDER);
-                        pdfCell.setPaddingTop(8f);
-                        pdfCell.setPaddingBottom(4f);
-                        String cellName = attrText(cell, "name");
-                        if ("noticeSignRight".equals(cellName)) {
-                            pdfCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
-                        } else {
-                            pdfCell.setHorizontalAlignment(Element.ALIGN_LEFT);
+                    if (protocolCell) {
+                        // 书写区按本页剩余高度份额垫；无 fillRemain 则只用 minHeightMm
+                        Float fillPt = null;
+                        if (cellLayout.fillRemainShare() != null && fillRemainHeights != null) {
+                            fillPt = fillRemainHeights.heightPtForRow(rowIndex);
                         }
+                        EmrTableLayoutSupport.applyCell(pdfCell, cellLayout, fillPt);
+                    } else {
+                        // 无协议 attrs：只按角色目录缺省
+                        applyNamedCellLayout(pdfCell, cell);
                     }
-                    // 入院/门诊页眉与签字：打印无框线（心浊音界等有框表不走此分支）
-                    if (borderlessEmrTable) {
-                        pdfCell.setBorder(PdfPCell.NO_BORDER);
-                        pdfCell.setPaddingLeft(2f);
-                        pdfCell.setPaddingRight(2f);
-                        // 入院基础信息：行高对齐正文 1.5 倍，避免打印挤成单倍行距
-                        if (patientHeader) {
-                            float leading = cellLeadingPt(cell);
-                            pdfCell.setLeading(leading, 0f);
-                            pdfCell.setPaddingTop(3f);
-                            pdfCell.setPaddingBottom(3f);
-                            pdfCell.setMinimumHeight(leading);
-                        } else {
-                            pdfCell.setPaddingTop(2f);
-                            pdfCell.setPaddingBottom(2f);
-                        }
-                        String cellName = attrText(cell, "name");
-                        if (signBlock && ("signRight".equals(cellName) || "signSpacer".equals(cellName))) {
-                            if ("signRight".equals(cellName)) {
-                                pdfCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
-                            } else {
-                                pdfCell.setHorizontalAlignment(Element.ALIGN_LEFT);
-                            }
-                        } else if (pageHeader && "pageHeaderRight".equals(cellName)) {
-                            pdfCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
-                        } else if (pageHeader && "pageHeaderLeft".equals(cellName)) {
+                    paintGridBorder(
+                            pdfCell,
+                            writtenCols,
+                            colspan,
+                            colCount,
+                            rowIndex == rows.size() - 1,
+                            borderlessEmrTable);
+                    // 入院表头缺省不折行，避免姓名/职业被窄列折成竖排
+                    if ("patientHeader".equals(tableName) && !Boolean.TRUE.equals(cellLayout.wrap())) {
+                        pdfCell.setNoWrap(true);
+                        if (!protocolCell) {
                             pdfCell.setHorizontalAlignment(Element.ALIGN_LEFT);
-                        } else if (verifyBlock && "signRight".equals(cellName)) {
-                            pdfCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
-                        } else if (patientHeader || pageHeader || verifyBlock) {
-                            pdfCell.setHorizontalAlignment(Element.ALIGN_LEFT);
+                            pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
                         }
                     }
                     if ("tableheader".equals(cellType)) {
@@ -1017,9 +987,7 @@ public class EmrContentJsonRenderer {
             }
             while (writtenCols < colCount) {
                 PdfPCell empty = new PdfPCell(new Phrase("", bodyFont));
-                if (safetySign || borderlessEmrTable) {
-                    empty.setBorder(PdfPCell.NO_BORDER);
-                }
+                paintGridBorder(empty, writtenCols, 1, colCount, rowIndex == rows.size() - 1, borderlessEmrTable);
                 table.addCell(empty);
                 writtenCols++;
             }
@@ -1029,139 +997,125 @@ public class EmrContentJsonRenderer {
     }
 
     /**
-     * 出院诊断书等表单：首列略窄（竖排标签），其余均分。
-     * 通过 table attrs.name=dischargeDiagnosisForm 识别。
+     * 角色目录里缺省无框的表。明确写了 border 时不走这里。
+     *
+     * @param tableName table.attrs.name
+     * @return patientHeader / pageHeader / verifyBlock / signBlock 表
      */
-    private static void applyDischargeFormColumnWidths(PdfPTable table, int colCount, JsonNode tableNode) {
-        if (colCount <= 0) {
-            return;
-        }
-        String tableName = attrText(tableNode, "name");
-        if ((!"dischargeDiagnosisForm".equals(tableName) && !"consultRequestForm".equals(tableName))
-                || colCount < 2) {
-            return;
-        }
-        try {
-            if (colCount == 8) {
-                if ("consultRequestForm".equals(tableName)) {
-                    // 会诊申请单：首列再加宽，保证「申请会诊目的」单行不折
-                    table.setWidths(new float[]{2.75f, 1.65f, 1.05f, 1.0f, 1.05f, 0.95f, 1.25f, 2.3f});
-                } else {
-                    // 出院诊断书等：首列略宽
-                    table.setWidths(new float[]{2.05f, 1.95f, 1.1f, 1.05f, 1.1f, 1.0f, 1.35f, 2.2f});
-                }
-            } else {
-                float[] widths = new float[colCount];
-                widths[0] = 1.15f;
-                float rest = (colCount - 1) > 0 ? (12.85f / (colCount - 1)) : 1f;
-                for (int i = 1; i < colCount; i++) {
-                    widths[i] = rest;
-                }
-                table.setWidths(widths);
-            }
-        } catch (Exception ignored) {
-            // 列宽失败不影响正文
-        }
+    private static boolean isBorderlessTableRole(String tableName) {
+        return "patientHeader".equals(tableName)
+                || "pageHeader".equals(tableName)
+                || "verifyBlock".equals(tableName)
+                || "signBlock".equals(tableName);
     }
 
     /**
-     * 门诊病历表格版：左列窄标签（屏上约 72px），右列宽内容；勿与 riskForm 混用。
+     * 无 colWidths 时的角色缺省列宽：标签/值两列、签字左右栏，其余均分。
+     * 不出现表名，不写死会诊八列毫米。
      *
      * @param table     目标表
      * @param colCount  列数
      * @param tableNode table 节点
      */
-    private static void applyOutpatientHistoryTableLayout(PdfPTable table, int colCount, JsonNode tableNode) {
-        if (colCount != 2) {
-            return;
-        }
-        if (!"outpatientHistory".equals(attrText(tableNode, "name"))) {
+    private static void applyRoleDefaultColumnWidths(PdfPTable table, int colCount, JsonNode tableNode) {
+        if (colCount < 2) {
             return;
         }
         try {
-            table.setWidths(new float[]{1.15f, 8.85f});
-            table.setSpacingBefore(2f);
-            table.setSpacingAfter(2f);
+            if (colCount == 2 && tableHasCellName(tableNode, "sectionLabel")) {
+                table.setWidths(new float[]{1.15f, 8.85f});
+            } else if (colCount == 2 && tableHasCellName(tableNode, "noticeSignRight")) {
+                table.setWidths(new float[]{6.2f, 3.8f});
+            } else {
+                float[] widths = new float[colCount];
+                for (int i = 0; i < colCount; i++) {
+                    widths[i] = 1f;
+                }
+                table.setWidths(widths);
+            }
+            table.setWidthPercentage(100f);
         } catch (Exception ignored) {
             // 列宽失败不影响正文
         }
     }
 
     /**
-     * 门诊 sectionLabel / sectionValue：标签居中、内容顶对齐左排。
+     * 表内是否出现指定单元格角色名。
+     *
+     * @param tableNode table JSON
+     * @param cellName  attrs.name
+     * @return 有则为 true
+     */
+    private static boolean tableHasCellName(JsonNode tableNode, String cellName) {
+        if (tableNode == null || !tableNode.has(CONTENT) || !tableNode.get(CONTENT).isArray()) {
+            return false;
+        }
+        if (!StringUtils.hasText(cellName)) {
+            return false;
+        }
+        for (JsonNode row : tableNode.get(CONTENT)) {
+            if (rowHasCellName(row, cellName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 长书写区：有 midBody / tallBody / fillRemain 则整行切页。
+     *
+     * @param tableNode table JSON
+     * @return 需要 setSplitLate
+     */
+    private static boolean tableHasNamedWriteArea(JsonNode tableNode) {
+        return tableHasCellName(tableNode, "midBody")
+                || tableHasCellName(tableNode, "tallBody")
+                || tableHasCellName(tableNode, "purposeBody");
+    }
+
+    /**
+     * 按列宽在格内折行的 composite 单元格。
+     * {@code new PdfPCell(Phrase)} 是 text-mode：格宽跟内容走，同行后续格被挤到下一行，
+     * 入院表头 / 风险评估看起来就像左栏竖排（B20）。
+     *
+     * @param phrase     格内已拼好的 Chunk
+     * @param leadingPt  行距（pt），与编辑器段落 lineHeight 同一行盒；单行也占满
+     * @return 可按列宽换行的单元格
+     */
+    private PdfPCell createColumnWrappingCell(Phrase phrase, float leadingPt) {
+        Paragraph paragraph = new Paragraph();
+        float leading = leadingPt;
+        // 未传入行距时回退正文 1.5 倍，避免 composite 格挤成单倍
+        if (leading <= 0f) {
+            leading = bodyLeadingPt(bodyFont);
+        }
+        paragraph.setLeading(leading);
+        if (phrase != null && !phrase.isEmpty()) {
+            for (Element element : phrase) {
+                // FontSelector 产物必须按 Chunk 拷贝；整 Phrase add 会盖掉 1.5 倍行距
+                if (element instanceof Chunk) {
+                    paragraph.add(element);
+                    continue;
+                }
+                paragraph.add(element);
+            }
+        }
+        PdfPCell cell = new PdfPCell();
+        cell.addElement(paragraph);
+        // 行盒跟编辑器：1.5 倍含整行。useAscender 会把只有一行的格子收到字面高度，打印比编辑器紧。
+        cell.setUseAscender(false);
+        cell.setUseDescender(true);
+        cell.setNoWrap(false);
+        return cell;
+    }
+
+    /**
+     * 按单元格角色名给缺省行高/对齐。毫米只跟角色走，不出现表名。
      *
      * @param pdfCell 目标格
      * @param cell    JSON 单元格
      */
-    private static void applyOutpatientHistoryCellLayout(PdfPCell pdfCell, JsonNode cell) {
-        String name = attrText(cell, "name");
-        pdfCell.setPaddingTop(6f);
-        pdfCell.setPaddingBottom(6f);
-        pdfCell.setPaddingLeft(6f);
-        pdfCell.setPaddingRight(6f);
-        if ("sectionLabel".equals(name)) {
-            pdfCell.setHorizontalAlignment(Element.ALIGN_CENTER);
-            pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
-        } else if ("sectionValue".equals(name)) {
-            pdfCell.setHorizontalAlignment(firstParagraphAlign(cell));
-            pdfCell.setVerticalAlignment(Element.ALIGN_TOP);
-        }
-    }
-
-    /**
-     * 住院病人风险评估表：首列给长标签（不良后果及预后），其余均分铺满正文宽。
-     *
-     * @param table     目标表
-     * @param colCount  列数
-     * @param tableNode table 节点
-     */
-    private static void applyRiskFormTableLayout(PdfPTable table, int colCount, JsonNode tableNode) {
-        if (colCount < 2) {
-            return;
-        }
-        if (!"riskForm".equals(attrText(tableNode, "name"))) {
-            return;
-        }
-        try {
-            float[] widths = new float[colCount];
-            widths[0] = 1.55f;
-            for (int i = 1; i < colCount; i++) {
-                widths[i] = 1f;
-            }
-            table.setWidths(widths);
-            table.setSpacingBefore(6f);
-            table.setSpacingAfter(6f);
-        } catch (Exception ignored) {
-            // 列宽失败不影响正文
-        }
-    }
-
-    /** 入院安全告知书签字行：无框线左右分栏（签字 | 日期） */
-    private static void applyAdmissionSafetySignTableLayout(PdfPTable table, int colCount, JsonNode tableNode) {
-        if (colCount < 2) {
-            return;
-        }
-        if (!"admissionSafetySign".equals(attrText(tableNode, "name"))) {
-            return;
-        }
-        try {
-            table.setWidths(new float[]{6.2f, 3.8f});
-            table.setSpacingBefore(2f);
-            table.setSpacingAfter(2f);
-        } catch (Exception ignored) {
-            // 列宽失败不影响正文
-        }
-    }
-
-    /**
-     * 按单元格 data-name 控制行高/对齐，贴近纸质诊断书。
-     * 出院诊断书的 formLabel/formValue 居中；风险评估表同名格子改走 {@link #applyRiskFormCellLayout}。
-     *
-     * @param pdfCell   目标格
-     * @param cell      JSON 单元格
-     * @param tableName table attrs.name
-     */
-    private void applyNamedCellLayout(PdfPCell pdfCell, JsonNode cell, String tableName) {
+    private void applyNamedCellLayout(PdfPCell pdfCell, JsonNode cell) {
         String name = attrText(cell, "name");
         pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
         if (!StringUtils.hasText(name)) {
@@ -1176,30 +1130,37 @@ public class EmrContentJsonRenderer {
                 pdfCell.setMinimumHeight(mmToPt(42f));
             }
             case "formLabel", "formValue" -> {
-                if (!"riskForm".equals(tableName)) {
-                    pdfCell.setHorizontalAlignment(Element.ALIGN_CENTER);
-                    pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
-                }
+                pdfCell.setHorizontalAlignment(Element.ALIGN_CENTER);
+                pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
+            }
+            case "sectionLabel" -> {
+                pdfCell.setHorizontalAlignment(Element.ALIGN_CENTER);
+                pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
+            }
+            case "sectionValue" -> {
+                pdfCell.setHorizontalAlignment(firstParagraphAlign(cell));
+                pdfCell.setVerticalAlignment(Element.ALIGN_TOP);
+            }
+            case "noticeSignRight", "pageHeaderRight", "signRight" -> {
+                pdfCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
+                pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
+            }
+            case "noticeSignLeft", "pageHeaderLeft", "signLeft", "signSpacer" -> {
+                pdfCell.setHorizontalAlignment(Element.ALIGN_LEFT);
+                pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
             }
             case "midBody" -> {
                 pdfCell.setVerticalAlignment(Element.ALIGN_TOP);
-                // 会诊申请单摘要区加高；出院诊断书等仍用紧凑高度
-                if ("consultRequestForm".equals(tableName)) {
-                    pdfCell.setMinimumHeight(mmToPt(48f));
-                } else {
-                    pdfCell.setMinimumHeight(mmToPt(12f));
-                }
+                pdfCell.setMinimumHeight(mmToPt(12f));
                 pdfCell.setPaddingTop(3f);
             }
+            case "purposeBody" -> {
+                applyPurposeBodyLayout(pdfCell);
+            }
             case "tallBody" -> {
+                // 书写区只用 minimumHeight，禁止 setFixedHeight 吞落款
                 pdfCell.setVerticalAlignment(Element.ALIGN_TOP);
-                if ("consultRequestForm".equals(tableName)) {
-                    // 初值；renderTable 内再按页剩余高度覆盖为撑满
-                    pdfCell.setMinimumHeight(mmToPt(100f));
-                } else {
-                    // 出院诊断书等压缩到约一页：摘要/指导各约 42mm
-                    pdfCell.setMinimumHeight(mmToPt(42f));
-                }
+                pdfCell.setMinimumHeight(mmToPt(42f));
                 pdfCell.setPaddingTop(3f);
             }
             case "signBlock" -> {
@@ -1218,77 +1179,273 @@ public class EmrContentJsonRenderer {
     }
 
     /**
-     * 会诊申请单「会诊记录」：用当前页剩余高度减去表内其它行估算，撑满到页脚上方。
-     * 在整表 {@code document.add} 之前调用，垂直位置仍是表前光标。
+     * 格子线只画一次。相邻格各画四边时，中间线会叠成两倍粗。
+     *
+     * @param cell       目标格
+     * @param colStart   该格起始列
+     * @param colspan    跨列数
+     * @param colCount   表列数
+     * @param lastRow    是否表的最后一行
+     * @param borderless 无框表
      */
-    private void applyConsultTallBodyFillPage(PdfPCell pdfCell) {
-        if (writer == null || document == null) {
+    private static void paintGridBorder(
+            PdfPCell cell,
+            int colStart,
+            int colspan,
+            int colCount,
+            boolean lastRow,
+            boolean borderless) {
+        if (cell == null) {
             return;
         }
-        float remainingPt = writer.getVerticalPosition(true) - document.bottom();
-        if (remainingPt <= 0f) {
+        if (borderless) {
+            cell.setBorder(PdfPCell.NO_BORDER);
             return;
         }
-        // 表内除 tallBody 外：信息两行 + 摘要48 + 目的/邀请/申请签名/末行签名
-        float otherRowsPt = mmToPt(10f + 10f + 48f + 12f + 12f + 16f + 16f);
-        float tallPt = remainingPt - otherRowsPt - mmToPt(2f);
-        if (tallPt < mmToPt(90f)) {
-            tallPt = mmToPt(90f);
+        int span = Math.max(1, colspan);
+        int flags = Rectangle.LEFT | Rectangle.TOP;
+        if (colStart + span >= colCount) {
+            flags |= Rectangle.RIGHT;
         }
-        pdfCell.setMinimumHeight(tallPt);
-        pdfCell.setFixedHeight(tallPt);
+        if (lastRow) {
+            flags |= Rectangle.BOTTOM;
+        }
+        cell.setBorder(flags);
+        cell.setBorderWidth(0.5f);
     }
 
     /**
-     * 风险评估表格子：值格左对齐并给病情简介等书写区最小行高，避免打印缩成纸顶一小块。
+     * 非书写行按列宽估折行后的高度（mm）。窄列长标签会高于 minHeightMm。
      *
-     * @param pdfCell 目标格
-     * @param cell    JSON 单元格
-     * @param row     当前行（用首格固定文案识别行类型）
+     * @param row          表行
+     * @param colShares    列宽份额；无效时返回 0
+     * @param tableWidthMm 表宽（mm）
+     * @return 估算高度；算不出为 0
      */
-    private void applyRiskFormCellLayout(PdfPCell pdfCell, JsonNode cell, JsonNode row) {
-        String cellName = attrText(cell, "name");
-        String rowLabel = firstRowLabel(row);
-        boolean isLabel = "formLabel".equals(cellName);
-        pdfCell.setPaddingTop(7f);
-        pdfCell.setPaddingBottom(7f);
+    private float estimateWrappedRowMm(JsonNode row, float[] colShares, float tableWidthMm) {
+        if (row == null || colShares == null || colShares.length == 0 || tableWidthMm <= 0f) {
+            return 0f;
+        }
+        if (!row.has(CONTENT) || !row.get(CONTENT).isArray()) {
+            return 0f;
+        }
+        float shareSum = 0f;
+        for (float share : colShares) {
+            shareSum += share;
+        }
+        if (shareSum <= 0f) {
+            return 0f;
+        }
+        float emMm = bodyFont.getSize() * 25.4f / 72f;
+        float leadingMm = bodyLeadingPt(bodyFont) * 25.4f / 72f;
+        float maxMm = 0f;
+        int col = 0;
+        for (JsonNode cell : row.get(CONTENT)) {
+            String cellType = normalizeType(cell.path(TYPE).asText(null));
+            if (!"tablecell".equals(cellType) && !"tableheader".equals(cellType)) {
+                continue;
+            }
+            int span = Math.max(1, cell.path(ATTRS).path("colspan").asInt(1));
+            float colMm = 0f;
+            for (int i = 0; i < span && col + i < colShares.length; i++) {
+                colMm += tableWidthMm * colShares[col + i] / shareSum;
+            }
+            EmrTableLayoutSupport.CellLayout layout = EmrTableLayoutSupport.parseCell(cell);
+            float padH = 10f * 25.4f / 72f;
+            float padV = padH;
+            if (layout.paddingMm() != null && layout.paddingMm().length == 4) {
+                padV = layout.paddingMm()[0] + layout.paddingMm()[2];
+                padH = layout.paddingMm()[1] + layout.paddingMm()[3];
+            }
+            float innerMm = colMm - padH;
+            if (innerMm < emMm) {
+                innerMm = emMm;
+            }
+            int lines = 1;
+            boolean singleLine = Boolean.TRUE.equals(layout.nowrap()) && !Boolean.TRUE.equals(layout.wrap());
+            if (!singleLine) {
+                float textMm = visibleTextWidthMm(cell, emMm);
+                if (textMm > innerMm) {
+                    lines = (int) Math.ceil(textMm / innerMm);
+                }
+                if (lines > 6) {
+                    lines = 6;
+                }
+            }
+            float heightMm = lines * leadingMm + padV;
+            if (heightMm > maxMm) {
+                maxMm = heightMm;
+            }
+            col += span;
+        }
+        return maxMm;
+    }
+
+    /**
+     * 格内可见文字的大致宽度（mm）。汉字按一字宽，ASCII 按半字。
+     *
+     * @param node 单元格或其子节点
+     * @param emMm 正文字号对应的一字宽（mm）
+     * @return 宽度
+     */
+    private float visibleTextWidthMm(JsonNode node, float emMm) {
+        if (node == null || !node.isObject() || emMm <= 0f) {
+            return 0f;
+        }
+        String type = normalizeType(node.path(TYPE).asText(null));
+        if (TYPE_TEXT.equals(type)) {
+            return textRunWidthMm(node.path("text").asText(""), emMm);
+        }
+        if (isInlineFieldType(type)) {
+            String value = node.path(ATTRS).path("value").asText("");
+            if (!StringUtils.hasText(value) || isUnfilledPlaceholderText(value)) {
+                return 0f;
+            }
+            return textRunWidthMm(value.trim(), emMm);
+        }
+        float width = 0f;
+        if (node.has(CONTENT) && node.get(CONTENT).isArray()) {
+            for (JsonNode child : node.get(CONTENT)) {
+                width += visibleTextWidthMm(child, emMm);
+            }
+        }
+        return width;
+    }
+
+    private static float textRunWidthMm(String text, float emMm) {
+        if (text == null || text.isEmpty() || emMm <= 0f) {
+            return 0f;
+        }
+        float width = 0f;
+        int n = text.length();
+        for (int i = 0; i < n; i++) {
+            char c = text.charAt(i);
+            if (c == '\n' || c == '\r') {
+                continue;
+            }
+            if (c <= 0x7f) {
+                width += emMm * 0.5f;
+            } else {
+                width += emMm;
+            }
+        }
+        return width;
+    }
+
+    /**
+     * purposeBody：一行文案，不要垫成摘要那样的书写区。
+     *
+     * @param pdfCell 目的格
+     */
+    private void applyPurposeBodyLayout(PdfPCell pdfCell) {
+        pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
+        pdfCell.setMinimumHeight(mmToPt(12f));
+        pdfCell.setPaddingTop(6f);
+        pdfCell.setPaddingBottom(6f);
         pdfCell.setPaddingLeft(8f);
         pdfCell.setPaddingRight(8f);
-        if (isLabel) {
-            pdfCell.setHorizontalAlignment(Element.ALIGN_CENTER);
-            pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
-        } else {
-            pdfCell.setHorizontalAlignment(firstParagraphAlign(cell));
-            pdfCell.setVerticalAlignment(Element.ALIGN_TOP);
+    }
+
+    /**
+     * 行内是否有指定 data-name 的单元格。
+     *
+     * @param row      表行
+     * @param cellName attrs.name
+     * @return 有则为 true
+     */
+    private static boolean rowHasCellName(JsonNode row, String cellName) {
+        if (row == null || !row.has(CONTENT) || !row.get(CONTENT).isArray()) {
+            return false;
         }
-        if ("病情简介".equals(rowLabel)) {
-            pdfCell.setMinimumHeight(mmToPt(48f));
-            if (!isLabel) {
-                pdfCell.setVerticalAlignment(Element.ALIGN_TOP);
-            }
-        } else if (rowLabel.contains("不良后果")) {
-            pdfCell.setMinimumHeight(mmToPt(24f));
-            if (!isLabel) {
-                pdfCell.setVerticalAlignment(Element.ALIGN_TOP);
-            }
-        } else if ("评估等级".equals(rowLabel) || rowLabel.contains("护理等级")) {
-            pdfCell.setMinimumHeight(mmToPt(16f));
-            pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
-            if (!isLabel) {
-                pdfCell.setHorizontalAlignment(Element.ALIGN_LEFT);
-            }
-        } else if (rowLabel.contains("签名")) {
-            pdfCell.setMinimumHeight(mmToPt(18f));
-            pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
-            pdfCell.setHorizontalAlignment(Element.ALIGN_LEFT);
-        } else if (rowLabel.contains("收集资料")) {
-            pdfCell.setMinimumHeight(mmToPt(12f));
-            pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
-        } else {
-            pdfCell.setMinimumHeight(mmToPt(10f));
-            pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
-            pdfCell.setHorizontalAlignment(Element.ALIGN_LEFT);
+        if (!StringUtils.hasText(cellName)) {
+            return false;
         }
+        for (JsonNode cell : row.get(CONTENT)) {
+            if (cellName.equals(attrText(cell, "name"))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 协议 fillRemainShare 行垫高（pt）。下标与表行一致。
+     *
+     * @param heightPtByRow 每行最小高度；非书写行为 0
+     */
+    private record FillRemainRowHeights(float[] heightPtByRow) {
+        /**
+         * 取指定行的剩余高度份额对应 pt。
+         *
+         * @param rowIndex 表行下标
+         * @return pt；越界或非书写行为 0
+         */
+        private float heightPtForRow(int rowIndex) {
+            if (heightPtByRow == null || rowIndex < 0 || rowIndex >= heightPtByRow.length) {
+                return 0f;
+            }
+            return heightPtByRow[rowIndex];
+        }
+    }
+
+    /**
+     * 按格 fillRemainShare 分配本页剩余高度。
+     * 先扣无该字段的行（minHeightMm 或引擎默认非书写行高），剩下按份额分给书写区。
+     * 空单铺满当前页且落款不挤进页脚；禁止 setFixedHeight。
+     *
+     * @param tableNode 表 JSON，用来取列宽份额
+     * @param rows      表全部行
+     * @param colCount  列数
+     * @return 每行垫高（pt）
+     */
+    private FillRemainRowHeights measureFillRemainRowHeights(JsonNode tableNode, List<JsonNode> rows, int colCount) {
+        float remainingPt = 0f;
+        if (writer != null && document != null) {
+            remainingPt = writer.getVerticalPosition(true) - document.bottom();
+        }
+        float tableWidthMm = 0f;
+        if (document != null) {
+            tableWidthMm = (document.right() - document.left()) * 25.4f / 72f;
+        }
+        float[] colShares = EmrTableLayoutSupport.readColWidths(tableNode, colCount);
+        float reservedPt = mmToPt(FILL_REMAIN_PAGE_SLACK_MM);
+        float[] shares = new float[rows.size()];
+        float shareTotal = 0f;
+        for (int i = 0; i < rows.size(); i++) {
+            JsonNode row = rows.get(i);
+            Float share = EmrTableLayoutSupport.rowFillRemainShare(row);
+            if (share != null) {
+                // 书写行不预扣高度，后面按份额分剩余
+                shares[i] = share;
+                shareTotal += share;
+                continue;
+            }
+            // 折行标签（如「申请会诊目的」）比 minHeightMm 高。只按最小高度扣，书写区会把落款挤到下一页。
+            float rowMm = FILL_REMAIN_NON_WRITE_ROW_MM;
+            Float minMm = EmrTableLayoutSupport.rowMinHeightMm(row);
+            if (minMm != null && minMm > rowMm) {
+                rowMm = minMm;
+            }
+            float wrappedMm = estimateWrappedRowMm(row, colShares, tableWidthMm);
+            if (wrappedMm > rowMm) {
+                rowMm = wrappedMm;
+            }
+            reservedPt += mmToPt(rowMm);
+        }
+        float writingPt = remainingPt - reservedPt;
+        if (writingPt < mmToPt(24f)) {
+            writingPt = mmToPt(24f);
+        }
+        float[] heightPt = new float[rows.size()];
+        if (shareTotal > 0f) {
+            for (int i = 0; i < rows.size(); i++) {
+                if (shares[i] <= 0f) {
+                    continue;
+                }
+                heightPt[i] = writingPt * shares[i] / shareTotal;
+            }
+        }
+        return new FillRemainRowHeights(heightPt);
     }
 
     /**
@@ -1314,7 +1471,7 @@ public class EmrContentJsonRenderer {
     }
 
     /**
-     * 行首格固定文案（不含填写值），用来识别病情简介 / 签名等行。
+     * 行首格固定文案（不含填写值），用来判断这一行是否进入签字上下文。
      *
      * @param row tableRow
      * @return 文案；无则空串
@@ -1507,7 +1664,8 @@ public class EmrContentJsonRenderer {
      */
     private void appendTextNodeToPhrase(Phrase phrase, JsonNode textNode) {
         String text = textNode.path("text").asText("");
-        if (text.isEmpty()) {
+        // 表格内空槽 placeholder 同样不进 PDF（B17）
+        if (text.isEmpty() || isUnfilledPlaceholderText(text)) {
             return;
         }
         if (!renderOptions.isIncludeTrackChanges() && hasMark(textNode, "deletion")) {
@@ -1811,7 +1969,16 @@ public class EmrContentJsonRenderer {
         String fromAttrs = "";
         if (attrs.has("value") && !attrs.get("value").isNull()) {
             JsonNode v = attrs.get("value");
-            fromAttrs = v.isTextual() ? v.asText() : v.toString();
+            // 文本节点用 asText；数字/布尔等走 toString，避免把 JSON 引号打进纸面
+            if (v.isTextual()) {
+                fromAttrs = v.asText();
+            } else {
+                fromAttrs = v.toString();
+            }
+        }
+        // 数据元 value 若仍是「请在这里填写…」则当空槽，不打上纸
+        if (isUnfilledPlaceholderText(fromAttrs)) {
+            fromAttrs = "";
         }
         if (StringUtils.hasText(fromAttrs)) {
             return fromAttrs;
@@ -1833,6 +2000,28 @@ public class EmrContentJsonRenderer {
             return firstNonBlank(meta.get("hospitalName"), meta.get("organizationName"), "");
         }
         return "";
+    }
+
+    /**
+     * 未填填写岛的 placeholder 文案不进正式打印（编辑器里是灰字提示）。
+     *
+     * @param value 节点 value 或 text
+     * @return true 则按空槽处理
+     */
+    private static boolean isUnfilledPlaceholderText(String value) {
+        if (!StringUtils.hasText(value)) {
+            return false;
+        }
+        String t = value.trim();
+        // 自由文本岛未填
+        if (t.startsWith("请在这里填写")) {
+            return true;
+        }
+        // 下拉/选择岛未填
+        if (t.startsWith("请在这里选择")) {
+            return true;
+        }
+        return false;
     }
 
     private static int resolveTextAlign(JsonNode node, int defaultAlign) {
@@ -1944,7 +2133,7 @@ public class EmrContentJsonRenderer {
     }
 
     /**
-     * 勾选框：☑/□ + 标签 + 全角空格分隔；英文标签同样走混排字体。
+     * 勾选：√/□ + 标签 + 全角空格。宋体没有 ☑，系统 checkbox 也不能进 PDF，必须用字。
      *
      * @param phrase 目标段落或单元格
      * @param node   checkbox 节点
@@ -1954,9 +2143,10 @@ public class EmrContentJsonRenderer {
         boolean checked = node.path(ATTRS).path("checked").asBoolean(false)
                 || "true".equalsIgnoreCase(node.path(ATTRS).path("checked").asText(""));
         String label = attrText(node, "label");
+        // 与编辑器 EmrCheckboxFieldView 同一套字：未勾 □、已勾 √
         String mark = "□";
         if (checked) {
-            mark = "☑";
+            mark = "√";
         }
         String text = mark;
         if (StringUtils.hasText(label)) {

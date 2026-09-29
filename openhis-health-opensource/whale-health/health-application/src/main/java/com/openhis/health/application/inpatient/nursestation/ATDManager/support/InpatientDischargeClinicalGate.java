@@ -4,6 +4,7 @@
  */
 package com.openhis.health.application.inpatient.nursestation.ATDManager.support;
 
+import com.openhis.health.application.shared.medicaltech.MedicalTechBilateralHomologySupport;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.support.NurseStationOrderExecuteListReadAssembler;
 import com.openhis.health.domain.clinical.procedure.entity.Procedure;
 import com.openhis.health.domain.clinical.procedure.service.ProcedureQueryService;
@@ -46,12 +47,14 @@ public class InpatientDischargeClinicalGate {
     private final ProcedureQueryService procedureQueryService;
     private final MedicationDispenseQueryService medicationDispenseQueryService;
     private final NurseStationOrderExecuteListReadAssembler nurseStationOrderExecuteListReadAssembler;
+    /** 出院门禁：医技相关费用未确费（BR-IP-ATD-011⑤）。 */
+    private final MedicalTechBilateralHomologySupport medicalTechBilateralHomologySupport;
 
     /**
      * 断言就诊已通过出院临床门禁（办理出院 / 出院全结结算写路径）。
      *
      * @param encounterId 就诊主键
-     * @throws BusinessException EX-IP-ATD-301/302/303/307
+     * @throws BusinessException EX-IP-ATD-301/302/303/307/309
      */
     public void assertDischargeClinicalGatePassed(Long encounterId) {
         if (encounterId == null) {
@@ -69,6 +72,8 @@ public class InpatientDischargeClinicalGate {
                 "患者有待取的药品，请先取药");
         }
         // 追溯码缺码：不再硬拦；由前端 listMissingDispenseTraceTips 提示后仍可清床
+        // Pre：医技相关费用未确费 → EX-IP-ATD-309（协同 DD 软落地；不再卡执行同态）
+        this.medicalTechBilateralHomologySupport.assertDischargeTechPending(encounterId);
     }
 
     /**

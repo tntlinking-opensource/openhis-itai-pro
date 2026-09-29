@@ -18,6 +18,7 @@ import {
   getConceptListApi,
   getEnumConceptListApi,
   getEnumDictListApi,
+  refreshConceptCacheApi,
 } from '#/api/basic/code';
 
 import { BASIC_TABLE_MAX_HEIGHT } from '../basic-table-max-height';
@@ -301,6 +302,51 @@ const handleRefreshSideQuery = () => {
   }
 };
 
+const cacheRefreshing = ref(false);
+
+/**
+ * 清空服务端术语字典缓存，使 SQL 灌数后的概念立即进入业务下拉。
+ * 用户取消确认框时静默返回；失败时提示错误文案。
+ */
+const handleRefreshConceptCache = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '将清空本进程内全部术语字典缓存，后续下拉会重新从数据库加载。是否继续？',
+      '刷新术语缓存',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    );
+    cacheRefreshing.value = true;
+    await refreshConceptCacheApi();
+    ElMessage.success('术语缓存已刷新，请重新打开相关业务页');
+    // 当前正打开某字典系统时，顺带重载右侧概念表，便于核对刚灌入的码
+    if (activeSideTab.value === 'codesystem' && selectedCodeId.value) {
+      await loadConceptList(selectedCodeId.value);
+    }
+  } catch (error: unknown) {
+    // Element Plus 取消确认为 'cancel'，不提示错误
+    if (error !== 'cancel') {
+      const err = error as {
+        response?: { data?: { msg?: string; message?: string } };
+        message?: string;
+        msg?: string;
+      };
+      const errorMessage =
+        err?.response?.data?.msg ||
+        err?.response?.data?.message ||
+        err?.message ||
+        err?.msg ||
+        '刷新缓存失败，请稍后重试';
+      ElMessage.error(errorMessage);
+    }
+  } finally {
+    cacheRefreshing.value = false;
+  }
+};
+
 const handleEditCodeSystem = (data: TreeNodeData) => {
   dialogFormData.value = {
     id: data.id as string,
@@ -447,6 +493,14 @@ onMounted(() => {
       </template>
 
       <template #toolbar-actions>
+        <ElButton
+          type="warning"
+          plain
+          :loading="cacheRefreshing"
+          @click="handleRefreshConceptCache"
+        >
+          刷新缓存
+        </ElButton>
         <ElButton v-if="activeSideTab === 'codesystem'" type="primary" @click="handleAddConcept">
           新增
         </ElButton>

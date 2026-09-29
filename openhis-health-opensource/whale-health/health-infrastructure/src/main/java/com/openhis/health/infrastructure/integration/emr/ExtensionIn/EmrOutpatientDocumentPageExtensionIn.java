@@ -25,7 +25,7 @@ public class EmrOutpatientDocumentPageExtensionIn {
     /** 就诊主键集合；与 patientIds 同时有值时为 OR。 */
     private List<Long> encounterIds;
 
-    /** 文书状态 code（如 DRAFT/SUBMITTED）；空则不过滤。 */
+    /** 文书状态 code（如 DRAFT/PENDING_ARCHIVE/ARCHIVED）；空则不过滤。 */
     private String status;
 
     /** 页码（1-based）。 */

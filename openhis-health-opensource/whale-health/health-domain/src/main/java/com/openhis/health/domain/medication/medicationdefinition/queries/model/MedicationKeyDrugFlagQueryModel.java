@@ -4,13 +4,17 @@
  */
 package com.openhis.health.domain.medication.medicationdefinition.queries.model;
 
+import com.openhis.health.domain.share.constants.PrescriptionSplitConstants;
 import com.openhis.health.domain.share.enums.KeyDrugType;
 import com.openhis.health.domain.share.utils.EnumUtil;
+import com.openhis.whale.core.application.util.StringUtils;
 import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 药典重点药四旗轻量投影（AS-RPT-011 性能路径）：按窗内出现的 productId 批量解析，禁止全库扫目录。
+ * 药典重点药标识轻量投影（AS-RPT-011 性能路径）：按窗内出现的 productId 批量解析，禁止全库扫目录。
+ *
+ * <p>含四旗布尔标识与药品性质码；麻/精一/精二按 {@code pharmacologyCategoryCode} 命中。</p>
  */
 @Getter
 @Setter
@@ -32,10 +36,17 @@ public class MedicationKeyDrugFlagQueryModel {
     private Boolean antibioticFlag;
 
     /**
-     * 判断本行是否命中指定重点药类型（仅 {@code flag = true} 计命中）。
+     * 药品性质码（术语 {@code medicine_properties} / 列 {@code pharmacology_category_code}）。
+     */
+    private String pharmacologyCategoryCode;
+
+    /**
+     * 判断本行是否命中指定重点药类型。
+     *
+     * <p>基药/监控/集采/抗生素看对应布尔旗为 true；麻醉/精一/精二看药品性质码等值。</p>
      *
      * @param keyDrugTypeCode {@link KeyDrugType#getCode()}；空/未知返回 false
-     * @return 对应旗为 true 时 true
+     * @return 命中时 true
      */
     public boolean matchesKeyDrugType(String keyDrugTypeCode) {
         KeyDrugType keyDrugType = EnumUtil.fromCode(KeyDrugType.class, keyDrugTypeCode);
@@ -54,6 +65,33 @@ public class MedicationKeyDrugFlagQueryModel {
         if (keyDrugType == KeyDrugType.ANTIBIOTIC) {
             return Boolean.TRUE.equals(this.antibioticFlag);
         }
-        return false;
+        // 麻醉/精一/精二：药品性质码等值（空性质不命中）
+        String expectedProperty = this.resolveMedicinePropertyCode(keyDrugType);
+        if (expectedProperty == null) {
+            return false;
+        }
+        if (StringUtils.isEmpty(this.pharmacologyCategoryCode)) {
+            return false;
+        }
+        return expectedProperty.equals(this.pharmacologyCategoryCode.trim());
+    }
+
+    /**
+     * 将麻/精重点药类型映射为术语 medicine_properties 码；非性质类返回 null。
+     *
+     * @param keyDrugType 重点药类型
+     * @return 性质码；非麻/精类型 null
+     */
+    private String resolveMedicinePropertyCode(KeyDrugType keyDrugType) {
+        if (keyDrugType == KeyDrugType.NARCOTIC) {
+            return PrescriptionSplitConstants.MEDICINE_PROPERTY_NARCOTIC;
+        }
+        if (keyDrugType == KeyDrugType.PSYCH_ONE) {
+            return PrescriptionSplitConstants.MEDICINE_PROPERTY_PSYCH_ONE;
+        }
+        if (keyDrugType == KeyDrugType.PSYCH_TWO) {
+            return PrescriptionSplitConstants.MEDICINE_PROPERTY_PSYCH_TWO;
+        }
+        return null;
     }
 }

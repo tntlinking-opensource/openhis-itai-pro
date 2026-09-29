@@ -7,6 +7,7 @@ package com.openhis.health.application.shared.advice;
 import java.util.Objects;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.product.support.ProductDefinitionDisplaySupport;
+import com.openhis.health.domain.custom.frequency.queries.model.FrequencyExecutionTimePointQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestDetailQueryModel;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.TherapyType;
@@ -17,18 +18,27 @@ import com.openhis.whale.core.application.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 住院药嘱 {@code quantity}/{@code unit_code} 与发放行对齐口径（护士执行写发药、药房配药门禁共用）。
  *
- * <p>药品申请长临共用同一套字段，语义由 {@code therapy_enum} 区分，<strong>与 {@code dose}/{@code dose_unit_code} 无关</strong>
- * （剂量仅供医生站展示，不参与发药、扣库、配药校验）：</p>
+ * <p>药品申请长临共用同一套字段，语义由 {@code therapy_enum} 区分：</p>
  * <ul>
- *   <li><strong>长期</strong>：{@code quantity}/{@code unit_code} 表示<strong>一次执行</strong>产生的发药数量与发药单位；每条发放行须与此一致（拆零单位比较）。</li>
+ *   <li><strong>长期</strong>：{@code quantity}/{@code unit_code} 表示<strong>一次执行</strong>产生的发药数量与发药单位
+ *       （开立侧按计量录入后换算落<strong>最小/拆零单位</strong>）；每条发放行须与此一致（拆零单位比较）。</li>
+ *   <li><strong>首日用量</strong>：{@code first_dose}/{@code first_dose_unit_code} 落库口径与长期单次用量相同
+ *       （最小单位）；开立 UI 按计量单位展示/录入，保存时前端换算。执行首次槽换量后
+ *       Dispense/Charge/库存 Gate <strong>与常规长嘱槽同一路径</strong>，不再按计量单位另算。</li>
+ *   <li><strong>分次用量不一致</strong>：{@code quantity_schedule} 有值时按当日频次点早→晚取段作该槽临床量
+ *       （BR-IP-EXE-040，<strong>只改正算量</strong>）；空则仍读 {@code quantity}。首次槽有 {@code first_dose} 时优先首日量。
+ *       开嘱/执行/取消/不执行/出院等业务路径与相同计量同一套，不因 schedule 另开分支。</li>
  *   <li><strong>临时</strong>：{@code quantity}/{@code unit_code} 表示开立<strong>总量</strong>与单位；单行不与总量逐条相等，多段合计由药房 {@code BR-IPP-006} 收口。</li>
  *   <li><strong>拆零下限（BR-IP-EXE-036）</strong>：临床槽换算拆零量 &lt; 1 时，计费/发药/扣库抬到 1 个拆零单位；列表切批见
  *       {@link StandingOrderMinSplitUnitBatchExpandSupport}。院点一盒一点（包装单位）优先于本规则。</li>
  * </ul>
+ * <p>{@code dose}/{@code dose_unit_code} 仅供医生站单次剂量展示，不参与发药、扣库、配药校验。</p>
  */
 public final class InpatientMedicationRequestExecutionMeasureHelper {
 
@@ -85,10 +95,56 @@ public final class InpatientMedicationRequestExecutionMeasureHelper {
     }
 
     /**
-     * 按槽位解析发药数量：开嘱日首次槽且填了首日量时用 {@code firstDose}，否则用常规单次量（BR-IP-ORD-030）。
+     * 按槽位解析发药数量：开嘱日首次槽且填了首日量时用 {@code firstDose}，否则有
+     * {@code quantitySchedule} 取对应段，再否则用常规单次量（BR-IP-ORD-030 / BR-IP-EXE-040）。
+     *
+     * <p>{@code firstDose} 落库已是最小单位数量（与 {@code requestQuantity} 同口径）；本方法只做槽位选用，
+     * 不再做计量→拆零换算。schedule 段数不足时该槽改用 {@code requestQuantity}（开立侧应已拒非法串；
+     * 执行侧按 BR-IP-EXE-040 产品规则改用常规 quantity，不另开分支）。</p>
      *
      * <p>长嘱不可拆一盒一点（{@code packageBatchExecution=true}）时固定为 1 个包装单位量，
-     * 与临嘱开一盒同构，忽略单次/首日量。</p>
+     * 与临嘱开一盒同构，忽略单次/首日量/schedule。</p>
+     *
+     * @param therapyEnum            治疗类型 code
+     * @param requestQuantity        常规单次/总量
+     * @param firstDose              首日/首次用量，可空
+     * @param planTime               本槽 planTime
+     * @param firstPlanTime          开嘱日首次 planTime，可空
+     * @param packageBatchExecution  是否一盒一点整包装写量
+     * @param quantitySchedule       分次拆零序列；可空
+     * @param zeroBasedSlotIndex     当日频次点早→晚 0-based 下标；&lt;0 表示未知，跳过 schedule
+     * @return 本槽发药数量
+     */
+    public static BigDecimal resolveDispenseQuantityForExecutionSlot(
+        String therapyEnum,
+        BigDecimal requestQuantity,
+        BigDecimal firstDose,
+        LocalDateTime planTime,
+        LocalDateTime firstPlanTime,
+        boolean packageBatchExecution,
+        String quantitySchedule,
+        int zeroBasedSlotIndex) {
+        if (packageBatchExecution) {
+            // 一盒一点：整包装数量恒为 1（单位见 resolveDispenseUnitCodeForExecutionSlot）
+            return BigDecimal.ONE;
+        }
+        if (!isLongTermTherapy(therapyEnum)) {
+            return resolveDispenseQuantityFromRequest(requestQuantity);
+        }
+        // 首次槽优先首日量（与 schedule 正交；BR-IP-EXE-032/040）
+        if (firstDose != null
+            && LongTermFirstExecutionSlotSupport.isFirstExecutionSlot(planTime, firstPlanTime)) {
+            return firstDose;
+        }
+        BigDecimal fromSchedule = resolveQuantityScheduleSegment(quantitySchedule, zeroBasedSlotIndex);
+        if (fromSchedule != null) {
+            return fromSchedule;
+        }
+        return resolveDispenseQuantityFromRequest(requestQuantity);
+    }
+
+    /**
+     * 按槽位解析发药数量（调用方未传 {@code quantitySchedule} 时只读常规 {@code quantity}）。
      *
      * @param therapyEnum            治疗类型 code
      * @param requestQuantity        常规单次/总量
@@ -105,25 +161,19 @@ public final class InpatientMedicationRequestExecutionMeasureHelper {
         LocalDateTime planTime,
         LocalDateTime firstPlanTime,
         boolean packageBatchExecution) {
-        if (packageBatchExecution) {
-            // 一盒一点：整包装数量恒为 1（单位见 resolveDispenseUnitCodeForExecutionSlot）
-            return BigDecimal.ONE;
-        }
-        if (!isLongTermTherapy(therapyEnum)) {
-            return resolveDispenseQuantityFromRequest(requestQuantity);
-        }
-        if (firstDose == null) {
-            return resolveDispenseQuantityFromRequest(requestQuantity);
-        }
-        if (!LongTermFirstExecutionSlotSupport.isFirstExecutionSlot(planTime, firstPlanTime)) {
-            return resolveDispenseQuantityFromRequest(requestQuantity);
-        }
-        // 首次槽换量：首日用量须 >0（域已校验），此处直接采用
-        return firstDose;
+        return resolveDispenseQuantityForExecutionSlot(
+            therapyEnum,
+            requestQuantity,
+            firstDose,
+            planTime,
+            firstPlanTime,
+            packageBatchExecution,
+            null,
+            -1);
     }
 
     /**
-     * 按槽位解析发药数量（默认可拆/非一盒一点）。
+     * 按槽位解析发药数量（默认可拆/非一盒一点；无 schedule）。
      *
      * @param therapyEnum     治疗类型 code
      * @param requestQuantity 常规单次/总量
@@ -139,7 +189,87 @@ public final class InpatientMedicationRequestExecutionMeasureHelper {
         LocalDateTime planTime,
         LocalDateTime firstPlanTime) {
         return resolveDispenseQuantityForExecutionSlot(
-            therapyEnum, requestQuantity, firstDose, planTime, firstPlanTime, false);
+            therapyEnum, requestQuantity, firstDose, planTime, firstPlanTime, false, null, -1);
+    }
+
+    /**
+     * 解析 {@code quantity_schedule} 第 {@code zeroBasedIndex} 段为正数；非法/越界返回 null。
+     *
+     * @param quantitySchedule 拆零逗号串；可空
+     * @param zeroBasedIndex   0-based 下标
+     * @return 正数段值；无法取用时 null
+     */
+    public static BigDecimal resolveQuantityScheduleSegment(String quantitySchedule, int zeroBasedIndex) {
+        if (zeroBasedIndex < 0 || StringUtils.isBlank(quantitySchedule)) {
+            return null;
+        }
+        String[] parts = quantitySchedule.split(",");
+        if (zeroBasedIndex >= parts.length) {
+            // 段数不足：本方法返回 null，由调用方改用常规 quantity（BR-IP-EXE-040）
+            return null;
+        }
+        String trimmed = StringUtils.trimToEmpty(parts[zeroBasedIndex]);
+        if (StringUtils.isBlank(trimmed)) {
+            return null;
+        }
+        try {
+            BigDecimal value = new BigDecimal(trimmed);
+            if (value.compareTo(BigDecimal.ZERO) <= 0) {
+                return null;
+            }
+            return value;
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    /**
+     * 在当日有序频次点中解析 planTime 的 0-based 下标（早→晚；跨日重复用同一日序列）。
+     *
+     * @param sameDayOrderedPlanTimes 当日频次展开点（未裁剪亦可；按时间序）
+     * @param planTime                本槽
+     * @return 下标；无法匹配返回 -1
+     */
+    public static int resolveZeroBasedSlotIndexInOrderedDay(
+        List<LocalDateTime> sameDayOrderedPlanTimes,
+        LocalDateTime planTime) {
+        if (sameDayOrderedPlanTimes == null || planTime == null) {
+            return -1;
+        }
+        LocalDateTime normalizedPlan = planTime.withNano(0);
+        int index = 0;
+        for (LocalDateTime point : sameDayOrderedPlanTimes) {
+            if (point == null) {
+                continue;
+            }
+            LocalDateTime normalizedPoint = point.withNano(0);
+            if (normalizedPoint.equals(normalizedPlan)) {
+                return index;
+            }
+            index++;
+        }
+        return -1;
+    }
+
+    /**
+     * 将频次展开点按出现顺序收集为有序列表（去重保序）。
+     *
+     * @param points 频次展开点；可空
+     * @return 有序 planTime；无点时空列表
+     */
+    public static List<LocalDateTime> collectOrderedExecutionAts(
+        List<FrequencyExecutionTimePointQueryModel> points) {
+        if (points == null || points.isEmpty()) {
+            return List.of();
+        }
+        List<LocalDateTime> ordered = new ArrayList<>();
+        for (FrequencyExecutionTimePointQueryModel point : points) {
+            if (point == null || point.getExecutionAt() == null) {
+                continue;
+            }
+            ordered.add(point.getExecutionAt().withNano(0));
+        }
+        return ordered;
     }
 
     /**
@@ -209,6 +339,54 @@ public final class InpatientMedicationRequestExecutionMeasureHelper {
      * @param firstPlanTime         首次槽
      * @param packageBatchExecution 是否一盒一点
      * @param packageUnitCode       包装单位
+     * @param quantitySchedule      分次拆零序列；可空
+     * @param zeroBasedSlotIndex    当日频次点下标；&lt;0 跳过 schedule
+     * @return 临床业务量
+     */
+    public static BillableMeasure resolveClinicalDispenseMeasureForExecutionSlot(
+        String therapyEnum,
+        BigDecimal requestQuantity,
+        BigDecimal firstDose,
+        String requestUnitCode,
+        String firstDoseUnitCode,
+        LocalDateTime planTime,
+        LocalDateTime firstPlanTime,
+        boolean packageBatchExecution,
+        String packageUnitCode,
+        String quantitySchedule,
+        int zeroBasedSlotIndex) {
+        BigDecimal quantity = resolveDispenseQuantityForExecutionSlot(
+            therapyEnum,
+            requestQuantity,
+            firstDose,
+            planTime,
+            firstPlanTime,
+            packageBatchExecution,
+            quantitySchedule,
+            zeroBasedSlotIndex);
+        String unitCode = resolveDispenseUnitCodeForExecutionSlot(
+            therapyEnum,
+            requestUnitCode,
+            firstDoseUnitCode,
+            planTime,
+            firstPlanTime,
+            packageBatchExecution,
+            packageUnitCode);
+        return new BillableMeasure(quantity, unitCode);
+    }
+
+    /**
+     * 解析本槽临床发药量（调用方未传 {@code quantitySchedule} 时只读常规 {@code quantity}）。
+     *
+     * @param therapyEnum           治疗类型
+     * @param requestQuantity       常规单次/总量
+     * @param firstDose             首日量
+     * @param requestUnitCode       常规单位
+     * @param firstDoseUnitCode     首日单位
+     * @param planTime              本槽
+     * @param firstPlanTime         首次槽
+     * @param packageBatchExecution 是否一盒一点
+     * @param packageUnitCode       包装单位
      * @return 临床业务量
      */
     public static BillableMeasure resolveClinicalDispenseMeasureForExecutionSlot(
@@ -221,17 +399,18 @@ public final class InpatientMedicationRequestExecutionMeasureHelper {
         LocalDateTime firstPlanTime,
         boolean packageBatchExecution,
         String packageUnitCode) {
-        BigDecimal quantity = resolveDispenseQuantityForExecutionSlot(
-            therapyEnum, requestQuantity, firstDose, planTime, firstPlanTime, packageBatchExecution);
-        String unitCode = resolveDispenseUnitCodeForExecutionSlot(
+        return resolveClinicalDispenseMeasureForExecutionSlot(
             therapyEnum,
+            requestQuantity,
+            firstDose,
             requestUnitCode,
             firstDoseUnitCode,
             planTime,
             firstPlanTime,
             packageBatchExecution,
-            packageUnitCode);
-        return new BillableMeasure(quantity, unitCode);
+            packageUnitCode,
+            null,
+            -1);
     }
 
     /**
@@ -247,6 +426,55 @@ public final class InpatientMedicationRequestExecutionMeasureHelper {
      * @param packageBatchExecution 是否一盒一点
      * @param packageUnitCode       包装单位
      * @param productRow            药品目录（拆零换算与拆零单位；可空则不做下限抬量）
+     * @param quantitySchedule      分次拆零序列；可空
+     * @param zeroBasedSlotIndex    当日频次点下标；&lt;0 跳过 schedule
+     * @return 计费/发药业务量
+     */
+    public static BillableMeasure resolveBillableDispenseMeasureForExecutionSlot(
+        String therapyEnum,
+        BigDecimal requestQuantity,
+        BigDecimal firstDose,
+        String requestUnitCode,
+        String firstDoseUnitCode,
+        LocalDateTime planTime,
+        LocalDateTime firstPlanTime,
+        boolean packageBatchExecution,
+        String packageUnitCode,
+        ProductDefinitionDisplayDto productRow,
+        String quantitySchedule,
+        int zeroBasedSlotIndex) {
+        BillableMeasure clinical = resolveClinicalDispenseMeasureForExecutionSlot(
+            therapyEnum,
+            requestQuantity,
+            firstDose,
+            requestUnitCode,
+            firstDoseUnitCode,
+            planTime,
+            firstPlanTime,
+            packageBatchExecution,
+            packageUnitCode,
+            quantitySchedule,
+            zeroBasedSlotIndex);
+        if (packageBatchExecution) {
+            // 一盒一点已是整包装，不再叠拆零下限
+            return clinical;
+        }
+        return applyMinSplitUnitFloor(clinical.getQuantity(), clinical.getUnitCode(), productRow);
+    }
+
+    /**
+     * 解析本槽计费/发药量（调用方未传 {@code quantitySchedule} 时只读常规 {@code quantity}）。
+     *
+     * @param therapyEnum           治疗类型
+     * @param requestQuantity       常规单次/总量
+     * @param firstDose             首日量
+     * @param requestUnitCode       常规单位
+     * @param firstDoseUnitCode     首日单位
+     * @param planTime              本槽
+     * @param firstPlanTime         首次槽
+     * @param packageBatchExecution 是否一盒一点
+     * @param packageUnitCode       包装单位
+     * @param productRow            药品目录
      * @return 计费/发药业务量
      */
     public static BillableMeasure resolveBillableDispenseMeasureForExecutionSlot(
@@ -260,7 +488,7 @@ public final class InpatientMedicationRequestExecutionMeasureHelper {
         boolean packageBatchExecution,
         String packageUnitCode,
         ProductDefinitionDisplayDto productRow) {
-        BillableMeasure clinical = resolveClinicalDispenseMeasureForExecutionSlot(
+        return resolveBillableDispenseMeasureForExecutionSlot(
             therapyEnum,
             requestQuantity,
             firstDose,
@@ -269,12 +497,10 @@ public final class InpatientMedicationRequestExecutionMeasureHelper {
             planTime,
             firstPlanTime,
             packageBatchExecution,
-            packageUnitCode);
-        if (packageBatchExecution) {
-            // 一盒一点已是整包装，不再叠拆零下限
-            return clinical;
-        }
-        return applyMinSplitUnitFloor(clinical.getQuantity(), clinical.getUnitCode(), productRow);
+            packageUnitCode,
+            productRow,
+            null,
+            -1);
     }
 
     /**

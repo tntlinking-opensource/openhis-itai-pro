@@ -13,12 +13,14 @@ import type {
 import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
 import type { DiagnosisItem } from '#/components/doctor-station/diagnosis';
 import type { ServiceApplyPrintMeta } from '#/utils/print/print-service-apply';
+import type { OrderTemplateHeaderItem } from '#/api/basic/order-template';
 
 import { computed, ref, watch } from 'vue';
 
 import { Search } from '@element-plus/icons-vue';
 import {
   ElButton,
+  ElCheckbox,
   ElEmpty,
   ElInput,
   ElInputNumber,
@@ -29,6 +31,12 @@ import {
   ElTreeSelect,
 } from 'element-plus';
 
+import {
+  ORDER_TEMPLATE_APPLY_CONTEXT_DOCTOR,
+  ORDER_TEMPLATE_WORKSTATION_INPATIENT,
+  ORDER_TEMPLATE_WORKSTATION_OUTPATIENT,
+  previewOrderTemplateApplyApi,
+} from '#/api/basic/order-template';
 import { useEnsureClinicalReception } from '#/components/doctor-station';
 import {
   AdviceDiagnosisBindPanel,
@@ -52,16 +60,22 @@ import {
 } from '#/utils/format/money-scale';
 import { resolveServicePreviewBillQuantity } from '../advice/services/service-quantity-calc';
 import { printServiceApplyForms } from '#/utils/print/print-service-apply';
+import { SERVICE_REQUEST_PRIORITY_EM } from '#/utils/print/constants/service-request-priority';
 import { syncLineRemarkWithRehabTreatmentCourse } from '#/utils/service-apply-display';
-import { loadAllDepartmentPerformOrgOptions } from '#/views/doctor-station/advice-shared/perform-org-options.service';
+import { decodeServiceApplyDetailIds } from '#/views/basic/ordertemplate/order-template-lines';
 import * as inpatientServiceApplyApi from '#/views/inpatient/doctor-station/service-apply/inpatient-service-apply.service';
 
 import { inferServiceApplyKindFromAdviceRow } from './service-apply-doc-groups';
 import ServiceApplyShellWrap from './service-apply-shell-wrap.vue';
-import { isServiceApplyDetailRequired } from './service-apply.constants';
+import {
+  isServiceApplyDetailRequired,
+  SERVICE_APPLY_CATEGORY_BY_KIND,
+} from './service-apply.constants';
+import ServiceApplyOrderTemplatePanel from './service-apply-order-template-panel.vue';
 import {
   buildDetailItems,
   buildSaveServiceApplyFormRequest,
+  buildServiceApplyBindTriggerLines,
   buildServiceApplyDiagnosisOptions,
   buildServiceApplySelectedItemsFromAdviceRows,
   catalogRowCategoryLabel,
@@ -74,12 +88,12 @@ import {
   firstTreeOptionValue,
   matchBodyStructureTreeFilterNode,
   mergeCatalogDefaultPerformOrgOptions,
-  persistServiceApplyDraftBindsAfterSign,
   pickCatalogDefaultPerformOrgId,
   pickDefaultServiceApplyEncounterDiagnosisIds,
   resolveServiceApplyDiagnosisIdsFromAdviceRow,
-  resolveServiceApplyFormExecutionCount,
+  resolveServiceApplyDraftBindsBeforeSign,
   resolveServiceApplyKindLabel,
+  resolveServiceApplyLineExecutionCount,
   validateServiceApplyBoundConsumablesBeforeSign,
   validateServiceApplySelectedItems,
 } from './service-apply.service';
@@ -149,8 +163,6 @@ const selectedItems = ref<ServiceApplySelectedItem[]>([]);
 const actionLoading = ref(false);
 const orgId = ref('');
 const orgOptions = ref<Array<{ label: string; value: string }>>([]);
-/** 整单执行次数（清单全部项目共用） */
-const executionCount = ref(1);
 const encounterDiagnosisIds = ref<string[]>([]);
 const encounterDiagnosisRows = ref<EncounterDiagnosisRowDto[]>([]);
 const diagnosisDialogVisible = ref(false);
@@ -233,13 +245,16 @@ const selectedCatalogRowKeys = computed(
   () => new Set(selectedItems.value.map((row) => row.catalogRowKey)),
 );
 
-/** 已选合计金额（单次量×整单次数×单价；入账以后端为准） */
+/** 已选合计金额（单次量×本行次数×单价；入账以后端为准） */
 const selectedTotalAmount = computed(() =>
   sumMoneyThenSettle(
     selectedItems.value.map((row) =>
       calcMoneyLineTotal(
         row.unitPrice,
-        resolveServicePreviewBillQuantity(row.quantity, executionCount.value),
+        resolveServicePreviewBillQuantity(
+          row.quantity,
+          resolveServiceApplyLineExecutionCount(row.executionCount),
+        ),
       ),
     ),
   ),
@@ -328,12 +343,15 @@ function buildSelectedRow(row: DoctorStationAdviceCatalogRowDto): ServiceApplySe
     activityDefinitionId: String(row.productDefinitionId ?? '').trim(),
     activityName: String(row.name ?? '').trim(),
     quantity: 1,
+    // 新建行默认执行次数 1，与原先整单默认一致
+    executionCount: 1,
     unitCode: String(row.unitCode ?? '').trim(),
     unitPrice: catalogRowUnitPrice(row),
     chrgitmLvText: catalogRowChrgitmLvText(row) || undefined,
     detailItems: defaultTargetId ? buildDetailItems(kind, [defaultTargetId]) : [],
     // 已选康复科时，新加入行直接带上固定疗程备注
     remark: syncLineRemarkWithRehabTreatmentCourse(undefined, kind, resolveCurrentPerformOrgName()),
+    priorityEnum: '',
   };
 }
 
@@ -419,15 +437,12 @@ async function refreshOrgOptions() {
     orgOptions.value = [];
     return;
   }
-  // 门诊/住院均为整单全局全院科室；空结果再兜底一次
+  // 有规则用规则并集；没配时接口回落开立科室，不再拉全院
   let merged = await serviceApplyApi.value.mergeServiceApplyOrgOptions({
     encounterId,
     patientId,
     activityDefinitionIds,
   });
-  if (merged.length === 0) {
-    merged = await loadAllDepartmentPerformOrgOptions();
-  }
   const selectedKeys = selectedItems.value.map((row) => row.catalogRowKey);
   orgOptions.value = mergeCatalogDefaultPerformOrgOptions(merged, catalogItems.value, selectedKeys);
   const allowedIds = new Set(orgOptions.value.map((item) => item.value));
@@ -564,6 +579,85 @@ function handleRemoveBoundConsumable(rowKey: string, consumableKey: string) {
   });
 }
 
+/** 套用申请单组套：只加入与当前弹窗类型一致的检查/检验/治疗行 */
+async function handleApplyOrderTemplate(header: OrderTemplateHeaderItem) {
+  const encounterId = String(props.encounterId ?? '').trim();
+  const patientId = String(props.patientId ?? '').trim();
+  const orderTemplateId = String(header.orderTemplateId ?? '').trim();
+  if (!encounterId || !patientId || !orderTemplateId) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+  const categoryCode = SERVICE_APPLY_CATEGORY_BY_KIND[effectiveApplyKind.value];
+  actionLoading.value = true;
+  try {
+    const preview = await previewOrderTemplateApplyApi({
+      orderTemplateId,
+      encounterId,
+      patientId,
+      applyContextCode: ORDER_TEMPLATE_APPLY_CONTEXT_DOCTOR,
+      workstationKindCode: isInpatientScope.value
+        ? ORDER_TEMPLATE_WORKSTATION_INPATIENT
+        : ORDER_TEMPLATE_WORKSTATION_OUTPATIENT,
+    });
+    const matched = (preview?.lines ?? []).filter(
+      (line) => String(line.groupKey ?? '').trim() === categoryCode,
+    );
+    if (matched.length === 0) {
+      ElMessage.warning(`该组套没有${resolveServiceApplyKindLabel(effectiveApplyKind.value)}项目`);
+      return;
+    }
+    const addedKeys: string[] = [];
+    for (const line of matched) {
+      const activityId = String(line.activityDefinitionId ?? '').trim();
+      const name = String(line.productName ?? '').trim();
+      if (!activityId || !name) {
+        continue;
+      }
+      const catalog = await serviceApplyApi.value.loadServiceApplyCatalog({
+        applyKind: effectiveApplyKind.value,
+        encounterId,
+        patientId,
+        keyword: name,
+      });
+      const hit = catalog.rows.find(
+        (row) => String(row.productDefinitionId ?? '').trim() === activityId,
+      );
+      if (!hit) {
+        continue;
+      }
+      const key = catalogRowKey(hit);
+      if (selectedCatalogRowKeys.value.has(key)) {
+        continue;
+      }
+      const selectedRow = buildSelectedRow(hit);
+      const qty = Number(line.defaultQuantity);
+      if (Number.isFinite(qty) && qty > 0) {
+        selectedRow.quantity = qty;
+      }
+      const detailIds = decodeServiceApplyDetailIds(line.dosageText);
+      if (detailIds.length > 0) {
+        selectedRow.detailItems = buildDetailItems(effectiveApplyKind.value, detailIds);
+      }
+      selectedItems.value = [...selectedItems.value, selectedRow];
+      addedKeys.push(selectedRow.rowKey);
+    }
+    if (addedKeys.length === 0) {
+      ElMessage.warning('组套项目已在清单中，或当前目录未找到对应项目');
+      return;
+    }
+    await refreshOrgOptions();
+    for (const rowKey of addedKeys) {
+      await enrichRowBoundConsumables(rowKey);
+    }
+    ElMessage.success(`已加入 ${addedKeys.length} 项`);
+  } catch {
+    ElMessage.error('组套套用失败，请稍后重试');
+  } finally {
+    actionLoading.value = false;
+  }
+}
+
 /** 点击左侧目录行：加入右侧清单 */
 async function handleAddCatalogItem(row: DoctorStationAdviceCatalogRowDto) {
   const key = catalogRowKey(row);
@@ -587,7 +681,6 @@ async function handleRemoveSelected(rowKey: string) {
 async function handleClearSelected() {
   selectedItems.value = [];
   orgId.value = '';
-  executionCount.value = 1;
   savedPrescriptionNo.value = '';
   await refreshOrgOptions();
 }
@@ -608,7 +701,6 @@ function buildPersistApplyFormRequest() {
     effectiveApplyKind.value,
     {
       requireDiagnosis: !isInpatientScope.value,
-      executionCount: executionCount.value,
     },
   );
   if (validationMsg) {
@@ -619,7 +711,6 @@ function buildPersistApplyFormRequest() {
     patientId,
     applyKind: effectiveApplyKind.value,
     orgId: orgId.value,
-    executionCount: executionCount.value,
     encounterDiagnosisIds: encounterDiagnosisIds.value,
     encounterDiagnosisRows: encounterDiagnosisRows.value,
     previousPrescriptionNo: savedPrescriptionNo.value || undefined,
@@ -643,7 +734,7 @@ async function persistApplyForm(): Promise<{
   return { encounterId, patientId, request, ...result };
 }
 
-/** 签发申请单（保存 → 签发生效） */
+/** 签发申请单（保存 → 绑定确认 → 签发生效） */
 async function executeSignRequests(): Promise<{
   encounterId: string;
   patientId: string;
@@ -659,18 +750,22 @@ async function executeSignRequests(): Promise<{
     items: selectedItems.value,
   });
   const { requestIds } = await persistApplyForm();
-  await persistServiceApplyDraftBindsAfterSign({
-    encounterId,
-    patientId,
-    items: selectedItems.value,
-    requestIds,
-    stationScope: isInpatientScope.value ? 'inpatient' : 'outpatient',
-  });
+  const stationScope = isInpatientScope.value ? 'inpatient' : 'outpatient';
+  const bindLines = buildServiceApplyBindTriggerLines(selectedItems.value, requestIds);
+  // 门诊：签发前弹窗确认绑定（可改量/删行）；住院：适配器恒空
+  if (bindLines.length > 0) {
+    await resolveServiceApplyDraftBindsBeforeSign({
+      encounterId,
+      patientId,
+      lines: bindLines,
+      stationScope,
+    });
+  }
   await serviceApplyApi.value.signServiceApplyRequests({
     encounterId,
     patientId,
     requestIds,
-    stationScope: isInpatientScope.value ? 'inpatient' : 'outpatient',
+    stationScope,
   });
   return {
     encounterId,
@@ -802,13 +897,11 @@ function writeDetailTargetIds(row: ServiceApplySelectedItem, ids: null | string[
 /** 编辑模式：将列表行回显到右侧清单 */
 async function hydrateFromEditDocumentGroup(group: ServiceApplyDocumentGroup) {
   savedPrescriptionNo.value = group.applyFormNo;
-  // 整单执行次数：各行应一致，取首个有效值
-  executionCount.value = resolveServiceApplyFormExecutionCount(group.lines);
+  // 按行回填单次量与执行次数（各行可不同）
   selectedItems.value = buildServiceApplySelectedItemsFromAdviceRows(
     group.lines,
     effectiveApplyKind.value,
     group.boundConsumablesByRequestId,
-    executionCount.value,
   );
   const head = group.lines[0];
   const previousOrgId = String(head?.performOrgId ?? '').trim();
@@ -866,7 +959,6 @@ function resetPanelState() {
   selectedItems.value = [];
   actionLoading.value = false;
   orgId.value = '';
-  executionCount.value = 1;
   orgOptions.value = [];
   encounterDiagnosisIds.value = [];
   encounterDiagnosisRows.value = [];
@@ -952,6 +1044,18 @@ watch(orgId, () => {
         <div v-if="!contextReady" class="context-hint">请先选择患者后再开立申请单</div>
 
         <div v-else class="workspace-panels">
+          <section class="template-panel">
+            <div class="template-panel__title">组套</div>
+            <ServiceApplyOrderTemplatePanel
+              :active="modelValue"
+              :apply-kind="effectiveApplyKind"
+              :disabled="actionLoading"
+              :encounter-id="encounterId"
+              :patient-id="patientId"
+              @select="handleApplyOrderTemplate"
+            />
+          </section>
+
           <section class="catalog-panel">
             <div class="catalog-panel__toolbar">
               <ElInput
@@ -1065,16 +1169,6 @@ watch(orgId, () => {
                   />
                 </ElSelect>
               </div>
-              <div class="cart-panel__field-row">
-                <span class="cart-field__label">执行次数</span>
-                <ElInputNumber
-                  v-model="executionCount"
-                  :min="1"
-                  :max="99"
-                  :controls="false"
-                  class="cart-field__qty"
-                />
-              </div>
               <div v-if="!isInpatientScope" class="cart-panel__field-row">
                 <span class="cart-field__label">诊断</span>
                 <div class="cart-panel__diagnosis">
@@ -1112,7 +1206,10 @@ watch(orgId, () => {
                           formatMoney(
                             calcMoneyLineTotal(
                               row.unitPrice,
-                              resolveServicePreviewBillQuantity(row.quantity, executionCount),
+                              resolveServicePreviewBillQuantity(
+                                row.quantity,
+                                resolveServiceApplyLineExecutionCount(row.executionCount),
+                              ),
                             ),
                           )
                         }}
@@ -1129,6 +1226,14 @@ watch(orgId, () => {
                 </div>
 
                 <div class="cart-item__fields">
+                  <span class="cart-field__label">执行次数</span>
+                  <ElInputNumber
+                    v-model="row.executionCount"
+                    :min="1"
+                    :max="99"
+                    :controls="false"
+                    class="cart-field__qty"
+                  />
                   <span class="cart-field__label">单次执行数量</span>
                   <ElInputNumber
                     v-model="row.quantity"
@@ -1137,6 +1242,8 @@ watch(orgId, () => {
                     :controls="false"
                     class="cart-field__qty"
                   />
+                </div>
+                <div class="cart-item__detail-row">
                   <span class="cart-field__label">
                     {{ detailFieldLabel }}
                     <span v-if="!detailRequired" class="cart-field__optional">选填</span>
@@ -1191,6 +1298,21 @@ watch(orgId, () => {
                 <div class="cart-item__remark">
                   <span class="cart-field__label">备注</span>
                   <ElInput v-model="row.remark" placeholder="选填" maxlength="200" />
+                </div>
+                <div
+                  v-if="effectiveApplyKind === 'lab' || effectiveApplyKind === 'exam'"
+                  class="cart-item__urgent"
+                >
+                  <ElCheckbox
+                    :model-value="row.priorityEnum === SERVICE_REQUEST_PRIORITY_EM"
+                    @update:model-value="
+                      (checked: boolean | string | number) => {
+                        row.priorityEnum = checked ? SERVICE_REQUEST_PRIORITY_EM : '';
+                      }
+                    "
+                  >
+                    急
+                  </ElCheckbox>
                 </div>
                 <div
                   v-if="row.boundConsumablesLoaded && (row.boundConsumables?.length ?? 0) > 0"
@@ -1361,11 +1483,31 @@ watch(orgId, () => {
 
 .workspace-panels {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 300px minmax(0, 1fr) minmax(0, 1.15fr);
   gap: 12px;
   flex: 1;
   min-height: 0;
   height: 0;
+}
+
+.template-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-blank);
+  overflow: hidden;
+}
+
+.template-panel__title {
+  flex: 0 0 auto;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
 }
 
 .catalog-panel,
@@ -1674,7 +1816,7 @@ watch(orgId, () => {
 
 .cart-item__fields {
   display: grid;
-  grid-template-columns: 56px 76px 56px minmax(0, 1fr);
+  grid-template-columns: 72px 76px 84px 76px;
   align-items: center;
   gap: 0 8px;
   margin-top: 8px;
@@ -1682,17 +1824,32 @@ watch(orgId, () => {
   border-top: 1px dashed #e8f0fe;
 }
 
-.cart-item__remark {
+.cart-item__detail-row {
   display: grid;
-  grid-template-columns: 56px minmax(0, 1fr);
+  grid-template-columns: 72px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   margin-top: 8px;
 }
 
+.cart-item__remark {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.cart-item__urgent {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+  padding-left: 80px;
+}
+
 .cart-item__consumables {
   display: grid;
-  grid-template-columns: 56px minmax(0, 1fr);
+  grid-template-columns: 72px minmax(0, 1fr);
   align-items: flex-start;
   gap: 8px;
   margin-top: 8px;
@@ -1727,6 +1884,14 @@ watch(orgId, () => {
 .cart-item__consumable-unit {
   font-size: 12px;
   color: var(--el-text-color-secondary);
+  flex-shrink: 0;
+}
+
+.cart-item__consumable-qty {
+  min-width: 40px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
   flex-shrink: 0;
 }
 

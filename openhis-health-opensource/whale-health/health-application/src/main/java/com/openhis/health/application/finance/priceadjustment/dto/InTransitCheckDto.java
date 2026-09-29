@@ -10,6 +10,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
+import java.util.List;
+
 /**
  * 物流调价在途预检结果 DTO（IF-PRC-08）。
  */
@@ -38,4 +40,10 @@ public class InTransitCheckDto {
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "阻断项目主键")
     private Long itemId;
+
+    /**
+     * 48 小时内未签发草稿提示（须开立医生自行删除）；无则空。
+     */
+    @Schema(description = "48小时内未签发草稿提示列表")
+    private List<FreshUnsignedDraftTipDto> freshUnsignedDraftTips;
 }

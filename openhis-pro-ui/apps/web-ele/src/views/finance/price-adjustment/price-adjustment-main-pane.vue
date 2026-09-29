@@ -392,7 +392,7 @@ function currentPersistedBusNo(): string | undefined {
 }
 
 /** 保存草稿（IF-PRC-09） */
-async function persistDocument(submitApproval: boolean): Promise<string | undefined> {
+async function persistDocument(): Promise<string | undefined> {
   if (!props.isDraftOrder && !props.documentEditable) {
     ElMessage.warning('当前状态不允许修改');
     return undefined;
@@ -417,14 +417,6 @@ async function persistDocument(submitApproval: boolean): Promise<string | undefi
       return undefined;
     }
     headForm.value.busNo = busNo;
-    if (submitApproval) {
-      const transit = await checkInTransitForSubmitApi({ busNo });
-      if (transit.data?.check?.blocked) {
-        ElMessage.error(transit.data.check.reasonMessage ?? '存在在途业务，无法提交');
-        return busNo;
-      }
-      await submitPriceAdjustmentForApprovalApi({ busNo });
-    }
     return busNo;
   } catch (error) {
     ElMessage.error(pickApiErrMsg(error));
@@ -433,17 +425,27 @@ async function persistDocument(submitApproval: boolean): Promise<string | undefi
 }
 
 async function handleSaveDoc() {
-  const busNo = await persistDocument(false);
+  const busNo = await persistDocument();
   if (!busNo) return;
   ElMessage.success('保存成功');
   emit('documentChanged', { busNo });
 }
 
 async function handleSaveAndSubmitDoc() {
-  const busNo = await persistDocument(true);
+  const busNo = await persistDocument();
   if (!busNo) return;
-  ElMessage.success('保存并提交审批成功');
   emit('documentChanged', { busNo });
+  try {
+    const ok = await submitApprovalAfterTransitCheck(busNo);
+    if (!ok) {
+      ElMessage.success('已保存；未提交审批');
+      return;
+    }
+    ElMessage.success('保存并提交审批成功');
+    emit('documentChanged', { busNo });
+  } catch (error) {
+    ElMessage.error(pickApiErrMsg(error));
+  }
 }
 
 async function handleSubmitApproval() {
@@ -462,17 +464,32 @@ async function handleSubmitApproval() {
     return;
   }
   try {
-    const transit = await checkInTransitForSubmitApi({ busNo });
-    if (transit.data?.check?.blocked) {
-      ElMessage.error(transit.data.check.reasonMessage ?? '存在在途业务，无法提交');
+    const ok = await submitApprovalAfterTransitCheck(busNo);
+    if (!ok) {
       return;
     }
-    await submitPriceAdjustmentForApprovalApi({ busNo });
     ElMessage.success('已提交审批');
     emit('documentChanged', { busNo });
   } catch (error) {
     ElMessage.error(pickApiErrMsg(error));
   }
+}
+
+/**
+ * 提交前在途预检；24h 内未签发草稿仅提示开立医生/患者（须自行删除，不可确认绕过）。
+ *
+ * @param busNo 调价单号
+ * @returns 是否已成功提交审批
+ */
+async function submitApprovalAfterTransitCheck(busNo: string): Promise<boolean> {
+  const transit = await checkInTransitForSubmitApi({ busNo });
+  const check = transit.data?.check;
+  if (check?.blocked) {
+    ElMessage.error(check.reasonMessage ?? '存在在途业务，无法提交');
+    return false;
+  }
+  await submitPriceAdjustmentForApprovalApi({ busNo });
+  return true;
 }
 
 /** 删除本地草稿或撤销已保存草稿 */

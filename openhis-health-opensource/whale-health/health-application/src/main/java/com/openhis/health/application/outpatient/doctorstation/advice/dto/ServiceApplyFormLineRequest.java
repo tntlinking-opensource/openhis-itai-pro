@@ -39,9 +39,22 @@ public class ServiceApplyFormLineRequest {
     @Schema(description = "单位 code", requiredMode = Schema.RequiredMode.REQUIRED)
     private String unitCode;
 
+    /**
+     * 本行执行次数（写入 {@code ServiceRequest.execution_count}）。
+     * <p>优先于整单 {@code SaveDoctorStationServiceApplyFormRequest#executionCount}；空或非法时回落整单值，再回落 1。</p>
+     */
+    @Schema(description = "本行执行次数；优先于整单 executionCount")
+    private Integer executionCount;
+
     /** 纯备注，落库 wkf_service_request.remark。 */
     @Schema(description = "纯备注，落库 wkf_service_request.remark")
     private String remark;
+
+    /**
+     * 医嘱优先级 code（DM-WKF-004；按项目加急为 {@code EM}；空表示非急）。
+     */
+    @Schema(description = "医嘱优先级 code（加急=EM）")
+    private String priorityEnum;
 
     /** 部位/样本明细。 */
     @Valid

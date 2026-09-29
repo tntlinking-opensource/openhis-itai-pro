@@ -95,6 +95,10 @@ export interface DeptReturnDetailLineDto {
   occurrenceTime?: string;
   reason?: string;
   remake?: string;
+  /** 行单价（供应请求落库价） */
+  price?: number;
+  /** 行金额 */
+  totalPrice?: number;
   productName?: string;
   specification?: string;
   manufacturer?: string;

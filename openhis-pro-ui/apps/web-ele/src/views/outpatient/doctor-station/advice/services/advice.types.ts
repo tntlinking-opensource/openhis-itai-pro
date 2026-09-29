@@ -38,6 +38,10 @@ export interface AdviceEditForm {
    * 诊疗：单次执行数量（UI 录入）；提交时 `quantity = serviceQuantity × totalAmount(执行次数)`。
    */
   serviceQuantity?: number;
+  /** 目录类目 code（检验 22/PROOF、检查 23/TEST；单独开诊疗出「急」用） */
+  catalogCategoryCode?: string;
+  /** 医嘱优先级 code（加急=EM） */
+  priorityEnum?: string;
 }
 
 export interface AdviceDrugItem extends AdviceEditForm {
@@ -152,6 +156,8 @@ export interface AdviceProductOption {
   chrgitmLvText?: string;
   /** 注射/输液药品标志（目录 inject_flag） */
   injectFlag?: boolean;
+  /** 目录类目 code（检验 22/PROOF、检查 23/TEST） */
+  categoryCode?: string;
   /** 中药特殊煎法术语码（目录 dosage_instruction） */
   dosageInstruction?: string;
   /** 中药特殊煎法展示名 */
@@ -222,8 +228,10 @@ export interface AdviceRowItem {
   remark?: string;
   /** 申请单部位/样本明细 */
   serviceRequestDetails?: ServiceRequestDetailSummaryDto[];
-  /** 目录类别 code：检验 PROOF、检查 TEST */
+  /** 目录类别 code：检验 PROOF/22、检查 TEST/23 */
   catalogCategoryCode?: string;
+  /** 医嘱优先级 code（加急=EM） */
+  priorityEnum?: string;
   /** 医保等级展示（甲类/乙类/丙类）；申请单编辑回显用 */
   chrgitmLvText?: string;
   /** 费用性质主键（药品/诊疗合同） */

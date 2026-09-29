@@ -73,7 +73,7 @@ public class OutpatientEmrListItemDto {
     private boolean printable;
 
     /**
-     * 病例是否已归档（文书 LOCKED/ARCHIVED）；归档后临床只读。
+     * 病例是否已归档（文书 PENDING_ARCHIVE/ARCHIVED）；归档后临床只读。
      */
     private boolean clinicalArchived;
 }

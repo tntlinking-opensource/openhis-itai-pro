@@ -303,6 +303,24 @@ public class DeviceRequest extends BaseAuditedEntity {
     }
 
     /**
+     * 断言草稿可废弃为已取消（不软删）。
+     *
+     * @throws BusinessException 非草稿态时
+     */
+    public void ensureDraftCancellable() {
+        if (!RequestStatus.DRAFT.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "仅草稿状态可废弃");
+        }
+    }
+
+    /**
+     * 迁移为已取消（废弃保留行）。
+     */
+    public void toCancelled() {
+        this.statusEnum = RequestStatus.CANCELLED.getCode();
+    }
+
+    /**
      * 已发送签退回草稿。
      */
     public void activeToDraft() {

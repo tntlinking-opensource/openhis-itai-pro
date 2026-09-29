@@ -49,6 +49,7 @@ import {
   ReportQueryBar,
   ReportTableScroll,
   mapReportPrintRow,
+  collectPagedReportRows,
   reportPrintFieldsOf,
   useReportListPrint,
 } from '#/views/report/shared';
@@ -226,35 +227,53 @@ function formatTextCell(value: unknown): string {
   return text || '—';
 }
 
+/** 将入出明细行映射为打印单元格。 */
+function mapInOutPrintRows(source: InpatientInOutDetailRowDto[]) {
+  return source.map((r) =>
+    mapReportPrintRow(r as unknown as Record<string, unknown>, reportPrintFieldsOf(PRINT_COLUMNS), {
+      busNo: (v) => formatTextCell(v),
+      patientName: (v) => formatTextCell(v),
+      genderText: (v) => formatTextCell(v),
+      ageText: (v) => formatTextCell(v),
+      admissionOrganizationName: (v) => formatTextCell(v),
+      admissionWardName: (v) => formatTextCell(v),
+      wardName: (v) => formatTextCell(v),
+      houseName: (v) => formatTextCell(v),
+      bedName: (v) => formatTextCell(v),
+      startTime: (v) => formatTextCell(v),
+      endTime: (v) => formatTextCell(v),
+      inpatientDays: (v) => formatTextCell(v),
+      transferTargetText: (v) => formatTextCell(v),
+      feeNatureDisplay: (v) => formatTextCell(v),
+      settledFeeAmount: (v) => formatMoneyCell(v),
+    }),
+  );
+}
+
 const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrintCurrentPage } =
   useReportListPrint({
     getReportCode: () => PRINT_REPORT_CODE,
     getColumnCatalog: () => PRINT_COLUMNS,
     getReportTitle: () => PAGE_TITLE,
-    getPrintRows: () =>
-      rows.value.map((r) =>
-        mapReportPrintRow(
-          r as unknown as Record<string, unknown>,
-          reportPrintFieldsOf(PRINT_COLUMNS),
-          {
-            busNo: (v) => formatTextCell(v),
-            patientName: (v) => formatTextCell(v),
-            genderText: (v) => formatTextCell(v),
-            ageText: (v) => formatTextCell(v),
-            admissionOrganizationName: (v) => formatTextCell(v),
-            admissionWardName: (v) => formatTextCell(v),
-            wardName: (v) => formatTextCell(v),
-            houseName: (v) => formatTextCell(v),
-            bedName: (v) => formatTextCell(v),
-            startTime: (v) => formatTextCell(v),
-            endTime: (v) => formatTextCell(v),
-            inpatientDays: (v) => formatTextCell(v),
-            transferTargetText: (v) => formatTextCell(v),
-            feeNatureDisplay: (v) => formatTextCell(v),
-            settledFeeAmount: (v) => formatMoneyCell(v),
-          },
-        ),
-      ),
+    getPrintRows: () => mapInOutPrintRows(rows.value),
+    fetchAllPrintRows: async () => {
+      const filters = buildFilterPayload();
+      if (!filters) {
+        return { rows: [], truncated: false };
+      }
+      const collected = await collectPagedReportRows({
+        fetchPage: async (pageNo, pageSize) => {
+          const page = await pageInpatientInOutDetailReportApi({
+            ...filters,
+            pageNo,
+            pageSize,
+          });
+          return { rows: page.content ?? [], total: Number(page.totalCount ?? 0) };
+        },
+      });
+      return { rows: mapInOutPrintRows(collected.rows), truncated: collected.truncated };
+    },
+    hasPrintableData: () => total.value > 0 || rows.value.length > 0,
   });
 
 const tableLoading = computed(
@@ -705,6 +724,7 @@ onMounted(async () => {
       ref="printFieldDialogRef"
       :report-code="PRINT_REPORT_CODE"
       :column-catalog="PRINT_COLUMNS"
+      show-print-scope
     />
   </Page>
 </template>

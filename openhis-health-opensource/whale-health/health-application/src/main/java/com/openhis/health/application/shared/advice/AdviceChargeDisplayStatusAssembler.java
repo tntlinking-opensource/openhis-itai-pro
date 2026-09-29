@@ -20,6 +20,13 @@ public final class AdviceChargeDisplayStatusAssembler {
     /** 列表「状态」列：已退费（对应 {@link ChargeItemStatus#REFUNDED}）。 */
     public static final String LIST_DISPLAY_REFUNDED_TEXT = "已退费";
 
+    /**
+     * 医技站口语：{@link ChargeItemStatus#PENDING_SETTLEMENT}（护士执行/划价入账后待结算）。
+     *
+     * <p>枚举 display 仍为「待结算」；医技执行单/费用清单用本口语，避免与「尚未划价」混淆。</p>
+     */
+    public static final String LIST_DISPLAY_PENDING_SETTLEMENT_PRICED_TEXT = "已划价待结算";
+
     /** 工具类禁止实例化。 */
     private AdviceChargeDisplayStatusAssembler() {
     }
@@ -130,6 +137,25 @@ public final class AdviceChargeDisplayStatusAssembler {
             return parsed.getDisplay();
         }
         return chargeStatusEnum;
+    }
+
+    /**
+     * 医技工作站收费状态展示文案。
+     *
+     * <p>{@code PENDING_SETTLEMENT} → 「已划价待结算」（护士执行入账后）；其余同
+     * {@link #resolveChargeStatusDisplayTextForAdviceList}。</p>
+     *
+     * @param chargeStatusEnum 收费状态码
+     * @return 展示文案
+     */
+    public static String resolveMedicalTechChargeStatusDisplayText(String chargeStatusEnum) {
+        if (StringUtils.isEmpty(chargeStatusEnum)) {
+            return "";
+        }
+        if (ChargeItemStatus.PENDING_SETTLEMENT.getCode().equals(chargeStatusEnum)) {
+            return LIST_DISPLAY_PENDING_SETTLEMENT_PRICED_TEXT;
+        }
+        return resolveChargeStatusDisplayTextForAdviceList(chargeStatusEnum);
     }
 
     /**

@@ -91,6 +91,12 @@ public class ServiceCatalogMapperImpl implements ServiceCatalogMapper {
         detailDto.setLocationId(activityDefinition.getLocationId());
         detailDto.setChrgitmLv(activityDefinition.getChrgitmLv());
         detailDto.setMrSettlementTypeCode(activityDefinition.getMrSettlementTypeCode());
+        // 子项标记：与主表 children_flag 一致（BR-ACTDEF-006），便于实体直出详情时识别组套
+        if (Boolean.TRUE.equals(activityDefinition.getChildrenFlag())) {
+            detailDto.setChildrenFlag(1);
+        } else {
+            detailDto.setChildrenFlag(0);
+        }
         return detailDto;
     }
 

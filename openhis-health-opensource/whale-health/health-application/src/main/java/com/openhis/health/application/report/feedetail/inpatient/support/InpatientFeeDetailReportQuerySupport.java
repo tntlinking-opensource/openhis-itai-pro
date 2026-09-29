@@ -937,7 +937,8 @@ public class InpatientFeeDetailReportQuerySupport {
             if (chargeItem.getProcedureId() != null) {
                 procedureIds.add(chargeItem.getProcedureId());
             }
-            if (!GenerateSource.NURSE_PRICING.getCode().equals(chargeItem.getGenerateSourceEnum())) {
+            if (!GenerateSource.NURSE_PRICING.getCode().equals(chargeItem.getGenerateSourceEnum())
+                && !GenerateSource.MEDICAL_TECH_PRICING.getCode().equals(chargeItem.getGenerateSourceEnum())) {
                 continue;
             }
             if (chargeItem.getServiceId() == null) {
@@ -1007,8 +1008,9 @@ public class InpatientFeeDetailReportQuerySupport {
         if (GenerateSource.AUTO_ROLL_FEES.getCode().equals(chargeItem.getGenerateSourceEnum())) {
             return chargeItem.getOccurrenceTime();
         }
-        // 护士划价耗材：发放/拣配展示时刻
-        if (GenerateSource.NURSE_PRICING.getCode().equals(chargeItem.getGenerateSourceEnum())
+        // 护士/医技划价耗材：发放/拣配展示时刻
+        if ((GenerateSource.NURSE_PRICING.getCode().equals(chargeItem.getGenerateSourceEnum())
+                || GenerateSource.MEDICAL_TECH_PRICING.getCode().equals(chargeItem.getGenerateSourceEnum()))
             && TableNameConstants.WKF_DEVICE_REQUEST.equals(chargeItem.getServiceTable())
             && deviceDisplayByReqId != null
             && chargeItem.getServiceId() != null) {

@@ -133,7 +133,7 @@ const expensePropertyOptions = computed<ApiOptionItem[]>(() => {
   return [{ label: '全部', value: FILTER_ALL_VALUE }, ...options];
 });
 
-/** 收款人下拉：仅当前日窗内有收款流水的人（preview.practitionerOptions） */
+/** 款员下拉：页初始化为 ROLE_CASHIER 岗池，查询后再并入本窗有流水的人 */
 const cashierOptions = ref<ApiOptionItem[]>([]);
 
 /** 当前下拉选项中的全部收款人 id（保序） */
@@ -332,8 +332,8 @@ async function loadPageInit() {
   queryForm.dateRange = [normalizeDateTimeBound(data.defaultDateFrom, 'start'), nowEnd()];
   dateRangeManuallyEdited.value = false;
   queryForm.expenseProperty = FILTER_ALL_VALUE;
-  // 收款人下拉等首次查询后按窗内有流水人填充；无流水者不列
-  cashierOptions.value = [];
+  // 款员岗池先入下拉；查询后再并入本窗有流水的人
+  cashierOptions.value = normalizeCashierOptions(data.cashierOptions);
   queryForm.cashierIds = [];
 }
 
@@ -341,24 +341,25 @@ async function loadPageInit() {
 const skipCashierChangeSearch = ref(false);
 
 /**
- * 收款人下拉仅保留本窗有流水者；空选且本窗有人时自动带出。
+ * 款员岗池与本窗有流水的人合并入下拉；空选且本窗有人时自动带出本窗的人。
  */
 function syncCashierOptionsFromPreview(data: null | PreviewOutpatientDailySettlementResponse) {
-  const fromWindow = data?.practitionerOptions ?? [];
-  const options: ApiOptionItem[] = [];
-  const windowIds: string[] = [];
-  for (const item of fromWindow) {
-    const key = preserveApiIdForRequest(item.value);
-    if (!key) {
-      continue;
-    }
-    options.push({ ...item, value: key });
-    windowIds.push(key);
+  const merged = new Map<string, ApiOptionItem>();
+  for (const item of normalizeCashierOptions(pageInit.value?.cashierOptions)) {
+    merged.set(item.value, item);
   }
-  cashierOptions.value = options;
-  // 已选中若不在本窗则剔除；空选且本窗有人时自动带出
+  const fromWindow = data?.practitionerOptions ?? [];
+  const windowIds: string[] = [];
+  for (const item of normalizeCashierOptions(fromWindow)) {
+    if (!merged.has(item.value)) {
+      merged.set(item.value, item);
+    }
+    windowIds.push(item.value);
+  }
+  cashierOptions.value = [...merged.values()];
+  const allowed = new Set(cashierOptions.value.map((item) => item.value));
+  // 已选中若不在下拉则剔除；空选且本窗有人时自动带出本窗的人，不把整个款员岗池选上
   if (queryForm.cashierIds.length > 0) {
-    const allowed = new Set(windowIds);
     const retained = queryForm.cashierIds.filter((id) => allowed.has(id));
     if (retained.length !== queryForm.cashierIds.length) {
       skipCashierChangeSearch.value = true;
@@ -368,6 +369,19 @@ function syncCashierOptionsFromPreview(data: null | PreviewOutpatientDailySettle
     skipCashierChangeSearch.value = true;
     queryForm.cashierIds = windowIds;
   }
+}
+
+/** 下拉值统一成字符串主键，避免 Long 精度丢失 */
+function normalizeCashierOptions(source: ApiOptionItem[] | undefined): ApiOptionItem[] {
+  const options: ApiOptionItem[] = [];
+  for (const item of source ?? []) {
+    const key = preserveApiIdForRequest(item.value);
+    if (!key) {
+      continue;
+    }
+    options.push({ ...item, value: key });
+  }
+  return options;
 }
 
 /** 改日期：标记为人工区间，清空已选收款人后再查，便于空选路径自动带出本窗收费人 */
@@ -715,12 +729,12 @@ onActivated(() => {
               />
             </ElSelect>
           </ElFormItem>
-          <ElFormItem label="收款人">
+          <ElFormItem label="款员">
             <ElSelect
               v-model="queryForm.cashierIds"
               multiple
               clearable
-              placeholder="不选=全部；仅列出本窗有流水者"
+              placeholder="不选=全部"
               class="!w-auto !min-w-[220px]"
               filterable
               @change="handleCashierIdsChange"
@@ -794,7 +808,7 @@ onActivated(() => {
             class="grid grid-cols-4 gap-x-4 gap-y-1 border-b border-[var(--el-border-color)] pb-2.5 text-sm leading-snug"
           >
             <div>
-              <span class="text-[var(--el-text-color-regular)]">收款人：</span>
+              <span class="text-[var(--el-text-color-regular)]">款员：</span>
               {{ selectedCashierLabel }}
             </div>
             <div>

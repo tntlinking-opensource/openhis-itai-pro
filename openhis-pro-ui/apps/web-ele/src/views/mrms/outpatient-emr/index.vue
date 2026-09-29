@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
 
+import type { EmrPrintPaperPayload } from '#/api/emr/document';
 import type { OptionDto } from '#/api/outpatient-registration';
 import type { OutpatientEmrListItemDto, QueryOutpatientEmrParams } from '#/api/mrms/types';
 
@@ -60,6 +61,9 @@ const pdfBase64 = ref('');
 const pdfPageCount = ref<number | undefined>();
 const pdfTitle = ref('门诊病历');
 const pdfAutoPrint = ref(false);
+const pdfReloading = ref(false);
+/** 预览弹窗换纸时回放同一行 */
+const pdfSourceRow = ref<null | OutpatientEmrListItemDto>(null);
 
 /** 病历编辑弹层 */
 const editVisible = ref(false);
@@ -76,22 +80,19 @@ const loginPractitionerId = computed(() =>
 
 const DOCUMENT_STATUS_LABEL: Record<string, string> = {
   DRAFT: '草稿',
-  SUBMITTED: '已提交',
-  LOCKED: '已锁定',
+  PENDING_ARCHIVE: '待归档审批',
   ARCHIVED: '已归档',
 };
 
 const DOCUMENT_STATUS_TAG: Record<string, 'info' | 'success' | 'warning' | 'danger'> = {
   DRAFT: 'info',
-  SUBMITTED: 'success',
-  LOCKED: 'warning',
-  ARCHIVED: 'danger',
+  PENDING_ARCHIVE: 'warning',
+  ARCHIVED: 'success',
 };
 
 const DOCUMENT_STATUS_OPTIONS = [
   { label: '草稿', value: 'DRAFT' },
-  { label: '已提交', value: 'SUBMITTED' },
-  { label: '已锁定', value: 'LOCKED' },
+  { label: '待归档审批', value: 'PENDING_ARCHIVE' },
   { label: '已归档', value: 'ARCHIVED' },
 ];
 
@@ -278,33 +279,47 @@ function openEdit(row: OutpatientEmrListItemDto) {
 }
 
 /**
+ * 按列表行生成门诊病历 PDF。
+ *
+ * @param row 列表行
+ * @param paper 预览弹窗所选纸张；不传则后端默认 A4
+ */
+async function requestRowPdf(row: OutpatientEmrListItemDto, paper?: EmrPrintPaperPayload) {
+  const documentId = preserveApiIdForRequest(row.documentId);
+  if (!documentId) {
+    ElMessage.warning('文书主键缺失');
+    return null;
+  }
+  const result = await generateDocumentPdfApi({
+    documentId,
+    patientId: preserveApiIdForRequest(row.patientId),
+    encounterId: preserveApiIdForRequest(row.encounterId),
+    documentTitle: row.title || '门诊病历',
+    documentTypeName: row.documentTypeName || '门诊病历',
+    previewMode: true,
+    printConfig: paper ? { paper } : undefined,
+  });
+  const base64 = result?.pdfBase64?.trim();
+  if (!base64) {
+    ElMessage.error('未生成 PDF 内容');
+    return null;
+  }
+  return { ...result, pdfBase64: base64 };
+}
+
+/**
  * 生成门诊病历 PDF 并打开预览/打印对话框。
  *
  * @param row 列表行
  * @param autoPrint 是否自动调起系统打印
  */
 async function openPdf(row: OutpatientEmrListItemDto, autoPrint: boolean) {
-  const documentId = preserveApiIdForRequest(row.documentId);
-  if (!documentId) {
-    ElMessage.warning('文书主键缺失');
-    return;
-  }
   try {
     loading.value = true;
-    const result = await generateDocumentPdfApi({
-      documentId,
-      patientId: preserveApiIdForRequest(row.patientId),
-      encounterId: preserveApiIdForRequest(row.encounterId),
-      documentTitle: row.title || '门诊病历',
-      documentTypeName: row.documentTypeName || '门诊病历',
-      previewMode: true,
-    });
-    const base64 = result?.pdfBase64?.trim();
-    if (!base64) {
-      ElMessage.error('未生成 PDF 内容');
-      return;
-    }
-    pdfBase64.value = base64;
+    const result = await requestRowPdf(row);
+    if (!result) return;
+    pdfSourceRow.value = row;
+    pdfBase64.value = result.pdfBase64;
     pdfPageCount.value = result.pageCount;
     pdfTitle.value = row.title || `${row.patientName || ''}门诊病历`;
     pdfAutoPrint.value = autoPrint;
@@ -313,6 +328,24 @@ async function openPdf(row: OutpatientEmrListItemDto, autoPrint: boolean) {
     ElMessage.error(autoPrint ? '打印失败' : '预览失败');
   } finally {
     loading.value = false;
+  }
+}
+
+/** 预览弹窗改纸张：按同一文书重出 PDF */
+async function onPreviewPaperChange(paper: EmrPrintPaperPayload) {
+  const row = pdfSourceRow.value;
+  if (!row || pdfReloading.value) return;
+  pdfAutoPrint.value = false;
+  pdfReloading.value = true;
+  try {
+    const result = await requestRowPdf(row, paper);
+    if (!result) return;
+    pdfBase64.value = result.pdfBase64;
+    pdfPageCount.value = result.pageCount;
+  } catch {
+    ElMessage.error('预览失败');
+  } finally {
+    pdfReloading.value = false;
   }
 }
 
@@ -349,7 +382,7 @@ async function handleArchiveClinicalCase(row: OutpatientEmrListItemDto) {
 }
 
 /**
- * 解档病例：确认后解锁 LOCKED 文书（病案主档已归档时后端拒绝）。
+ * 解档病例：确认后将 ARCHIVED 文书恢复为 DRAFT（病案主档已归档时后端拒绝）。
  *
  * @param row 列表行
  */
@@ -477,6 +510,8 @@ onActivated(() => {
       :page-count="pdfPageCount"
       :title="pdfTitle"
       :auto-print="pdfAutoPrint"
+      :loading="pdfReloading"
+      @paper-change="onPreviewPaperChange"
     />
   </Page>
 </template>

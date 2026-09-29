@@ -25,9 +25,11 @@ import com.openhis.health.domain.administration.encounter.entity.Encounter;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.clinical.observation.command.CreateObservationCommand;
 import com.openhis.health.domain.clinical.observation.command.FinalizeObservationCommand;
+import com.openhis.health.domain.clinical.observation.command.ProjectFromPacsSummaryCommand;
 import com.openhis.health.domain.clinical.observation.command.UpdateObservationCommand;
 import com.openhis.health.domain.clinical.observation.entity.Observation;
 import com.openhis.health.domain.clinical.observation.queries.model.ObservationModel;
+import com.openhis.health.domain.clinical.observation.service.LisResultProjectionService;
 import com.openhis.health.domain.clinical.observation.service.ObservationDomainService;
 import com.openhis.health.domain.clinical.observation.service.ObservationQueryService;
 import com.openhis.health.domain.clinical.observationdefinition.command.SaveObservationDefinitionCommand;
@@ -37,17 +39,27 @@ import com.openhis.health.domain.clinical.observationdefinition.service.Observat
 import com.openhis.health.domain.clinical.observationdefinition.service.ObservationDefinitionQueryService;
 import com.openhis.health.domain.custom.activityobservationlink.queries.model.ActivityObservationLinkModel;
 import com.openhis.health.domain.custom.activityobservationlink.service.ActivityObservationLinkQueryService;
+import com.openhis.health.domain.pacs.diagnosticreport.queries.model.PacsDiagnosticReportDetailQueryModel;
+import com.openhis.health.domain.pacs.diagnosticreport.service.PacsDiagnosticReportQueryService;
+import com.openhis.health.domain.pacs.workitem.queries.model.PacsWorkItemDetailQueryModel;
+import com.openhis.health.domain.pacs.workitem.service.PacsWorkItemQueryService;
 import com.openhis.health.domain.peis.commonresult.queries.model.PeisCommonResultModel;
 import com.openhis.health.domain.peis.commonresult.service.PeisCommonResultQueryService;
 import com.openhis.health.domain.peis.encounterprogress.queries.PeisEncounterProgressQuery;
 import com.openhis.health.domain.peis.encounterprogress.queries.model.DeptDeskRowModel;
 import com.openhis.health.domain.peis.encounterprogress.queries.query.DeptDeskQuery;
+import com.openhis.health.domain.peis.servicerequestext.command.UpdatePeisSrDispatchCommand;
 import com.openhis.health.domain.peis.servicerequestext.command.UpdatePeisSrExecStatusCommand;
+import com.openhis.health.domain.peis.servicerequestext.queries.model.PeisServiceRequestExtModel;
 import com.openhis.health.domain.peis.servicerequestext.service.PeisServiceRequestExtDomainService;
+import com.openhis.health.domain.peis.servicerequestext.service.PeisServiceRequestExtQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.ObservationDefinitionConstants;
+import com.openhis.health.domain.share.constants.PeisDispatchStatusConstants;
 import com.openhis.health.domain.share.constants.PeisExecStatusConstants;
+import com.openhis.health.domain.share.constants.ServiceRequestCategoryConstants;
 import com.openhis.health.domain.share.enums.EncounterClass;
+import com.openhis.health.domain.share.enums.PacsReportStatus;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -76,7 +88,7 @@ import java.util.Set;
  *   <li>Gate：仅 PE 就诊；可选科室与 SR.orgId 一致；OD 须启用。</li>
  *   <li>Pre：ProgressQuery 待检队列；按 SR 加载 Observation；常见结果模板读侧。</li>
  *   <li>Cmd：ObservationDomainService upsert/finalize；确认后更新 peis_sr_ext.exec=checked。</li>
- *   <li>Asm：经 {@link PeisDeptDeskMapper} 装配；DES-08 投影 Gap 未关前拒绝。</li>
+ *   <li>Asm：经 {@link PeisDeptDeskMapper} 装配；DES-08 检查类走 PACS 投影补偿。</li>
  * </ul>
  *
  * <p>接入：{@code AppServiceControllerRegistrar} → {@code POST /api/app/peisDeptExamDesk/{methodName}}；不另写 RestController。</p>
@@ -84,9 +96,6 @@ import java.util.Set;
 @Service
 @RequiredArgsConstructor
 public class PeisDeptExamDeskAppService {
-
-    private static final String GAP_PROJECTION_MESSAGE =
-        "LIS/PACS 结果投影尚未就绪（GAP-PEIS-DES-01），请等待领域 LisResultProjectionService 关闭后再试";
 
     /** 租户默认「项目结论」观察项编码（无需手工维护目录）。 */
     private static final String DEFAULT_PROJECT_CONCLUSION_CODE = "PEIS_PROJECT_CONCLUSION";
@@ -98,6 +107,8 @@ public class PeisDeptExamDeskAppService {
     private final ObservationDomainService observationDomainService;
     /** 观察实例读侧。 */
     private final ObservationQueryService observationQueryService;
+    /** LIS/PACS → CLN 投影。 */
+    private final LisResultProjectionService lisResultProjectionService;
     /** 观察定义目录读侧（启停与分类）。 */
     private final ObservationDefinitionQueryService observationDefinitionQueryService;
     /** 观察定义目录写侧（懒创建默认项目结论）。 */
@@ -108,6 +119,12 @@ public class PeisDeptExamDeskAppService {
     private final PeisEncounterProgressQuery peisEncounterProgressQuery;
     /** 项目执行扩展写侧（确认后 checked）。 */
     private final PeisServiceRequestExtDomainService peisServiceRequestExtDomainService;
+    /** 项目执行扩展读侧。 */
+    private final PeisServiceRequestExtQueryService peisServiceRequestExtQueryService;
+    /** 检查报告读侧（DES-08 PACS）。 */
+    private final PacsDiagnosticReportQueryService pacsDiagnosticReportQueryService;
+    /** 检查工单读侧（DES-08 PACS）。 */
+    private final PacsWorkItemQueryService pacsWorkItemQueryService;
     /** 常见结果模板读侧。 */
     private final PeisCommonResultQueryService peisCommonResultQueryService;
     /** 服务申请读侧。 */
@@ -297,17 +314,85 @@ public class PeisDeptExamDeskAppService {
     }
 
     /**
-     * 拉取 LIS/PACS 结果投影（IF-PEIS-DES-08；Gap 未关闭前拒绝）。
+     * 拉取 LIS/PACS 结果投影（IF-PEIS-DES-08）。
+     *
+     * <p>检查（category=TEST）走 {@code projectFromPacsSummary}；检验（PROOF）仍待 LIS Gap。</p>
      *
      * @param request 投影请求
      */
+    @Transactional
     public void projectResults(ProjectResultsRequest request) {
-        // Gate：Gap 未关闭，禁止伪实现投影
         if (request == null || request.getServiceRequestId() == null) {
             throw new BusinessException(
                 ErrorCodeConstants.OBSERVATION_INVALID_ARGUMENT, "服务申请标识不能为空");
         }
-        throw new BusinessException(ErrorCodeConstants.OBSERVATION_INVALID_ARGUMENT, GAP_PROJECTION_MESSAGE);
+        ServiceRequestListModel sr = serviceRequestQueryService.mustGetListModelById(request.getServiceRequestId());
+        peisDeptDeskEligibilitySupport.assertEncounterEligibleForDeptDesk(sr.getEncounterId());
+        PeisServiceRequestExtModel ext =
+            peisServiceRequestExtQueryService.findByServiceRequestId(request.getServiceRequestId());
+        if (ext == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.OBSERVATION_INVALID_ARGUMENT, "服务申请扩展不存在，请先外发");
+        }
+
+        if (ServiceRequestCategoryConstants.SERVICE_CATEGORY_TEST.equals(sr.getCategoryEnum())) {
+            this.projectPacsCompensation(sr, ext);
+            return;
+        }
+        if (ServiceRequestCategoryConstants.SERVICE_CATEGORY_PROOF.equals(sr.getCategoryEnum())) {
+            throw new BusinessException(
+                ErrorCodeConstants.OBSERVATION_INVALID_ARGUMENT,
+                "LIS 结果投影尚未就绪（GAP-PEIS-DES-01 / projectFromLis），检查类请用 category=TEST");
+        }
+        throw new BusinessException(
+            ErrorCodeConstants.OBSERVATION_INVALID_ARGUMENT, "仅支持检验/检查类服务申请投影");
+    }
+
+    private void projectPacsCompensation(ServiceRequestListModel sr, PeisServiceRequestExtModel ext) {
+        String dispatch = ext.getPacsDispatchEnum();
+        if (!PeisDispatchStatusConstants.SENT.equals(dispatch)
+            && !PeisDispatchStatusConstants.RESULT_RECEIVED.equals(dispatch)) {
+            throw new BusinessException(
+                ErrorCodeConstants.OBSERVATION_INVALID_ARGUMENT, "检查未外发，请先外发后再拉取结果");
+        }
+        Optional<PacsWorkItemDetailQueryModel> workItemOpt =
+            pacsWorkItemQueryService.findOptionalByServiceRequestId(sr.getId());
+        if (workItemOpt.isEmpty()) {
+            throw new BusinessException(
+                ErrorCodeConstants.PACS_WORK_ITEM_NOT_FOUND, "未找到关联检查工单");
+        }
+        PacsWorkItemDetailQueryModel workItem = workItemOpt.get();
+        PacsDiagnosticReportDetailQueryModel report = pacsDiagnosticReportQueryService
+            .findByWorkItemId(workItem.getId())
+            .orElseThrow(() -> new BusinessException(
+                ErrorCodeConstants.PACS_REPORT_NOT_FOUND, "检查报告不存在，无法投影"));
+        if (!PacsReportStatus.FINAL.getCode().equals(report.getStatusEnum())) {
+            throw new BusinessException(
+                ErrorCodeConstants.PACS_REPORT_INVALID_STATUS, "检查报告未审核发布，无法投影");
+        }
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
+            ErrorCodeConstants.OBSERVATION_INVALID_ARGUMENT, "未获取到当前操作人");
+        Encounter encounter = encounterQueryService.findOptionalEncounterEntityById(sr.getEncounterId())
+            .orElseThrow(() -> new BusinessException(
+                ErrorCodeConstants.OBSERVATION_INVALID_ARGUMENT, "就诊不存在"));
+
+        ProjectFromPacsSummaryCommand projectCmd = new ProjectFromPacsSummaryCommand();
+        projectCmd.setTenantId(encounter.getTenantId());
+        projectCmd.setOrgId(sr.getOrgId());
+        projectCmd.setEncounterId(sr.getEncounterId());
+        projectCmd.setServiceRequestId(sr.getId());
+        projectCmd.setActivityId(sr.getActivityId() != null ? sr.getActivityId() : ext.getActivityId());
+        projectCmd.setPacsReportId(report.getId());
+        projectCmd.setConclusionText(report.getConclusion());
+        projectCmd.setFindingsText(report.getFindings());
+        projectCmd.setOperatorId(operatorId);
+        lisResultProjectionService.projectFromPacsSummary(projectCmd);
+
+        UpdatePeisSrDispatchCommand dispatchCmd = new UpdatePeisSrDispatchCommand();
+        dispatchCmd.setServiceRequestId(sr.getId());
+        dispatchCmd.setModuleEnum(PeisDispatchStatusConstants.MODULE_PACS);
+        dispatchCmd.setDispatchEnum(PeisDispatchStatusConstants.RESULT_RECEIVED);
+        peisServiceRequestExtDomainService.updateDispatchFlags(dispatchCmd);
     }
 
     private ServiceRequestListModel assertSaveObservationGate(SaveObservationRequest request) {

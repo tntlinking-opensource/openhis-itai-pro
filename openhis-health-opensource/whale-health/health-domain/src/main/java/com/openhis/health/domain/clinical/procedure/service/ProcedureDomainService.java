@@ -65,6 +65,16 @@ public class ProcedureDomainService {
         entity.setPatientId(cmd.getPatientId());
         entity.setCategoryEnum(cmd.getCategoryEnum());
         entity.setOccurrenceTime(cmd.getOccurrenceTime());
+        // 医技侧写入登录 TECH 科；护士站路径留空，两侧执行记录按 org_id 隔离
+        entity.setOrgId(cmd.getOrgId());
+        // 手术/麻醉执行横表：手术时间与 occurrence_time 分离；麻醉起止仅麻醉弹窗
+        entity.setProcedureTime(cmd.getProcedureTime());
+        entity.setAnesthesiaStartTime(cmd.getAnesthesiaStartTime());
+        entity.setAnesthesiaEndTime(cmd.getAnesthesiaEndTime());
+        entity.setIncisionTypeCode(cmd.getIncisionTypeCode());
+        entity.setSendLabFlag(cmd.getSendLabFlag());
+        entity.setSpecimen(cmd.getSpecimen());
+        entity.setNote(cmd.getNote());
         entity.setOccurrenceSlotActive(true);
         // BR-PRO-002: 执行记录必须绑定就诊与患者。
         entity.assertRequestBound();
@@ -106,13 +116,16 @@ public class ProcedureDomainService {
      */
     public void appendProcedurePerformer(AppendProcedurePerformerCommand cmd) {
         Procedure procedure = this.loadProcedure(cmd.getProcedureId());
+        // 前置：仅准备中/执行中可挂入执行人（DM-CLN-004 §6.1.3）
+        procedure.assertPerformerAppendable();
         for (AppendProcedurePerformerCommand.ProcedurePerformerItemCommand item : cmd.resolveItems()) {
             ProcedurePerformer performer;
-            // 业务分支：新增路径。
+            // 业务分支：无子表 id 则新增执行人行
             if (item.getId() == null) {
                 performer = new ProcedurePerformer();
                 performer.setProcedureId(procedure.getId());
             } else {
+                // 业务分支：有子表 id 则更新同 procedure 下已有执行人行
                 performer = performerRepository.findByIdAndProcedureId(item.getId(), procedure.getId())
                     .orElseThrow(() -> new BusinessException(ErrorCodeConstants.PROCEDURE_NOT_FOUND, "执行人记录不存在"));
             }
@@ -150,6 +163,8 @@ public class ProcedureDomainService {
         } else if (entity.getRecordedTime() == null) {
             entity.setRecordedTime(LocalDateTime.now());
         }
+        // 手术执行横表：完成时可补实填字段（非空覆盖）
+        this.applySurgeryExecutionFieldsOnComplete(entity, cmd);
         // Assert：BR-PRO-004 完成动作必须具备结果语义（结果/报告至少一项）。
         entity.complete();
         // 持久化：状态 COMPLETED 与 recorder/recorded 同事务提交
@@ -291,5 +306,42 @@ public class ProcedureDomainService {
             refunded.setOccurrenceSlotActive(false);
             procedureRepository.save(refunded);
         });
+    }
+
+    /**
+     * 完成执行时按「非空覆盖」写入手术横表实填字段。
+     *
+     * @param entity 执行记录
+     * @param cmd    完成命令
+     */
+    private void applySurgeryExecutionFieldsOnComplete(Procedure entity, CompleteProcedureRecordCommand cmd) {
+        // 手术时间非空则覆盖（与 occurrence_time 分离）
+        if (cmd.getProcedureTime() != null) {
+            entity.setProcedureTime(cmd.getProcedureTime());
+        }
+        // 麻醉开始非空则覆盖
+        if (cmd.getAnesthesiaStartTime() != null) {
+            entity.setAnesthesiaStartTime(cmd.getAnesthesiaStartTime());
+        }
+        // 麻醉结束非空则覆盖
+        if (cmd.getAnesthesiaEndTime() != null) {
+            entity.setAnesthesiaEndTime(cmd.getAnesthesiaEndTime());
+        }
+        // 切口类别非空则覆盖
+        if (cmd.getIncisionTypeCode() != null) {
+            entity.setIncisionTypeCode(cmd.getIncisionTypeCode());
+        }
+        // 是否送检非空则覆盖
+        if (cmd.getSendLabFlag() != null) {
+            entity.setSendLabFlag(cmd.getSendLabFlag());
+        }
+        // 样本非空则覆盖（与备注分列）
+        if (cmd.getSpecimen() != null) {
+            entity.setSpecimen(cmd.getSpecimen());
+        }
+        // 备注非空则覆盖（与样本分列）
+        if (cmd.getNote() != null) {
+            entity.setNote(cmd.getNote());
+        }
     }
 }

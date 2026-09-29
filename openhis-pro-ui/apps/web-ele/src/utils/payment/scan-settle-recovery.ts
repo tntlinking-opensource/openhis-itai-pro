@@ -34,23 +34,32 @@ export class ScanSettleRefundedError extends Error {
 export interface SettleWithScanRecoveryOptions {
   /** 支付草稿主键：退货成功后清缓存并落 BPC REFUNDED */
   paymentDraftId?: number | string;
-  /** 退货金额（元）；缺省按 paidAmtFen / txnAmtFen */
+  /**
+   * 医院账金额（元），仅兜底。有凭证 `paidAmtFen`/`txnAmtFen` 时，Win 退货优先渠道患者实付，
+   * 勿把医院账 5 元误打给银联（患者实付可能是 4.99）。
+   */
   refundAmountYuan?: number | string;
 }
 
 /**
- * 解析半成功退货金额（元）。
+ * 解析半成功银联 Win 退货金额（元）：渠道患者实付优先，医院账金额仅兜底。
  *
- * @param clientScanResult 扫码凭证
- * @param fallback 调用方提示金额
+ * @param clientScanResult 扫码凭证（含 paidAmtFen / txnAmtFen）
+ * @param fallback 调用方医院账金额（元）；仅当凭证无渠道分时使用
  */
 function resolveRefundAmountYuan(
   clientScanResult: ClientScanResultDto,
   fallback?: number | string,
 ): string {
-  const paidFen = Number(clientScanResult.paidAmtFen ?? clientScanResult.txnAmtFen ?? 0);
-  if (Number.isFinite(paidFen) && paidFen > 0) {
-    return formatMoneyDisplay(paidFen / 100);
+  let channelFen = 0;
+  if (clientScanResult.paidAmtFen != null && Number(clientScanResult.paidAmtFen) > 0) {
+    channelFen = Number(clientScanResult.paidAmtFen);
+  } else if (clientScanResult.txnAmtFen != null && Number(clientScanResult.txnAmtFen) > 0) {
+    channelFen = Number(clientScanResult.txnAmtFen);
+  }
+  // 有渠道分：Win R 按实付，避免把医院账 5.00 打给只收了 4.99 的渠道
+  if (Number.isFinite(channelFen) && channelFen > 0) {
+    return formatMoneyDisplay(channelFen / 100);
   }
   return formatMoneyDisplay(fallback ?? 0);
 }

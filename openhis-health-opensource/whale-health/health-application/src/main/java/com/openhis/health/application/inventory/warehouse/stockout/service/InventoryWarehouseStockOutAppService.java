@@ -32,7 +32,7 @@ import com.openhis.health.application.shared.tracenumber.TraceNumberSupplyAgreeT
 import com.openhis.health.application.shared.tracenumber.RecordTraceTransferPairSpec;
 import com.openhis.health.domain.administration.product.support.ProductDefinitionDisplaySupport;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryCatalogAvailabilityRowModel;
-import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
+import com.openhis.health.application.shared.practitioner.PractitionerRoleScopeLoader;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionSelectionTerminologyMaps;
@@ -840,11 +840,12 @@ public class InventoryWarehouseStockOutAppService {
                     pageItemIds.add(inv.getItemId());
                 }
             }
-            // —— 选品为批号行级展开（inventoryItemId 锚点）：可用量按 wkf_inventory_item.id 回填，与 assert 行级键一致；禁止 itemId+批号聚合。——
+            // —— 选品为批号行级展开（inventoryItemId 锚点）：库房账面量（不过期、不剔锁定）按 wkf_inventory_item.id 回填，与 assert 行级键一致。——
             Map<Long, BigDecimal> availableQtyByInventoryItemId = new HashMap<>();
             if (!pageItemIds.isEmpty()) {
+                // Pre：库房账面量回填（不过期、不剔锁定；药库/药房/科室同口径）
                 List<InventoryCatalogAvailabilityRowModel> availRows =
-                    this.inventoryItemQueryService.findAvailableCatalogRowsForOrder(
+                    this.inventoryItemQueryService.findWarehouseOperableCatalogRowsForOrder(
                         itemTable, new ArrayList<>(pageItemIds), List.of(request.getSourceLocationId()));
                 for (InventoryCatalogAvailabilityRowModel ar : availRows) {
                     if (ar == null || ar.getId() == null || ar.getQuantity() == null) {
@@ -867,9 +868,9 @@ public class InventoryWarehouseStockOutAppService {
                 ProductDefinitionDisplayDto pr = products.get(key);
                 ProductDefinitionItemDto dto = stockOutMapper.toProductDefinitionItemDtoFromInventory(inv, pr);
                 if (inv.getId() != null) {
-                    // —— 可用量：与 assert 阶段同一 inventoryItemId 行级键，避免账面 quantity 与可用口径不一致。——
+                    // —— 账面量：与 assert 同一 inventoryItemId 行级键；过期/锁定均按账面回填。——
                     BigDecimal avail = availableQtyByInventoryItemId.get(inv.getId());
-                    // 无可用量行时展示 0，避免 null 误导前端可出库
+                    // 无账面行时展示 0，避免 null 误导前端
                     if (avail == null) {
                         avail = BigDecimal.ZERO;
                     }
@@ -1668,8 +1669,9 @@ public class InventoryWarehouseStockOutAppService {
         }
         if (!requestedByInventoryItemId.isEmpty()) {
             List<Long> invIds = new ArrayList<>(requestedByInventoryItemId.keySet());
+            // Pre：库房账面量回填（不过期、不剔锁定；药库/药房/科室同口径）
             List<InventoryCatalogAvailabilityRowModel> rowsById =
-                this.inventoryItemQueryService.findAvailableCatalogRowsForInventoryItemIds(invIds, locationIds);
+                this.inventoryItemQueryService.findWarehouseOperableCatalogRowsForInventoryItemIds(invIds, locationIds);
             Map<Long, InventoryCatalogAvailabilityRowModel> rowByInventoryItemId = new HashMap<>();
             for (InventoryCatalogAvailabilityRowModel row : rowsById) {
                 if (row == null || row.getId() == null) {
@@ -1686,7 +1688,7 @@ public class InventoryWarehouseStockOutAppService {
                 if (row == null || sample == null) {
                     throw new BusinessException(
                         ErrorCodeConstants.WHS_SO_001,
-                        "所选库存行当前不可用、已锁定或已过期，请刷新选品后再试");
+                        "所选库存行不存在或已变更，请刷新选品后再试");
                 }
                 if (!Objects.equals(row.getLocationId(), sourceLocationId)) {
                     throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "所选库存行与当前源药库不一致");
@@ -1768,8 +1770,9 @@ public class InventoryWarehouseStockOutAppService {
             if (itemIds.isEmpty()) {
                 continue;
             }
+            // Pre：库房账面量回填（不过期、不剔锁定；药库/药房/科室同口径）
             List<InventoryCatalogAvailabilityRowModel> rows =
-                this.inventoryItemQueryService.findAvailableCatalogRowsForOrder(
+                this.inventoryItemQueryService.findWarehouseOperableCatalogRowsForOrder(
                     itemTable, new ArrayList<>(itemIds), locationIds);
             Map<Long, Map<String, BigDecimal>> availableByItemLot = new HashMap<>();
             Map<Long, BigDecimal> availableByItemId = new HashMap<>();

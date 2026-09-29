@@ -11,6 +11,7 @@ import com.openhis.health.domain.medication.medicationdefinition.repository.Medi
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.MedicationCatalogImportConstants;
+import com.openhis.health.domain.share.constants.PrescriptionSplitConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.KeyDrugType;
 import com.openhis.health.domain.share.enums.PublicationStatus;
@@ -334,10 +335,17 @@ public class MedicationDefinitionQueryService {
                 if (StringUtils.isNotEmpty(query.getCategoryCode())) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.CATEGORY_CODE), query.getCategoryCode().trim()));
                 }
-                // 重点药类型：非空时对应药典布尔标识为 true（null/空不限；与列表/导出同口径）
-                String keyDrugFlagField = this.resolveKeyDrugFlagFieldName(query.getKeyDrugType());
-                if (keyDrugFlagField != null) {
-                    predicates.add(cb.equal(root.get(keyDrugFlagField), Boolean.TRUE));
+                // 重点药类型（四旗）：null/空不限
+                Predicate keyDrugPredicate =
+                    this.buildKeyDrugTypePredicate(root, cb, query.getKeyDrugType());
+                if (keyDrugPredicate != null) {
+                    predicates.add(keyDrugPredicate);
+                }
+                // 药品性质（麻/精）：与重点药类型分字段；同时非空时 AND
+                Predicate medicinePropertyPredicate =
+                    this.buildKeyDrugTypePredicate(root, cb, query.getMedicinePropertyCode());
+                if (medicinePropertyPredicate != null) {
+                    predicates.add(medicinePropertyPredicate);
                 }
                 String normalizedStatus = this.normalizeKeyDrugStatusFilter(query.getStatusEnum());
                 if (normalizedStatus != null) {
@@ -1071,10 +1079,12 @@ public class MedicationDefinitionQueryService {
     }
 
     /**
-     * 按主键批量解析重点药四旗（AS-RPT-011 性能路径：仅窗内出现的 productId，禁止全库扫目录）。
+     * 按主键批量解析重点药标识（AS-RPT-011 性能路径：仅窗内出现的 productId，禁止全库扫目录）。
+     *
+     * <p>投影含四旗布尔与药品性质码，供基药/监控/集采/抗生素/麻/精一/精二分桶。</p>
      *
      * @param ids 药典主键集合；空返回空 Map
-     * @return id → 四旗投影；已软删行不写入
+     * @return id → 重点药投影；已软删行不写入
      */
     public Map<Long, MedicationKeyDrugFlagQueryModel> mapKeyDrugFlagsByIds(Collection<Long> ids) {
         Map<Long, MedicationKeyDrugFlagQueryModel> result = new LinkedHashMap<>();
@@ -1084,7 +1094,7 @@ public class MedicationDefinitionQueryService {
         List<MedicationDefinition> rows = new ArrayList<>(IdInQueryChunkSupport.loadByIdInChunks(
             ids,
             chunkIds -> this.medicationDefinitionRepository.findAllById(chunkIds)));
-        // Loop：仅未删除行写入四旗，供报表按类型分桶
+        // Loop：仅未删除行写入标识，供报表按类型分桶
         for (MedicationDefinition row : rows) {
             if (row == null || row.getId() == null || Boolean.TRUE.equals(row.getIsDeleted())) {
                 continue;
@@ -1095,6 +1105,7 @@ public class MedicationDefinitionQueryService {
             flags.setNationalMonitorFlag(row.getNationalMonitorFlag());
             flags.setCentralPurchaseFlag(row.getCentralPurchaseFlag());
             flags.setAntibioticFlag(row.getAntibioticFlag());
+            flags.setPharmacologyCategoryCode(row.getPharmacologyCategoryCode());
             result.put(row.getId(), flags);
         }
         return result;
@@ -1103,7 +1114,8 @@ public class MedicationDefinitionQueryService {
     /**
      * 按重点药类型解析药品定义主键（库存明细筛选预解析，B.6.4 禁止 inventory 跨包 JOIN）。
      *
-     * <p>仅收窄「对应标识为 true」的未删除药品；未知/空 code 返回空列表。不按启用/停用收窄。</p>
+     * <p>布尔旗类型筛对应标识为 true；麻/精一/精二筛 {@code pharmacology_category_code} 等值。
+     * 未知/空 code 返回空列表。不按启用/停用收窄。</p>
      *
      * @param keyDrugTypeCode {@link KeyDrugType#getCode()}；空时返回空列表
      * @return 命中的目录主键列表
@@ -1115,7 +1127,7 @@ public class MedicationDefinitionQueryService {
     /**
      * 按重点药类型 + 可选目录状态解析药品定义主键（AS-RPT-011 启用/停用筛选）。
      *
-     * <p>仅收窄「对应标识为 true」的未删除药品；{@code statusEnum} 为空则不按状态收窄；
+     * <p>布尔旗类型筛对应标识为 true；麻/精一/精二筛药品性质码；{@code statusEnum} 为空则不按状态收窄；
      * 仅认 {@link PublicationStatus#ACTIVE}/{@link PublicationStatus#INACTIVE}。</p>
      *
      * @param keyDrugTypeCode {@link KeyDrugType#getCode()}；空时返回空列表
@@ -1123,15 +1135,25 @@ public class MedicationDefinitionQueryService {
      * @return 命中的目录主键列表
      */
     public List<Long> listIdsByKeyDrugType(String keyDrugTypeCode, String statusEnum) {
-        String flagField = this.resolveKeyDrugFlagFieldName(keyDrugTypeCode);
-        if (flagField == null) {
+        // Gate：空/未知类型无命中，禁止全表扫
+        if (StringUtils.isEmpty(keyDrugTypeCode)) {
+            return Collections.emptyList();
+        }
+        KeyDrugType keyDrugType = EnumUtil.fromCode(KeyDrugType.class, keyDrugTypeCode.trim());
+        if (keyDrugType == null) {
             return Collections.emptyList();
         }
         String normalizedStatus = this.normalizeKeyDrugStatusFilter(statusEnum);
         Specification<MedicationDefinition> specification = (root, criteriaQuery, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
-            predicates.add(cb.equal(root.get(flagField), Boolean.TRUE));
+            Predicate keyDrugPredicate = this.buildKeyDrugTypePredicate(root, cb, keyDrugType.getCode());
+            // 无法解析的类型码：恒假，避免误返回全表
+            if (keyDrugPredicate == null) {
+                predicates.add(cb.disjunction());
+            } else {
+                predicates.add(keyDrugPredicate);
+            }
             // 启用/停用筛选：有合法状态码时收窄 status_enum
             if (normalizedStatus != null) {
                 predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), normalizedStatus));
@@ -1199,16 +1221,43 @@ public class MedicationDefinitionQueryService {
     }
 
     /**
-     * 将重点药类型 code 映射为药典布尔字段属性名；空或未知码返回 null（表示不筛）。
+     * 按重点药类型组装目录谓词：布尔旗等值 true，或药品性质码等值；空/未知返回 null（调用方不追加）。
      *
+     * @param root            药典 root
+     * @param cb              CriteriaBuilder
      * @param keyDrugTypeCode {@link KeyDrugType#getCode()}
-     * @return {@link FieldNameConstants} 中的 flag 属性名；无法解析时 null
+     * @return 类型谓词；无法解析时 null
      */
-    private String resolveKeyDrugFlagFieldName(String keyDrugTypeCode) {
+    private Predicate buildKeyDrugTypePredicate(
+        Root<MedicationDefinition> root,
+        CriteriaBuilder cb,
+        String keyDrugTypeCode) {
         if (StringUtils.isEmpty(keyDrugTypeCode)) {
             return null;
         }
         KeyDrugType type = EnumUtil.fromCode(KeyDrugType.class, keyDrugTypeCode.trim());
+        if (type == null) {
+            return null;
+        }
+        // 麻/精一/精二：药品性质码等值（术语 medicine_properties）
+        String medicinePropertyCode = this.resolveMedicinePropertyCode(type);
+        if (medicinePropertyCode != null) {
+            return cb.equal(root.get(FieldNameConstants.PHARMACOLOGY_CATEGORY_CODE), medicinePropertyCode);
+        }
+        String flagField = this.resolveKeyDrugFlagFieldName(type);
+        if (flagField == null) {
+            return null;
+        }
+        return cb.equal(root.get(flagField), Boolean.TRUE);
+    }
+
+    /**
+     * 将重点药类型映射为药典布尔字段属性名；麻/精与未知返回 null。
+     *
+     * @param type 重点药类型枚举
+     * @return {@link FieldNameConstants} 中的 flag 属性名；非布尔旗类型 null
+     */
+    private String resolveKeyDrugFlagFieldName(KeyDrugType type) {
         if (type == null) {
             return null;
         }
@@ -1228,4 +1277,24 @@ public class MedicationDefinitionQueryService {
         return null;
     }
 
+    /**
+     * 将麻/精重点药类型映射为术语 medicine_properties 码；非性质类返回 null。
+     *
+     * @param type 重点药类型
+     * @return 性质码；非麻/精类型 null
+     */
+    private String resolveMedicinePropertyCode(KeyDrugType type) {
+        if (type == KeyDrugType.NARCOTIC) {
+            return PrescriptionSplitConstants.MEDICINE_PROPERTY_NARCOTIC;
+        }
+        if (type == KeyDrugType.PSYCH_ONE) {
+            return PrescriptionSplitConstants.MEDICINE_PROPERTY_PSYCH_ONE;
+        }
+        if (type == KeyDrugType.PSYCH_TWO) {
+            return PrescriptionSplitConstants.MEDICINE_PROPERTY_PSYCH_TWO;
+        }
+        return null;
+    }
+
 }
+

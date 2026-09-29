@@ -3,7 +3,7 @@ import type { JSONContent } from '@tiptap/core';
 
 import type { EmrTemplateTreeNode } from './build-emr-template-tree';
 
-import type { DocumentSummaryDto } from '#/api/emr/document';
+import type { DocumentSummaryDto, EmrPrintPaperPayload } from '#/api/emr/document';
 import type { TemplateDto } from '#/api/emr/template';
 import type { ApplyEmrTemplatePayload, PatientInfoForEmrMetadata } from '#/emrEditor';
 import type { EmrTemplateStationKind } from '#/views/basic/emr-template/emr-template-scope.constants';
@@ -59,6 +59,7 @@ import {
   SimpleEditor,
   stripDocumentStampMetadataFromContentJson,
   stripEmrPageBreaks,
+  stripOutpatientSignoffMetadataFromContentJson,
 } from '#/emrEditor';
 import {
   packEmrDocWithSidecar,
@@ -225,6 +226,8 @@ const pdfPreviewAutoPrint = ref(false);
 const pdfPreviewBase64 = ref('');
 const pdfPreviewPageCount = ref<number | undefined>();
 const pdfPreviewTitle = ref('打印预览');
+/** 当前预览是预览还是正式打印，换纸时沿用 */
+const pdfPreviewMode = ref(true);
 
 const importDiagnosisDialogOpen = ref(false);
 const importAdviceDialogOpen = ref(false);
@@ -508,6 +511,12 @@ function editorDocIdForTab(tab: EmrOpenTab): string {
   return '';
 }
 
+/** 只读/可写切换时重建编辑器，避免引用历史后再复用仍沿用不可填的 NodeView */
+function editorInstanceKey(tab: EmrOpenTab): string {
+  const mode = tab.documentReadOnly || props.forceReadOnly ? 'ro' : 'rw';
+  return `${tab.key}:${mode}`;
+}
+
 function remoteSaveForTab(tabKey: string) {
   return async (content: JSONContent) => {
     const tab = openTabs.value.find((t) => t.key === tabKey);
@@ -622,6 +631,28 @@ function resolveLoginDoctorDisplayName(): string {
     if (text) return text;
   }
   return '';
+}
+
+/**
+ * 门诊病历新开（套模板/复用）：右下角医生钉成当前登录人。
+ * 签字日期等落款时间仍走元数据当天默认值。
+ */
+function pinOutpatientSignoffMetadata(
+  typeCode: string,
+  meta: Record<string, string>,
+): Record<string, string> {
+  if (typeCode.trim() !== 'OUTPATIENT_RECORD') return meta;
+  const doctor = resolveLoginDoctorDisplayName();
+  if (!doctor) return meta;
+  return { ...meta, doctorName: doctor };
+}
+
+/** 门诊病历新开前清掉右下角落款，其它文书只清落款时间 */
+function stripSignoffForNewDocument(typeCode: string, doc: JSONContent): JSONContent {
+  if (typeCode.trim() === 'OUTPATIENT_RECORD') {
+    return stripOutpatientSignoffMetadataFromContentJson(doc);
+  }
+  return stripDocumentStampMetadataFromContentJson(doc);
 }
 
 function resolvePatientDisplayName(metadata?: Record<string, string>): string {
@@ -1017,18 +1048,23 @@ async function applyTemplateLocallyToTab(
       buildMetadataValuesFromPatientInfo(props.patientInfo),
       serverMeta,
     );
-    liveTab.serverMetadataValues = mergedMeta;
+    const signoffMeta = pinOutpatientSignoffMetadata(typeCode, mergedMeta);
+    liveTab.serverMetadataValues = signoffMeta;
     // 模版章节硬分页与软分页叠加会半页留白；新开文书只靠纸高软分页
+    const templateDoc = stripEmrPageBreaks(loadEmrContentIntoTab(liveTab, tpl.content));
+    // 门诊病历右下角医生/日期不沿用模板里的旧值
     const doc = applyMetadataValuesToContentJson(
-      stripEmrPageBreaks(loadEmrContentIntoTab(liveTab, tpl.content)),
-      mergedMeta,
+      typeCode.trim() === 'OUTPATIENT_RECORD'
+        ? stripOutpatientSignoffMetadataFromContentJson(templateDoc)
+        : templateDoc,
+      signoffMeta,
       true,
     );
     liveTab.recordDoc = doc;
     captureContentSnapshot(liveTab, doc);
     liveTab.editorSurface = 'document';
     syncTabHeader(liveTab, {
-      metadataValues: mergedMeta,
+      metadataValues: signoffMeta,
     });
     void nextTick(() => {
       relayoutEditorForTab(liveTab.key);
@@ -1247,7 +1283,7 @@ const canSaveAsTemplate = computed(
 /** 侧栏「用当前病历更新模板」：与存为模版同前提 */
 const canUpdateTemplateContent = computed(() => canSaveAsTemplate.value);
 
-async function requestDocumentPdf(previewMode: boolean) {
+async function requestDocumentPdf(previewMode: boolean, paper?: EmrPrintPaperPayload) {
   if (!canPrintDocument.value) {
     ElMessage.warning('请先选择模板或打开病历');
     return null;
@@ -1293,6 +1329,7 @@ async function requestDocumentPdf(previewMode: boolean) {
     printConfig: buildEmrPrintConfigPayload(tab.pageMargins, tab.pageChrome, {
       isOutpatientRecord: documentTypeCode.value.trim() === 'OUTPATIENT_RECORD',
       screenMetrics,
+      paper,
     }),
   });
   if (!result?.pdfBase64?.trim()) {
@@ -1312,6 +1349,7 @@ async function handlePrintPreview() {
     const result = await requestDocumentPdf(true);
     if (!result) return;
     pdfPreviewAutoPrint.value = false;
+    pdfPreviewMode.value = true;
     pdfPreviewTitle.value = `${resolvePaperDocumentTitle(activeTab.value) || '病历'} · 预览`;
     pdfPreviewBase64.value = result.pdfBase64!;
     pdfPreviewPageCount.value = result.pageCount;
@@ -1333,10 +1371,28 @@ async function handlePrint() {
     const result = await requestDocumentPdf(false);
     if (!result) return;
     pdfPreviewAutoPrint.value = true;
+    pdfPreviewMode.value = false;
     pdfPreviewTitle.value = `${resolvePaperDocumentTitle(activeTab.value) || '病历'} · 打印`;
     pdfPreviewBase64.value = result.pdfBase64!;
     pdfPreviewPageCount.value = result.pageCount;
     pdfPreviewVisible.value = true;
+  } catch {
+    // 拦截器已提示
+  } finally {
+    pdfLoading.value = false;
+  }
+}
+
+/** 预览弹窗改纸张：按当前正文重出 PDF，不改编辑器纸面 */
+async function onPreviewPaperChange(paper: EmrPrintPaperPayload) {
+  if (pdfLoading.value) return;
+  pdfPreviewAutoPrint.value = false;
+  pdfLoading.value = true;
+  try {
+    const result = await requestDocumentPdf(pdfPreviewMode.value, paper);
+    if (!result) return;
+    pdfPreviewBase64.value = result.pdfBase64!;
+    pdfPreviewPageCount.value = result.pageCount;
   } catch {
     // 拦截器已提示
   } finally {
@@ -1782,15 +1838,16 @@ async function handleReuseDocument(row: DocumentSummaryDto) {
       buildMetadataValuesFromPatientInfo(props.patientInfo),
       serverMeta,
     );
+    const signoffMeta = pinOutpatientSignoffMetadata(typeCode, mergedMeta);
     const sidecar = readEmrDocSidecar(dto.content);
     sidecar.pageChrome = pinOutpatientPageChrome(typeCode, sidecar.pageChrome);
     const sourceDoc = normalizeEmrRootDoc(
       stripEmrDocSidecar(parseEmrContentToDoc(dto.content) ?? (dto.content as JSONContent)),
     );
-    // 复用是新文书：清空源落款时间后再烤当天，避免沿用旧记录时间
+    // 复用是新文书：清空源落款后再烤当前登录人与当天，避免沿用旧医生和旧时间
     const bakedDoc = applyMetadataValuesToContentJson(
-      stripDocumentStampMetadataFromContentJson(sourceDoc),
-      mergedMeta,
+      stripSignoffForNewDocument(typeCode, sourceDoc),
+      signoffMeta,
       true,
     );
     const packedDoc = packEmrDocWithSidecar(bakedDoc, sidecar);
@@ -1819,7 +1876,7 @@ async function handleReuseDocument(row: DocumentSummaryDto) {
       documentTypeName: (row.documentTypeName ?? '').trim() || tab.documentTypeName,
       encounterId,
       id: newId,
-      metadataValues: mergedMeta,
+      metadataValues: signoffMeta,
       readOnly: false,
       sourceTemplateId: sourceTplId || undefined,
       title: created.title ?? '',
@@ -2293,6 +2350,7 @@ defineExpose({
             :class="{ 'medical-record-form__editor-pane--active': tab.key === activeTabKey }"
           >
             <SimpleEditor
+              :key="editorInstanceKey(tab)"
               :ref="(el) => setEditorRef(tab.key, el as InstanceType<typeof SimpleEditor> | null)"
               v-model="tab.recordDoc"
               v-model:page-margins="tab.pageMargins"
@@ -2345,6 +2403,8 @@ defineExpose({
       :page-count="pdfPreviewPageCount"
       :title="pdfPreviewTitle"
       :auto-print="pdfPreviewAutoPrint"
+      :loading="pdfLoading"
+      @paper-change="onPreviewPaperChange"
     />
     <SaveAsEmrTemplateDialog
       ref="saveAsTemplateDialogRef"

@@ -1,7 +1,11 @@
 <script lang="ts" setup>
-import type { AddRegistrationTypeParams, RegistrationType } from '#/api/core/system/registration';
+import type {
+  ConsultationActivityOption,
+  RegistrationType,
+  SaveRegistrationTypeParams,
+} from '#/api/core/system/registration';
 
-import { computed, reactive, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
 
@@ -10,9 +14,16 @@ import { ElMessage } from 'element-plus';
 import { useVbenForm, z } from '#/adapter/form';
 import {
   addRegistrationTypeApi,
-  REGISTRATION_TYPE_ACTIVE_FLAG,
+  joinRegistrationActivityIds,
+  listConsultationActivityOptionsApi,
+  parseRegistrationActivityIds,
   updateRegistrationTypeApi,
 } from '#/api/core/system/registration';
+import { formatMoneyDisplay, sumMoneyThenSettle } from '#/utils/format/money-scale';
+
+defineOptions({
+  name: 'RegistrationTypeEditDialog',
+});
 
 interface Props {
   visible?: boolean;
@@ -29,8 +40,49 @@ const emit = defineEmits<{
   'update:visible': [value: boolean];
 }>();
 
+/** 诊查费下拉候选项 */
+const consultationOptions = ref<ConsultationActivityOption[]>([]);
+/** 选项加载中 */
+const optionsLoading = ref(false);
+
 const isEditMode = computed(() => !!props.formData?.id);
 
+/** 下拉选项：label 带售价，value 用 string 主键 */
+const selectOptions = computed(() => {
+  // 组装 ElSelect options
+  return consultationOptions.value.map((row) => {
+    const priceText =
+      row.salePrice === null || row.salePrice === undefined || row.salePrice === ''
+        ? '无价'
+        : `${formatMoneyDisplay(row.salePrice)}元`;
+    const busNo = row.busNo ? ` / ${row.busNo}` : '';
+    return {
+      label: `${row.name || '未命名'}${busNo}（${priceText}）`,
+      value: String(row.id),
+    };
+  });
+});
+
+/** 按已选 AD 汇总售价（只读展示） */
+function sumSelectedSaleAmount(selectedIds: string[]): string {
+  const prices: Array<number | string> = [];
+  const priceById = new Map<string, number | string | null | undefined>();
+  // 建立 id → 售价映射
+  for (const row of consultationOptions.value) {
+    priceById.set(String(row.id), row.salePrice);
+  }
+  for (const id of selectedIds) {
+    const price = priceById.get(id);
+    // 缺价跳过，不计入合计
+    if (price === null || price === undefined || price === '') {
+      continue;
+    }
+    prices.push(price);
+  }
+  return formatMoneyDisplay(sumMoneyThenSettle(prices));
+}
+
+/** 提交新增/编辑 */
 async function handleSubmit() {
   const { valid } = await formApi.validate();
   if (!valid) {
@@ -39,57 +91,79 @@ async function handleSubmit() {
 
   modalApi.lock(true);
   try {
-    const values = (await formApi.getValues()) as AddRegistrationTypeParams;
+    const values = (await formApi.getValues()) as {
+      activityIds?: string[];
+      name?: string;
+    };
+    const name = (values.name || '').trim();
+    if (!name) {
+      ElMessage.error('请输入名称');
+      return;
+    }
+    // 选中的诊查费主键列表 → CSV
+    const activityIds = joinRegistrationActivityIds(values.activityIds || []);
+    const payload: SaveRegistrationTypeParams = {
+      name,
+      activityIds,
+    };
     if (isEditMode.value) {
       if (!props.formData?.id) {
         ElMessage.error('缺少挂号类型ID');
         return;
       }
-      const params: RegistrationType & { id: string } = {
-        id: props.formData.id,
-        name: values.name || '',
-        ybNo: values.ybNo || '',
-        amount: Number(values.amount) || 0,
-      };
-      await updateRegistrationTypeApi(params);
+      await updateRegistrationTypeApi({
+        ...payload,
+        id: String(props.formData.id),
+      });
       ElMessage.success('编辑挂号类型成功');
     } else {
-      const params: AddRegistrationTypeParams = {
-        name: values.name || '',
-        ybNo: values.ybNo || '',
-        amount: Number(values.amount) || 0,
-        activeFlag: values.activeFlag ?? REGISTRATION_TYPE_ACTIVE_FLAG.ACTIVE,
-      };
-      await addRegistrationTypeApi(params);
+      await addRegistrationTypeApi(payload);
       ElMessage.success('新增挂号类型成功');
     }
     emit('success');
     modalApi.close();
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('操作失败:', error);
-    const errorMessage = error.msg || error.message || '操作失败，请稍后重试';
-    ElMessage.error(errorMessage);
+    const err = error as { message?: string; msg?: string };
+    ElMessage.error(err.msg || err.message || '操作失败，请稍后重试');
   } finally {
     modalApi.unlock();
   }
 }
 
+/** 拉取诊查费候选项 */
+async function loadConsultationOptions() {
+  optionsLoading.value = true;
+  try {
+    const rows = await listConsultationActivityOptionsApi();
+    consultationOptions.value = rows || [];
+  } catch (error: unknown) {
+    console.error('加载诊查费候选项失败:', error);
+    consultationOptions.value = [];
+    ElMessage.error('加载诊查费候选项失败');
+  } finally {
+    optionsLoading.value = false;
+  }
+}
+
+/** 打开时重置表单并回显 */
 async function resetForm() {
   await formApi.resetForm();
+  await loadConsultationOptions();
 
   if (props.formData && Object.keys(props.formData).length > 0) {
-    const form = props.formData as Partial<RegistrationType>;
+    const form = props.formData;
+    const selectedIds = parseRegistrationActivityIds(form.activityIds);
     await formApi.setValues({
       name: form.name || '',
-      ybNo: form.ybNo || '',
-      amount: form.amount || 0,
+      activityIds: selectedIds,
+      amountDisplay: sumSelectedSaleAmount(selectedIds),
     });
   } else {
     await formApi.setValues({
       name: '',
-      ybNo: '',
-      amount: 0,
-      activeFlag: REGISTRATION_TYPE_ACTIVE_FLAG.ACTIVE,
+      activityIds: [],
+      amountDisplay: formatMoneyDisplay(0),
     });
   }
 }
@@ -111,7 +185,7 @@ const [Modal, modalApi] = useVbenModal({
 const formConfig = reactive({
   commonConfig: {
     componentProps: {
-      style: { width: '220px' },
+      style: { width: '100%' },
     },
   },
   layout: 'horizontal' as const,
@@ -122,47 +196,39 @@ const formConfig = reactive({
       label: '名称',
       required: true,
       componentProps: {
-        placeholder: '请输入名称',
+        placeholder: '请输入挂号类型名称',
       },
       rules: z.string().min(1, { message: '请输入名称' }),
     },
     {
-      component: 'Input',
-      fieldName: 'ybNo',
-      label: '医保编码',
-      required: true,
-      componentProps: {
-        placeholder: '请输入医保编码',
-      },
-      rules: z.string().min(1, { message: '请输入医保编码' }),
-    },
-    {
-      component: 'InputNumber',
-      fieldName: 'amount',
-      label: '金额',
-      required: true,
-      componentProps: {
-        placeholder: '请输入金额',
-        min: 0,
-        precision: 2,
-        style: { width: '220px' },
-      },
-      rules: z.number().min(0, { message: '金额必须大于等于0' }),
-    },
-    {
       component: 'Select',
-      fieldName: 'activeFlag',
-      label: '状态',
-      required: true,
-      defaultValue: REGISTRATION_TYPE_ACTIVE_FLAG.ACTIVE,
+      fieldName: 'activityIds',
+      label: '诊查费',
+      help: '可多选；零元号可不选。金额按所选诊查费当前售价合计，不可自定义。',
       componentProps: {
-        placeholder: '请选择状态',
-        options: [
-          { label: '启用', value: REGISTRATION_TYPE_ACTIVE_FLAG.ACTIVE },
-          { label: '停用', value: REGISTRATION_TYPE_ACTIVE_FLAG.INACTIVE },
-        ],
+        placeholder: '请选择诊查费（可多选，零元可不选）',
+        options: selectOptions.value,
+        multiple: true,
+        filterable: true,
+        collapseTags: true,
+        collapseTagsTooltip: true,
+        clearable: true,
+        loading: optionsLoading.value,
+        // 选中变更时刷新只读金额
+        onChange: (ids: string[]) => {
+          const selected = Array.isArray(ids) ? ids.map(String) : [];
+          formApi.setFieldValue('amountDisplay', sumSelectedSaleAmount(selected));
+        },
       },
-      rules: z.number({ message: '请选择状态' }),
+    },
+    {
+      component: 'Input',
+      fieldName: 'amountDisplay',
+      label: '金额',
+      componentProps: {
+        disabled: true,
+        placeholder: '由诊查费售价合计',
+      },
     },
   ]),
   showDefaultActions: false,
@@ -185,7 +251,7 @@ watch(
 
 <template>
   <Modal
-    class="w-[600px]"
+    class="w-[640px] max-w-[96vw]"
     :title="isEditMode ? '编辑挂号类型' : '新增挂号类型'"
     :close-on-click-modal="false"
     :close-on-press-escape="false"

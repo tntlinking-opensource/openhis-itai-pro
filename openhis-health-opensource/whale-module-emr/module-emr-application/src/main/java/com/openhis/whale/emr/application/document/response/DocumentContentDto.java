@@ -25,7 +25,7 @@ public class DocumentContentDto {
     /** 文书标题 */
     private String title;
     /**
-     * 文书状态：DRAFT / SUBMITTED / LOCKED / ARCHIVED 等
+     * 文书状态：DRAFT / PENDING_ARCHIVE / ARCHIVED
      */
     private String status;
     /**

@@ -63,16 +63,21 @@ public class ChargeItem extends BaseAuditedEntity {
     private LocalDateTime occurrenceTime;
 
     /**
-     * 执行人主键（DM performer_id）。
+     * 医技确费人主键（DM fee_confirmer_id）。
      *
-     * <p>护士站等执行路径可写执行人；<strong>禁止</strong>再用于收款人——收款人见 {@link #entererId}。</p>
+     * <p>住院医技费用清单一键确费时批量写入；空=未确费。临床执行人真源在 Procedure / DeviceDispense，
+     * <strong>禁止</strong>再把本列当执行人或收款人——收款人见 {@link #entererId}。</p>
      */
-    @Column(name = "performer_id")
-    private Long performerId;
+    @Column(name = "fee_confirmer_id")
+    private Long feeConfirmerId;
 
-    /** 执行机构主键（DM performing_org_id）。 */
-    @Column(name = "performing_org_id")
-    private Long performingOrgId;
+    /**
+     * 医技确费时刻（DM fee_confirmed_at）。
+     *
+     * <p>与 {@link #feeConfirmerId} 成对；有值即该账单行已确费。</p>
+     */
+    @Column(name = "fee_confirmed_at")
+    private LocalDateTime feeConfirmedAt;
 
     /** 申请机构主键（DM requesting_org_id）。 */
     @Column(name = "requesting_org_id")
@@ -125,6 +130,18 @@ public class ChargeItem extends BaseAuditedEntity {
     /** 手工调价后金额（DM manual_adjusted_price）。 */
     @Column(name = "manual_adjusted_price")
     private BigDecimal manualAdjustedPrice;
+
+    /**
+     * 结算折扣率快照（DM settle_discount_rate）：折后占原价 (0,1]；未打折为空。
+     */
+    @Column(name = "settle_discount_rate")
+    private BigDecimal settleDiscountRate;
+
+    /**
+     * 结算折扣来源（DM settle_discount_source_enum）：NONE / CONFIG / CASHIER。
+     */
+    @Column(name = "settle_discount_source_enum")
+    private String settleDiscountSourceEnum;
 
     /** 改价原因码（DM override_reason_code）。 */
     @Column(name = "override_reason_code")
@@ -254,5 +271,30 @@ public class ChargeItem extends BaseAuditedEntity {
         if (this.orgId == null) {
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "收费明细机构标识不能为空");
         }
+    }
+
+    /**
+     * 写入收费折扣结算快照（BR-OPC-029/032 / BR-IP-STL-022/025）。
+     *
+     * <p>{@code discountAmount}=折后应收；{@code systemDiscountPrice}=优惠额（原价−折后）；
+     * {@code totalPrice}/{@code baseAmount} 保持原价不变。</p>
+     *
+     * @param discountedReceivable 折后应收（结算 2 位）
+     * @param discountGap          优惠额（结算 2 位）
+     * @param settleRate           有效折扣率
+     * @param sourceEnum           来源 code（CONFIG/CASHIER）
+     */
+    public void applySettleDiscountSnapshot(
+        BigDecimal discountedReceivable,
+        BigDecimal discountGap,
+        BigDecimal settleRate,
+        String sourceEnum
+    ) {
+        // 折后应收写入 discount_amount（与费用明细应收口径一致）
+        this.discountAmount = discountedReceivable;
+        // 优惠额写入 system_discount_price（DM v1.6.25 语义）
+        this.systemDiscountPrice = discountGap;
+        this.settleDiscountRate = settleRate;
+        this.settleDiscountSourceEnum = sourceEnum;
     }
 }

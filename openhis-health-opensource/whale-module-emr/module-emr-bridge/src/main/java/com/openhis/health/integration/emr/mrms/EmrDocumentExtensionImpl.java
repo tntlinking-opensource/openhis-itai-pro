@@ -179,7 +179,7 @@ public class EmrDocumentExtensionImpl implements EmrDocumentExtension {
     }
 
     /**
-     * 病案归档时将就诊下未锁定文书批量置为 LOCKED。
+     * 病案归档时将就诊下未归档文书批量置为 ARCHIVED。
      *
      * @param encounterId 就诊主键
      */
@@ -199,16 +199,16 @@ public class EmrDocumentExtensionImpl implements EmrDocumentExtension {
         }
         for (Document document : loadDocuments(patientId, encounterId)) {
             String status = document.getStatus();
-            // 已锁定/已归档文书不再变更状态
-            if (DocumentManager.STATUS_LOCKED.equals(status) || DocumentManager.STATUS_ARCHIVED.equals(status)) {
+            // 已归档文书不再变更状态
+            if (DocumentManager.STATUS_ARCHIVED.equals(status)) {
                 continue;
             }
-            documentManager.updateStatus(document.getId(), DocumentManager.STATUS_LOCKED);
+            documentManager.updateStatus(document.getId(), DocumentManager.STATUS_ARCHIVED);
         }
     }
 
     /**
-     * 病案解档时将 LOCKED 文书恢复为 SUBMITTED。
+     * 病案解档时将已归档文书恢复为 DRAFT（解档能力已产品禁止；接口保留兼容旧调用）。
      *
      * @param encounterId 就诊主键
      */
@@ -226,14 +226,14 @@ public class EmrDocumentExtensionImpl implements EmrDocumentExtension {
             return;
         }
         for (Document document : loadDocuments(patientId, encounterId)) {
-            if (DocumentManager.STATUS_LOCKED.equals(document.getStatus())) {
-                documentManager.updateStatus(document.getId(), DocumentManager.STATUS_SUBMITTED);
+            if (DocumentManager.STATUS_ARCHIVED.equals(document.getStatus())) {
+                documentManager.updateStatus(document.getId(), DocumentManager.STATUS_DRAFT);
             }
         }
     }
 
     /**
-     * 批量判断就诊下是否存在 LOCKED 文书（病例归档态；归档病例落 LOCKED）。
+     * 批量判断就诊下是否存在待归档审批或已归档文书。
      *
      * @param encounterIds 就诊主键集合
      * @return 命中就诊主键集合
@@ -261,7 +261,10 @@ public class EmrDocumentExtensionImpl implements EmrDocumentExtension {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(root.get("encounterId").in(encounterKeys));
             predicates.add(cb.equal(root.get("isDeleted"), false));
-            predicates.add(root.get("status").in(DocumentManager.STATUS_LOCKED));
+            // 待归档审批或已归档均视为临床只读
+            predicates.add(root.get("status").in(
+                    DocumentManager.STATUS_PENDING_ARCHIVE,
+                    DocumentManager.STATUS_ARCHIVED));
             return cb.and(predicates.toArray(new Predicate[0]));
         };
         for (Document document : documentRepository.findAll(spec)) {
@@ -292,8 +295,14 @@ public class EmrDocumentExtensionImpl implements EmrDocumentExtension {
             out.setTotalCount(0L);
             return out;
         }
-        int pageNo = query.getPageNo() == null || query.getPageNo() < 1 ? 1 : query.getPageNo();
-        int pageSize = query.getPageSize() == null || query.getPageSize() < 1 ? 20 : query.getPageSize();
+        int pageNo = 1;
+        if (query.getPageNo() != null && query.getPageNo() >= 1) {
+            pageNo = query.getPageNo();
+        }
+        int pageSize = 20;
+        if (query.getPageSize() != null && query.getPageSize() >= 1) {
+            pageSize = query.getPageSize();
+        }
         if (pageSize > 200) {
             pageSize = 200;
         }
@@ -449,14 +458,13 @@ public class EmrDocumentExtensionImpl implements EmrDocumentExtension {
     }
 
     /**
-     * 判断文书是否已达可打印状态（已提交/锁定/归档）。
+     * 判断文书是否已达可打印状态（待归档审批或已归档）。
      *
      * @param status 文书状态 code
      * @return 可打印则 true
      */
     private boolean isSubmittedOrBeyond(String status) {
-        return DocumentManager.STATUS_SUBMITTED.equals(status)
-                || DocumentManager.STATUS_LOCKED.equals(status)
+        return DocumentManager.STATUS_PENDING_ARCHIVE.equals(status)
                 || DocumentManager.STATUS_ARCHIVED.equals(status);
     }
 }

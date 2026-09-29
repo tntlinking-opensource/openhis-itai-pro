@@ -316,7 +316,7 @@ public class HomepageMapper {
     }
 
     /**
-     * 手术 DTO 转领域实体（保存用，含 P0 扩列）。
+     * 手术 DTO 转领域实体（保存用；字段与 {@link ProcedureLineDto} / 表列同构）。
      *
      * @param lines DTO 列表
      * @return 实体列表
@@ -333,13 +333,22 @@ public class HomepageMapper {
             entity.setOprnOprtCode(line.getOprnOprtCode());
             entity.setOprnOprtName(line.getOprnOprtName());
             entity.setOprnDate(line.getOprnDate());
+            entity.setOprnTime(line.getOprnTime());
             entity.setMainOprnFlag(line.getMainOprnFlag());
             entity.setOprnLevelCode(line.getOprnLevelCode());
             entity.setOprnIncisionCode(line.getOprnIncisionCode());
             entity.setHealGradeCode(line.getHealGradeCode());
             entity.setAnstWayCode(line.getAnstWayCode());
             entity.setOperDrName(line.getOperDrName());
+            entity.setAsit1Name(line.getAsit1Name());
+            entity.setAsit2Name(line.getAsit2Name());
+            entity.setNurseName(line.getNurseName());
             entity.setAnstDrName(line.getAnstDrName());
+            entity.setAnstStartTime(line.getAnstStartTime());
+            entity.setAnstEndTime(line.getAnstEndTime());
+            entity.setSpecimen(line.getSpecimen());
+            entity.setNote(line.getNote());
+            entity.setSendLabFlag(line.getSendLabFlag());
             entity.setValiFlag(line.getValiFlag());
             result.add(entity);
         }
@@ -372,6 +381,8 @@ public class HomepageMapper {
         }
         Map<String, ClinicalDiagnosisPresentationQueryModel> presentationByCode =
                 conditionDefinitionQueryService.mapClinicalPresentationByStoredCodes(storedCodes, sourceHints);
+        Map<String, String> catalogSourceByCode =
+                conditionDefinitionQueryService.mapCatalogSourceByConditionCodes(storedCodes);
         // 按库表顺序回显诊断行（含 id 供前端编辑；扩列含病情/确诊/医生/上传）
         for (HomepageDiagnosis row : rows) {
             DiagnosisLineDto dto = new DiagnosisLineDto();
@@ -415,6 +426,7 @@ public class HomepageMapper {
                 dto.setDiagCode(storedCode);
                 dto.setDiagName(storedName);
             }
+            dto.setSourceEnum(this.resolveDiagSource(storedCode, sourceHints, catalogSourceByCode));
             dto.setAdmCondCode(row.getAdmCondCode());
             dto.setOutIllStatusCode(row.getOutIllStatusCode());
             dto.setConfirmTime(row.getConfirmTime());
@@ -430,13 +442,47 @@ public class HomepageMapper {
     }
 
     /**
-     * 手术实体行转 DTO（含主键与 P0 扩列，供编辑页回显）。
+     * 诊断行目录来源：优先就诊实际开立的目录，否则按编码反查目录。
+     *
+     * @param storedCode          落库诊断编码
+     * @param sourceHints         就诊诊断编码 → source_enum
+     * @param catalogSourceByCode 目录反查编码 → source_enum
+     * @return tcm_dx / tcm_syndrome / clinical_v2 等；无法解析时 null
+     */
+    private String resolveDiagSource(
+            String storedCode,
+            Map<String, String> sourceHints,
+            Map<String, String> catalogSourceByCode) {
+        if (storedCode == null || storedCode.isBlank()) {
+            return null;
+        }
+        String code = storedCode.trim();
+        String hinted = null;
+        if (sourceHints != null) {
+            hinted = sourceHints.get(code);
+        }
+        if (hinted != null && !hinted.isBlank()) {
+            return hinted.trim();
+        }
+        if (catalogSourceByCode == null) {
+            return null;
+        }
+        String lookedUp = catalogSourceByCode.get(code);
+        if (lookedUp == null || lookedUp.isBlank()) {
+            return null;
+        }
+        return lookedUp.trim();
+    }
+
+    /**
+     * 手术实体行转 DTO（含主键与扩列，供编辑页回显；对齐 AS-MRMS-HP-001）。
      *
      * @param rows 手术实体列表，可为 null
      * @return DTO 列表，永不为 null
      */
     private List<ProcedureLineDto> toProcedureDtos(List<HomepageProcedure> rows) {
         List<ProcedureLineDto> result = new ArrayList<>();
+        // 无手术行时返回空列表，前端展示空表头
         if (rows == null) {
             return result;
         }
@@ -447,13 +493,22 @@ public class HomepageMapper {
             dto.setOprnOprtCode(row.getOprnOprtCode());
             dto.setOprnOprtName(row.getOprnOprtName());
             dto.setOprnDate(row.getOprnDate());
+            dto.setOprnTime(row.getOprnTime());
             dto.setMainOprnFlag(row.getMainOprnFlag());
             dto.setOprnLevelCode(row.getOprnLevelCode());
             dto.setOprnIncisionCode(row.getOprnIncisionCode());
             dto.setHealGradeCode(row.getHealGradeCode());
             dto.setAnstWayCode(row.getAnstWayCode());
             dto.setOperDrName(row.getOperDrName());
+            dto.setAsit1Name(row.getAsit1Name());
+            dto.setAsit2Name(row.getAsit2Name());
+            dto.setNurseName(row.getNurseName());
             dto.setAnstDrName(row.getAnstDrName());
+            dto.setAnstStartTime(row.getAnstStartTime());
+            dto.setAnstEndTime(row.getAnstEndTime());
+            dto.setSpecimen(row.getSpecimen());
+            dto.setNote(row.getNote());
+            dto.setSendLabFlag(row.getSendLabFlag());
             dto.setValiFlag(row.getValiFlag());
             result.add(dto);
         }

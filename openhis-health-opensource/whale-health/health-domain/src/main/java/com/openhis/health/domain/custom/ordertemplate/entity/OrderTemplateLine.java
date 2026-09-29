@@ -144,6 +144,11 @@ public class OrderTemplateLine extends BaseAuditedEntity {
             && OrderTemplateLineKind.MEDICATION.getCode().equals(this.lineKindEnum)) {
             throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT, "划价组套禁止维护药品行");
         }
+        // 申请单组套只收诊疗行，检查/检验/治疗类别由应用层校验 groupKey
+        if (OrderTemplateKind.SERVICE_APPLY.getCode().equals(templateKindEnum)
+            && !OrderTemplateLineKind.SERVICE.getCode().equals(this.lineKindEnum)) {
+            throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT, "申请单组套仅允许诊疗行");
+        }
     }
 
     /**

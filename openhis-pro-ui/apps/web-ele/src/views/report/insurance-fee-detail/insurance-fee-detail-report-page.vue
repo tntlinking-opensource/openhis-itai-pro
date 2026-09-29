@@ -53,6 +53,7 @@ import {
   ReportPageFooter,
   ReportPrintFieldDialog,
   ReportQueryBar,
+  collectPagedReportRows,
   reportPrintFieldsOf,
   ReportTableScroll,
   useReportListPrint,
@@ -255,9 +256,11 @@ const printColumnCatalog = computed<ReportPrintColumnDef[]>(() => [
 /**
  * 将当前页映射为打印单元格。
  */
-function mapCurrentPrintRows(): Record<string, string>[] {
+function mapCurrentPrintRows(
+  source: InsuranceFeeDetailRowDto[] = tableData.value,
+): Record<string, string>[] {
   const fields = reportPrintFieldsOf(printColumnCatalog.value);
-  return tableData.value.map((row) =>
+  return source.map((row) =>
     mapReportPrintRow(row as unknown as Record<string, unknown>, fields, {
       medfeeSumamt: (value) => formatMoneyCell(value),
       fundPaySumamt: (value) => formatMoneyCell(value),
@@ -276,6 +279,20 @@ const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrint
     getColumnCatalog: () => printColumnCatalog.value,
     getReportTitle: () => pageTitle.value,
     getPrintRows: () => mapCurrentPrintRows(),
+    fetchAllPrintRows: async () => {
+      const collected = await collectPagedReportRows({
+        fetchPage: async (pageNo, pageSize) => {
+          const page = await pageInsuranceFeeDetailReportApi(props.scope, {
+            ...buildFilterBody(),
+            pageNo,
+            pageSize,
+          } as Parameters<typeof pageInsuranceFeeDetailReportApi>[1]);
+          return { rows: page.content ?? [], total: Number(page.totalCount ?? 0) };
+        },
+      });
+      return { rows: mapCurrentPrintRows(collected.rows), truncated: collected.truncated };
+    },
+    hasPrintableData: () => total.value > 0 || tableData.value.length > 0,
   });
 
 /**
@@ -726,6 +743,13 @@ onMounted(async () => {
       </template>
     </ReportListPageLayout>
 
-    <ReportPrintFieldDialog ref="printFieldDialogRef" />
+    <ReportPrintFieldDialog
+      ref="printFieldDialogRef"
+      :report-code="
+        scope === 'outpatient' ? 'report-insurance-fee-detail-op' : 'report-insurance-fee-detail-ip'
+      "
+      :column-catalog="printColumnCatalog"
+      show-print-scope
+    />
   </Page>
 </template>

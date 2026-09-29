@@ -35,11 +35,29 @@ public interface ServiceRequestCategoryConstants {
      */
     String SERVICE_CATEGORY_ENTRUST = "52";
 
+    /**
+     * 诊疗类目：诊查费（枚举名 {@code CONSULTATION}）。
+     *
+     * <p>目录类别 {@code activity_category_code=53}；业务类型配合 {@code ActivityType.CONSULTATION}（{@code type_enum=7}）。</p>
+     */
+    String SERVICE_CATEGORY_CONSULTATION = "53";
+
     /** 诊疗类目：护理级别（枚举名 {@code NURSING}；住院滚费护理级别医嘱）。 */
     String SERVICE_CATEGORY_NURSING = "26";
 
     /** 诊疗类目：手术（枚举名 {@code PROCEDURE}；DM-WKF-004 ActivityDefCategory）。 */
     String SERVICE_CATEGORY_PROCEDURE = "24";
+
+    /**
+     * 诊疗类目：麻醉（枚举名 {@code ANESTHESIA}；AS-IP-DOR-012 / 业务口径 §3.1）。
+     *
+     * <p>{@code ActivityDefinition.category_code=25} → {@code ServiceRequest.category_enum=25}；
+     * 与手术 {@link #SERVICE_CATEGORY_PROCEDURE} 分单分执行。</p>
+     */
+    String SERVICE_CATEGORY_ANESTHESIA = "25";
+
+    /** 请求入参枚举名：麻醉（解析为 {@link #SERVICE_CATEGORY_ANESTHESIA}）。 */
+    String CATEGORY_ENUM_NAME_ANESTHESIA = "ANESTHESIA";
 
     /** 请求入参枚举名：治疗（解析为 {@link #SERVICE_CATEGORY_TREATMENT}）。 */
     String CATEGORY_ENUM_NAME_TREATMENT = "TREATMENT";

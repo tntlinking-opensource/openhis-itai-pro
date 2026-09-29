@@ -4,6 +4,9 @@
  */
 package com.openhis.health.application.inpatient.financial.settle.service;
 
+import com.openhis.health.application.shared.chargediscount.ChargeDiscountApplySupport;
+import com.openhis.health.application.shared.chargediscount.ChargeDiscountBatchResult;
+import com.openhis.health.application.shared.chargediscount.ChargeDiscountLineResult;
 import com.openhis.health.application.shared.financial.PaymentChannelDisplayAssembler;
 import com.openhis.health.application.shared.inpatient.InpatientAccountBalanceDisplayDtoApplier;
 import com.openhis.health.application.shared.inpatient.InpatientAccountBalanceDisplayAssembler;
@@ -285,6 +288,9 @@ public class InpatientSettleAppService {
     /** 支付渠道展示名。 */
     private final PaymentChannelDisplayAssembler paymentChannelDisplayAssembler;
 
+    /** 收费折扣能力门控与折算（门控关闭时零侵入）。 */
+    private final ChargeDiscountApplySupport chargeDiscountApplySupport;
+
     /** 出院类诊疗写侧（反结撤销出院嘱 Cmd）。 */
     private final ServiceRequestDomainService serviceRequestDomainService;
 
@@ -314,9 +320,13 @@ public class InpatientSettleAppService {
                 2L, InpatientSettleConstants.PRESENTATION_MODE_SUMMARY, "大类汇总"));
             // Pre：用户可选支付渠道与预交金/门诊收费口径对齐。
             List<OptionDto> paymentChannels = paymentChannelOptionProvider.loadUserSelectableOptions();
+            // Pre：折扣能力门控（BR-IP-STL-020）；未配置时 false
+            boolean discountFeatureEnabled = chargeDiscountApplySupport.isDiscountFeatureEnabled();
             // Asm：Mapper 装配页签、呈现模式与渠道下拉。
-            return inpatientSettleMapper.toLoadInpatientSettlePageInitResponse(
+            LoadInpatientSettlePageInitResponse response = inpatientSettleMapper.toLoadInpatientSettlePageInitResponse(
                 queueTabs, presentationModes, paymentChannels);
+            response.setDiscountFeatureEnabled(discountFeatureEnabled);
+            return response;
         } catch (BusinessException ex) {
             throw ex;
         } catch (RuntimeException ex) {
@@ -552,6 +562,8 @@ public class InpatientSettleAppService {
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             InpatientSettleConstants.EX_IP_STL_001,
             "请选择待结算费用");
+        // Gate：门控关闭禁止折扣率入参（BR-IP-STL-020）；未传率时零侵入
+        chargeDiscountApplySupport.assertCashierRateAllowedByFeatureGate(request.getCashierDiscountRate());
         EncounterDetailQueryModel encounter = encounterQueryService.mustGetEncounterOfClass(
             request.getEncounterId(),
             EncounterClass.IMP.getCode(),
@@ -584,6 +596,8 @@ public class InpatientSettleAppService {
         }
         List<ChargeItem> chargeItems = Collections.emptyList();
         BigDecimal receivableTotal = BigDecimal.ZERO;
+        ChargeDiscountBatchResult discountBatch = new ChargeDiscountBatchResult();
+        discountBatch.setApplied(false);
         if (!zeroAmountDischargeFull) {
             // Pre：加载所选行并校验归属就诊且均为待结算态（BR-IP-STL-002）。
             ChargeItemQueryCommand loadCmd = new ChargeItemQueryCommand();
@@ -591,7 +605,14 @@ public class InpatientSettleAppService {
             chargeItems = chargeItemQueryService.loadChargeItemsByIds(loadCmd);
             this.assertChargeItemsForInpatientSettle(
                 chargeItems, requestedChargeItemIds, request.getEncounterId());
-            receivableTotal = this.sumChargeItemAmount(chargeItems);
+            // Pre：折扣试算（门控关闭或未打折 → applied=false，应收仍按原价）
+            discountBatch =
+                chargeDiscountApplySupport.resolveBatch(chargeItems, request.getCashierDiscountRate());
+            if (discountBatch.isApplied()) {
+                receivableTotal = discountBatch.getDiscountedReceivableTotal();
+            } else {
+                receivableTotal = this.sumChargeItemAmount(chargeItems);
+            }
             if (receivableTotal.compareTo(BigDecimal.ZERO) <= 0) {
                 // Pre：有明细时应收须为正；零元全结走空列表分支。
                 throw new BusinessException(
@@ -659,7 +680,8 @@ public class InpatientSettleAppService {
                 request.getEncounterId());
             // 占位明细按收费项记账账户汇总（自费/医保分桶），禁止一律挂登记个人现金户。
             List<PaymentDetailItemCommand> draftDetailCommands =
-                this.buildInpatientPreSettlePaymentDetailDraftLines(request.getEncounterId(), chargeItems);
+                this.buildInpatientPreSettlePaymentDetailDraftLines(
+                    request.getEncounterId(), chargeItems, discountBatch);
             CreatePaymentDraftFromPreSettleCommand paymentDraftCommand =
                 inpatientSettleMapper.toCreatePaymentDraftFromPreSettleCommand(
                     request,
@@ -893,6 +915,8 @@ public class InpatientSettleAppService {
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             InpatientSettleConstants.EX_IP_STL_106,
             "重新预结算并核对");
+        // Gate：门控关闭禁止折扣率入参（BR-IP-STL-020）；未传率时零侵入
+        chargeDiscountApplySupport.assertCashierRateAllowedByFeatureGate(request.getCashierDiscountRate());
         // Pre：草稿须为 INPATIENT_CLINIC + DRAFT，且就诊锚点与本次提交一致。
         PaymentReconciliationQueryModel payment =
             paymentReconciliationQueryService.mustGetPayment(request.getPaymentDraftId());
@@ -928,11 +952,20 @@ public class InpatientSettleAppService {
             "重新预结算并核对");
         // Pre：拟结项须仍属本就诊且为待结算态，禁止重复结算已结行；零元出院全结允许空列表。
         List<ChargeItem> chargeItems = Collections.emptyList();
+        ChargeDiscountBatchResult discountBatch = new ChargeDiscountBatchResult();
+        discountBatch.setApplied(false);
         if (!request.getChargeItemIds().isEmpty()) {
             ChargeItemQueryCommand loadCmd = new ChargeItemQueryCommand();
             loadCmd.setIds(request.getChargeItemIds());
             chargeItems = chargeItemQueryService.loadChargeItemsByIds(loadCmd);
             this.assertChargeItemsForInpatientSettle(chargeItems, request.getChargeItemIds(), request.getEncounterId());
+            // Pre：折扣试算并落快照（门控关闭/未打折跳过）
+            discountBatch =
+                chargeDiscountApplySupport.resolveBatch(chargeItems, request.getCashierDiscountRate());
+            chargeDiscountApplySupport.persistLineDiscounts(discountBatch);
+            if (discountBatch.isApplied()) {
+                chargeItems = chargeItemQueryService.loadChargeItemsByIds(loadCmd);
+            }
         }
         // Pre：与历史成功/退款中流水挂载 chargeItem 求交，命中则拒绝（BR-IP-STL-007）。
         List<PaymentReconciliationQueryModel> overlapping =
@@ -1016,6 +1049,12 @@ public class InpatientSettleAppService {
                 ybConfirmResult,
                 request.getPaymentDraftId());
             settleCommand.setPayReceiptDetails(settleReceiptDetails);
+            // Pre：优惠合计>0 时追加 DISCOUNT 旁证（不进渠道实付 C；方案甲）
+            PaymentDetailItemCommand discountRecDetail =
+                chargeDiscountApplySupport.buildDiscountRecDetail(discountBatch);
+            if (discountRecDetail != null) {
+                settleReceiptDetails.add(discountRecDetail);
+            }
             if (expectedChannelPayable.compareTo(BigDecimal.ZERO) > 0) {
                 // Pre：须对「即将落库」的明细做扫码替换（SCAN_PAY→微信/支付宝/银行卡）；
                 // 禁止另拷一份 channelDetails——否则银联成功但落库仍可能残留草稿 CASHIER/SCAN_PAY。
@@ -2004,12 +2043,19 @@ public class InpatientSettleAppService {
         if (chargeItems == null) {
             return sum;
         }
-        // 累加各收费项 total_price 作为应收基准。
+        // 应收优先 discount_amount（打折后为折后；未打折创建时=totalPrice）
         for (ChargeItem chargeItem : chargeItems) {
-            if (chargeItem == null || chargeItem.getTotalPrice() == null) {
+            if (chargeItem == null) {
                 continue;
             }
-            sum = sum.add(chargeItem.getTotalPrice());
+            BigDecimal lineAmount = chargeItem.getDiscountAmount();
+            if (lineAmount == null) {
+                lineAmount = chargeItem.getTotalPrice();
+            }
+            if (lineAmount == null) {
+                continue;
+            }
+            sum = sum.add(lineAmount);
         }
         return sum;
     }
@@ -2306,6 +2352,21 @@ public class InpatientSettleAppService {
     private List<PaymentDetailItemCommand> buildInpatientPreSettlePaymentDetailDraftLines(
         Long encounterId,
         List<ChargeItem> chargeItems) {
+        return this.buildInpatientPreSettlePaymentDetailDraftLines(encounterId, chargeItems, null);
+    }
+
+    /**
+     * 按收费项记账账户汇总预结算占位明细；打折时用折后行额。
+     *
+     * @param encounterId   就诊主键
+     * @param chargeItems   本次预结算收费项
+     * @param discountBatch 折扣试算；null 或未应用时按原价
+     * @return 非空占位明细列表
+     */
+    private List<PaymentDetailItemCommand> buildInpatientPreSettlePaymentDetailDraftLines(
+        Long encounterId,
+        List<ChargeItem> chargeItems,
+        ChargeDiscountBatchResult discountBatch) {
         Long defaultChargeAccountId = null;
         Account defaultChargeAccount = accountQueryService.getDefaultChargeAccount(encounterId);
         if (defaultChargeAccount != null) {
@@ -2326,6 +2387,14 @@ public class InpatientSettleAppService {
                     "收费项未绑定结算账户且就诊未开立默认挂账账户，无法生成支付草稿");
             }
             BigDecimal linePrice = chargeLine.getTotalPrice();
+            // 打折：按试算折后替换行额
+            if (discountBatch != null && discountBatch.isApplied()) {
+                ChargeDiscountLineResult discountLine =
+                    discountBatch.getLineByChargeItemId().get(chargeLine.getId());
+                if (discountLine != null && discountLine.getDiscountedReceivable() != null) {
+                    linePrice = discountLine.getDiscountedReceivable();
+                }
+            }
             if (linePrice == null) {
                 linePrice = BigDecimal.ZERO;
             }

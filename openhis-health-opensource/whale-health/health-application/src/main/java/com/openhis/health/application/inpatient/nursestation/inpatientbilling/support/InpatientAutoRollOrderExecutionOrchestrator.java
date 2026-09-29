@@ -47,7 +47,10 @@ import java.util.Map;
  * 住院滚费长期诊疗医嘱执行编排（AS-IP-NUR-013 IF-IP-ARG-08；对齐 IF-IP-EXE-02，非划价轨）。
  *
  * <p>对已有 VERIFIED 长期 ServiceRequest 登记 planTime 槽位 Procedure + {@code order-execute} 待结算 Charge；
- * 主执行人写入责任护士维度（BR-IP-ARG-019）。</p>
+ * Procedure 顺序与医嘱执行/划价诊疗一致：{@code create→start→挂主执行人→complete}（BR-IP-ARG-015 / DM-CLN-004）；
+ * 主执行人=责任护士（BR-IP-ARG-019）。划价临时诊疗走
+ * {@link NurseStationInpatientBillingProcedureOrchestrator}，共用
+ * {@link ProcedureExecutionPerformerOrchestrator#registerPrimaryPerformer}。</p>
  */
 @Slf4j
 @Component
@@ -77,6 +80,9 @@ public class InpatientAutoRollOrderExecutionOrchestrator {
 
     /**
      * 对长期诊疗医嘱执行单个 billDate 计划点（IF-IP-EXE-02 同构，专用滚费入口）。
+     *
+     * <p>Procedure 编排固定 {@code create→start→挂主执行人→complete}；与划价
+     * {@code registerCompletedNursePricingProcedure}、护士站医嘱执行同序（仅 category/来源不同）。</p>
      *
      * @param command 执行命令
      * @return 执行结果
@@ -157,7 +163,8 @@ public class InpatientAutoRollOrderExecutionOrchestrator {
         }
         Long procedureId;
         try {
-            // Cmd：Procedure create → start → complete（category=LONG_TERM，skipDuplicate+planTime 幂等）
+            // Cmd：Procedure create → start → 挂主执行人 → complete（与 IF-IP-EXE-02 / 划价诊疗同序；
+            // DM-CLN-004 assertPerformerAppendable：仅 PREPARATION/IN_PROGRESS 可挂执行人）
             CreateProcedureRecordCommand createCmd = new CreateProcedureRecordCommand();
             createCmd.setOperatorId(operatorId);
             createCmd.setSkipDuplicateRequestAnchorCheck(Boolean.TRUE);
@@ -172,6 +179,9 @@ public class InpatientAutoRollOrderExecutionOrchestrator {
             startCmd.setProcedureId(procedureId);
             startCmd.setOperatorId(operatorId);
             procedureDomainService.startProcedureExecution(startCmd);
+            // Cmd：主执行人须在 COMPLETED 前写入（责任护士；startTime 对齐 planTime）
+            procedureExecutionPerformerOrchestrator.registerPrimaryPerformer(
+                procedureId, performerId, operatorId, planTime);
             CompleteProcedureRecordCommand completeCmd = new CompleteProcedureRecordCommand();
             completeCmd.setProcedureId(procedureId);
             completeCmd.setOperatorId(operatorId);
@@ -191,9 +201,6 @@ public class InpatientAutoRollOrderExecutionOrchestrator {
                 ex);
             return Outcome.FAILED;
         }
-        // Cmd：登记主执行人（责任护士）；startTime 与 planTime 对齐，避免展示成任务触发瞬间
-        procedureExecutionPerformerOrchestrator.registerPrimaryPerformer(
-            procedureId, performerId, operatorId, planTime);
         // Cmd：新建 order-execute 待结算 Charge（IF-IP-EXE-018）
         try {
             CreateChargeItemCommand chargeCmd = new CreateChargeItemCommand();

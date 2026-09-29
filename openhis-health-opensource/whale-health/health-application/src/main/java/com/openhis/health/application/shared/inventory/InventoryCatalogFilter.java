@@ -48,6 +48,7 @@ public class InventoryCatalogFilter {
             && !query.getDeviceCategoryCodes().isEmpty();
         boolean hasChrgitmLv = query.getChrgitmLvList() != null && !query.getChrgitmLvList().isEmpty();
         boolean hasKeyDrugType = StringUtils.isNotEmpty(query.getKeyDrugType());
+        boolean hasMedicineProperty = StringUtils.isNotEmpty(query.getMedicinePropertyCode());
         if (hasMedicationCategory) {
             query.setResolvedMedicationDefinitionIds(
                 this.medicationDefinitionQueryService.listIdsByCategoryCodesIn(query.getMedicationCategoryCodes()));
@@ -72,21 +73,22 @@ public class InventoryCatalogFilter {
                 query.setResolvedDeviceDefinitionIds(devByLv);
             }
         }
-        // 重点药类型仅作用于药品定义：与类目/医保等级已解析主键求交；无前置条件时直接写入
-        if (hasKeyDrugType) {
-            List<Long> medByKeyDrug =
-                this.medicationDefinitionQueryService.listIdsByKeyDrugType(query.getKeyDrugType());
+        // 重点药类型 / 药品性质仅作用于药品定义：与类目/医保等级已解析主键求交；两框同时选时彼此 AND
+        if (hasKeyDrugType || hasMedicineProperty) {
+            List<Long> medByKeyFilter = this.resolveKeyDrugAndMedicinePropertyIds(
+                query.getKeyDrugType(),
+                query.getMedicinePropertyCode());
             if (hasMedicationCategory || hasChrgitmLv) {
                 query.setResolvedMedicationDefinitionIds(
-                    this.intersectIds(query.getResolvedMedicationDefinitionIds(), medByKeyDrug));
+                    this.intersectIds(query.getResolvedMedicationDefinitionIds(), medByKeyFilter));
             } else {
-                query.setResolvedMedicationDefinitionIds(medByKeyDrug);
+                query.setResolvedMedicationDefinitionIds(medByKeyFilter);
             }
         }
     }
 
     /**
-     * 备份静表：按重点药类型预解析药品定义主键并写入 {@link DocInventoryItemSnapshotPageQuery}。
+     * 备份静表：按重点药类型/药品性质预解析药品定义主键并写入 {@link DocInventoryItemSnapshotPageQuery}。
      *
      * <p>静表无药典标识列，须经药典 QueryService 预解析后按 {@code item_id} 收窄（B.6.4）。</p>
      *
@@ -96,11 +98,42 @@ public class InventoryCatalogFilter {
         if (query == null) {
             return;
         }
-        if (StringUtils.isEmpty(query.getKeyDrugType())) {
+        if (StringUtils.isEmpty(query.getKeyDrugType())
+            && StringUtils.isEmpty(query.getMedicinePropertyCode())) {
             return;
         }
         query.setResolvedMedicationDefinitionIds(
-            this.medicationDefinitionQueryService.listIdsByKeyDrugType(query.getKeyDrugType()));
+            this.resolveKeyDrugAndMedicinePropertyIds(
+                query.getKeyDrugType(),
+                query.getMedicinePropertyCode()));
+    }
+
+    /**
+     * 按重点药类型与药品性质预解析药典主键；两框均非空时求交（AND）。
+     *
+     * @param keyDrugTypeCode         重点药类型 code（四旗）；空则不按四旗收窄
+     * @param medicinePropertyCode    药品性质 code（麻/精）；空则不按性质收窄
+     * @return 命中主键；无命中返回空列表
+     */
+    private List<Long> resolveKeyDrugAndMedicinePropertyIds(
+        String keyDrugTypeCode,
+        String medicinePropertyCode) {
+        boolean hasKeyDrug = StringUtils.isNotEmpty(keyDrugTypeCode);
+        boolean hasProperty = StringUtils.isNotEmpty(medicinePropertyCode);
+        // 仅重点药
+        if (hasKeyDrug && !hasProperty) {
+            return this.medicationDefinitionQueryService.listIdsByKeyDrugType(keyDrugTypeCode);
+        }
+        // 仅药品性质
+        if (!hasKeyDrug && hasProperty) {
+            return this.medicationDefinitionQueryService.listIdsByKeyDrugType(medicinePropertyCode);
+        }
+        // 两框同时选：AND 求交
+        List<Long> byKey =
+            this.medicationDefinitionQueryService.listIdsByKeyDrugType(keyDrugTypeCode);
+        List<Long> byProperty =
+            this.medicationDefinitionQueryService.listIdsByKeyDrugType(medicinePropertyCode);
+        return this.intersectIds(byKey, byProperty);
     }
 
     /**

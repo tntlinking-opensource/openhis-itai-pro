@@ -72,7 +72,8 @@ class StandingOrderPackageBatchExpandSupportTest {
     }
 
     @Test
-    void cut_overshoot_fallsBack() {
+    void cut_overshootCeil_closesBoxWithCarry_notFallback() {
+        // 5+2 越过包装 6：旧「刚好等于」会 FALLBACK；ceil 关盒后余量 1 结转
         List<LocalDateTime> times = List.of(
             LocalDateTime.of(2026, 7, 22, 8, 0),
             LocalDateTime.of(2026, 7, 22, 12, 0));
@@ -80,6 +81,49 @@ class StandingOrderPackageBatchExpandSupportTest {
         StandingOrderPackageBatchExpandSupport.CutResult result =
             StandingOrderPackageBatchExpandSupport.cutThroughBatchContainingDeadline(
                 times, qtys, new BigDecimal("6"), times.get(1), false);
+        assertEquals(StandingOrderPackageBatchExpandSupport.CutKind.SUCCESS, result.getKind());
+        assertEquals(1, result.getPlanTimes().size());
+        assertEquals(times.get(0), result.getPlanTimes().get(0));
+    }
+
+    @Test
+    void cut_threeTabletsBidPackage100_ceilClosesFirstBox_notDayPointsFallback() {
+        // 复现：优甲乐 一次 3 片 × BID、盒 100 片——旧 exact 切盒在累加越过 100 时 FALLBACK 成日点
+        List<LocalDateTime> times = new ArrayList<>();
+        List<BigDecimal> qtys = new ArrayList<>();
+        LocalDateTime day = LocalDateTime.of(2026, 9, 26, 10, 51);
+        // 34 槽 × 3 片 = 102 ≥ 100 → ceil 封第 1 盒；截止落在开嘱日第二点仍须探测满盒
+        for (int i = 0; i < 40; i++) {
+            // 日二次：偶数槽取当日首点锚，奇数槽 +6h
+            if (i % 2 == 0) {
+                times.add(day.plusDays(i / 2L));
+            } else {
+                times.add(day.plusDays(i / 2L).withHour(16).withMinute(0));
+            }
+            qtys.add(new BigDecimal("3"));
+        }
+        LocalDateTime deadline = times.get(1);
+        StandingOrderPackageBatchExpandSupport.CutResult needMore =
+            StandingOrderPackageBatchExpandSupport.cutThroughBatchContainingDeadline(
+                times.subList(0, 4), qtys.subList(0, 4), new BigDecimal("100"), deadline, true);
+        assertEquals(StandingOrderPackageBatchExpandSupport.CutKind.NEED_MORE, needMore.getKind());
+
+        StandingOrderPackageBatchExpandSupport.CutResult result =
+            StandingOrderPackageBatchExpandSupport.cutThroughBatchContainingDeadline(
+                times, qtys, new BigDecimal("100"), deadline, true);
+        assertEquals(StandingOrderPackageBatchExpandSupport.CutKind.SUCCESS, result.getKind());
+        assertEquals(1, result.getPlanTimes().size());
+        assertEquals(times.get(0), result.getPlanTimes().get(0));
+    }
+
+    @Test
+    void cut_singleSlotOverPackage_fallsBack() {
+        // 单槽 7 > 包装 6：仍降级可拆
+        List<LocalDateTime> times = List.of(LocalDateTime.of(2026, 7, 22, 8, 0));
+        List<BigDecimal> qtys = List.of(new BigDecimal("7"));
+        StandingOrderPackageBatchExpandSupport.CutResult result =
+            StandingOrderPackageBatchExpandSupport.cutThroughBatchContainingDeadline(
+                times, qtys, new BigDecimal("6"), times.get(0), false);
         assertEquals(StandingOrderPackageBatchExpandSupport.CutKind.FALLBACK, result.getKind());
     }
 

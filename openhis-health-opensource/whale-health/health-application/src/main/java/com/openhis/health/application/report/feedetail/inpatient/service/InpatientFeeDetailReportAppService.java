@@ -5,7 +5,7 @@
 
 package com.openhis.health.application.report.feedetail.inpatient.service;
 
-import com.openhis.health.application.basic.administration.support.PractitionerCashierOptionProvider;
+import com.openhis.health.application.shared.practitioner.PractitionerCashierOptionProvider;
 import com.openhis.health.application.outpatient.financial.feedetail.dto.OutpatientFeeDetailAmountSummaryDto;
 import com.openhis.health.application.outpatient.financial.feedetail.dto.OutpatientFeeDetailEncounterBlockDto;
 import com.openhis.health.application.outpatient.financial.feedetail.dto.OutpatientFeeDetailExportRowDto;

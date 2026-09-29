@@ -210,6 +210,11 @@ public interface AggregateTypeConstants {
     String SERVICE_DEVICE_TEMPLATE = "SDT";
 
     /**
+     * 收费折扣配置聚合类型名称（DM-CUS-016）。
+     */
+    String CHARGE_DISCOUNT_CONFIG = "CDC";
+
+    /**
      * 价格调整聚合类型名称。
      */
     String PRICE_ADJUSTMENT = "PAD";
@@ -328,7 +333,22 @@ public interface AggregateTypeConstants {
     String CASE_RECORD = "case_record";
 
     /**
+     * 病案首页编辑申请聚合类型（领域事件 {@code aggregateType}）。
+     */
+    String HOMEPAGE_EDIT_APPLICATION = "homepage_edit_application";
+
+    /**
      * 病案号 {@code medcasno} 发号前缀（{@code CR} + yyMM + 4 位年流水，无横杠）。
      */
     String CASE_RECORD_MEDCASNO = "CR";
+
+    /**
+     * 检查工单聚合类型（PacsWorkItem 领域事件 aggregateType）。
+     */
+    String PACS_WORK_ITEM = "PWI";
+
+    /**
+     * 检查报告聚合类型（PacsDiagnosticReport 领域事件 aggregateType）。
+     */
+    String PACS_DIAGNOSTIC_REPORT = "PDR";
 }

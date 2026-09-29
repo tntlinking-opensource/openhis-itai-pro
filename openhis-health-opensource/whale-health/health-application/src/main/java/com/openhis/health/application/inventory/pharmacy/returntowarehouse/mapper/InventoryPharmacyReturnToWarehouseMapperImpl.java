@@ -377,6 +377,8 @@ public class InventoryPharmacyReturnToWarehouseMapperImpl implements InventoryPh
         dto.setOccurrenceTime(line.getOccurrenceTime());
         dto.setReason(line.getReason());
         dto.setRemake(line.getRemake());
+        dto.setPrice(line.getPrice());
+        dto.setTotalPrice(line.getTotalPrice());
         // 按产品复合键回填品名/规格/厂家、单位展示名与计量带，供详情列回显
         if (productByKey != null && line.getItemTable() != null && line.getItemId() != null) {
             String key = ProductDefinitionKeyUtil.buildCompositeKey(line.getItemTable(), line.getItemId());

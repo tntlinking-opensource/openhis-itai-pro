@@ -10,7 +10,7 @@ import { Page } from '@vben/common-ui';
 
 import { TableLayout } from '@vben-core/table-layout-ui';
 
-import { ElButton, ElDialog, ElMessage, ElMessageBox, ElProgress } from 'element-plus';
+import { ElButton, ElDialog, ElMessage, ElMessageBox, ElProgress, ElTag } from 'element-plus';
 
 import {
   deleteServiceCatalogApi,
@@ -35,6 +35,10 @@ import { formatMoneyDisplay } from '#/utils/format/money-scale';
 
 import { BASIC_TABLE_MAX_HEIGHT } from '../basic-table-max-height';
 import { resolveCatalogRecordNavigation } from '../catalog/catalog-record-nav';
+import {
+  BUILT_IN_ACTIVITY_EDIT_HINT,
+  isBuiltInActivityName,
+} from '#/constants/domain/built-in-activity-definition';
 import EditDialog from './edit-dialog.vue';
 
 const route = useRoute();
@@ -48,6 +52,8 @@ const queryParams = ref({
   categoryCode: '',
   /** 启用状态；空字符串表示「全部」 */
   statusEnum: '' as string,
+  /** 绑定子项；空字符串表示「全部」；'true'/'false' 提交时转 Boolean */
+  childrenFlag: '' as string,
 });
 
 const tableData = ref<ServiceCatalogItem[]>([]);
@@ -97,6 +103,14 @@ const tableColumns: TableColumn[] = [
     showOverflowTooltip: true,
   },
   {
+    prop: 'childrenFlag',
+    label: '绑定子项',
+    width: 100,
+    align: 'center',
+    headerAlign: 'center',
+    slot: 'childrenFlag',
+  },
+  {
     prop: 'retailPrice',
     label: '售价',
     minWidth: 100,
@@ -121,6 +135,19 @@ function formatRetailPrice(price: unknown): string {
   }
   const num = Number(price);
   return Number.isFinite(num) ? formatMoneyDisplay(num) : String(price);
+}
+
+/**
+ * 列表/详情 `childrenFlag` 是否为「已绑定子项」
+ *（列表 Boolean；详情 0/1，均按真值判定）。
+ */
+function isChildrenBound(flag: unknown): boolean {
+  return flag === true || flag === 1 || flag === '1';
+}
+
+/** 列表行是否为产品内置诊疗（禁止删/停用） */
+function isBuiltInServiceRow(row: ServiceCatalogItem | null | undefined): boolean {
+  return isBuiltInActivityName(row?.name);
 }
 
 const formItems = computed<FormItemConfig[]>(() => [
@@ -155,6 +182,19 @@ const formItems = computed<FormItemConfig[]>(() => [
       { label: '已停用', value: PublicationStatusCode.INACTIVE },
     ],
   },
+  {
+    type: 'select',
+    prop: 'childrenFlag',
+    label: '绑定子项',
+    placeholder: '全部',
+    clearable: true,
+    multiple: false,
+    options: [
+      { label: '全部', value: '' },
+      { label: '是', value: 'true' },
+      { label: '否', value: 'false' },
+    ],
+  },
 ]);
 
 /** 分类筛选归一：空/数组转可提交的 string（对齐耗材目录） */
@@ -182,6 +222,20 @@ function normalizeStatusEnumForApi(raw: unknown): string | undefined {
   return s === '' ? undefined : s;
 }
 
+/** 绑定子项筛选归一：空 → undefined；'true'/'false'/布尔 → boolean */
+function normalizeChildrenFlagForApi(raw: unknown): boolean | undefined {
+  if (raw === undefined || raw === null || raw === '') {
+    return undefined;
+  }
+  if (raw === true || raw === 1 || raw === '1' || raw === 'true') {
+    return true;
+  }
+  if (raw === false || raw === 0 || raw === '0' || raw === 'false') {
+    return false;
+  }
+  return undefined;
+}
+
 const handleQuery = async (params: Record<string, unknown>) => {
   queryParams.value = {
     ...queryParams.value,
@@ -195,6 +249,7 @@ const handleQuery = async (params: Record<string, unknown>) => {
       keyword: queryParams.value.keyword || undefined,
       categoryCode: normalizeCategoryCodeForApi(queryParams.value.categoryCode),
       statusEnum: normalizeStatusEnumForApi(queryParams.value.statusEnum),
+      childrenFlag: normalizeChildrenFlagForApi(queryParams.value.childrenFlag),
       // 目录维护须见明细子项（组套选品等默认隐藏）
       includeReferencedPackageChildren: true,
     });
@@ -218,6 +273,8 @@ const handleReset = () => {
     pageSize: 10,
     keyword: '',
     categoryCode: '',
+    statusEnum: '',
+    childrenFlag: '',
   };
   handleQuery(queryParams.value);
 };
@@ -332,6 +389,7 @@ const handleExportCatalog = async () => {
       keyword: queryParams.value.keyword || undefined,
       categoryCode: queryParams.value.categoryCode || undefined,
       statusEnum: normalizeStatusEnumForApi(queryParams.value.statusEnum),
+      childrenFlag: normalizeChildrenFlagForApi(queryParams.value.childrenFlag),
       exportColumns: SERVICE_CATALOG_EXPORT_COLUMNS,
     });
     if (!result?.fileBytes?.trim()) {
@@ -489,8 +547,21 @@ const handleDisable = async () => {
     return;
   }
 
+  // 内置项不可停用：从批量中剔除并提示
+  const builtInNames = selectedRows.value
+    .filter((row) => isBuiltInServiceRow(row))
+    .map((row) => String(row.name ?? '').trim())
+    .filter(Boolean);
+  if (builtInNames.length > 0) {
+    ElMessage.warning(`${BUILT_IN_ACTIVITY_EDIT_HINT}：${builtInNames.join('、')}`);
+  }
+  const disableTargets = selectedRows.value.filter((row) => !isBuiltInServiceRow(row));
+  if (disableTargets.length === 0) {
+    return;
+  }
+
   try {
-    const ids = selectedRows.value.map((row) => row.id).filter(Boolean);
+    const ids = disableTargets.map((row) => row.id).filter(Boolean);
     if (ids.length === 0) {
       ElMessage.warning('所选数据中没有有效的ID');
       return;
@@ -540,6 +611,11 @@ const handleStop = async (row: ServiceCatalogItem) => {
     ElMessage.warning('缺少ID');
     return;
   }
+  // Gate：内置诊疗禁止停用
+  if (isBuiltInServiceRow(row)) {
+    ElMessage.warning(BUILT_IN_ACTIVITY_EDIT_HINT);
+    return;
+  }
   try {
     await stopServiceCatalogApi([String(row.id)]);
     ElMessage.success('停用成功');
@@ -579,7 +655,16 @@ const doDeleteByIds = async (ids: string[]) => {
 };
 
 const handleDelete = async () => {
+  // 内置项不可删：从批量中剔除并提示
+  const builtInNames = selectedRows.value
+    .filter((row) => isBuiltInServiceRow(row))
+    .map((row) => String(row.name ?? '').trim())
+    .filter(Boolean);
+  if (builtInNames.length > 0) {
+    ElMessage.warning(`${BUILT_IN_ACTIVITY_EDIT_HINT}：${builtInNames.join('、')}`);
+  }
   const ids = selectedRows.value
+    .filter((row) => !isBuiltInServiceRow(row))
     .map((row) => row.id)
     .filter(Boolean)
     .map(String);
@@ -596,6 +681,11 @@ const handleDelete = async () => {
 const handleRowDelete = async (row: ServiceCatalogItem) => {
   if (!row.id) {
     ElMessage.warning('缺少ID');
+    return;
+  }
+  // Gate：内置诊疗禁止删除
+  if (isBuiltInServiceRow(row)) {
+    ElMessage.warning(BUILT_IN_ACTIVITY_EDIT_HINT);
     return;
   }
   try {
@@ -831,6 +921,12 @@ watch(
         <StatusEnumTag :status-enum="row.statusEnum" :status-text="row.statusEnum_enumText" />
       </template>
 
+      <template #childrenFlag="{ row }">
+        <ElTag :type="isChildrenBound(row.childrenFlag) ? 'success' : 'info'" size="small">
+          {{ isChildrenBound(row.childrenFlag) ? '是' : '否' }}
+        </ElTag>
+      </template>
+
       <template #retailPrice="{ row }">
         {{ formatRetailPrice(row.retailPrice) }}
       </template>
@@ -841,10 +937,22 @@ watch(
           <ElButton v-if="row.statusEnum !== 2" type="success" link @click="handleStart(row)">
             启用
           </ElButton>
-          <ElButton v-else-if="row.statusEnum === 2" type="warning" link @click="handleStop(row)">
+          <ElButton
+            v-else-if="row.statusEnum === 2 && !isBuiltInServiceRow(row)"
+            type="warning"
+            link
+            @click="handleStop(row)"
+          >
             停用
           </ElButton>
-          <ElButton type="danger" link @click="handleRowDelete(row)">删除</ElButton>
+          <ElButton
+            v-if="!isBuiltInServiceRow(row)"
+            type="danger"
+            link
+            @click="handleRowDelete(row)"
+          >
+            删除
+          </ElButton>
         </div>
       </template>
     </TableLayout>

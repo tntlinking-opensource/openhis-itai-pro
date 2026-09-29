@@ -8,7 +8,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
 /**
- * 4401 病案首页 oprninfo 手术行。
+ * 4401 病案首页 oprninfo 手术行（组装自 {@code mrms_homepage_procedure}；出站码为 yb_no）。
+ *
+ * <p>对齐 AS-MRMS-UP-001 / 05 §8.3；助手术者字段 {@code asit_1_name}/{@code asit_name2}。</p>
  */
 @Data
 public class MedcasHomepageOprnInfo {
@@ -56,6 +58,14 @@ public class MedcasHomepageOprnInfo {
     /** 手术者姓名。 */
     @JsonProperty("oper_name")
     private String operName;
+
+    /** 一助姓名。 */
+    @JsonProperty("asit_1_name")
+    private String asit1Name;
+
+    /** 二助姓名。 */
+    @JsonProperty("asit_name2")
+    private String asitName2;
 
     /** 麻醉医师姓名。 */
     @JsonProperty("anst_dr_name")

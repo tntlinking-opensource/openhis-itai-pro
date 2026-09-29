@@ -57,6 +57,7 @@ export {
   PATIENT_BOUND_FIELD_KEYS,
   resolveFillableMetadataKey,
   stripDocumentStampMetadataFromContentJson,
+  stripOutpatientSignoffMetadataFromContentJson,
   stripPatientBoundMetadataFromContentJson,
 } from './emr-patient-metadata';
 export type {

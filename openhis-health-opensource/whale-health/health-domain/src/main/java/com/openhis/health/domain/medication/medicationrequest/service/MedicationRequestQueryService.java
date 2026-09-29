@@ -5,13 +5,7 @@
 package com.openhis.health.domain.medication.medicationrequest.service;
 
 import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
-import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestDetailQueryModel;
-import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestFifoSignContext;
-import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestHistoryQueryModel;
-import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
-import com.openhis.health.domain.medication.medicationrequest.queries.model.OutpatientSignedPrescriptionSummaryCountQueryModel;
-import com.openhis.health.domain.medication.medicationrequest.queries.model.TcmHerbalPrescriptionGroupQueryModel;
-import com.openhis.health.domain.medication.medicationrequest.queries.model.TcmHerbalPrescriptionHistoryGroupQueryModel;
+import com.openhis.health.domain.medication.medicationrequest.queries.model.*;
 import com.openhis.health.domain.medication.medicationrequest.query.OutpatientSignedPrescriptionDrugLinePageQuery;
 import com.openhis.health.domain.medication.medicationrequest.repository.MedicationRequestRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -200,7 +194,10 @@ public class MedicationRequestQueryService {
     }
 
     /**
-     * 判断药品是否存在非终态医嘱申请（调价提交互斥 BR-PRC-SUB-003：在途医嘱）。
+     * 判断药品是否存在非终态医嘱申请（含未签发 DRAFT 的复合口径）。
+     *
+     * <p>调价提交请改用 {@link #existsHardInTransitRequestByMedicationId}（硬在途）与
+     * {@link #listUnsignedDraftsByMedicationId}（未签发草稿，由应用层按 48h 窗口分流）。</p>
      *
      * @param medicationId 药品定义主键 {@code med_medication_definition.id}
      * @return 存在在途申请时为 true
@@ -221,6 +218,71 @@ public class MedicationRequestQueryService {
     }
 
     /**
+     * 按药品定义列出未签发草稿（调价保存/提交在途配套）。
+     *
+     * <p>口径：未软删、{@code DRAFT}、从未签发（{@code req_authored_time} 空）；
+     * 填充患者/开立人/有效开立时刻供 48h 新鲜窗口分流。</p>
+     *
+     * @param medicationId 药品定义主键
+     * @return 未签发草稿读模型；无则空列表
+     */
+    public List<StaleUnsignedMedicationRequestDraftQueryModel> listUnsignedDraftsByMedicationId(Long medicationId) {
+        if (medicationId == null) {
+            return new ArrayList<>();
+        }
+        Specification<MedicationRequest> specification = (root, cq, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.MEDICATION_ID), medicationId));
+            predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), RequestStatus.DRAFT.getCode()));
+            predicates.add(cb.isNull(root.get(FieldNameConstants.REQ_AUTHORED_TIME)));
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+        List<MedicationRequest> entities = medicationRequestRepository.findAll(specification);
+        List<StaleUnsignedMedicationRequestDraftQueryModel> rows = new ArrayList<>();
+        for (MedicationRequest entity : entities) {
+            if (entity == null || entity.getId() == null) {
+                continue;
+            }
+            StaleUnsignedMedicationRequestDraftQueryModel row = new StaleUnsignedMedicationRequestDraftQueryModel();
+            row.setId(entity.getId());
+            row.setEncounterId(entity.getEncounterId());
+            row.setPatientId(entity.getPatientId());
+            row.setRequesterId(entity.getRequesterId());
+            row.setMedicationId(entity.getMedicationId());
+            row.setUpdatedAt(entity.getUpdatedAt());
+            // 有效开立时刻：开立日优先，空则回落更新时间
+            LocalDateTime openedAt = entity.getReqOpenedTime();
+            if (openedAt == null) {
+                openedAt = entity.getUpdatedAt();
+            }
+            row.setOpenedAt(openedAt);
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    /**
+     * 是否存在硬在途药品申请（已签发/已校对/暂挂；不含 DRAFT）。
+     *
+     * @param medicationId 药品定义主键
+     * @return 存在硬在途时 true
+     */
+    public boolean existsHardInTransitRequestByMedicationId(Long medicationId) {
+        if (medicationId == null) {
+            return false;
+        }
+        Specification<MedicationRequest> specification = (root, cq, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.MEDICATION_ID), medicationId));
+            predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(this.hardInTransitRequestStatusCodes()));
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+        return medicationRequestRepository.count(specification) > 0;
+    }
+
+    /**
      * 在途医嘱申请状态码：待发、已签发、已校对、暂挂（非 COMPLETED/CANCELLED/STOPPED）。
      *
      * @return 状态 code 列表
@@ -228,6 +290,19 @@ public class MedicationRequestQueryService {
     private List<String> inTransitRequestStatusCodes() {
         List<String> codes = new ArrayList<>();
         codes.add(RequestStatus.DRAFT.getCode());
+        codes.add(RequestStatus.ACTIVE.getCode());
+        codes.add(RequestStatus.VERIFIED.getCode());
+        codes.add(RequestStatus.HOLD.getCode());
+        return codes;
+    }
+
+    /**
+     * 硬在途状态：已签发后链路（不含未签发草稿）。
+     *
+     * @return 状态 code 列表
+     */
+    private List<String> hardInTransitRequestStatusCodes() {
+        List<String> codes = new ArrayList<>();
         codes.add(RequestStatus.ACTIVE.getCode());
         codes.add(RequestStatus.VERIFIED.getCode());
         codes.add(RequestStatus.HOLD.getCode());
@@ -978,6 +1053,9 @@ public class MedicationRequestQueryService {
         // 首日/首次用量：护士执行首次槽换量与医生站列表回显（BR-IP-ORD-030）
         model.setFirstDose(request.getFirstDose());
         model.setFirstDoseUnitCode(request.getFirstDoseUnitCode());
+        // 分次用量序列：空=走 dose/quantity；有值=按槽取段（BR-MRQ-035 / BR-IP-ORD-037）
+        model.setDoseSchedule(request.getDoseSchedule());
+        model.setQuantitySchedule(request.getQuantitySchedule());
         model.setLotNumber(request.getLotNumber());
         model.setDispensePerDuration(request.getDispensePerDuration());
         model.setOrgId(request.getOrgId());

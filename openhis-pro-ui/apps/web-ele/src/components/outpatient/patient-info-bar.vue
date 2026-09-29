@@ -13,6 +13,14 @@ defineOptions({
   name: 'PatientInfoBar',
 });
 
+interface Props {
+  /** 与就诊列表/读模型字段一致 */
+  patient?: PatientInfoBarPayload;
+  doctorName?: string;
+  /** 开始时间文案（默认「挂号时间」；住院传「入院时间」） */
+  startTimeLabel?: string;
+}
+
 const props = withDefaults(defineProps<Props>(), {
   patient: () => ({
     encounterId: '',
@@ -29,13 +37,8 @@ const props = withDefaults(defineProps<Props>(), {
     statusEnum: undefined,
   }),
   doctorName: '',
+  startTimeLabel: '挂号时间',
 });
-
-interface Props {
-  /** 与就诊列表/读模型字段一致 */
-  patient?: PatientInfoBarPayload;
-  doctorName?: string;
-}
 
 const paymentTypeTagConfig = computed(() => {
   const label = (props.patient.serviceTypeName ?? '').trim();
@@ -53,8 +56,11 @@ const ageDisplay = computed(() => {
   return t || '';
 });
 
-/** 身份证号（有值才展示） */
-const idCardDisplay = computed(() => (props.patient.idCard ?? '').trim());
+/** 手机号展示（无值显示 —） */
+const phoneDisplay = computed(() => (props.patient.phone ?? '').trim() || '—');
+
+/** 身份证号展示（无值显示 —） */
+const idCardDisplay = computed(() => (props.patient.idCard ?? '').trim() || '—');
 
 /** 患者地址全文（有值才展示） */
 const addressDisplay = computed(() => {
@@ -94,9 +100,9 @@ const startTimeDisplay = computed(() => {
         <span v-if="ageDisplay" class="text-text-main text-sm">{{ ageDisplay }}</span>
       </div>
 
-      <div v-if="patient.phone" class="flex items-center gap-1.5">
-        <span class="text-text-sub text-sm">电话：</span>
-        <span class="text-text-main text-sm">{{ patient.phone }}</span>
+      <div class="flex items-center gap-1.5">
+        <span class="text-text-sub text-sm">手机号：</span>
+        <span class="text-text-main text-sm">{{ phoneDisplay }}</span>
       </div>
 
       <div v-if="patient.medicalRecordNo" class="flex items-center gap-1.5">
@@ -104,7 +110,7 @@ const startTimeDisplay = computed(() => {
         <span class="text-text-main text-sm font-medium">{{ patient.medicalRecordNo }}</span>
       </div>
 
-      <div v-if="idCardDisplay" class="flex items-center gap-1.5">
+      <div class="flex items-center gap-1.5">
         <span class="text-text-sub text-sm">身份证号：</span>
         <span class="text-text-main text-sm">{{ idCardDisplay }}</span>
       </div>
@@ -131,7 +137,7 @@ const startTimeDisplay = computed(() => {
     <div class="flex shrink-0 items-center gap-4">
       <div v-if="patient.startTime" class="flex items-center gap-1.5">
         <Calendar class="text-text-sub h-3.5 w-3.5" />
-        <span class="text-text-sub text-sm">挂号时间：</span>
+        <span class="text-text-sub text-sm">{{ startTimeLabel }}：</span>
         <span class="text-text-main text-sm">{{ startTimeDisplay }}</span>
       </div>
 

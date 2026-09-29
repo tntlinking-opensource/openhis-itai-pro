@@ -51,6 +51,7 @@ import {
   ReportQueryBar,
   ReportTableScroll,
   mapReportPrintRow,
+  collectPagedReportRows,
   reportPrintFieldsOf,
   useReportListPrint,
 } from '#/views/report/shared';
@@ -196,6 +197,23 @@ const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrint
     getColumnCatalog: () => printColumnCatalog.value,
     getReportTitle: () => PAGE_TITLE,
     getPrintRows: () => tableData.value.map((row) => mapPeriodBalancePrintRow(row)),
+    fetchAllPrintRows: async () => {
+      const collected = await collectPagedReportRows({
+        fetchPage: async (pageNo, pageSize) => {
+          const page = await pagePeriodBalanceDetailApi({
+            ...buildPageRequest(),
+            pageNo,
+            pageSize,
+          });
+          return { rows: page.rows ?? [], total: Number(page.total ?? 0) };
+        },
+      });
+      return {
+        rows: collected.rows.map((row) => mapPeriodBalancePrintRow(row)),
+        truncated: collected.truncated,
+      };
+    },
+    hasPrintableData: () => total.value > 0 || tableData.value.length > 0,
   });
 
 const tableLoading = computed(
@@ -758,6 +776,7 @@ onMounted(async () => {
       ref="printFieldDialogRef"
       report-code="report-period-balance-detail"
       :column-catalog="printColumnCatalog"
+      show-print-scope
     />
   </Page>
 </template>

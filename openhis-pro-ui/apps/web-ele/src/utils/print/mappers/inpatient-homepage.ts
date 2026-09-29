@@ -351,26 +351,12 @@ function hasDiagContent(row: DiagnosisLineDto): boolean {
   return Boolean(str(row.diagName) || str(row.diagCode));
 }
 
-/**
- * 国标中医病证分类码形态（GB/T 15657）：
- * 疾病 A##.##.##…；证候 B##.##.##…（至少两段两位小数，区别于 ICD-10 单段）。
- */
-const TCM_DISEASE_CODE_RE = /^A\d{2}(\.\d{2}){2,}$/i;
-const TCM_SYNDROME_CODE_RE = /^B\d{2}(\.\d{2}){2,}$/i;
+/** 中医疾病目录（术语 condition_definition_source.tcm_dx） */
+const TCM_DISEASE_SOURCE = 'tcm_dx';
+/** 中医证候目录（术语 condition_definition_source.tcm_syndrome） */
+const TCM_SYNDROME_SOURCE = 'tcm_syndrome';
 
-/** 中医主病（疾病目录码） */
-function isTcmDiseaseCode(code?: string): boolean {
-  return TCM_DISEASE_CODE_RE.test(str(code));
-}
-
-/** 中医主证（证候目录码） */
-function isTcmSyndromeCode(code?: string): boolean {
-  return TCM_SYNDROME_CODE_RE.test(str(code));
-}
-
-/**
- * 出院诊断优先；尚未填写出院诊断时回退入院诊断，避免详情有值打印空白。
- */
+/** 出院诊断表只打出院诊断；未填出院诊断时留空，不回退入院诊断。 */
 function pickTableDiagnoses(form: HomepageFormModel): DiagnosisLineDto[] {
   const list = form.diagnoses ?? [];
   const dischargeMain = list.filter(
@@ -379,16 +365,7 @@ function pickTableDiagnoses(form: HomepageFormModel): DiagnosisLineDto[] {
   const dischargeOther = list.filter(
     (row) => row.diagTypeCode === 'discharge_other' && hasDiagContent(row),
   );
-  if (dischargeMain.length > 0 || dischargeOther.length > 0) {
-    return [...dischargeMain, ...dischargeOther];
-  }
-  const admissionMain = list.filter(
-    (row) => row.diagTypeCode === 'admission_main' && hasDiagContent(row),
-  );
-  const admissionOther = list.filter(
-    (row) => row.diagTypeCode === 'admission_other' && hasDiagContent(row),
-  );
-  return [...admissionMain, ...admissionOther];
+  return [...dischargeMain, ...dischargeOther];
 }
 
 /** 取指定类型首条诊断 */
@@ -429,11 +406,12 @@ function buildDiagFields(
   const tcmSyndromes: DiagnosisLineDto[] = [];
   const western: DiagnosisLineDto[] = [];
   for (const row of rows) {
-    if (isTcmDiseaseCode(row.diagCode)) {
+    const source = str(row.sourceEnum);
+    if (source === TCM_DISEASE_SOURCE) {
       tcmDiseases.push(row);
       continue;
     }
-    if (isTcmSyndromeCode(row.diagCode)) {
+    if (source === TCM_SYNDROME_SOURCE) {
       tcmSyndromes.push(row);
       continue;
     }

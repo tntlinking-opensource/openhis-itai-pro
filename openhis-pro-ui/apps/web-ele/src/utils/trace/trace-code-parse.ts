@@ -6,9 +6,9 @@ export const TRACE_CODE_NON_STANDARD_MAX_LENGTH = 100;
 
 /**
  * 非标追溯码药名关键字：名称包含任一关键字则不强制 20 位，绑码按名称匹配。
- * 当前：依洛尤单抗注射液（进口/GS1 码，位数非 20）。
+ * 当前：依洛尤单抗 / 地舒单抗等进口药（GS1：GTIN+SN，位数非 20）。
  */
-export const NON_STANDARD_TRACE_DRUG_NAME_KEYWORDS = ['依洛尤单抗'] as const;
+export const NON_STANDARD_TRACE_DRUG_NAME_KEYWORDS = ['依洛尤单抗', '地舒单抗'] as const;
 
 /** 单次批量反查上限（与后端 BR-TRC-015 一致） */
 export const TRACE_BATCH_RESOLVE_MAX = 50;

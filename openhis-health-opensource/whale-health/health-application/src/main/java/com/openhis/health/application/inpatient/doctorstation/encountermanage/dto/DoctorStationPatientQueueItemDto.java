@@ -91,6 +91,12 @@ public class DoctorStationPatientQueueItemDto implements InpatientAccountBalance
     private String idCard;
 
     /**
+     * 联系电话：读模型未投影，由患者主档批量回填（与护士站队列 patientPhone 同口径）。
+     */
+    @Schema(description = "联系电话")
+    private String phone;
+
+    /**
      * 病区主键。
      */
     @Schema(description = "病区主键")

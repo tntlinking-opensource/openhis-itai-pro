@@ -37,6 +37,7 @@ import com.openhis.health.domain.share.constants.InpatientMedicationDispenseRepo
 import com.openhis.health.domain.share.constants.PharmacyDispenseRecordConstants;
 import com.openhis.health.domain.share.constants.PharmacyDispenseRecordExportConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
+import com.openhis.health.domain.share.enums.KeyDrugType;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.DeptIssueReportLineQueryModel;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.DeptIssueReportSummaryBundle;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.DeptIssueReportSummaryRow;
@@ -158,6 +159,7 @@ public class InpatientMedicationDispenseReportAppService {
                 defaultFrom,
                 defaultTo);
             response.setOrganizationOptions(organizationOptions);
+            response.setMedicinePropertyOptions(this.buildMedicinePropertyOptions());
             return response;
         } catch (RuntimeException ex) {
             log.warn("住院发药报表页初始化失败", ex);
@@ -212,6 +214,7 @@ public class InpatientMedicationDispenseReportAppService {
                         request.getPatientKeyword(),
                         request.getFeeNatureContractNo(),
                         request.getOrganizationId(),
+                        request.getKeyDrugType(),
                         1,
                         PharmacyDispenseRecordExportConstants.EXPORT_MAX_ROWS);
                 MedicationDispenseReportSummaryQuery summaryQuery =
@@ -241,6 +244,7 @@ public class InpatientMedicationDispenseReportAppService {
                         request.getMedicationCategoryCodes(),
                         request.getDrugKeyword(),
                         request.getOrganizationId(),
+                        request.getKeyDrugType(),
                         summaryDimension,
                         1,
                         PharmacyDispenseRecordExportConstants.EXPORT_MAX_ROWS);
@@ -336,6 +340,7 @@ public class InpatientMedicationDispenseReportAppService {
                         request.getPatientKeyword(),
                         request.getFeeNatureContractNo(),
                         request.getOrganizationId(),
+                        request.getKeyDrugType(),
                         pageNo,
                         pageSize);
                 Page<MedicationDispenseSlipQueryModel> slipPage =
@@ -357,6 +362,7 @@ public class InpatientMedicationDispenseReportAppService {
                         request.getMedicationCategoryCodes(),
                         request.getDrugKeyword(),
                         request.getOrganizationId(),
+                        request.getKeyDrugType(),
                         null,
                         pageNo,
                         pageSize);
@@ -412,6 +418,7 @@ public class InpatientMedicationDispenseReportAppService {
                 summarizeRequest.setRecordTypeCode(request.getRecordTypeCode());
                 summarizeRequest.setPharmacyLocationId(request.getPharmacyLocationId());
                 summarizeRequest.setMedicationCategoryCodes(request.getMedicationCategoryCodes());
+                summarizeRequest.setKeyDrugType(request.getKeyDrugType());
                 summarizeRequest.setDispenserPractitionerId(request.getDispenserPractitionerId());
                 summarizeRequest.setDrugKeyword(request.getDrugKeyword());
                 summarizeRequest.setPatientKeyword(request.getPatientKeyword());
@@ -479,6 +486,7 @@ public class InpatientMedicationDispenseReportAppService {
                     request.getPatientKeyword(),
                     request.getFeeNatureContractNo(),
                     request.getOrganizationId(),
+                    request.getKeyDrugType(),
                     1,
                     PharmacyDispenseRecordExportConstants.EXPORT_MAX_ROWS);
             List<MedicationDispenseSlipQueryModel> slips =
@@ -495,6 +503,7 @@ public class InpatientMedicationDispenseReportAppService {
                     request.getMedicationCategoryCodes(),
                     request.getDrugKeyword(),
                     request.getOrganizationId(),
+                    request.getKeyDrugType(),
                     null,
                     1,
                     PharmacyDispenseRecordExportConstants.EXPORT_MAX_ROWS);
@@ -527,6 +536,32 @@ public class InpatientMedicationDispenseReportAppService {
             options.add(option);
         }
         return options;
+    }
+
+    /**
+     * 构造药品性质下拉（仅麻醉 / 一类精神 / 二类精神）。
+     *
+     * @return 药品性质选项（value=KeyDrugType code）
+     */
+    private List<OptionDto> buildMedicinePropertyOptions() {
+        List<OptionDto> options = new ArrayList<>();
+        options.add(this.toMedicinePropertyOption(KeyDrugType.NARCOTIC));
+        options.add(this.toMedicinePropertyOption(KeyDrugType.PSYCH_ONE));
+        options.add(this.toMedicinePropertyOption(KeyDrugType.PSYCH_TWO));
+        return options;
+    }
+
+    /**
+     * KeyDrugType → 药品性质 OptionDto。
+     *
+     * @param keyDrugType 重点药/性质类型
+     * @return 下拉选项
+     */
+    private OptionDto toMedicinePropertyOption(KeyDrugType keyDrugType) {
+        OptionDto option = new OptionDto();
+        option.setValue(keyDrugType.getCode());
+        option.setLabel(keyDrugType.getDisplay());
+        return option;
     }
 
     /**

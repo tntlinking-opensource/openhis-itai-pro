@@ -19,7 +19,7 @@ import java.util.List;
 @Schema(description = "住院医生站-暂存前绑定解析响应")
 public class ResolveInpatientDoctorStationAdviceDraftBindsResponse {
 
-    /** 绑定明细（合管优先；同批同设备去重）。 */
-    @Schema(description = "绑定明细")
+    /** 绑定明细（**BR-IP-ORD-036**：住院开立恒空列表）。 */
+    @Schema(description = "绑定明细（住院开立恒空）")
     private List<DoctorStationAdviceDraftBindItemDto> bindItems;
 }

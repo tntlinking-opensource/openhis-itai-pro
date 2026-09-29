@@ -58,6 +58,12 @@ public class DischargePendingMedicationItemDto {
     @Schema(description = "单位 code")
     private String unitCode;
 
+    /**
+     * 单位展示名（术语 UNIT_CODE 解析；列表「单位」列优先展示本字段）。
+     */
+    @Schema(description = "单位展示名")
+    private String unitCodeText;
+
     /** 计划发药时间。 */
     @Schema(description = "计划发药时间")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)

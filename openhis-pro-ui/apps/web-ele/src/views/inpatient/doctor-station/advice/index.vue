@@ -21,6 +21,8 @@ const props = withDefaults(
     defaultTimeSortOrder?: 'asc' | 'desc';
     /** 纳入中药饮片并按方合并（病案首页医嘱侧栏） */
     includeTcmPrescriptions?: boolean;
+    /** 行操作「执行记录」（仅病案首页医嘱侧栏打开） */
+    showExecutionRecord?: boolean;
   }>(),
   {
     encounterId: '',
@@ -28,6 +30,7 @@ const props = withDefaults(
     patientId: '',
     defaultTimeSortOrder: undefined,
     includeTcmPrescriptions: false,
+    showExecutionRecord: false,
   },
 );
 

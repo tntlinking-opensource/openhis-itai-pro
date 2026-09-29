@@ -159,6 +159,9 @@ const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrint
     getColumnCatalog: () => printColumnCatalog.value,
     getReportTitle: () => PAGE_TITLE,
     getPrintRows: () => mapCurrentPrintRows(),
+    fetchAllPrintRows: async () => ({ rows: mapCurrentPrintRows(), truncated: false }),
+    hasPrintableData: () =>
+      isDetailMode.value ? detailLines.value.length > 0 : summaryLines.value.length > 0,
   });
 
 const tableLoading = computed(
@@ -757,6 +760,7 @@ onMounted(async () => {
       ref="printFieldDialogRef"
       :report-code="resolveReportPrintCode()"
       :column-catalog="printColumnCatalog"
+      show-print-scope
     />
   </Page>
 </template>

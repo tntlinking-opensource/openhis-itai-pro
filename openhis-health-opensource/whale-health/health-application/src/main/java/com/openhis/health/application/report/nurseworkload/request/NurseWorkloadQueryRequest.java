@@ -46,18 +46,18 @@ public class NurseWorkloadQueryRequest {
     /**
      * 开立科室主键（可选；仅金额按 {@code ChargeItem.requesting_org_id} 二次收窄时使用）。
      *
-     * <p>科室工作量统计请传 {@link #organizationId}（默认登录科室），勿与本字段混用。</p>
+     * <p>科室工作量统计请传 {@link #organizationId}（工作科室），勿与本字段混用。</p>
      */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "开立科室主键（可选；金额二次收窄）")
     private Long requestingOrgId;
 
     /**
-     * 默认登录科室主键（可选；{@code Practitioner.org_id}）。
+     * 工作科室主键（可选；岗位 {@code adm_pr_assign.org_id}）。
      *
-     * <p>已选时统计该科下全部护士岗人员工作量合计与卡片；未选=当前就诊域全院。</p>
+     * <p>已选时统计该科下护士/医技岗位人员工作量合计与卡片；未选=当前就诊域全院。</p>
      */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "默认登录科室主键（可选；Practitioner.org_id）")
+    @Schema(description = "工作科室主键（可选；岗位 adm_pr_assign.org_id）")
     private Long organizationId;
 }

@@ -77,6 +77,8 @@ const props = withDefaults(
     feeNatureOptions?: TerminologyOptionDto[];
     initialGroup?: AdviceDrugItem[];
     medicationRateOptions?: TerminologyOptionDto[];
+    /** 频次码 → day_times 段数（用量不一致） */
+    dayTimesCountByRateCode?: Record<string, number>;
     medicationRouteOptions?: TerminologyOptionDto[];
     /** IF-IP-DOR-18 输液滴速选项 */
     medicationSpeedOptions?: TerminologyOptionDto[];
@@ -103,6 +105,7 @@ const props = withDefaults(
     feeNatureOptions: () => [],
     encounterId: '',
     medicationRateOptions: () => [],
+    dayTimesCountByRateCode: () => ({}),
     medicationRouteOptions: () => [],
     medicationSpeedOptions: () => [],
     orderSelectExpandNonce: 0,
@@ -958,6 +961,7 @@ onMounted(() => {
               :item="item"
               :fee-nature-options="feeNatureOptions"
               :medication-rate-options="medicationRateOptions"
+              :day-times-count-by-rate-code="dayTimesCountByRateCode"
               :medication-route-options="medicationRouteOptions"
               :medication-speed-options="medicationSpeedOptions"
             />

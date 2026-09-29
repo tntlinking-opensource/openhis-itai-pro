@@ -27,10 +27,19 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class ProcedureCatalogMapperImpl implements ProcedureCatalogMapper {
 
-    private static final String PROCEDURE_SOURCE_CODE_SYSTEM = TerminologyCodeSystemNameConstants.PROCEDURE_DEFINITION_SOURCE;
+    /** 手术目录来源码系名（术语下拉与展示文案解析）。 */
+    private static final String PROCEDURE_SOURCE_CODE_SYSTEM =
+        TerminologyCodeSystemNameConstants.PROCEDURE_DEFINITION_SOURCE;
 
+    /** 术语读侧：解析来源/发布状态展示文案。 */
     private final CodeSystemQueryService codeSystemQueryService;
 
+    /**
+     * 将手术定义实体装配为列表行 DTO（含来源/状态展示文案与挂靠 AD）。
+     *
+     * @param entity 调用方保证可为 null；null 时返回 null
+     * @return 列表行 DTO；entity 为 null 时返回 null
+     */
     @Override
     public ProcedureCatalogDto toDto(ProcedureDefinition entity) {
         if (entity == null) {
@@ -52,10 +61,19 @@ public class ProcedureCatalogMapperImpl implements ProcedureCatalogMapper {
         dto.setClinicCode(entity.getClinicCode());
         dto.setYbMatchFlag(toIntFlag(entity.getYbMatchFlag()));
         dto.setStatusEnum(entity.getStatusEnum());
-        dto.setStatusEnum_enumText(codeSystemQueryService.getDisplayByCode(PublicationStatus.class, entity.getStatusEnum()));
+        dto.setStatusEnum_enumText(
+            codeSystemQueryService.getDisplayByCode(PublicationStatus.class, entity.getStatusEnum()));
+        // 挂靠 AD：国临选品计费映射回显（BR-POC-010）
+        dto.setActivityDefinitionId(entity.getActivityDefinitionId());
         return dto;
     }
 
+    /**
+     * 将分页行 QueryModel 装配为列表行 DTO（含挂靠 AD 回显）。
+     *
+     * @param model 调用方保证可为 null；null 时返回 null
+     * @return 列表行 DTO；model 为 null 时返回 null
+     */
     @Override
     public ProcedureCatalogDto toDto(ProcedureDefinitionPageItemQueryModel model) {
         if (model == null) {
@@ -70,14 +88,26 @@ public class ProcedureCatalogMapperImpl implements ProcedureCatalogMapper {
         dto.setTypeCode(model.getTypeCode());
         dto.setTypeCode_dictText(model.getTypeCode());
         dto.setStatusEnum(model.getStatusEnum());
-        dto.setStatusEnum_enumText(codeSystemQueryService.getDisplayByCode(PublicationStatus.class, model.getStatusEnum()));
+        dto.setStatusEnum_enumText(
+            codeSystemQueryService.getDisplayByCode(PublicationStatus.class, model.getStatusEnum()));
         dto.setYbFlag(toIntFlag(model.getYbFlag()));
         dto.setYbNo(model.getYbNo());
         dto.setClinicCode(model.getClinicCode());
         dto.setDescription(model.getDescription());
+        dto.setPyStr(model.getPyStr());
+        dto.setWbStr(model.getWbStr());
+        dto.setYbMatchFlag(toIntFlag(model.getYbMatchFlag()));
+        // 挂靠 AD：分页列表回显（BR-POC-010）
+        dto.setActivityDefinitionId(model.getActivityDefinitionId());
         return dto;
     }
 
+    /**
+     * 将详情 QueryModel 装配为详情 DTO（字段同列表行，含挂靠 AD）。
+     *
+     * @param model 调用方保证可为 null；null 时返回 null
+     * @return 详情 DTO；model 为 null 时返回 null
+     */
     @Override
     public ProcedureCatalogDetailDto toDetailDto(ProcedureDefinitionDetailQueryModel model) {
         if (model == null) {
@@ -99,10 +129,19 @@ public class ProcedureCatalogMapperImpl implements ProcedureCatalogMapper {
         dto.setClinicCode(model.getClinicCode());
         dto.setYbMatchFlag(toIntFlag(model.getYbMatchFlag()));
         dto.setStatusEnum(model.getStatusEnum());
-        dto.setStatusEnum_enumText(codeSystemQueryService.getDisplayByCode(PublicationStatus.class, model.getStatusEnum()));
+        dto.setStatusEnum_enumText(
+            codeSystemQueryService.getDisplayByCode(PublicationStatus.class, model.getStatusEnum()));
+        // 挂靠 AD：详情回显（BR-POC-010）
+        dto.setActivityDefinitionId(model.getActivityDefinitionId());
         return dto;
     }
 
+    /**
+     * 将新增请求映射为领域新增命令（含可选挂靠 AD；医保标记 Integer→Boolean）。
+     *
+     * @param request 调用方保证非空；空则抛校验异常
+     * @return 新增命令
+     */
     @Override
     public AddProcedureDefinitionCommand toCreateCommand(CreateProcedureCatalogRequest request) {
         if (request == null) {
@@ -121,9 +160,17 @@ public class ProcedureCatalogMapperImpl implements ProcedureCatalogMapper {
         command.setClinicCode(request.getClinicCode());
         command.setYbMatchFlag(toBoolFlag(request.getYbMatchFlag()));
         command.setStatusEnum(request.getStatusEnum());
+        // 可选挂靠 AD：写入领域新增命令（BR-POC-010）
+        command.setActivityDefinitionId(request.getActivityDefinitionId());
         return command;
     }
 
+    /**
+     * 将编辑请求映射为领域编辑命令（含可选挂靠 AD；null 表示不改存量挂靠）。
+     *
+     * @param request 调用方保证非空；空则抛校验异常
+     * @return 编辑命令
+     */
     @Override
     public EditProcedureDefinitionCommand toUpdateCommand(UpdateProcedureCatalogRequest request) {
         if (request == null) {
@@ -143,17 +190,32 @@ public class ProcedureCatalogMapperImpl implements ProcedureCatalogMapper {
         command.setClinicCode(request.getClinicCode());
         command.setYbMatchFlag(toBoolFlag(request.getYbMatchFlag()));
         command.setStatusEnum(request.getStatusEnum());
+        // 非空改绑；null 本轮不改存量挂靠（与领域 Edit 口径一致）
+        command.setActivityDefinitionId(request.getActivityDefinitionId());
         return command;
     }
 
+    /**
+     * 按来源码解析术语展示文案；概念不存在时返回 null。
+     *
+     * @param sourceCode 来源码
+     * @return 展示文案；未配置时 null
+     */
     private String resolveSourceText(String sourceCode) {
-        var concept = codeSystemQueryService.findConceptByCodeSystemNameAndCode(PROCEDURE_SOURCE_CODE_SYSTEM, sourceCode);
+        var concept =
+            codeSystemQueryService.findConceptByCodeSystemNameAndCode(PROCEDURE_SOURCE_CODE_SYSTEM, sourceCode);
         if (concept == null) {
             return null;
         }
         return concept.getDisplay();
     }
 
+    /**
+     * Boolean 医保/对码标记转为出参 0/1；null 保持 null。
+     *
+     * @param value 领域 Boolean 标记
+     * @return 0/1 或 null
+     */
     private Integer toIntFlag(Boolean value) {
         if (Boolean.TRUE.equals(value)) {
             return 1;
@@ -164,6 +226,12 @@ public class ProcedureCatalogMapperImpl implements ProcedureCatalogMapper {
         return null;
     }
 
+    /**
+     * 请求侧 0/1 标记转为领域 Boolean；null 保持 null；非 1 视为 false。
+     *
+     * @param value 请求 Integer 标记
+     * @return Boolean 或 null
+     */
     private Boolean toBoolFlag(Integer value) {
         if (value == null) {
             return null;

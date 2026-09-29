@@ -20,8 +20,9 @@ import {
 export interface SubmitScanRefundParams {
   originalPaymentId: number | string;
   /**
-   * 调用方提示金额（元）。有 BPC 成功消费单时忽略，一律按 `txnAmtFen` 退扫码段，
-   * 避免混合支付把「账单应退总额」误打给银联。
+   * 调用方提示金额（元，医院账口径）。有 BPC 成功消费单时：Win/银联退货一律按
+   * 渠道患者实付 `paidAmtFen ?? txnAmtFen`，避免把医院账 5 元打给银联（患者只付了 4.99）。
+   * 医院 HIS 冲账仍按原支付下单金额，不读本字段覆盖。
    */
   refundAmountYuan?: number | string;
   /** 已知原支付落库渠道时可跳过查渠道接口（退费页分组已带） */
@@ -40,6 +41,7 @@ export type ScanRefundPath =
 
 const CLIENT_REFUND_CACHE_PREFIX = 'whale.scanRefund.clientResult:';
 
+/** 本机银联退货凭证 sessionStorage key。 */
 function cacheStorageKey(paymentId: number | string): string {
   return `${CLIENT_REFUND_CACHE_PREFIX}${String(paymentId)}`;
 }
@@ -99,9 +101,22 @@ function findBpcAlreadyRefundedOrder(orders: BpcOrderSummaryDto[]): BpcOrderSumm
   );
 }
 
+/**
+ * 银联 Win 应退元：渠道患者实付 `paidAmtFen`，无实付时回落院内下单 `txnAmtFen`。
+ * 与 BPC Gate 一致；医院 HIS 冲账仍按原支付下单金额，不在此混用。
+ *
+ * @param order BPC 原消费单摘要
+ * @param fallback 无 BPC 金额时的兜底（元）
+ */
 function resolveRefundAmountYuan(order: BpcOrderSummaryDto, fallback?: number | string): string {
-  if (order.txnAmtFen != null && Number(order.txnAmtFen) > 0) {
-    return formatMoneyDisplay(Number(order.txnAmtFen) / 100);
+  let channelFen = 0;
+  if (order.paidAmtFen != null && Number(order.paidAmtFen) > 0) {
+    channelFen = Number(order.paidAmtFen);
+  } else if (order.txnAmtFen != null && Number(order.txnAmtFen) > 0) {
+    channelFen = Number(order.txnAmtFen);
+  }
+  if (Number.isFinite(channelFen) && channelFen > 0) {
+    return formatMoneyDisplay(channelFen / 100);
   }
   return formatMoneyDisplay(fallback ?? 0);
 }
@@ -127,7 +142,17 @@ function isCachedResultValidForOrder(
   if (!cachedMer || cachedMer !== orderMer) {
     return false;
   }
-  if (order.txnAmtFen == null || Number(order.txnAmtFen) <= 0) {
+  const channelFen = (() => {
+    if (order.paidAmtFen != null && Number(order.paidAmtFen) > 0) {
+      return Number(order.paidAmtFen);
+    }
+    if (order.txnAmtFen != null && Number(order.txnAmtFen) > 0) {
+      return Number(order.txnAmtFen);
+    }
+    return 0;
+  })();
+  // 无渠道金额时仅校验商户单号，避免旧缓存误拦截
+  if (!Number.isFinite(channelFen) || channelFen <= 0) {
     return Boolean(cachedMer);
   }
   const expected = resolveRefundAmountYuan(order);
@@ -256,7 +281,7 @@ function buildClientRefundResult(
  * 原路银联退货：unionPay 包 → 原支付渠道 → BPC → Win R。
  * 普通退（现金等或包未起）返回 null；须银联退但 Win/退货失败则抛错。
  *
- * 金额以 BPC 原消费单 `txnAmtFen` 为准（混合支付只退扫码段）。
+ * 银联 Win 金额按渠道患者实付 `paidAmtFen ?? txnAmtFen`；医院 HIS 冲账仍按原下单。
  * Win 已成功或银联回报明确「已全额退款」时幂等返回凭证，供院内收口重试。
  */
 export async function submitScanRefund(

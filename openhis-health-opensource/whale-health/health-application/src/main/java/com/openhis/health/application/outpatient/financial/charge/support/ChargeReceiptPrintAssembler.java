@@ -9,6 +9,7 @@ import com.openhis.health.application.outpatient.financial.charge.dto.ChargeRece
 import com.openhis.health.application.outpatient.financial.charge.dto.ChargeSettlementInsuranceSummaryDto;
 import com.openhis.health.application.outpatient.financial.charge.dto.ChargeSettlementPaymentLineDto;
 import com.openhis.health.application.outpatient.financial.charge.dto.ChargeSettlementSetlinfoDto;
+import com.openhis.health.application.shared.financial.InsuranceReceiptAccountBalanceSupport;
 import com.openhis.health.domain.administration.account.entity.Account;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
@@ -722,8 +723,9 @@ public class ChargeReceiptPrintAssembler {
      * 按支付子明细与医保快照回填小票各渠道金额（含 totalAmount 现金回落）。
      *
      * <p>起付线取 2207 回执 {@code act_pay_dedc}；公务员待遇/补助取回执
-     * {@code cvlserv_flag}/{@code cvlserv_pay}；个账余额优先取回执 {@code balc}，
-     * 再回落支付明细 {@code afterBalance}（门诊收费通常不写 afterBalance）。
+     * {@code cvlserv_flag}/{@code cvlserv_pay}；个账余额经
+     * {@link InsuranceReceiptAccountBalanceSupport}：回执 {@code balc} 为结算前时减本笔个账支出后展示，
+     * 无回执则回落支付明细 {@code afterBalance}（门诊收费通常不写 afterBalance）。
      * 「现金实收」仅取本笔 {@code CASH} 渠道；仅当本笔无微信/支付宝/银行卡时，
      * 才回落本笔结算 {@code psn_cash_pay} 或挂号医保快照个人现金，避免扫码收费被挂号现金污染。
      * 展示上须与「医保个人账户」分列，禁止把微信实收叫成个人账户。</p>
@@ -778,7 +780,6 @@ public class ChargeReceiptPrintAssembler {
             settlementFundPaySumamt = settlementAmounts.fundPaySumamt;
             settlementPsnCashPay = settlementAmounts.psnCashPay;
         }
-        BigDecimal accountBalance = firstNonNull(settlementBalc, accountBalanceFromDetail);
 
         BigDecimal channelFund = channelAmounts.get(PaymentChannel.INSURANCE_FUND.getCode());
         BigDecimal snapshotFund = null;
@@ -797,6 +798,11 @@ public class ChargeReceiptPrintAssembler {
         BigDecimal acct = firstNonNull(
             channelAmounts.get(PaymentChannel.INSURANCE_ACCT.getCode()),
             snapshotAcct);
+        // 个账余额：扣款后剩余（balc 扣前 − 本笔个账；无 balc 才用 afterBalance）
+        BigDecimal accountBalance = InsuranceReceiptAccountBalanceSupport.resolveReceiptAccountBalance(
+            settlementBalc,
+            accountBalanceFromDetail,
+            acct);
         BigDecimal snapshotCash = null;
         if (insuranceSnapshot != null) {
             snapshotCash = insuranceSnapshot.getYbPsnCashPay();
@@ -838,10 +844,11 @@ public class ChargeReceiptPrintAssembler {
     }
 
     /**
-     * 从支付单下未撤销的 2207 正式结算回执汇总小票起付线、公务员字段与个账余额。
+     * 从支付单下未撤销的 2207 正式结算回执汇总小票起付线、公务员字段与个账余额原值。
      *
      * <p>多笔时 {@code act_pay_dedc}/{@code cvlserv_pay} 求和；{@code cvlserv_flag}
-     * 取首笔非空；{@code balc} 取最后一笔非空值（与 {@link #fillSettlementSetlinfo} 口径一致）。</p>
+     * 取首笔非空；{@code balc} 取最后一笔非空值（平台原值/结算前，展示扣后见
+     * {@link InsuranceReceiptAccountBalanceSupport}）。</p>
      *
      * @param paymentId 支付主键
      * @return 起付线/公务员/余额；扩展未启用或无回执时字段为 null

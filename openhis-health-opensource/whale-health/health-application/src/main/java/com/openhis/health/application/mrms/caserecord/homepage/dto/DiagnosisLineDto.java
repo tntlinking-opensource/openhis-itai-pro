@@ -35,6 +35,12 @@ public class DiagnosisLineDto {
     /** 诊断名称（与 diagCode 同源目录名）。 */
     private String diagName;
 
+    /**
+     * 目录来源（不落库；加载时按就诊开立目录或编码反查）。
+     * {@code tcm_dx} 中医疾病目录，{@code tcm_syndrome} 中医证候目录，其余为西医目录。
+     */
+    private String sourceEnum;
+
     /** 入院病情字典码（4401 adm_cond：1有 2临床未确定 3情况不明 4无）。 */
     private String admCondCode;
 

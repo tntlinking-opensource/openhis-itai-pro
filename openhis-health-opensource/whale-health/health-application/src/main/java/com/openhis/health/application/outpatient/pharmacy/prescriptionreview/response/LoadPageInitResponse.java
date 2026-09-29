@@ -27,6 +27,23 @@ public class LoadPageInitResponse {
     @Schema(description = "是否合理下拉")
     private List<OptionDto> reasonableOptions;
 
+    /**
+     * 重点药类型下拉（基药 / 国家重点监控 / 集采 / 抗生素）。
+     *
+     * <p>value = {@code KeyDrugType} code（BASIC/NATIONAL_MONITOR/CENTRAL_PURCHASE/ANTIBIOTIC）。
+     * 麻/精见 {@link #medicinePropertyOptions}。</p>
+     */
+    @Schema(description = "重点药类型下拉")
+    private List<OptionDto> keyDrugTypeOptions;
+
+    /**
+     * 药品性质下拉（麻醉药品 / 一类精神药品 / 二类精神药品）。
+     *
+     * <p>value = {@code KeyDrugType} code（NARCOTIC/PSYCH_ONE/PSYCH_TWO）。</p>
+     */
+    @Schema(description = "药品性质下拉")
+    private List<OptionDto> medicinePropertyOptions;
+
     /** 默认点评日起（yyyy-MM-dd，本月首日）。 */
     @Schema(description = "默认点评日起")
     private String defaultReviewedDateFrom;

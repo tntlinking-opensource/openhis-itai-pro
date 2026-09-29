@@ -7,7 +7,10 @@ package com.openhis.health.application.mrms.outpatientemr.service;
 import com.openhis.health.application.mrms.outpatientemr.dto.OutpatientEmrListItemDto;
 import com.openhis.health.application.mrms.outpatientemr.mapper.OutpatientEmrListMapper;
 import com.openhis.health.application.mrms.outpatientemr.request.ArchiveOutpatientClinicalCaseRequest;
+import com.openhis.health.application.mrms.outpatientemr.request.CreateOutpatientDocumentEditApplicationRequest;
 import com.openhis.health.application.mrms.outpatientemr.request.QueryOutpatientEmrListRequest;
+import com.openhis.health.application.mrms.outpatientemr.request.SubmitOutpatientDocumentArchiveBatchRequest;
+import com.openhis.health.application.mrms.outpatientemr.request.SubmitOutpatientDocumentArchiveRequest;
 import com.openhis.health.application.shared.mrms.MrmsClinicalCaseArchiveSupport;
 import com.openhis.health.application.shared.validator.MrmsOperatorResolver;
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
@@ -19,11 +22,20 @@ import com.openhis.health.domain.administration.patient.service.PatientQueryServ
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.share.constants.EmrDocumentTypeCodes;
 import com.openhis.health.domain.share.constants.MrmsErrorCodes;
+import com.openhis.health.domain.share.enums.EncounterClass;
+import com.openhis.health.infrastructure.integration.emr.EmrDocumentArchiveWorkflowExtension;
+import com.openhis.health.infrastructure.integration.emr.EmrDocumentEditApplicationExtension;
 import com.openhis.health.infrastructure.integration.emr.EmrDocumentExtension;
+import com.openhis.health.infrastructure.integration.emr.ExtensionIn.EmrDocumentArchiveBatchExtensionIn;
+import com.openhis.health.infrastructure.integration.emr.ExtensionIn.EmrDocumentArchiveWriteExtensionIn;
+import com.openhis.health.infrastructure.integration.emr.ExtensionIn.EmrDocumentEditCreateExtensionIn;
+import com.openhis.health.infrastructure.integration.emr.ExtensionOut.EmrDocumentArchiveWriteExtensionOut;
+import com.openhis.health.infrastructure.integration.emr.ExtensionOut.EmrDocumentEditApplicationExtensionOut;
 import com.openhis.health.infrastructure.integration.emr.ExtensionIn.EmrOutpatientDocumentPageExtensionIn;
 import com.openhis.health.infrastructure.integration.emr.ExtensionOut.EmrOutpatientDocumentItemExtensionOut;
 import com.openhis.health.infrastructure.integration.emr.ExtensionOut.EmrOutpatientDocumentPageExtensionOut;
 import com.openhis.whale.core.application.dto.PagedResult;
+import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.exception.ValidationException;
 import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
@@ -89,6 +101,12 @@ public class MrmsOutpatientEmrQueryAppService {
     /** 临床病例归档/解档编排。 */
     private final MrmsClinicalCaseArchiveSupport clinicalCaseArchiveSupport;
 
+    /** 文书归档三态工作流（增量提交归档）。 */
+    private final EmrDocumentArchiveWorkflowExtension documentArchiveWorkflowExtension;
+
+    /** 文书编辑申请（增量创建申请）。 */
+    private final EmrDocumentEditApplicationExtension documentEditApplicationExtension;
+
     /**
      * 分页检索门诊病历文书。
      *
@@ -144,7 +162,7 @@ public class MrmsOutpatientEmrQueryAppService {
     }
 
     /**
-     * 解档病例：解锁 LOCKED 文书（仅病案管理员；病案主档已归档时拒绝）。
+     * 解档病例：ARCHIVED → DRAFT（仅病案管理员；病案主档已归档时拒绝）。
      *
      * @param request 含就诊主键
      */
@@ -153,6 +171,96 @@ public class MrmsOutpatientEmrQueryAppService {
         Long tenantId = operatorResolver.requireTenantId();
         // Cmd：按就诊解锁文书
         clinicalCaseArchiveSupport.unarchiveClinicalCase(request.getEncounterId(), tenantId);
+    }
+
+    /**
+     * 单份文书提交归档审批（IF-MRMS-OEMR-03）。
+     *
+     * <p><strong>增量</strong>：不改动 {@link #archiveClinicalCase}/{@link #unarchiveClinicalCase}。</p>
+     *
+     * @param request 文书主键
+     */
+    public void submitDocumentArchive(SubmitOutpatientDocumentArchiveRequest request) {
+        // Gate：EMR 归档 SPI 可用 + 文书主键 + 登录操作人
+        assertArchiveWorkflowEnabled();
+        if (request == null || request.getDocumentId() == null) {
+            throw new ValidationException("文书主键不能为空");
+        }
+        Long operatorId = operatorResolver.requireOperatorId();
+        // Pre：组装 Extension 写 In
+        EmrDocumentArchiveWriteExtensionIn in = new EmrDocumentArchiveWriteExtensionIn();
+        in.setDocumentId(request.getDocumentId());
+        in.setOperatorId(operatorId);
+        // Cmd：DRAFT → PENDING_ARCHIVE
+        EmrDocumentArchiveWriteExtensionOut out = documentArchiveWorkflowExtension.submitArchive(in);
+        if (!out.isSuccess()) {
+            throw new BusinessException(MrmsErrorCodes.CLINICAL_ARCHIVE_EMR_DISABLED, out.getMessage());
+        }
+    }
+
+    /**
+     * 批量文书提交归档（IF-MRMS-OEMR-04）。
+     *
+     * @param request 文书 id 列表
+     */
+    public void submitDocumentArchiveBatch(SubmitOutpatientDocumentArchiveBatchRequest request) {
+        // Gate：EMR 可用 + 列表非空
+        assertArchiveWorkflowEnabled();
+        if (request == null || request.getDocumentIds() == null || request.getDocumentIds().isEmpty()) {
+            throw new ValidationException("文书主键列表不能为空");
+        }
+        Long operatorId = operatorResolver.requireOperatorId();
+        // Pre：批量 In
+        EmrDocumentArchiveBatchExtensionIn in = new EmrDocumentArchiveBatchExtensionIn();
+        in.setDocumentIds(request.getDocumentIds());
+        in.setOperatorId(operatorId);
+        // Cmd：批量 DRAFT → PENDING_ARCHIVE
+        EmrDocumentArchiveWriteExtensionOut out = documentArchiveWorkflowExtension.submitArchiveBatch(in);
+        if (!out.isSuccess()) {
+            throw new BusinessException(MrmsErrorCodes.CLINICAL_ARCHIVE_EMR_DISABLED, out.getMessage());
+        }
+    }
+
+    /**
+     * 创建门诊文书编辑申请（IF-MRMS-OEMR-05）。
+     *
+     * @param request 文书 + 原因
+     * @return 申请主键
+     */
+    public Long createDocumentEditApplication(CreateOutpatientDocumentEditApplicationRequest request) {
+        // Gate：编辑 SPI 可用 + 文书主键 + 申请原因
+        if (!documentEditApplicationExtension.isEnabled()) {
+            throw new BusinessException(MrmsErrorCodes.CLINICAL_ARCHIVE_EMR_DISABLED, "电子病历未启用");
+        }
+        if (request == null || request.getDocumentId() == null) {
+            throw new ValidationException("文书主键不能为空");
+        }
+        String reason = StringUtils.trimToNull(request.getApplyReason());
+        if (reason == null) {
+            throw new ValidationException("申请原因不能为空");
+        }
+        Long operatorId = operatorResolver.requireOperatorId();
+        // Pre：组装创建 In（门诊 AMB）
+        EmrDocumentEditCreateExtensionIn in = new EmrDocumentEditCreateExtensionIn();
+        in.setTenantId(operatorResolver.requireTenantId());
+        in.setDocumentId(request.getDocumentId());
+        in.setEncounterClassCode(EncounterClass.AMB.getCode());
+        in.setApplyReason(reason);
+        in.setApplicantId(operatorId);
+        in.setOperatorId(operatorId);
+        // Cmd：SPI 创建申请
+        EmrDocumentEditApplicationExtensionOut out = documentEditApplicationExtension.create(in);
+        // Asm：返回申请主键
+        return out.getApplicationId();
+    }
+
+    /**
+     * 文书归档工作流可用门禁。
+     */
+    private void assertArchiveWorkflowEnabled() {
+        if (!documentArchiveWorkflowExtension.isEnabled()) {
+            throw new BusinessException(MrmsErrorCodes.CLINICAL_ARCHIVE_EMR_DISABLED, "电子病历未启用，无法提交文书归档");
+        }
     }
 
     /**
@@ -299,10 +407,13 @@ public class MrmsOutpatientEmrQueryAppService {
                 dto.setAdmitterPractitionerId(admitterId);
                 dto.setDoctorName(doctorNames.get(admitterId));
             }
-            // 文书已 LOCKED/ARCHIVED 视为病例已归档
+            // 文书待归档审批或已归档 → 病例临床只读
             String status = StringUtils.trimToNull(dto.getStatusCode());
-            dto.setClinicalArchived(
-                    "LOCKED".equalsIgnoreCase(status) || "ARCHIVED".equalsIgnoreCase(status));
+            boolean clinicallyArchived = false;
+            if ("PENDING_ARCHIVE".equals(status) || "ARCHIVED".equals(status)) {
+                clinicallyArchived = true;
+            }
+            dto.setClinicalArchived(clinicallyArchived);
         }
         return items;
     }

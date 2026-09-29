@@ -39,6 +39,16 @@ function diagnosisRowKey(row: EncounterDiagnosisRowDto, index: number): string {
   );
 }
 
+/**
+ * 术语目录名常带「(可选词：同义词)」。弹窗列表可保留；插入正文按 BR-IMPORT-DX-01 去掉。
+ */
+function stripOptionalWordAlias(name: string): string {
+  return name
+    .replace(/[（(]可选词[：:][^）)]*[）)]/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
+
 /** 中医展示名「病（证）」→「病 — 证」；已是「病 — 证」则原样 */
 function formatTcmImportName(displayName: string): string {
   const name = displayName.trim();
@@ -52,7 +62,7 @@ function formatTcmImportName(displayName: string): string {
 }
 
 function buildWesternLineText(row: EncounterDiagnosisRowDto): string {
-  const name = trimText(row.conditionDefinitionName) || '未命名诊断';
+  const name = stripOptionalWordAlias(trimText(row.conditionDefinitionName)) || '未命名诊断';
   const code = trimText(row.conditionCode);
   const typeText = trimText(row.iptDiseaseTypeText);
   const desc = trimText(row.diagnosisDesc);
@@ -66,7 +76,9 @@ function buildWesternLineText(row: EncounterDiagnosisRowDto): string {
 }
 
 function buildTcmLineText(row: EncounterDiagnosisRowDto): string {
-  const name = formatTcmImportName(trimText(row.conditionDefinitionName) || '未命名诊断');
+  const name = formatTcmImportName(
+    stripOptionalWordAlias(trimText(row.conditionDefinitionName)) || '未命名诊断',
+  );
   const typeText = trimText(row.iptDiseaseTypeText);
   const desc = trimText(row.diagnosisDesc);
   const main = Number(row.mainDiagnosisFlag) === 1;

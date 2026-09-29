@@ -1,9 +1,9 @@
 /**
  * IF-DOR-23 用法/诊疗绑定解析与落库。
  *
- * 仅供 advice-draft-save.service 中 MANUAL_USAGE_BIND 策略调用；
- * 新建药品（CREATE）触发用法绑定、新建诊疗（CREATE）触发诊疗绑定；
- * UPDATE 编辑保存不二次带出。
+ * <p>产品口径（签发时带出）：暂存（IF-DOR-14）只落主医嘱；点签发前对本次待签草稿
+ * 统一解析绑定、弹窗确认（可改量/删行，诊疗与耗材同权）、落派生后再扩 signTargets 签发。
+ * 去重规则不变：同批合管同设备一份、同组同用法同目标一份、已存在 based_on 派生不重复带。</p>
  */
 import type {
   AdviceDraftBindDialogRow,
@@ -14,6 +14,7 @@ import type { AdviceRowItem } from './advice.types';
 import type {
   DoctorStationAdviceDraftBindItemDto,
   DoctorStationAdviceDraftLineRequest,
+  DoctorStationAdviceResourceKeyDto,
   DoctorStationAdviceRowDto,
   SaveDoctorStationAdviceDraftBatchResponse,
 } from '#/api/doctor-station/advice.types';
@@ -42,6 +43,7 @@ import {
   MEDICATION_REQUEST_TABLE,
   SERVICE_REQUEST_TABLE,
 } from './advice-tab.constants';
+import { resourceKeyFromRow, rowLooksDraftForSign } from './advice-row';
 
 export interface SaveAdviceDraftBatchWithBindOptions {
   encounterId: string;
@@ -1091,7 +1093,7 @@ async function saveAdviceDraftBatchWithConfirmedBindRows(
   };
 }
 
-/** IF-DOR-23 + 来源缓存 / 弹窗确认：新建药品→用法绑定、新建诊疗→诊疗绑定；纯 UPDATE 不二次弹窗 */
+/** IF-DOR-23 + 来源缓存 / 弹窗确认：供签发前带出（主医嘱已落库） */
 export async function saveAdviceDraftBatchWithBindResolution(
   options: SaveAdviceDraftBatchWithBindOptions,
 ): Promise<SaveDoctorStationAdviceDraftBatchResponse> {
@@ -1115,7 +1117,7 @@ export async function saveAdviceDraftBatchWithBindResolution(
     message: 'OK',
   });
 
-  // 无新建药品/诊疗行时不解析绑定（纯 UPDATE/DELETE 直接暂存）
+  // 无药品/诊疗触发行时不解析绑定
   if (!hasBindTriggerCreateLine(lines)) {
     return primaryLinesAlreadyPersisted ? skipPrimarySave() : apiAdapter.saveDraftBatch(batchBody);
   }
@@ -1126,7 +1128,7 @@ export async function saveAdviceDraftBatchWithBindResolution(
     lines,
     apiAdapter,
   });
-  // 只保留由本次 CREATE 药品/诊疗触发行产生的绑定项
+  // 只保留由药品/诊疗触发行产生的绑定项（含签发前带 requestId 的 CREATE 伪行）
   dialogRowCandidates = dialogRowCandidates.filter((row) =>
     isBindItemTriggeredByEligibleCreate(row.bindItem, lines),
   );
@@ -1135,6 +1137,7 @@ export async function saveAdviceDraftBatchWithBindResolution(
     return primaryLinesAlreadyPersisted ? skipPrimarySave() : apiAdapter.saveDraftBatch(batchBody);
   }
 
+  // 已存在 based_on 派生 / 同组同用法等同规则去重
   const resolvableRows = filterResolvableDialogRowCandidates(
     dialogRowCandidates,
     lines,
@@ -1159,7 +1162,7 @@ export async function saveAdviceDraftBatchWithBindResolution(
   if (promptRows.length > 0) {
     const dialogResult = await openAdviceDraftBindDialog(promptRows, promptSourceGroups);
     if (!dialogResult) {
-      // 取消绑定确认：仍暂存主医嘱，不带出绑定项
+      // 取消绑定确认：主医嘱已落库则不带出；未落库则仍只暂存主医嘱
       return primaryLinesAlreadyPersisted
         ? skipPrimarySave()
         : apiAdapter.saveDraftBatch(batchBody);
@@ -1173,7 +1176,7 @@ export async function saveAdviceDraftBatchWithBindResolution(
   return saveAdviceDraftBatchWithConfirmedBindRows(options, confirmedDialogRows);
 }
 
-/** 主医嘱已落库后解析并保存派生绑定（申请单签发等） */
+/** 主医嘱已落库后解析并保存派生绑定（签发前统一带出） */
 export async function saveAdviceDraftBindLinesAfterPrimaryPersisted(
   options: SaveAdviceDraftBatchWithBindOptions,
 ): Promise<SaveDoctorStationAdviceDraftBatchResponse> {
@@ -1183,7 +1186,7 @@ export async function saveAdviceDraftBindLinesAfterPrimaryPersisted(
   });
 }
 
-/** 仅保留耗材（adm_device_definition）绑定行 */
+/** 仅保留耗材（adm_device_definition）绑定行（库存校验用） */
 export function filterDeviceBindDialogRows(
   rows: AdviceDraftBindDialogRow[],
 ): AdviceDraftBindDialogRow[] {
@@ -1192,7 +1195,7 @@ export function filterDeviceBindDialogRows(
   );
 }
 
-/** IF-DOR-23 绑定明细 → 弹窗可编辑行（供申请单卡内展示复用） */
+/** IF-DOR-23 绑定明细 → 弹窗可编辑行 */
 export function mapDraftBindItemsToDialogRows(
   bindItems: DoctorStationAdviceDraftBindItemDto[],
   lines: DoctorStationAdviceDraftLineRequest[] = [],
@@ -1215,4 +1218,154 @@ export async function persistAdviceDraftBindsWithConfirmedDialogRows(
   confirmedDialogRows: AdviceDraftBindDialogRow[],
 ): Promise<SaveDoctorStationAdviceDraftBatchResponse> {
   return saveAdviceDraftBatchWithConfirmedBindRows(options, confirmedDialogRows);
+}
+
+/** 列表行是否为绑定派生行（based_on 锚定药品或诊疗） */
+function isAdviceRowBindDerivedAnchor(row: AdviceRowItem): boolean {
+  if (String(row.basedOnMedicationRequestId ?? '').trim()) {
+    return true;
+  }
+  if (String(row.basedOnServiceRequestId ?? '').trim()) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 待签发草稿主行 → IF-DOR-23 触发行（CREATE + 已有 requestId）。
+ * 跳过已是 based_on 派生的行；药品须有 methodCode，诊疗须有 activityDefinitionId。
+ */
+export function buildAdviceBindTriggerLinesFromDraftRows(
+  draftRows: readonly AdviceRowItem[],
+): DoctorStationAdviceDraftLineRequest[] {
+  const lines: DoctorStationAdviceDraftLineRequest[] = [];
+  for (const row of draftRows) {
+    // 派生行本身不再触发二次带出
+    if (isAdviceRowBindDerivedAnchor(row)) {
+      continue;
+    }
+    const requestId = preserveApiIdForRequest(row.requestId);
+    if (!requestId) {
+      continue;
+    }
+    const definitionId =
+      preserveApiIdForRequest(row.productDefinitionId) ??
+      String(row.productDefinitionId ?? '').trim();
+    if (!definitionId) {
+      continue;
+    }
+    const pt = String(row.productTableName ?? '').trim();
+    const rt = String(row.resourceType ?? '')
+      .trim()
+      .toUpperCase();
+    // 药品：USAGE 绑定触发
+    if (pt === MEDICATION_DEFINITION_TABLE || rt === 'MEDICATION') {
+      const methodCode = String(row.methodCode ?? '').trim();
+      if (!methodCode) {
+        continue;
+      }
+      const groupId = String(row.groupId ?? row.packageId ?? '').trim();
+      lines.push({
+        lineOp: 'CREATE',
+        productTableName: MEDICATION_DEFINITION_TABLE,
+        requestId,
+        medicationPayload: {
+          medicationDefinitionId: definitionId,
+          methodCode,
+          ...(groupId ? { groupId, packageId: groupId } : {}),
+        },
+      });
+      continue;
+    }
+    // 诊疗：ACTIVITY / 合管派生触发
+    if (pt === ACTIVITY_DEFINITION_TABLE || rt === 'SERVICE') {
+      const qtyRaw = Number(row.listQuantity ?? 1);
+      const quantity = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
+      const unitCode = String(row.listUnitCode ?? '').trim() || 'U';
+      lines.push({
+        lineOp: 'CREATE',
+        productTableName: ACTIVITY_DEFINITION_TABLE,
+        requestId,
+        servicePayload: {
+          activityDefinitionId: definitionId,
+          quantity,
+          unitCode,
+        },
+      });
+    }
+  }
+  return lines;
+}
+
+/** 规范化签发目标 requestId */
+function normalizeSignTargetRequestId(value: unknown): string {
+  return preserveApiIdForRequest(value) ?? String(value ?? '').trim();
+}
+
+/**
+ * 签发目标扩绑定派生草稿：主目标 + based_on 落在主目标上的待签发派生行。
+ * 保留合管同设备去重后的落库结果，不在此再滤采血费。
+ */
+export function expandAdviceSignTargetsWithBoundDrafts(
+  primaryTargets: readonly DoctorStationAdviceResourceKeyDto[],
+  allRows: readonly AdviceRowItem[],
+): DoctorStationAdviceResourceKeyDto[] {
+  const primaryIds = new Set(
+    primaryTargets.map((t) => normalizeSignTargetRequestId(t.requestId)).filter(Boolean),
+  );
+  const dedupe = new Map<string, DoctorStationAdviceResourceKeyDto>();
+  const addTarget = (target: DoctorStationAdviceResourceKeyDto) => {
+    const requestId = normalizeSignTargetRequestId(target.requestId);
+    const productTableName = String(target.productTableName ?? '').trim();
+    if (!requestId || !productTableName) {
+      return;
+    }
+    dedupe.set(`${productTableName}:${requestId}`, { requestId, productTableName });
+  };
+  for (const target of primaryTargets) {
+    addTarget(target);
+  }
+  // 挂在本批主医嘱下的派生诊疗/耗材一并签发
+  for (const row of allRows) {
+    if (!rowLooksDraftForSign(row)) {
+      continue;
+    }
+    const basedOnMr = normalizeSignTargetRequestId(row.basedOnMedicationRequestId);
+    const basedOnSr = normalizeSignTargetRequestId(row.basedOnServiceRequestId);
+    const anchored =
+      (basedOnMr && primaryIds.has(basedOnMr)) || (basedOnSr && primaryIds.has(basedOnSr));
+    if (!anchored) {
+      continue;
+    }
+    const key = resourceKeyFromRow(row);
+    if (key) {
+      addTarget(key);
+    }
+  }
+  return [...dedupe.values()];
+}
+
+/**
+ * 签发前：对本次待签草稿解析绑定 → 弹窗确认 → 落派生（去重规则复用既有实现）。
+ *
+ * @returns 无待带出或用户取消确认时仍返回 success（不阻断仅签主医嘱）；落库失败则 success=false
+ */
+export async function resolveAndPersistAdviceDraftBindsAtSign(params: {
+  encounterId: string;
+  patientId: string;
+  draftRows: readonly AdviceRowItem[];
+  existingAdviceRows?: AdviceRowItem[] | DoctorStationAdviceRowDto[];
+  apiAdapter?: AdviceDraftBindHttpAdapter;
+}): Promise<SaveDoctorStationAdviceDraftBatchResponse> {
+  const bindLines = buildAdviceBindTriggerLinesFromDraftRows(params.draftRows);
+  if (bindLines.length === 0) {
+    return { success: true, message: 'OK' };
+  }
+  return saveAdviceDraftBindLinesAfterPrimaryPersisted({
+    encounterId: params.encounterId,
+    patientId: params.patientId,
+    lines: bindLines,
+    existingAdviceRows: params.existingAdviceRows ?? params.draftRows,
+    apiAdapter: params.apiAdapter ?? outpatientAdviceDraftBindHttpAdapter,
+  });
 }

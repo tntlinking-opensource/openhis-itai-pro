@@ -6,12 +6,15 @@ import type { TemplateDto } from '#/api/emr/template';
 import type { EmrTemplateStationKind } from '#/views/basic/emr-template/emr-template-scope.constants';
 
 import { computed, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 
-import { ElInput } from 'element-plus';
+import { Tickets } from '@element-plus/icons-vue';
+import { ElButton, ElIcon, ElInput, ElMessage } from 'element-plus';
 
 import { getDocumentListApi } from '#/api/emr/document';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { EMR_TEMPLATE_STATION_KIND } from '#/views/basic/emr-template/emr-template-scope.constants';
 
 import EmrTemplateTree from './emr-template-tree.vue';
 
@@ -66,6 +69,7 @@ interface Props {
   canUpdateTemplateContent?: boolean;
 }
 
+const router = useRouter();
 const searchKeyword = ref('');
 const historyLoading = ref(false);
 /** 已写病历列表：医生站=本次+历史；就诊收窄=仅本 encounter */
@@ -80,6 +84,14 @@ const historyRootLabel = computed(() =>
 /** 搜索框占位 */
 const searchPlaceholder = computed(() =>
   props.viewOnly || props.encounterScoped ? '搜索本次就诊病历…' : '搜索本诊病历或模板…',
+);
+
+/** 住院医生站可写：侧栏提供病案首页跳转入口 */
+const showCaseRecordHomepageEntry = computed(
+  () =>
+    props.stationKind === EMR_TEMPLATE_STATION_KIND.INPATIENT &&
+    !props.viewOnly &&
+    !!(props.encounterId ?? '').trim(),
 );
 
 /** 按 id 去重合并文书列表（保留先出现的项） */
@@ -170,6 +182,19 @@ function refreshTemplateTree() {
   void templateTreeRef.value?.reload?.();
 }
 
+/** 跳转当前就诊病案首页详情（无案号按 encounterId 打开） */
+function handleOpenCaseRecordHomepage() {
+  const encounterId = preserveApiIdForRequest(props.encounterId);
+  if (!encounterId) {
+    ElMessage.warning('缺少就诊主键，无法打开病案首页');
+    return;
+  }
+  void router.push({
+    name: 'MrmsCaseRecordHomepageDetail',
+    query: { encounterId },
+  });
+}
+
 watch(
   () => [props.patientId, props.encounterId, props.viewOnly, props.encounterScoped] as const,
   () => {
@@ -190,6 +215,21 @@ defineExpose({
       class="history-template-panel__search flex h-[42px] flex-shrink-0 items-center border-b px-[10px]"
     >
       <ElInput v-model="searchKeyword" clearable size="small" :placeholder="searchPlaceholder" />
+    </div>
+
+    <div
+      v-if="showCaseRecordHomepageEntry"
+      class="history-template-panel__homepage flex h-[36px] flex-shrink-0 items-center border-b px-[10px]"
+    >
+      <ElButton
+        type="primary"
+        link
+        class="history-template-panel__homepage-btn"
+        @click="handleOpenCaseRecordHomepage"
+      >
+        <ElIcon class="mr-1"><Tickets /></ElIcon>
+        病案首页
+      </ElButton>
     </div>
 
     <div v-loading="historyLoading" class="min-h-0 flex-1 overflow-y-auto p-3">
@@ -232,5 +272,10 @@ defineExpose({
 <style scoped>
 .history-template-panel__hint {
   color: var(--el-text-color-secondary);
+}
+
+.history-template-panel__homepage-btn {
+  padding: 0;
+  font-size: 13px;
 }
 </style>

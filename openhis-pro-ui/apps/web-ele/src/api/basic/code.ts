@@ -115,3 +115,8 @@ export const getEnumDictListApi = async () => {
 export const getEnumConceptListApi = async (params: EnumDictParams) => {
   return publicRequestClient.post('/code/getEnumConceptList', params);
 };
+
+/** 清空术语概念字典缓存（SQL 灌数后无需重启即可让业务下拉回源） */
+export const refreshConceptCacheApi = async () => {
+  return publicRequestClient.post('/code/refreshConceptCache');
+};

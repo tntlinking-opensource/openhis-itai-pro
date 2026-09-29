@@ -132,6 +132,42 @@ public final class MrmsConstants {
     /** 4401 入院途径：其他。 */
     public static final String ADM_WAY_OTHER = "9";
 
+    /** 病案首页付费方式：城镇职工基本医疗保险（国标 1～9，与前端 PAY_WAY_OPTIONS 同码）。 */
+    public static final String PAY_WAY_EMPLOYEE = "1";
+
+    /** 病案首页付费方式：城镇居民基本医疗保险。 */
+    public static final String PAY_WAY_RESIDENT = "2";
+
+    /** 病案首页付费方式：新型农村合作医疗。 */
+    public static final String PAY_WAY_NRCM = "3";
+
+    /** 病案首页付费方式：全自费。 */
+    public static final String PAY_WAY_SELF_PAY = "7";
+
+    /** 病案首页付费方式：其他社会保险。 */
+    public static final String PAY_WAY_OTHER_SOCIAL = "8";
+
+    /** 病案首页付费方式：其他。 */
+    public static final String PAY_WAY_OTHER = "9";
+
+    /** 平台险种：职工基本医疗。 */
+    public static final String INSUTYPE_EMPLOYEE_BASIC = "310";
+
+    /** 平台险种：公务员医疗补助（首页仍归职工）。 */
+    public static final String INSUTYPE_EMPLOYEE_CIVIL = "320";
+
+    /** 平台险种：大额医疗（首页仍归职工）。 */
+    public static final String INSUTYPE_EMPLOYEE_LARGE = "330";
+
+    /** 平台险种：离休人员医疗保障。 */
+    public static final String INSUTYPE_RETIRED = "340";
+
+    /** 平台险种：城乡居民基本医疗。 */
+    public static final String INSUTYPE_RESIDENT = "390";
+
+    /** 平台险种：新型农村合作医疗（遗留码）。 */
+    public static final String INSUTYPE_NRCM = "392";
+
     private MrmsConstants() {
     }
 
@@ -159,6 +195,60 @@ public final class MrmsConstants {
             return true;
         }
         return false;
+    }
+
+    /**
+     * 平台 {@code insutype} → 病案首页付费方式码（1～9）。
+     *
+     * <p>入院登记开医保户时已写入 {@code adm_account.insutype}；首页自动取值据此带入，
+     * 避免病案室再手工点选。映射口径：职工系→1、居民→2、新农合→3、离休→8；未知非空→9。</p>
+     *
+     * @param insutype 平台险种码；可空
+     * @return 首页 {@code pay_way_code}；空入参返回 null
+     */
+    public static String mapInsutypeToPayWayCode(String insutype) {
+        if (insutype == null || insutype.isBlank()) {
+            return null;
+        }
+        String code = insutype.trim();
+        // 职工基本 / 公务员补助 / 大额：国标首页均归「城镇职工」
+        if (INSUTYPE_EMPLOYEE_BASIC.equals(code)
+                || INSUTYPE_EMPLOYEE_CIVIL.equals(code)
+                || INSUTYPE_EMPLOYEE_LARGE.equals(code)) {
+            return PAY_WAY_EMPLOYEE;
+        }
+        // 城乡居民基本医疗
+        if (INSUTYPE_RESIDENT.equals(code)) {
+            return PAY_WAY_RESIDENT;
+        }
+        // 新农合遗留码
+        if (INSUTYPE_NRCM.equals(code)) {
+            return PAY_WAY_NRCM;
+        }
+        // 离休等其他社保类
+        if (INSUTYPE_RETIRED.equals(code)) {
+            return PAY_WAY_OTHER_SOCIAL;
+        }
+        // 有险种但未列映射：归「其他」，避免空下拉
+        return PAY_WAY_OTHER;
+    }
+
+    /**
+     * 按就诊是否开立医保账户解析首页付费方式。
+     *
+     * <p>无医保户 → 全自费（7）；有医保户则按 {@link #mapInsutypeToPayWayCode}；
+     * 有户但险种空 → null（待读卡补写或手工选）。</p>
+     *
+     * @param hasMedicalInsuranceAccount 是否存在有效医保账户
+     * @param insutype                   医保户 {@code insutype}；可空
+     * @return 首页付费方式码；无法判定时 null
+     */
+    public static String resolvePayWayCode(boolean hasMedicalInsuranceAccount, String insutype) {
+        // 纯自费住院：登记仅开个人现金户
+        if (!hasMedicalInsuranceAccount) {
+            return PAY_WAY_SELF_PAY;
+        }
+        return mapInsutypeToPayWayCode(insutype);
     }
 
     /**

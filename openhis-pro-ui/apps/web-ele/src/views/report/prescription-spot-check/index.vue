@@ -221,6 +221,11 @@ const { run: runExport, loading: exportLoading } = useRequest(
   {
     manual: true,
     onSuccess: (data) => {
+      const base64 = (data.body ?? data.fileBytes ?? data.content)?.trim();
+      if (!base64) {
+        ElMessage.error('导出失败：未返回文件内容');
+        return;
+      }
       downloadBinaryExportFile(data, defaultExportFileName.value);
       const rowCount = data.rowCount ?? data.exportedRowCount ?? 0;
       ElMessage.success(`导出成功，共 ${rowCount} 行`);

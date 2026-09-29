@@ -82,6 +82,8 @@ const props = defineProps<{
   item: AdviceDrugItem;
   feeNatureOptions: FeeNatureOption[];
   medicationRateOptions: TerminologyOptionDto[];
+  /** 频次码 → day_times 段数（变动剂量展开框） */
+  dayTimesCountByRateCode?: Record<string, number>;
   medicationRouteOptions: TerminologyOptionDto[];
   /** IF-IP-DOR-18 输液滴速选项（仅 injectFlag 药展示） */
   medicationSpeedOptions?: TerminologyOptionDto[];
@@ -90,6 +92,88 @@ const props = defineProps<{
 /** 医保等级=自费时仅保留自费合同下拉 */
 const itemFeeNatureOptions = computed(() =>
   filterFeeNatureOptionsByChrgitmLv(props.feeNatureOptions, props.item.chrgitmLv),
+);
+
+/** 当前频次日内时刻段数（展开框数；无则 0） */
+const unevenDoseSlotCount = computed(() => {
+  const rate = String(props.item.frequency ?? '').trim();
+  if (!rate) return 0;
+  const map = props.dayTimesCountByRateCode ?? {};
+  const n = Number(map[rate]);
+  if (!Number.isFinite(n) || n < 1) return 0;
+  return Math.trunc(n);
+});
+
+/** 是否可勾选变动剂量（长期 + 频次有 day_times） */
+const canUnevenDose = computed(
+  () => Boolean(props.hideTotalAmount) && unevenDoseSlotCount.value >= 2,
+);
+
+/** 分次剂量框下标列表（供 v-for） */
+const unevenDoseSlotIndexes = computed(() => {
+  const n = unevenDoseSlotCount.value;
+  if (n < 1) return [] as number[];
+  return Array.from({ length: n }, (_, i) => i);
+});
+
+/**
+ * 勾选变动剂量：开则按频次段数铺框（首框带当前单次剂量）；取消则清空。
+ */
+function onUnevenDoseToggle(enabled: boolean) {
+  props.formHandlers.setField('unevenDoseEnabled', enabled);
+  if (!enabled) {
+    props.formHandlers.setField('doseScheduleSlots', undefined);
+    return;
+  }
+  const count = unevenDoseSlotCount.value;
+  if (count < 1) {
+    props.formHandlers.setField('unevenDoseEnabled', false);
+    return;
+  }
+  const current = Number(props.item.doseConvertRatio ?? props.item.singleDose);
+  const seed =
+    Number.isFinite(current) && current > 0 ? roundMedicationDoseDisplayQty(current) : undefined;
+  const slots: Array<number | undefined> = [];
+  for (let i = 0; i < count; i++) {
+    slots.push(i === 0 ? seed : undefined);
+  }
+  props.formHandlers.setField('doseScheduleSlots', slots);
+}
+
+/**
+ * 改某一分次剂量框。
+ */
+function onDoseScheduleSlotInput(index: number, value: unknown) {
+  const slots = [...(props.item.doseScheduleSlots ?? [])];
+  const count = unevenDoseSlotCount.value;
+  while (slots.length < count) {
+    slots.push(undefined);
+  }
+  slots[index] = parseOptionalNumberInput(value);
+  props.formHandlers.setField('doseScheduleSlots', slots);
+}
+
+/** 频次变更：若已开不一致且段数变化，重铺框长。 */
+watch(
+  () => [props.item.frequency, unevenDoseSlotCount.value, props.item.unevenDoseEnabled] as const,
+  ([, count, enabled]) => {
+    if (!enabled) return;
+    const prev = props.item.doseScheduleSlots ?? [];
+    if (count < 2) {
+      // dayTimes 未就绪时保留已回显的分次框，避免撤回后再编辑被误关
+      if (prev.length >= 2) return;
+      // 频次无法展开多框：自动关闭
+      props.formHandlers.setField('unevenDoseEnabled', false);
+      props.formHandlers.setField('doseScheduleSlots', undefined);
+      return;
+    }
+    if (prev.length === count) return;
+    const next: Array<number | undefined> = [];
+    for (let i = 0; i < count; i++) {
+      next.push(prev[i]);
+    }
+    props.formHandlers.setField('doseScheduleSlots', next);
+  },
 );
 
 function patchContract(contractId: string) {
@@ -193,14 +277,21 @@ const showSpeedField = computed(
         />
       </div>
     </div>
-    <div class="drug-form-row bottom-row">
-      <div class="field-item dose-convert-item">
+    <!-- 单次用量、首日用量、用法、频次同一行；变动剂量紧跟频次 -->
+    <div class="drug-form-row route-row">
+      <div
+        class="field-item dose-convert-item"
+        :class="{ 'is-dose-locked': item.unevenDoseEnabled }"
+      >
         <span class="meta-label">单次用量</span>
         <div class="dose-convert-wrap">
           <div class="dose-num-with-unit">
             <ElInputNumber
               class="dose-qty-input"
-              :class="item.selectedId ? 'western-single-dose-primary' : ''"
+              :class="
+                item.selectedId && !item.unevenDoseEnabled ? 'western-single-dose-primary' : ''
+              "
+              :disabled="Boolean(item.unevenDoseEnabled)"
               :model-value="item.singleDose ?? undefined"
               :min="0"
               :precision="2"
@@ -224,6 +315,7 @@ const showSpeedField = computed(
           <div class="dose-num-with-unit">
             <ElInputNumber
               class="dose-qty-input"
+              :disabled="Boolean(item.unevenDoseEnabled)"
               :model-value="doseDisplayValue(item.doseConvertRatio)"
               :min="0"
               :precision="3"
@@ -250,8 +342,8 @@ const showSpeedField = computed(
           </div>
         </div>
       </div>
-      <!-- 长期：首日/首次用量可选；空=首次槽仍用常规单次量（BR-IP-ORD-030） -->
-      <div v-if="hideTotalAmount" class="field-item">
+      <!-- 长期：首日按计量单位录入；落库由草稿层换算为最小单位 -->
+      <div v-if="hideTotalAmount" class="field-item first-dose-item">
         <span class="meta-label">首日用量</span>
         <div class="dose-num-with-unit">
           <ElInputNumber
@@ -264,19 +356,12 @@ const showSpeedField = computed(
               (value: unknown) => {
                 const v = parseOptionalNumberInput(value);
                 formHandlers.setField('firstDose', v as AdviceDrugItem['firstDose']);
-                if (v !== undefined && Number.isFinite(v) && v > 0) {
-                  formHandlers.setField(
-                    'firstDoseUnitCode',
-                    String(item.totalAmountUnit || item.doseSubUnit || '').trim() || undefined,
-                  );
-                } else {
-                  formHandlers.setField('firstDoseUnitCode', undefined);
-                }
+                formHandlers.setField('firstDoseUnitCode', undefined);
               }
             "
           />
-          <span class="dose-unit-tail" :title="item.doseSubUnit || item.totalAmountUnit || ''">{{
-            item.doseSubUnit || item.totalAmountUnit || '—'
+          <span class="dose-unit-tail dose-unit-tail--wide" :title="item.doseSubUnit || ''">{{
+            item.doseSubUnit || '—'
           }}</span>
         </div>
       </div>
@@ -320,6 +405,13 @@ const showSpeedField = computed(
             :value="String(opt.value ?? '')"
           />
         </ElSelect>
+      </div>
+      <div v-if="canUnevenDose" class="field-item uneven-check-item">
+        <span class="meta-label">变动剂量</span>
+        <ElCheckbox
+          :model-value="Boolean(item.unevenDoseEnabled)"
+          @update:model-value="(value: unknown) => onUnevenDoseToggle(Boolean(value))"
+        />
       </div>
       <div v-if="showSpeedField" class="field-item">
         <span class="meta-label">滴速</span>
@@ -384,6 +476,35 @@ const showSpeedField = computed(
               :value="opt.value"
             />
           </ElSelect>
+        </div>
+      </div>
+    </div>
+    <!-- 分次剂量独占一行，跟在用法频次后面 -->
+    <div
+      v-if="hideTotalAmount && item.unevenDoseEnabled && unevenDoseSlotCount >= 2"
+      class="drug-form-row schedule-row"
+    >
+      <div class="field-item schedule-field">
+        <span class="meta-label">分次剂量</span>
+        <div class="uneven-dose-slots">
+          <div
+            v-for="slotIndex in unevenDoseSlotIndexes"
+            :key="`dose-slot-${slotIndex}`"
+            class="uneven-slot-chip"
+          >
+            <span class="slot-ordinal">第{{ slotIndex + 1 }}次</span>
+            <ElInputNumber
+              class="dose-qty-input"
+              :model-value="item.doseScheduleSlots?.[slotIndex] ?? undefined"
+              :min="0"
+              :controls="false"
+              placeholder="必填"
+              @update:model-value="(value: unknown) => onDoseScheduleSlotInput(slotIndex, value)"
+            />
+            <span class="dose-unit-tail dose-unit-tail--wide" :title="item.doseSubUnit || ''">{{
+              item.doseSubUnit || '—'
+            }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -474,6 +595,15 @@ const showSpeedField = computed(
   margin-left: 2px;
 }
 
+/* 四字及以上标签按内容宽，避免折行 */
+.dose-convert-item > .meta-label,
+.schedule-field > .meta-label,
+.uneven-check-item > .meta-label,
+.route-row .first-dose-item > .meta-label {
+  width: auto;
+  min-width: 64px;
+}
+
 .product-total-amount {
   color: #0f766e;
   font-size: 14px;
@@ -483,8 +613,8 @@ const showSpeedField = computed(
 
 .drug-form-row {
   display: grid;
-  align-items: end;
-  width: fit-content;
+  align-items: center;
+  width: 100%;
   max-width: 100%;
 }
 
@@ -492,18 +622,93 @@ const showSpeedField = computed(
   grid-template-columns: minmax(220px, 0.9fr) minmax(100px, auto);
   gap: 10px 14px;
   margin-bottom: 10px;
+  width: fit-content;
 }
 
-.bottom-row {
-  grid-template-columns: auto 220px 200px 170px auto;
-  gap: 10px 10px;
+/* 分次剂量：独占一行，横向芯片排布 */
+.schedule-row {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+  width: 100%;
+}
+
+.schedule-field {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  width: 100%;
+}
+
+.schedule-field > .meta-label {
+  line-height: 32px;
+}
+
+.uneven-dose-slots {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background: var(--el-fill-color-blank);
+}
+
+.uneven-slot-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.slot-ordinal {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: var(--el-component-size, 32px);
+  white-space: nowrap;
+}
+
+.schedule-field :deep(.dose-qty-input.el-input-number),
+.field-item.first-dose-item :deep(.dose-qty-input.el-input-number) {
+  width: 80px;
+  max-width: 80px;
+  flex: 0 0 80px;
+}
+
+/* 用法 / 频次 / 滴速（临嘱含天数总量） */
+.route-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  width: 100%;
+}
+
+.route-row .field-item {
+  flex: 0 1 200px;
+  min-width: 160px;
+  max-width: 240px;
+}
+
+/* 单次用量、首日用量、变动剂量按内容宽，不按下拉框宽度撑开 */
+.route-row .dose-convert-item,
+.route-row .uneven-check-item,
+.route-row .first-dose-item {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: none;
+}
+
+.route-row .total-amount-item {
+  flex: 0 1 260px;
+  max-width: 280px;
 }
 
 .remark-row {
   grid-template-columns: minmax(280px, 1fr);
   gap: 10px;
   margin-top: 10px;
-  /* 覆盖 .drug-form-row 的 fit-content，固定备注行宽 */
   width: 500px;
   max-width: 100%;
 }
@@ -520,15 +725,44 @@ const showSpeedField = computed(
   min-width: 0;
 }
 
+.uneven-check-item {
+  grid-template-columns: auto auto;
+}
+
 .field-item :deep(.el-select),
 .field-item :deep(.el-input-number) {
   width: 100%;
 }
 
-.skin-test-item :deep(.el-checkbox) {
+.skin-test-item :deep(.el-checkbox),
+.uneven-check-item :deep(.el-checkbox) {
   display: flex;
   align-items: center;
   min-height: 32px;
+}
+
+/* 仅开立表单上的复选框加深边框，不作用到医嘱表格 */
+.skin-test-item :deep(.el-checkbox__input:not(.is-disabled) .el-checkbox__inner),
+.uneven-check-item :deep(.el-checkbox__input:not(.is-disabled) .el-checkbox__inner) {
+  border-color: var(--el-text-color-regular);
+}
+
+.skin-test-item :deep(.el-checkbox__input.is-checked .el-checkbox__inner),
+.uneven-check-item :deep(.el-checkbox__input.is-checked .el-checkbox__inner),
+.skin-test-item :deep(.el-checkbox__input:not(.is-disabled):hover .el-checkbox__inner),
+.uneven-check-item :deep(.el-checkbox__input:not(.is-disabled):hover .el-checkbox__inner) {
+  border-color: var(--el-color-primary);
+}
+
+/* 变动剂量勾选后单次用量只读置灰 */
+.dose-convert-item.is-dose-locked .dose-unit-tail,
+.dose-convert-item.is-dose-locked .equals-sign {
+  color: var(--el-text-color-disabled);
+}
+
+.dose-convert-item.is-dose-locked :deep(.el-input__inner) {
+  color: var(--el-disabled-text-color);
+  -webkit-text-fill-color: var(--el-disabled-text-color);
 }
 
 .dose-convert-wrap,
@@ -564,6 +798,10 @@ const showSpeedField = computed(
   text-overflow: ellipsis;
 }
 
+.dose-unit-tail--wide {
+  max-width: 6em;
+}
+
 .total-amount-wrap .total-unit-select {
   width: 72px;
   min-width: 56px;
@@ -583,16 +821,20 @@ const showSpeedField = computed(
 }
 
 @media (max-width: 1400px) {
-  .bottom-row {
-    grid-template-columns: repeat(2, minmax(260px, 1fr));
+  .route-row .field-item {
+    flex: 1 1 220px;
+    max-width: none;
   }
 
-  .dose-convert-item {
-    grid-column: 1 / -1;
+  .route-row .dose-convert-item,
+  .route-row .uneven-check-item,
+  .route-row .first-dose-item {
+    flex: 0 0 auto;
+    max-width: none;
   }
 
-  .total-amount-item {
-    grid-column: 1 / -1;
+  .route-row .total-amount-item {
+    flex: 1 1 100%;
     max-width: 320px;
   }
 }

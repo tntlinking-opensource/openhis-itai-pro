@@ -84,8 +84,8 @@ CREATE TABLE IF NOT EXISTS "public"."adm_charge_item" (
     "status_enum" varchar(255),
     "total_price" numeric(19,6),
     "occurrence_time" timestamptz(6),
-    "performer_id" int8,
-    "performing_org_id" int8,
+    "fee_confirmer_id" int8,
+    "fee_confirmed_at" timestamptz(6),
     "requesting_org_id" int8,
     "cost_org_id" int8,
     "quantity_value" numeric(18, 4),
@@ -139,8 +139,8 @@ COMMENT ON COLUMN adm_charge_item.definition_id IS '收费项目定义主键（D
 COMMENT ON COLUMN adm_charge_item.status_enum IS '收费明细聚合根（DM-ADM-011 §3.1，表 adm_charge_item）';
 COMMENT ON COLUMN adm_charge_item.total_price IS '总价（DM total_price）';
 COMMENT ON COLUMN adm_charge_item.occurrence_time IS '费用发生时刻（DM occurrence_time）';
-COMMENT ON COLUMN adm_charge_item.performer_id IS '执行人主键（DM performer_id）';
-COMMENT ON COLUMN adm_charge_item.performing_org_id IS '执行机构主键（DM performing_org_id）';
+COMMENT ON COLUMN adm_charge_item.fee_confirmer_id IS '医技确费人主键（DM fee_confirmer_id；空=未确费）';
+COMMENT ON COLUMN adm_charge_item.fee_confirmed_at IS '医技确费时刻（DM fee_confirmed_at）';
 COMMENT ON COLUMN adm_charge_item.requesting_org_id IS '申请机构主键（DM requesting_org_id）';
 COMMENT ON COLUMN adm_charge_item.cost_org_id IS '成本归属机构主键（DM cost_org_id）';
 COMMENT ON COLUMN adm_charge_item.quantity_value IS '数量值（DM quantity_value）';
@@ -728,6 +728,7 @@ CREATE TABLE IF NOT EXISTS "public"."adm_healthcare_service" (
     "active_flag" bool NOT NULL,
     "appointment_required_flag" bool,
     "yb_no" varchar(255),
+    "activity_ids" varchar(512),
     "bus_no" varchar(255),
     "comment" varchar(255),
     "extra_details" varchar(255),
@@ -754,25 +755,26 @@ COMMENT ON COLUMN adm_healthcare_service.location_id IS '服务所在地点主�
 COMMENT ON COLUMN adm_healthcare_service.status_enum IS '服务状态码（status_enum，String code）';
 COMMENT ON COLUMN adm_healthcare_service.active_flag IS '服务是否处于激活可用状态，与 statusEnum=ACTIVE 联动维护';
 COMMENT ON COLUMN adm_healthcare_service.appointment_required_flag IS '预约是否必填标志，true 表示患者必须预约后才可就诊';
-COMMENT ON COLUMN adm_healthcare_service.yb_no IS '医保编号（yb_no），对接医保结算使用，可为空';
+COMMENT ON COLUMN adm_healthcare_service.yb_no IS '医保编号（yb_no）已废弃业务读写；存量列可空，新业务取绑定诊查费 AD';
+COMMENT ON COLUMN adm_healthcare_service.activity_ids IS '诊查费 ActivityDefinition 主键 CSV（逗号分隔）；零元号可空；见 DM-ADM-007 BR-HCS-010～012';
 COMMENT ON COLUMN adm_healthcare_service.bus_no IS '业务编号（bus_no），系统内唯一标识医疗服务的人读编码，可为空';
 COMMENT ON COLUMN adm_healthcare_service.comment IS '备注说明，对外展示的补充描述，可为空';
 COMMENT ON COLUMN adm_healthcare_service.extra_details IS '扩展详情（JSON 字符串），存储结构化附加信息，可为空';
 COMMENT ON COLUMN adm_healthcare_service.contact IS '联系方式（JSON 字符串），医疗服务对外联系信息，可为空';
 
 -- seed: adm_healthcare_service
--- 产品种子：复诊0元号（BR-REG-020；写侧按 name=复诊0元号 识别；bus_no 种子默认 HS00000004）
+-- 产品种子：复诊0元号（BR-REG-020；写侧按 name=复诊0元号 识别；bus_no 种子默认 HS00000004；零元可不绑 activity_ids）
 INSERT INTO adm_healthcare_service (
     id, tenant_id, created_at, updated_at, created_by, updated_by,
     is_deleted, deleted_at, deleted_by, version,
     name, type_code, category_code, offered_org_id, specialty_code, location_id,
-    status_enum, active_flag, appointment_required_flag, yb_no, bus_no, comment, extra_details, contact
+    status_enum, active_flag, appointment_required_flag, yb_no, activity_ids, bus_no, comment, extra_details, contact
 )
 VALUES (
     322957328119180160, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1,
     false, NULL, NULL, 0,
     '复诊0元号', '4', NULL, NULL, NULL, NULL,
-    'ACTIVE', true, false, '004', 'HS00000004', NULL, NULL, NULL
+    'ACTIVE', true, false, NULL, NULL, 'HS00000004', NULL, NULL, NULL
 )
 ON CONFLICT (id) DO NOTHING;
 
@@ -1488,6 +1490,10 @@ CREATE INDEX IF NOT EXISTS idx_rpt_adm_ci_product
 CREATE INDEX IF NOT EXISTS idx_rpt_adm_ci_enterer
     ON adm_charge_item (enterer_id, entered_date)
     WHERE is_deleted = FALSE AND enterer_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_adm_charge_item_fee_confirmer
+    ON adm_charge_item (encounter_id, fee_confirmer_id)
+    WHERE is_deleted = false AND fee_confirmer_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_rpt_adm_ci_req_org
     ON adm_charge_item (requesting_org_id, entered_date)

@@ -433,6 +433,7 @@ export function mapTreatmentLineToExecuteRow(
     serviceCategoryCode: (row.serviceCategoryCode ?? '').trim() || undefined,
     serviceCategoryCodeText: (row.serviceCategoryCodeText ?? '').trim() || undefined,
     specimenTubeMergeDeviceId: preserveApiIdForRequest(row.specimenTubeMergeDeviceId) ?? undefined,
+    priorityEnum: (row.priorityEnum ?? '').trim() || undefined,
   };
 }
 

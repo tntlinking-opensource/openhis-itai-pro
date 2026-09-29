@@ -124,6 +124,32 @@ public class PriceAdjustmentQueryService {
     }
 
     /**
+     * 批量判断同表项目集合是否存在 pending 调价（BR-PRC-LOCK-007 签发前互斥）。
+     *
+     * @param itemTable 项目物理表
+     * @param itemIds   项目定义主键集合；空则 false
+     * @return 任一项目存在 pending 调价单时为 true
+     */
+    public boolean existsPendingByAnyItem(String itemTable, Collection<Long> itemIds) {
+        if (StringUtils.isEmpty(itemTable) || itemIds == null || itemIds.isEmpty()) {
+            return false;
+        }
+        LinkedHashSet<Long> distinctIds = new LinkedHashSet<>();
+        for (Long itemId : itemIds) {
+            if (itemId != null) {
+                distinctIds.add(itemId);
+            }
+        }
+        if (distinctIds.isEmpty()) {
+            return false;
+        }
+        return this.repository.existsByItemTableAndItemIdInAndStatusEnumAndIsDeletedFalse(
+            itemTable.trim(),
+            distinctIds,
+            PriceAdjustmentStatus.PENDING.getCode());
+    }
+
+    /**
      * 判断单品是否存在已审批调价（报表进价是否需回放调价记录）。
      *
      * @param itemTable 项目物理表

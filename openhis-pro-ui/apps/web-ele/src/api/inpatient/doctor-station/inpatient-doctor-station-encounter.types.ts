@@ -34,6 +34,8 @@ export interface InpatientDoctorStationPatientDto {
   houseName?: string;
   /** 身份证号（完整号；读模型未投影，由队列增补回填） */
   idCard?: string;
+  /** 联系电话（读模型未投影，由队列增补回填） */
+  phone?: string;
   lowBalanceWarning?: boolean;
   nursingLevelActivityId?: string;
   /** 护理级别展示名（IF-IP-DOR-01 · BR-IP-DOR-009） */

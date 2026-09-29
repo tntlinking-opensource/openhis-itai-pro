@@ -375,4 +375,10 @@ public class NurseStationTreatmentLineDto {
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "合管检验设备主键")
     private Long specimenTubeMergeDeviceId;
+
+    /**
+     * 医嘱优先级 code（DM-WKF-004；加急为 {@code EM}；采血贴印「急」用）。
+     */
+    @Schema(description = "医嘱优先级 code（加急=EM）")
+    private String priorityEnum;
 }

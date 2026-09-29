@@ -11,7 +11,11 @@ import { ElCheckbox, ElCheckboxGroup, ElMessage, ElTree } from 'element-plus';
 
 import { useVbenForm, z } from '#/adapter/form';
 import { getMenuGrantTreeApi } from '#/api/core/system/menu';
-import { BUILTIN_ROLE_STAFF_SCOPES, STAFF_SCOPE_OPTIONS } from '#/api/basic/staff';
+import {
+  BUILTIN_ROLE_STAFF_SCOPES,
+  STAFF_SCOPE_OPTIONS,
+  type StaffScopeCode,
+} from '#/api/basic/staff';
 import { getPermissionsByRoleApi } from '#/api/user/permission';
 import {
   assignPermissionsApi,
@@ -55,7 +59,7 @@ const menuTreeRef = ref<InstanceType<typeof ElTree>>();
 
 const selectedStaffScopes = ref<string[]>([]);
 
-/** 内置角色仅展示模板内管理能力；自定义角色可选全部（已去掉护士管理科室） */
+/** 内置业务角色仅展示模板内管理能力；新增/自定义角色展示全部（含工作科室） */
 const staffScopeOptionsForForm = computed(() => {
   if (isEdit.value && props.role?.isStatic && props.role.code) {
     const allowed = BUILTIN_ROLE_STAFF_SCOPES[props.role.code];
@@ -63,8 +67,36 @@ const staffScopeOptionsForForm = computed(() => {
       return STAFF_SCOPE_OPTIONS.filter((item) => allowed.includes(item.value));
     }
   }
-  return STAFF_SCOPE_OPTIONS;
+  return [...STAFF_SCOPE_OPTIONS];
 });
+
+/** 内置业务角色的管理能力由系统固定，禁止在界面改勾选 */
+const isBuiltinStaffScopeLocked = computed(() => {
+  if (!isEdit.value || !props.role?.isStatic || isSystemAdminRole.value) {
+    return false;
+  }
+  return props.role.code != null && BUILTIN_ROLE_STAFF_SCOPES[props.role.code] !== undefined;
+});
+
+/**
+ * 把接口回显的 StaffScope 收敛到当前表单可选项；内置角色若库内旧码对不上则回落模板。
+ * @returns selected 为界面勾选；initial 用于判断是否需写回（旧码时与 selected 不同，点确定即纠正）
+ */
+function resolveStaffScopesForForm(scopes: string[]): { selected: string[]; initial: string[] } {
+  const allowedValues = new Set(staffScopeOptionsForForm.value.map((item) => item.value));
+  const visible = scopes.filter((scope) => allowedValues.has(scope as StaffScopeCode));
+  if (visible.length > 0) {
+    return { selected: visible, initial: [...visible] };
+  }
+  if (isEdit.value && props.role?.isStatic && props.role.code) {
+    const template = BUILTIN_ROLE_STAFF_SCOPES[props.role.code];
+    if (template !== undefined) {
+      // 库内仍是旧码（如 NURSE_ORG）时：界面按模板勾选，initial 保留原值以便保存时写回
+      return { selected: [...template], initial: [...scopes] };
+    }
+  }
+  return { selected: [], initial: [] };
+}
 
 /** 编辑回显时的初始权限名 / 声明，用于提交时跳过未变更的接口 */
 const initialPermissionNames = ref<string[]>([]);
@@ -340,8 +372,9 @@ async function loadFormData() {
         if (roleId) {
           const scopesResponse = await getStaffScopesApi(roleId);
           const scopes = unwrapStringList(scopesResponse);
-          initialStaffScopes.value = [...scopes];
-          selectedStaffScopes.value = scopes;
+          const resolved = resolveStaffScopesForForm(scopes);
+          initialStaffScopes.value = resolved.initial;
+          selectedStaffScopes.value = resolved.selected;
         }
       } catch (error) {
         console.error('获取角色声明失败:', error);
@@ -510,11 +543,11 @@ watch(
       <div class="border-t pt-4">
         <div class="mb-2 text-sm font-medium">角色管理能力</div>
         <p class="text-muted-foreground mb-2 text-xs">
-          拥有该角色的用户，在人员维护页可编辑的岗位分配区块。内置业务角色的能力由系统固定；自定义角色可按需勾选。
+          拥有该角色的用户，在人员维护页可编辑的岗位分配区块。内置业务角色的能力由系统固定；自定义角色可按需勾选（含工作科室，候选为护士站与医技科室）。
         </p>
         <ElCheckboxGroup
           v-model="selectedStaffScopes"
-          :disabled="isSystemAdminRole"
+          :disabled="isSystemAdminRole || isBuiltinStaffScopeLocked"
           class="flex flex-wrap gap-x-4 gap-y-2"
         >
           <ElCheckbox v-for="opt in staffScopeOptionsForForm" :key="opt.value" :label="opt.value">

@@ -32,6 +32,11 @@ public class ExportServiceCatalogRequest {
     private String statusEnum;
 
     /**
+     * 是否已绑定套餐子项筛选（与列表 {@code childrenFlag} 同口径）；空/{@code null} 表示不限。
+     */
+    private Boolean childrenFlag;
+
+    /**
      * 前端下发的导出列；空则导出全部列（按表头名匹配 field/title）。
      */
     @Schema(description = "导出列清单（页面可见列）")

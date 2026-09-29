@@ -61,6 +61,12 @@ public class ReturnToWarehouseDetailLineDto {
     /** 备注。 */
     @Schema(description = "备注 remake")
     private String remake;
+    /** 行单价（供应请求落库价；打印单价列）。 */
+    @Schema(description = "单价 price")
+    private BigDecimal price;
+    /** 行金额（供应请求落库总额；打印金额列）。 */
+    @Schema(description = "金额 totalPrice")
+    private BigDecimal totalPrice;
     /** 产品展示名称（读模型富化）。 */
     @Schema(description = "产品名称 productName")
     private String productName;

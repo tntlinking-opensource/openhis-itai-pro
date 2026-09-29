@@ -491,17 +491,28 @@ export function newDiagnosisRow(diagTypeCode: string, sortNo: number): Diagnosis
   };
 }
 
+/**
+ * 新建一条空手术行（默认非主手术；愈合等终改字段留空）。
+ *
+ * @param sortNo 排序号
+ */
 export function newProcedureRow(sortNo: number): ProcedureLineDto {
   return {
     sortNo,
     oprnOprtCode: '',
     oprnOprtName: '',
+    mainOprnFlag: '0',
     oprnLevelCode: '',
     oprnIncisionCode: '',
     healGradeCode: '',
     anstWayCode: '',
     operDrName: '',
+    asit1Name: '',
+    asit2Name: '',
+    nurseName: '',
     anstDrName: '',
+    specimen: '',
+    note: '',
   };
 }
 
@@ -730,6 +741,7 @@ export function mapListItemToRow(item: CaseRecordListItemDto): HomepageListRow {
     ageText: item.ageText?.trim() || undefined,
     bedName: item.bedName?.trim() || undefined,
     wardName: item.wardName?.trim() || undefined,
+    wardId: preserveApiIdForRequest(item.wardId),
     iptNo: item.iptNo ?? '',
     medcasno: item.medcasno ?? '',
     certno: item.certno,

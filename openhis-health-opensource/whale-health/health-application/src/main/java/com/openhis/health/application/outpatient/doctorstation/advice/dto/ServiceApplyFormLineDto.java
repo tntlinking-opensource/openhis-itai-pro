@@ -51,6 +51,10 @@ public class ServiceApplyFormLineDto {
     @Schema(description = "纯备注")
     private String remark;
 
+    /** 医嘱优先级 code（加急=EM）。 */
+    @Schema(description = "医嘱优先级 code（加急=EM）")
+    private String priorityEnum;
+
     /** 部位/样本明细。 */
     @Schema(description = "部位/样本明细")
     private List<ServiceRequestDetailSummaryDto> details;

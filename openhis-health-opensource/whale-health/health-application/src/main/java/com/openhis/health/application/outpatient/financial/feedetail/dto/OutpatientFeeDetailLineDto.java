@@ -75,7 +75,7 @@ public class OutpatientFeeDetailLineDto {
     @Schema(description = "开单医生")
     private String orderingDoctorName;
 
-    /** 执行人主键（有执行记录时为 Procedure 主执行人；否则 ChargeItem.performer_id）。 */
+    /** 执行人主键（有执行记录时为 Procedure 主执行人；耗材为 DeviceDispense 发放/配药人）。 */
     @Schema(description = "执行人主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long performerId;

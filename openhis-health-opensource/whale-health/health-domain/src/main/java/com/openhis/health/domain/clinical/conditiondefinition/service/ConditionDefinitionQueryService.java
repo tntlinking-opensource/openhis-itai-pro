@@ -381,6 +381,77 @@ public class ConditionDefinitionQueryService {
     }
 
     /**
+     * 按诊断编码批量取目录来源（病案首页打印分列用）。
+     *
+     * <p>同码多目录时优先中医证候、其次中医疾病，再国临，其余保留先命中的来源。</p>
+     *
+     * @param conditionCodes 首页落库诊断编码
+     * @return 编码 → {@code source_enum}；目录中不存在的码不出现
+     */
+    public Map<String, String> mapCatalogSourceByConditionCodes(Collection<String> conditionCodes) {
+        Map<String, String> result = new LinkedHashMap<>();
+        if (conditionCodes == null || conditionCodes.isEmpty()) {
+            return result;
+        }
+        LinkedHashSet<String> codes = new LinkedHashSet<>();
+        for (String code : conditionCodes) {
+            if (StringUtils.isNotBlank(code)) {
+                codes.add(code.trim());
+            }
+        }
+        if (codes.isEmpty()) {
+            return result;
+        }
+        Map<String, String> bestSourceByCode = new HashMap<>();
+        for (ConditionDefinition entity : repository.findByConditionCodeIn(codes)) {
+            if (entity == null || Boolean.TRUE.equals(entity.getIsDeleted())) {
+                continue;
+            }
+            String code = StringUtils.trimToNull(entity.getConditionCode());
+            String source = StringUtils.trimToNull(entity.getSourceEnum());
+            if (code == null || source == null) {
+                continue;
+            }
+            String existing = bestSourceByCode.get(code);
+            if (existing == null || this.catalogSourceOutranks(source, existing)) {
+                bestSourceByCode.put(code, source);
+            }
+        }
+        result.putAll(bestSourceByCode);
+        return result;
+    }
+
+    /**
+     * 同码多目录时的来源优先级：中医证候 &gt; 中医疾病 &gt; 国临 &gt; 其余。
+     *
+     * @param candidate 新命中的来源
+     * @param current   已保留的来源
+     * @return candidate 应替换 current 时为 true
+     */
+    private boolean catalogSourceOutranks(String candidate, String current) {
+        return this.catalogSourceRank(candidate) > this.catalogSourceRank(current);
+    }
+
+    /**
+     * 目录来源优先级（数值越大越优先）。
+     *
+     * @param source {@code source_enum}
+     * @return 优先级
+     */
+    private int catalogSourceRank(String source) {
+        if (DoctorStationDiagnosisConstants.SOURCE_TCM_SYNDROME.equals(source)) {
+            return 3;
+        }
+        if (DoctorStationDiagnosisConstants.SOURCE_TCM_DX.equals(source)) {
+            return 2;
+        }
+        if (DoctorStationDiagnosisConstants.SOURCE_CLINICAL_V2.equals(source)) {
+            return 1;
+        }
+        return 0;
+    }
+
+    /**
      * 由目录定义解析病案首页/结算清单应展示的国临与医保口径。
      *
      * <p>国临目录原样；中医主列直接落目录码/名（无双码展示）；西医医保目录反查首个国临绑码；

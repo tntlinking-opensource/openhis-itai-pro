@@ -38,9 +38,11 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class DocumentManager {
 
+    /** 草稿（可编辑）。 */
     public static final String STATUS_DRAFT = "DRAFT";
-    public static final String STATUS_SUBMITTED = "SUBMITTED";
-    public static final String STATUS_LOCKED = "LOCKED";
+    /** 待归档审批。 */
+    public static final String STATUS_PENDING_ARCHIVE = "PENDING_ARCHIVE";
+    /** 已归档（只读）。 */
     public static final String STATUS_ARCHIVED = "ARCHIVED";
 
     /** 首次病程模板编码，同就诊仅允许一份 */
@@ -117,11 +119,33 @@ public class DocumentManager {
      */
     @Transactional(rollbackFor = Exception.class)
     public Document create(String patientId, String encounterId, String documentTypeCode, Long templateId) {
+        return create(patientId, encounterId, documentTypeCode, templateId, null);
+    }
+
+    /**
+     * 创建文书（须带书写时科室，DM-EMR-001）。
+     *
+     * @param patientId 患者
+     * @param encounterId 就诊
+     * @param documentTypeCode 类型
+     * @param templateId 模板
+     * @param organizationId 书写时科室；可空时存量兼容，新业务应传入
+     * @return 新建文书
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Document create(
+            String patientId,
+            String encounterId,
+            String documentTypeCode,
+            Long templateId,
+            Long organizationId) {
         Document doc = new Document();
         doc.setPatientId(patientId);
         doc.setEncounterId(encounterId);
         doc.setDocumentTypeCode(documentTypeCode);
         doc.setStatus(STATUS_DRAFT);
+        doc.setVersionNo(1);
+        doc.setOrganizationId(organizationId);
         String initialContent = resolveInitialContent(documentTypeCode, templateId);
         doc.setContent(initialContent);
         if (templateId != null) {
@@ -153,7 +177,8 @@ public class DocumentManager {
     public Document saveContent(Long documentId, String content, boolean saveVersion) {
         Document doc = documentRepository.findByIdAndIsDeletedFalse(documentId)
                 .orElseThrow(() -> new EntityNotFoundException("文书", documentId));
-        if (STATUS_LOCKED.equals(doc.getStatus()) || STATUS_ARCHIVED.equals(doc.getStatus())) {
+        if (STATUS_PENDING_ARCHIVE.equals(trimStatus(doc.getStatus()))
+                || STATUS_ARCHIVED.equals(trimStatus(doc.getStatus()))) {
             throw new ValidationException("文书已锁定或归档，不可修改");
         }
         doc.setContent(content);
@@ -162,6 +187,141 @@ public class DocumentManager {
             createVersionSnapshot(doc);
         }
         return doc;
+    }
+
+    /**
+     * 提交归档：DRAFT → PENDING_ARCHIVE。
+     *
+     * @param documentId 文书
+     * @param operatorId 提交人
+     * @return 更新后文书
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Document submitArchive(Long documentId, Long operatorId) {
+        Document doc = documentRepository.findByIdAndIsDeletedFalse(documentId)
+                .orElseThrow(() -> new EntityNotFoundException("文书", documentId));
+        if (!STATUS_DRAFT.equals(trimStatus(doc.getStatus()))) {
+            throw new ValidationException("仅草稿可提交归档");
+        }
+        doc.setStatus(STATUS_PENDING_ARCHIVE);
+        doc.setArchiveSubmittedBy(operatorId);
+        doc.setArchiveSubmittedAt(LocalDateTime.now());
+        doc.setArchiveRejectReason(null);
+        return documentRepository.save(doc);
+    }
+
+    /**
+     * 同批多文书提交归档：每份独立校验；任一份失败整批回滚（BR-EMR-DOC-008）。
+     *
+     * @param documentIds 文书主键列表
+     * @param operatorId 提交人
+     * @return 提交后的文书列表（顺序与入参一致）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public List<Document> submitArchiveBatch(List<Long> documentIds, Long operatorId) {
+        if (documentIds == null || documentIds.isEmpty()) {
+            throw new ValidationException("提交归档文书列表不能为空");
+        }
+        List<Document> result = new ArrayList<>();
+        for (Long documentId : documentIds) {
+            // 逐份走单条门禁；失败抛异常触发整批回滚
+            result.add(submitArchive(documentId, operatorId));
+        }
+        return result;
+    }
+
+    /**
+     * 归档同意：PENDING_ARCHIVE → ARCHIVED（不升 version_no）。
+     *
+     * @param documentId 文书
+     * @param operatorId 审批人
+     * @return 更新后文书
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Document approveArchive(Long documentId, Long operatorId) {
+        Document doc = documentRepository.findByIdAndIsDeletedFalse(documentId)
+                .orElseThrow(() -> new EntityNotFoundException("文书", documentId));
+        if (!STATUS_PENDING_ARCHIVE.equals(trimStatus(doc.getStatus()))) {
+            throw new ValidationException("仅待归档审批可同意");
+        }
+        doc.setStatus(STATUS_ARCHIVED);
+        doc.setArchiveApprovedBy(operatorId);
+        doc.setArchiveApprovedAt(LocalDateTime.now());
+        return documentRepository.save(doc);
+    }
+
+    /**
+     * 归档驳回：PENDING_ARCHIVE → DRAFT。
+     *
+     * @param documentId 文书
+     * @param rejectReason 驳回原因
+     * @param operatorId 审批人
+     * @return 更新后文书
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Document rejectArchive(Long documentId, String rejectReason, Long operatorId) {
+        Document doc = documentRepository.findByIdAndIsDeletedFalse(documentId)
+                .orElseThrow(() -> new EntityNotFoundException("文书", documentId));
+        if (!STATUS_PENDING_ARCHIVE.equals(trimStatus(doc.getStatus()))) {
+            throw new ValidationException("仅待归档审批可驳回");
+        }
+        if (!StringUtils.hasText(rejectReason)) {
+            throw new ValidationException("驳回原因不能为空");
+        }
+        doc.setStatus(STATUS_DRAFT);
+        doc.setArchiveRejectReason(rejectReason.trim());
+        return documentRepository.save(doc);
+    }
+
+    /**
+     * 编辑审核通过后回写 content 并设定业务版本。
+     *
+     * @param documentId 文书
+     * @param newContent 新正文
+     * @param expectedFromVersion 申请 from_version
+     * @param toVersion 目标版本
+     * @param operatorId 操作人
+     * @return 更新后文书
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Document applyApprovedEdit(
+            Long documentId,
+            String newContent,
+            Integer expectedFromVersion,
+            Integer toVersion,
+            Long operatorId) {
+        Document doc = documentRepository.findByIdAndIsDeletedFalse(documentId)
+                .orElseThrow(() -> new EntityNotFoundException("文书", documentId));
+        if (!STATUS_ARCHIVED.equals(trimStatus(doc.getStatus()))) {
+            throw new ValidationException("仅已归档文书可回写编辑结果");
+        }
+        Integer currentVersion = doc.getVersionNo();
+        if (currentVersion == null) {
+            currentVersion = 1;
+        }
+        if (expectedFromVersion == null || !expectedFromVersion.equals(currentVersion)) {
+            throw new ValidationException("文书版本已变化，请重新申请编辑");
+        }
+        if (toVersion == null || toVersion != expectedFromVersion + 1) {
+            throw new ValidationException("目标版本无效");
+        }
+        doc.setContent(newContent);
+        doc.setVersionNo(toVersion);
+        doc.setStatus(STATUS_ARCHIVED);
+        return documentRepository.save(doc);
+    }
+
+    /**
+     * 状态 trim；不做大小写兼容。
+     *
+     * @param status 原始状态
+     * @return trim 后；空则空串
+     */
+    private String trimStatus(String status) {
+        if (status == null) {
+            return "";
+        }
+        return status.trim();
     }
 
     /**
@@ -275,9 +435,12 @@ public class DocumentManager {
         Document doc = new Document();
         doc.setPatientId(patientId);
         doc.setEncounterId(encounterId);
-        doc.setDocumentTypeCode(documentTypeCode != null && !documentTypeCode.isEmpty()
-                ? documentTypeCode
-                : source.getDocumentTypeCode());
+        // 未传类型时沿用源文书类型
+        String typeCode = source.getDocumentTypeCode();
+        if (documentTypeCode != null && !documentTypeCode.isEmpty()) {
+            typeCode = documentTypeCode;
+        }
+        doc.setDocumentTypeCode(typeCode);
         doc.setTitle(source.getTitle());
         doc.setContent(source.getContent());
         doc.setStatus(STATUS_DRAFT);

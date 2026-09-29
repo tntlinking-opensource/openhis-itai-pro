@@ -3,6 +3,7 @@ import type { EditorView } from '@tiptap/pm/view';
 
 import { commitFillableIslandValue } from '#/emrEditor/components/simple-editor/fillable-island-commit';
 import {
+  contentEditableCaretOffset,
   pinIslandCaret,
   readContentEditablePlainText,
   readContentEditableSelectionOffsets,
@@ -97,16 +98,20 @@ export function captureEmrIslandInsertTarget(
   if (!island) return null;
   if (root && !root.contains(island)) return null;
   const offsets = readContentEditableSelectionOffsets(island);
-  if (!offsets) {
-    const len = readContentEditablePlainText(island).length;
-    return { kind: 'contentEditable', el: island, start: len, end: len };
+  if (offsets) {
+    return {
+      kind: 'contentEditable',
+      el: island,
+      start: offsets.from,
+      end: offsets.to,
+    };
   }
-  return {
-    kind: 'contentEditable',
-    el: island,
-    start: offsets.from,
-    end: offsets.to,
-  };
+  const caret = contentEditableCaretOffset(island);
+  if (caret >= 0) {
+    return { kind: 'contentEditable', el: island, start: caret, end: caret };
+  }
+  const len = readContentEditablePlainText(island).length;
+  return { kind: 'contentEditable', el: island, start: len, end: len };
 }
 
 /** 捕获编辑器当前选区（Word 化正文流插入用） */
@@ -165,14 +170,18 @@ function insertTextIntoContentEditableIsland(
   if (next === current) return false;
 
   const caret = start + text.length;
-  pinIslandCaret(el, caret);
-  if (!commitFillableIslandValue(editor, pos, next)) {
-    syncContentEditableFromValue(el, next, caret);
-    return true;
+  pinIslandCaret(el, caret, 800);
+  const committed = commitFillableIslandValue(editor, pos, next);
+  const applyDom = () => {
+    if (!el.isConnected) return;
+    syncContentEditableFromValue(el, next, caret, { pinCaret: true });
+  };
+  applyDom();
+  if (committed) {
+    requestAnimationFrame(() => {
+      applyDom();
+    });
   }
-  requestAnimationFrame(() => {
-    syncContentEditableFromValue(el, next, caret);
-  });
   return true;
 }
 
@@ -187,6 +196,14 @@ export function insertTextIntoIslandTarget(
     return insertTextIntoContentEditableIsland(editor, target, text);
   }
   return insertTextIntoInputIsland(target, text);
+}
+
+/** 把正文光标钉到指定文档位（弹窗关焦后可能把选区映回插入起点） */
+function pinEditorCaretAfterImport(editor: Editor, pos: number) {
+  if (editor.isDestroyed) return;
+  const size = editor.state.doc.content.size;
+  const next = Math.max(0, Math.min(pos, size));
+  editor.chain().focus().setTextSelection(next).run();
 }
 
 /** TipTap：在指定选区（或当前光标）插入多行纯文本（换行 → hardBreak） */
@@ -208,14 +225,25 @@ export function insertPlainTextAtEditorCursor(
     }
   }
   if (content.length === 0) return false;
-  let chain = editor.chain().focus();
-  if (selection) {
-    const size = editor.state.doc.content.size;
-    const from = Math.max(0, Math.min(selection.from, size));
-    const to = Math.max(from, Math.min(selection.to, size));
-    chain = chain.setTextSelection({ from, to });
-  }
-  return chain.insertContent(content).run();
+
+  const size = editor.state.doc.content.size;
+  const from = selection
+    ? Math.max(0, Math.min(selection.from, size))
+    : editor.state.selection.from;
+  const to = selection ? Math.max(from, Math.min(selection.to, size)) : editor.state.selection.to;
+  const beforeSize = editor.state.doc.content.size;
+
+  const ok = editor.chain().focus().setTextSelection({ from, to }).insertContent(content).run();
+  if (!ok) return false;
+
+  // 块尾 = 原选区终点 + 文档净增；立刻钉一次，弹窗失焦后再钉一次（B03）
+  const afterSize = editor.state.doc.content.size;
+  const caret = Math.max(0, Math.min(to + (afterSize - beforeSize), afterSize));
+  pinEditorCaretAfterImport(editor, caret);
+  requestAnimationFrame(() => {
+    pinEditorCaretAfterImport(editor, caret);
+  });
+  return true;
 }
 
 /**

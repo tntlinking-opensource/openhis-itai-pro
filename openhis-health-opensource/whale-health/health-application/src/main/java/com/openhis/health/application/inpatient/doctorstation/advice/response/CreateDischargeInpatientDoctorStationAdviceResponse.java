@@ -11,7 +11,7 @@ import lombok.Data;
 import lombok.experimental.Accessors;
 
 /**
- * IF-IP-DOR-21：开立出院医嘱响应（出院服务申请与离院里程碑同事务写入后的回传）。
+ * IF-IP-DOR-21：开立出院医嘱响应（出院服务申请与离院里程碑同事务写入并签发后的回传）。
  */
 @Data
 @Accessors(chain = true)

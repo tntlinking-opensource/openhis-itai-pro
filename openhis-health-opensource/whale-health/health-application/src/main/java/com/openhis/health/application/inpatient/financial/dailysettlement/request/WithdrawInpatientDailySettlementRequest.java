@@ -12,7 +12,7 @@ import lombok.Data;
 import lombok.experimental.Accessors;
 
 /**
- * 撤回住院交账请求（仅 SUBMITTED；提交人或会计）。
+ * 撤回住院交账请求（仅 SUBMITTED；须为款员岗）。
  */
 @Data
 @Accessors(chain = true)

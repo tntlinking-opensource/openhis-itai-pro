@@ -2008,9 +2008,19 @@ async function handlePullSmallCodes(payload: {
 
   const mergedCodeItems: MsfxUpstreamTraceCodeItem[] = [];
   const mergedSmall: string[] = [];
+  /** 已得到明确结果的源码（展开成功 / 已是最小）；未决批不纳入，便于保留原中码再拉 */
+  const resolvedSourceCodes: string[] = [];
   let lastHint = '';
   let anyExpanded = false;
   let doneBatches = 0;
+
+  const isAlreadySmallestItem = (item: MsfxUpstreamTraceCodeItem) => {
+    const s = String(item.isSmallest ?? '')
+      .trim()
+      .toLowerCase();
+    if (s === 'y' || s === '1' || s === 'true') return true;
+    return String(item.codePackLevel ?? '').trim() === '1';
+  };
 
   try {
     for (let i = 0; i < chunks.length; i++) {
@@ -2041,17 +2051,26 @@ async function handlePullSmallCodes(payload: {
         const expanded =
           incomingCodes.length > 0 &&
           (incomingCodes.length !== chunk.length || incomingCodes.some((c) => !chunk.includes(c)));
-        if (expanded) {
+        // 本批全是最小码（误标中码）：后端回填 codeItems，须并入小码，不可当「未展开」丢弃
+        const alreadySmallest =
+          incomingCodes.length > 0 &&
+          (lastHint.includes('已是最小包装') ||
+            (incomingCodes.length === chunk.length &&
+              incomingCodes.every((c) => chunk.includes(c)) &&
+              codeItems.every((item) => isAlreadySmallestItem(item))));
+        if (expanded || alreadySmallest) {
           anyExpanded = true;
           mergedCodeItems.push(...codeItems);
+          resolvedSourceCodes.push(...chunk);
         } else if (smallCodes.length > chunk.length) {
           anyExpanded = true;
           mergedSmall.push(...smallCodes);
+          resolvedSourceCodes.push(...chunk);
         } else {
           ElMessage.warning(
             `第 ${i + 1}/${chunks.length} 批尚未返回小码：${lastHint || '请稍后重试本批'}`,
           );
-          // 未展开的中大码不计入小码结果，避免误当小码入库
+          // 未决中大码不计入小码，也不标 resolved，保留原码可再拉
         }
         doneBatches += 1;
       } catch (error) {
@@ -2076,7 +2095,7 @@ async function handlePullSmallCodes(payload: {
     if (anyExpanded && mergedCodeItems.length > 0) {
       msfxGenerateConfirmRef.value?.applyExpandedCodes(
         payload.key,
-        packCodes,
+        resolvedSourceCodes.length > 0 ? resolvedSourceCodes : packCodes,
         mergedCodeItems,
         oneLevelOnly ? 'MEDIUM' : 'SMALL',
       );

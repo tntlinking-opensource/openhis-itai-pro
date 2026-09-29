@@ -291,6 +291,39 @@ public class StandingOrderOralPackageInventorySupport {
         LocalDate asOf,
         UnitClaimMode claimMode,
         boolean applyStandingOrderPackageBatch) {
+        return this.compute(
+            displayRequest,
+            proceduresByRequestId,
+            product,
+            methodLabelByCode,
+            asOf,
+            claimMode,
+            applyStandingOrderPackageBatch,
+            null);
+    }
+
+    /**
+     * 按领用模式计算展示行剩余；可传入已预热的改量链，避免列表路径重复上溯/下溯。
+     *
+     * @param displayRequest                 当前列表行对应药嘱
+     * @param proceduresByRequestId          链上各嘱 Procedure
+     * @param product                        药品目录
+     * @param methodLabelByCode              用法展示名
+     * @param asOf                           业务统计截止日
+     * @param claimMode                      PACKAGE / MIN_SPLIT
+     * @param applyStandingOrderPackageBatch 全局不可拆；仅 PACKAGE 模式需要为 true
+     * @param preloadedChain                 已预热改量链（根→尾）；空则内部 loadDoseChangeChain
+     * @return 快照；永不 null
+     */
+    public OralPackageInventorySnapshot compute(
+        MedicationRequest displayRequest,
+        Map<Long, List<ProcedureRecordQueryModel>> proceduresByRequestId,
+        ProductDefinitionDisplayDto product,
+        Map<String, String> methodLabelByCode,
+        LocalDate asOf,
+        UnitClaimMode claimMode,
+        boolean applyStandingOrderPackageBatch,
+        List<MedicationRequest> preloadedChain) {
         OralPackageInventorySnapshot snap = new OralPackageInventorySnapshot();
         snap.setApplied(false);
         snap.setDisplayHost(false);
@@ -315,7 +348,10 @@ public class StandingOrderOralPackageInventorySupport {
             // 未命中本模式资格
             return snap;
         }
-        List<MedicationRequest> chain = this.loadDoseChangeChain(displayRequest.getId());
+        List<MedicationRequest> chain = preloadedChain;
+        if (chain == null || chain.isEmpty()) {
+            chain = this.loadDoseChangeChain(displayRequest.getId());
+        }
         if (chain.isEmpty()) {
             chain = List.of(displayRequest);
         }
@@ -451,10 +487,134 @@ public class StandingOrderOralPackageInventorySupport {
     }
 
     /**
+     * 预计领用日补点 Gate：该 {@code planTime} 是否仍允许补回 pending（BR-IP-EXE-038）。
+     *
+     * <p>领入统计仅计净 COMPLETED，故「不执行」后下次领用日常仍落在同日，若补点时只认已执行、
+     * 无视 Procedure {@code STOPPED}，会把已登记不执行的锚点再次塞回待执行，并误拦出院。
+     * 口径与护士站 occurrence 净态一致：仅无记录 / pending / 执行-取消对冲净值待执行可补；
+     * <strong>不执行（STOPPED）、净已执行、孤立取消</strong>均为该 occurrence 终态，禁止补回。</p>
+     *
+     * @param proceduresAtRequest 本药嘱（request）下 Procedure 读模型；可空
+     * @param planTime            拟补回的计划锚点
+     * @return true=允许补 pending；false=该点已终态勿补
+     */
+    public boolean allowsNextClaimPendingReinjection(
+        List<ProcedureRecordQueryModel> proceduresAtRequest,
+        LocalDateTime planTime) {
+        if (planTime == null) {
+            return false;
+        }
+        LocalDateTime occurrenceKey = planTime.withNano(0);
+        List<ProcedureRecordQueryModel> group = new ArrayList<>();
+        if (proceduresAtRequest != null) {
+            for (ProcedureRecordQueryModel row : proceduresAtRequest) {
+                if (row == null || row.getOccurrenceTime() == null) {
+                    continue;
+                }
+                // 秒级归一，与护士站 occurrence 分组合并键一致
+                if (occurrenceKey.equals(row.getOccurrenceTime().withNano(0))) {
+                    group.add(row);
+                }
+            }
+        }
+        if (group.isEmpty()) {
+            // 尚无 Procedure：空窗补点合法
+            return true;
+        }
+        ProcedureRecordQueryModel finalRecord = this.pickMaxIdProcedure(group);
+        if (finalRecord == null || StringUtils.isBlank(finalRecord.getStatusEnum())) {
+            return true;
+        }
+        String status = finalRecord.getStatusEnum();
+        if (EventStatus.STOPPED.getCode().equals(status)) {
+            // 不执行是终态，禁止补回假 pending
+            return false;
+        }
+        if (EventStatus.COMPLETED.getCode().equals(status)) {
+            if (this.isCompletedOffsetByCancel(proceduresAtRequest, finalRecord.getId())) {
+                // 执行-取消对冲：净值待执行，允许补点
+                return true;
+            }
+            // 净已执行：禁止再补
+            return false;
+        }
+        if (EventStatus.isCancelExecutionStatusCode(status)) {
+            if (finalRecord.getRefundId() != null) {
+                // 末态 CANCEL 带对冲：净值待执行
+                return true;
+            }
+            // 孤立取消：终态
+            return false;
+        }
+        // PREPARATION 等非终态：仍视为可补
+        return true;
+    }
+
+    /**
+     * occurrence 组内取 id 最大记录作为末态（与护士站分桶同口径）。
+     *
+     * @param group 同 occurrence 的 Procedure
+     * @return 末态行；组空则 null
+     */
+    private ProcedureRecordQueryModel pickMaxIdProcedure(List<ProcedureRecordQueryModel> group) {
+        if (group == null || group.isEmpty()) {
+            return null;
+        }
+        ProcedureRecordQueryModel best = null;
+        for (ProcedureRecordQueryModel row : group) {
+            if (row == null) {
+                continue;
+            }
+            if (best == null) {
+                best = row;
+                continue;
+            }
+            Long bestId = best.getId();
+            Long rowId = row.getId();
+            if (bestId == null) {
+                best = row;
+                continue;
+            }
+            if (rowId != null && rowId.compareTo(bestId) > 0) {
+                best = row;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * 净 COMPLETED 是否已被某 CANCEL.refund_id 对冲。
+     *
+     * @param procedures           本 request 下全部 Procedure
+     * @param completedProcedureId COMPLETED 行主键
+     * @return true=已被对冲
+     */
+    private boolean isCompletedOffsetByCancel(
+        List<ProcedureRecordQueryModel> procedures,
+        Long completedProcedureId) {
+        if (procedures == null || completedProcedureId == null) {
+            return false;
+        }
+        for (ProcedureRecordQueryModel row : procedures) {
+            if (row == null) {
+                continue;
+            }
+            if (!EventStatus.isCancelExecutionStatusCode(row.getStatusEnum())) {
+                continue;
+            }
+            if (completedProcedureId.equals(row.getRefundId())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 解析预计下次领盒日当天的第一个频次计划点（BR-IP-EXE-038 pending 锚）。
      *
      * <p>改量/已领盒后，包装切盒仍可能把「下一盒首」锚在新嘱开立日；抑制过早点后会出现空窗。
-     * 调用方须在下次领盒日用本方法补回可执行锚点。</p>
+     * 调用方须在下次领盒日用本方法补回可执行锚点；补点前须经
+     * {@link #allowsNextClaimPendingReinjection}——不执行与已执行同为终态，禁止只认 COMPLETED。</p>
      *
      * @param displayRequest 展示宿主药嘱（链尾）
      * @param nextClaimDate  预计下次领盒日
@@ -759,7 +919,7 @@ public class StandingOrderOralPackageInventorySupport {
             return null;
         }
         BigDecimal walkingRemain = claimed;
-        // 右界：至少覆盖到 asOf，并再向前看 NEXT_CLAIM_LOOKAHEAD_DAYS，兼容「截止日已过后仍未领」
+        // 右界：至少覆盖到 asOf，并再向前看 NEXT_CLAIM_LOOKAHEAD_DAYS（截止已过仍未领时仍能算出下次领用日）
         LocalDate limit = asOf.plusDays(NEXT_CLAIM_LOOKAHEAD_DAYS);
         LocalDate day = consumeStart;
         while (!day.isAfter(limit)) {
@@ -791,6 +951,9 @@ public class StandingOrderOralPackageInventorySupport {
         measure.setFirstDose(mr.getFirstDose());
         measure.setFirstDoseUnitCode(mr.getFirstDoseUnitCode());
         measure.setMethodCode(mr.getMethodCode());
+        // 分次 schedule：切批累加按槽取段（BR-IP-EXE-040）
+        measure.setQuantitySchedule(mr.getQuantitySchedule());
+        measure.setRateCode(mr.getRateCode());
         return measure;
     }
 

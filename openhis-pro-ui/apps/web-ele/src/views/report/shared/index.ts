@@ -16,8 +16,11 @@ export {
 export { sumReportPurchaseCornerFromRows } from './sum-report-purchase-corner';
 export { useReportTableHeight } from './use-report-table-height';
 export {
+  collectPagedReportRows,
   mapReportPrintRow,
+  REPORT_PRINT_ALL_MAX_ROWS,
+  REPORT_PRINT_ALL_PAGE_SIZE,
   reportPrintFieldsOf,
   useReportListPrint,
 } from './use-report-list-print';
-export type { UseReportListPrintOptions } from './use-report-list-print';
+export type { ReportPrintAllFetchResult, UseReportListPrintOptions } from './use-report-list-print';

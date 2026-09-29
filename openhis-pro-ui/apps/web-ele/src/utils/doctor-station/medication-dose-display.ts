@@ -5,6 +5,7 @@
  * 小数位：计量（剂量单位）固定 3 位；最小单位 2 位。
  * 列表/收起摘要在剂量段后保留「/次」。
  * 长期药剂量位见 formatLongTermMedicationDoseLine（单次 + 日总量）。
+ * 首日用量见 formatFirstDoseDisplay / appendFirstDoseToDoseLine（BR-IP-ORD-030）。
  */
 
 import {
@@ -25,6 +26,16 @@ export interface MedicationDoseDisplayParts {
   splitDoseUnitName?: null | string;
 }
 
+/** 首日/首次用量展示入参（仅长期有值时拼「首日…」） */
+export interface MedicationFirstDoseDisplayParts {
+  /** 首日用量数值 */
+  firstDose?: null | number | string;
+  /** 首日用量单位编码（无展示名时回落） */
+  firstDoseUnitCode?: null | string;
+  /** 首日用量单位展示名 */
+  firstDoseUnitName?: null | string;
+}
+
 export interface MedicationDoseSummaryOptions extends MedicationDoseDisplayParts {
   /** 总量（请求数量） */
   quantity?: null | number | string;
@@ -34,6 +45,10 @@ export interface MedicationDoseSummaryOptions extends MedicationDoseDisplayParts
   includeTotal?: boolean;
   /** 总量单位展示名解析（缺省用 unitName/unitCode） */
   resolveTotalUnitLabel?: (unitName?: null | string, unitCode?: null | string) => string;
+  /** 首日用量（可选；有值时追加「，首日…」） */
+  firstDose?: null | number | string;
+  firstDoseUnitCode?: null | string;
+  firstDoseUnitName?: null | string;
 }
 
 function trimText(value: unknown): string {
@@ -179,16 +194,19 @@ function withPerDoseSuffix(doseCore: string): string {
 /**
  * 长期药剂量位：单次量 + 日总量（频次已在用法行展示，不再重复）。
  * 例：一次一片，每日三片（有日剂量文案时才装配；否则返回空串由调用方回落）。
+ * 可选追加首日用量：…，首日12支（BR-IP-ORD-030）。
  */
 export function formatLongTermMedicationDoseLine(
-  options: MedicationDoseDisplayParts & {
-    /** 日剂量友好文案（如 每日三片） */
-    dailyDoseDisplay?: null | string;
-  },
+  options: MedicationDoseDisplayParts &
+    MedicationFirstDoseDisplayParts & {
+      /** 日剂量友好文案（如 每日三片） */
+      dailyDoseDisplay?: null | string;
+    },
 ): string {
   const dailyPart = trimText(options.dailyDoseDisplay);
   if (!dailyPart) {
-    return '';
+    // 无日剂量文案时仍可能单独展示首日用量
+    return formatFirstDoseDisplay(options);
   }
 
   // 单次量优先后端 dosageDisplay（如 1片/次）；缺再按结构化字段重拼
@@ -215,7 +233,10 @@ export function formatLongTermMedicationDoseLine(
 
   let perDosePart = '';
   if (perDoseCore) {
-    if (perDoseCore.startsWith('一次')) {
+    // 分次 schedule（含逗号）：禁止套「一次」，否则变成「一次50微克,150微克」
+    if (perDoseCore.includes(',') || perDoseCore.includes('，')) {
+      perDosePart = perDoseCore.replace(/，/gu, ',');
+    } else if (perDoseCore.startsWith('一次')) {
       perDosePart = perDoseCore;
     } else {
       const matched = perDoseCore.match(/^(\d+(?:\.\d+)?)(.*)$/u);
@@ -228,18 +249,59 @@ export function formatLongTermMedicationDoseLine(
     }
   }
 
-  return [perDosePart, dailyPart].filter((p) => p.length > 0).join('，');
+  const baseLine = [perDosePart, dailyPart].filter((p) => p.length > 0).join('，');
+  return appendFirstDoseToDoseLine(baseLine, options);
+}
+
+/**
+ * 首日/首次用量展示段：有正数量时返回「首日{数量}{单位}」，否则空串。
+ */
+export function formatFirstDoseDisplay(options: MedicationFirstDoseDisplayParts): string {
+  const raw = options.firstDose;
+  if (raw === null || raw === undefined || String(raw).trim() === '') {
+    return '';
+  }
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    return '';
+  }
+  const qtyText = formatFriendlyDoseQtyText(String(n));
+  const unit = trimText(options.firstDoseUnitName) || trimText(options.firstDoseUnitCode);
+  return unit ? `首日${qtyText}${unit}` : `首日${qtyText}`;
+}
+
+/**
+ * 在剂量摘要后追加首日用量段（已含「首日」前缀时不重复拼接）。
+ */
+export function appendFirstDoseToDoseLine(
+  baseLine: string,
+  options: MedicationFirstDoseDisplayParts,
+): string {
+  const firstPart = formatFirstDoseDisplay(options);
+  if (!firstPart) {
+    return trimText(baseLine);
+  }
+  const base = trimText(baseLine);
+  if (!base) {
+    return firstPart;
+  }
+  // 已拼过首日段则保持原样，避免成组/二次格式化重复
+  if (base.includes('首日')) {
+    return base;
+  }
+  return `${base}，${firstPart}`;
 }
 
 /**
  * 列表剂量摘要行：单次剂量主文案+/次 + 可选「共总量」；末尾句号与历史口径一致。
  * 已是长期友好文案（一次…，每日…）时原样返回，不再补 /次。
+ * 有首日用量时追加「，首日…」。
  */
 export function formatMedicationDoseSummaryLine(options: MedicationDoseSummaryOptions): string {
   const readyDaily = trimText(options.dosageDisplay);
   // 长期友好成稿或旧「每日三片」：不再拼 /次 / 共
   if (isReadyMadeDoseSummary(readyDaily)) {
-    return readyDaily;
+    return appendFirstDoseToDoseLine(readyDaily, options);
   }
   const left = withPerDoseSuffix(formatMedicationDoseDisplay(options));
   const includeTotal = options.includeTotal !== false;
@@ -253,16 +315,15 @@ export function formatMedicationDoseSummaryLine(options: MedicationDoseSummaryOp
       right = unit ? `共${qty}${unit}` : `共${qty}`;
     }
   }
+  let base = '';
   if (left && right) {
-    return `${left}，${right}。`;
+    base = `${left}，${right}。`;
+  } else if (left) {
+    base = `${left}。`;
+  } else if (right) {
+    base = `${right}。`;
   }
-  if (left) {
-    return `${left}。`;
-  }
-  if (right) {
-    return `${right}。`;
-  }
-  return '';
+  return appendFirstDoseToDoseLine(base, options);
 }
 
 /**

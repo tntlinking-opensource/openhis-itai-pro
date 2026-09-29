@@ -275,6 +275,14 @@ public interface OutpatientRegistrationMapper {
     List<ChargeItemPreviewDto> toChargeItemPreviewDtoListBySaleLine(ChargeItemDefinition saleLine);
 
     /**
+     * 根据多条收费定义构建预结算收费项预览（一号多诊查费）。
+     *
+     * @param saleLines 收费定义列表
+     * @return 收费项预览列表
+     */
+    List<ChargeItemPreviewDto> toChargeItemPreviewDtoListBySaleLines(List<ChargeItemDefinition> saleLines);
+
+    /**
      * 将挂号单读模型映射为挂号单 DTO。
      *
      * @param model 挂号单读模型
@@ -325,10 +333,11 @@ public interface OutpatientRegistrationMapper {
     UpdatePatientAddressCommand toUpdatePatientAddressCommand(Long patientId, String address);
 
     /**
-     * 将预结算请求映射为收费项创建命令。
+     * 将预结算请求映射为收费项创建命令（BR-REG-022：product 锚 AD）。
      *
      * @param request 预结算请求
-     * @param saleLine 收费定义
+     * @param saleLine 收费定义（AD SALE）
+     * @param activityId 诊查费 AD 主键；空绑零元可空
      * @param encounterId 已开立就诊主键，须非空且非 0，写入收费明细以便挂号读模型投影累加金额
      * @param occurredAt 费用发生时刻（与就诊登记时刻对齐）
      * @param accountId 挂号结算账户主键（DM 必填 account_id）
@@ -338,11 +347,20 @@ public interface OutpatientRegistrationMapper {
     CreateChargeItemCommand toCreateChargeItemCommand(
         PreRegisterSettlementRequest request,
         ChargeItemDefinition saleLine,
+        Long activityId,
         Long encounterId,
         LocalDateTime occurredAt,
         Long accountId,
         Long orgId
     );
+
+    /**
+     * 将收费项 ID 集合封装为批量命令。
+     *
+     * @param chargeItemIds 收费项 ID 列表
+     * @return 批量收费项命令
+     */
+    BatchChargeItemIdsCommand toBatchChargeItemIdsCommand(List<Long> chargeItemIds);
 
     /**
      * 将单收费项 ID 封装为批量命令。
@@ -393,19 +411,20 @@ public interface OutpatientRegistrationMapper {
     );
 
     /**
-     * 构建创建支付草稿命令。
+     * 构建创建支付草稿命令（支持多条挂号收费明细）。
      *
      * @param request 预结算请求
      * @param encounterId 就诊 ID
-     * @param chargeItemId 收费项 ID
-     * @param chargeItemAmount 已落库的挂号收费明细金额（与 {@code ChargeItem.totalPrice} 一致，不得再取自定价定义）
+     * @param chargeItemIds 收费项 ID 列表
+     * @param chargeItemAmount 已落库挂号收费明细合计（不得再取自定价定义）
      * @param details 支付明细
+     * @param contractBusNo 费用性质业务编码
      * @return 创建支付草稿命令
      */
     CreatePaymentDraftFromPreSettleCommand toCreatePaymentDraftFromPreSettleCommand(
         PreRegisterSettlementRequest request,
         Long encounterId,
-        Long chargeItemId,
+        List<Long> chargeItemIds,
         java.math.BigDecimal chargeItemAmount,
         List<PaymentDetailItemCommand> details,
         String contractBusNo

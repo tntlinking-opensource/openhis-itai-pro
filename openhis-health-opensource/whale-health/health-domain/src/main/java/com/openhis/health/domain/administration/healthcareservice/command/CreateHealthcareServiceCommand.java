@@ -11,7 +11,7 @@ import lombok.Setter;
 /**
  * 创建医疗服务命令（批量）。
  * <p>
- * 用于登记新的医疗服务项，包括名称、类型、分类及提供机构等主数据。
+ * 用于登记新的医疗服务项，包括名称、类型、分类、提供机构及诊查费 AD 绑定串。
  */
 @Getter
 @Setter
@@ -32,7 +32,10 @@ public class CreateHealthcareServiceCommand extends BatchCommand<CreateHealthcar
         private String categoryCode;
         /** 提供该服务的组织机构主键。 */
         private Long offeredOrgId;
-        /** 医保目录编码或对照码。 */
-        private String ybNo;
+        /**
+         * 诊查费 ActivityDefinition 主键 CSV；零元号可空。
+         * <p>对齐 DM-ADM-007 {@code activity_ids}；禁止再写业务 yb_no。</p>
+         */
+        private String activityIds;
     }
 }

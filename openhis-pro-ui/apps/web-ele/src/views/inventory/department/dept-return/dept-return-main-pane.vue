@@ -101,6 +101,7 @@ import {
   preserveApiIdForRequest,
   resolveLoginPractitionerIdForRequest,
 } from '#/utils/format/preserve-api-id';
+import { formatInventoryLineTotal } from '#/utils/format/money-scale';
 import {
   applyHydratedInventoryDetailQtyToRow,
   applyInventoryRowQtyUnitList,
@@ -117,8 +118,10 @@ import {
 } from '#/utils/inventory/inventory-product-pick-list';
 import {
   canConvertDisplayQtyToSplitForBands,
+  normalizeInboundProductUnitBands,
   persistDisplayQtyAsSplitForBands,
   resolveInboundLinePersistUnitCodeForBands,
+  warehouseNonInboundResolveDisplayUnitPrice,
   type InboundProductUnitBand,
 } from '#/utils/inventory/inbound-product-unit-bands';
 import {
@@ -152,6 +155,10 @@ interface ReturnPreviewRow {
   unitList?: { label?: string; value: string; value_dictText?: string }[];
   __prevBandKind?: string;
   lotNumber: string;
+  /** 进价（详情落库价 / 目录计量带；打印单价列） */
+  price?: number;
+  /** 行金额；打印金额列，缺省时按数量×单价算 */
+  totalPrice?: number | string;
   traceNo: string;
   reason: string;
   remake: string;
@@ -495,6 +502,8 @@ function mapDetailLineToGrid(ln: DeptReturnDetailLineDto, rowIdx: number): Retur
     // 仅回填真实字典文案；裸 unitCode 交给 hydrate/计量带解析，避免数量列显示「100 9」
     unitCodeDictText: String(ln.unitCodeDictText ?? '').trim() || undefined,
     lotNumber: String(ln.lotNumber ?? ''),
+    price: ln.price,
+    totalPrice: ln.totalPrice,
     traceNo: String(ln.traceNo ?? ''),
     reason: String(ln.reason ?? ''),
     remake: String(ln.remake ?? ''),
@@ -507,6 +516,25 @@ function mapDetailLineToGrid(ln: DeptReturnDetailLineDto, rowIdx: number): Retur
   });
   applyHydratedInventoryDetailQtyToRow(row, hydrated);
   applyInventoryRowQtyUnitList(row);
+  const catalog = ln.productCatalog;
+  const bands = normalizeInboundProductUnitBands(catalog?.unitBands, catalog?.unitBandsJson);
+  if (bands.length > 0) {
+    row.unitBands = bands;
+  }
+  if (!String(row.specification ?? '').trim()) {
+    row.specification = String(catalog?.totalVolume ?? '').trim();
+  }
+  if (row.price === undefined || row.price === null) {
+    const catalogPrice = Number(catalog?.purchasePrice);
+    const fromBands = warehouseNonInboundResolveDisplayUnitPrice({
+      bands: row.unitBands ?? [],
+      displayBandKind: row.selectedBandKind,
+      legacyUnitPrice: ln.price ?? (Number.isFinite(catalogPrice) ? catalogPrice : undefined),
+    });
+    if (fromBands !== undefined) {
+      row.price = fromBands;
+    }
+  }
   return row;
 }
 
@@ -1369,6 +1397,20 @@ function resolveDeptReturnPrintUnitLabel(row: ReturnPreviewRow): string {
   return String(row.unitCodeDictText ?? row.unitCode ?? '').trim();
 }
 
+/** 打印单价：行上已有则用，否则按当前计量带从目录价解析 */
+function resolveDeptReturnPrintUnitPrice(row: ReturnPreviewRow): number | undefined {
+  if (row.price !== undefined && row.price !== null && String(row.price) !== '') {
+    const fromRow = Number(row.price);
+    if (Number.isFinite(fromRow)) {
+      return fromRow;
+    }
+  }
+  return warehouseNonInboundResolveDisplayUnitPrice({
+    bands: row.unitBands ?? [],
+    displayBandKind: row.selectedBandKind,
+  });
+}
+
 /** 打印或预览科室退库单 */
 async function handlePrint(payload?: { preview?: boolean }) {
   const busNo = String(headerBusNo.value ?? '').trim();
@@ -1389,15 +1431,29 @@ async function handlePrint(payload?: { preview?: boolean }) {
     .trim()
     .replace('T', ' ');
 
-  // 按当前网格展示值组装退货明细
-  const lineRows = productRows.map((row) => ({
-    productBusNo: resolveInvPrintProductBusNo(row as unknown as Record<string, unknown>),
-    productName: String(row.productName ?? '').trim(),
-    qty: row.itemQuantity,
-    unitLabel: resolveDeptReturnPrintUnitLabel(row),
-    lotNumber: String(row.lotNumber ?? '').trim(),
-    reasonText: String(row.reason ?? '').trim(),
-  }));
+  // 按当前网格展示值组装退货明细（规格/厂家/单价金额与药房退库单同列）
+  const lineRows = productRows.map((row) => {
+    const unitPrice = resolveDeptReturnPrintUnitPrice(row);
+    const qty = Number(row.itemQuantity);
+    const existingAmount = String(row.totalPrice ?? '').trim();
+    const amount =
+      existingAmount ||
+      (unitPrice !== undefined && Number.isFinite(qty)
+        ? formatInventoryLineTotal(qty, unitPrice)
+        : undefined);
+    return {
+      productBusNo: resolveInvPrintProductBusNo(row as unknown as Record<string, unknown>),
+      productName: String(row.productName ?? '').trim(),
+      specText: String(row.specification ?? '').trim(),
+      manufacturerText: String(row.manufacturer ?? '').trim(),
+      qty: row.itemQuantity,
+      unitLabel: resolveDeptReturnPrintUnitLabel(row),
+      unitPrice,
+      amount,
+      lotNumber: String(row.lotNumber ?? '').trim(),
+      reasonText: String(row.reason ?? '').trim(),
+    };
+  });
 
   const preparedByName = resolveInvDocPreparedByName(
     props.queueCardRow as null | Record<string, unknown>,

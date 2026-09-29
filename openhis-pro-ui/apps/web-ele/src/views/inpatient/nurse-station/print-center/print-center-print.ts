@@ -10,7 +10,10 @@ import { resolvePrintScenarioLabel } from '#/utils/print/constants/print-scenari
 import { printInfusionLabel } from '#/utils/print/print-nurse-station';
 import { print, PRINT_SCENARIO } from '#/utils/print/runtime';
 import type { PrintResult } from '#/utils/print/runtime/types';
-import { groupPrintPendingSpecimenBarcodeRows } from '#/utils/print/nurse-station-print-targets';
+import {
+  groupPrintPendingSpecimenBarcodeRows,
+  resolveSpecimenBarcodeLabelCount,
+} from '#/utils/print/nurse-station-print-targets';
 import { normalizeOralMedSheetPrintJson } from '#/utils/print/normalize-oral-med-sheet-print-json';
 import { resolveInfusionLabelPrintTimesPerDay } from '#/utils/print/mappers/outpatient-infusion-label';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
@@ -370,7 +373,7 @@ export async function printInpatientPrintCenter(
       return { ok: printedCount > 0, count: printedCount };
     }
 
-    // 采血贴：住院模板 ip-specimenBarcode-print，合管 device 一组一张
+    // 采血贴：住院模板 ip-specimenBarcode-print；合管 device 一组；张数=开立数量×份数
     if (docType === 'specimen_barcode') {
       let printedCount = 0;
       const groupedTargets = groupPrintPendingSpecimenBarcodeRows(rows);
@@ -386,6 +389,8 @@ export async function printInpatientPrintCenter(
         if (!encounterId || !serviceRequestId) {
           continue;
         }
+        const labelCount = resolveSpecimenBarcodeLabelCount(target.labelCount);
+        const labelCopies = labelCount * Math.max(1, copies);
         const result = await printOnce({
           scenarioCode: PRINT_SCENARIO.ipSpecimenBarcodePrint,
           source: {
@@ -395,8 +400,9 @@ export async function printInpatientPrintCenter(
             ageText: patient?.age == null ? '' : `${patient.age}岁`,
             itemName: String(target.itemName ?? '').trim(),
             serviceRequestId,
+            priorityEnum: String(target.priorityEnum ?? '').trim() || undefined,
           },
-          copies,
+          copies: labelCopies,
           jobName: `采血贴·${target.bedNo ?? ''}${target.patientName ?? ''}`,
           bizRef: {
             scenarioCode: PRINT_SCENARIO.ipSpecimenBarcodePrint,
@@ -406,7 +412,7 @@ export async function printInpatientPrintCenter(
           },
         });
         if (result.ok) {
-          printedCount += 1;
+          printedCount += labelCopies;
         }
       }
       if (printedCount <= 0) {

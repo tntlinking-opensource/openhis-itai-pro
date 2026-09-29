@@ -141,10 +141,11 @@ public interface NurseStationOrderExecuteMapper {
      * @param procedureId  执行记录主键
      * @param operatorId   操作人
      * @param recordedTime 实际执行时刻（{@code actualTime} → {@code recorded_time}）；可空由领域回落
+     * @param item         写槽位；手术/麻醉弹窗时携带横表覆盖字段，可空
      * @return 完成命令
      */
     CompleteProcedureRecordCommand toCompleteProcedureRecordCommand(
-        Long procedureId, Long operatorId, LocalDateTime recordedTime);
+        Long procedureId, Long operatorId, LocalDateTime recordedTime, NurseStationOrderExecuteWriteSlotDto item);
 
     /**
      * 登记计划点不执行（BR-IP-EXE-021）。

@@ -57,6 +57,10 @@ import { isStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
 
 import { fetchAdviceCatalogRowsByPrepickedKeys } from '../services/advice-catalog-prepicked';
 import {
+  expandAdviceSignTargetsWithBoundDrafts,
+  resolveAndPersistAdviceDraftBindsAtSign,
+} from '../services/advice-draft-bind.service';
+import {
   saveAdviceDraftBatchDirect,
   saveAdviceDraftBatchWithManualUsageBind,
 } from '../services/advice-draft-save.service';
@@ -408,12 +412,31 @@ export function useAdviceTab(
     const hasDiagnosis = await ensureEncounterHasDiagnosisForSign(encounterId, patientId);
     if (!hasDiagnosis) return;
     const insuranceContract = await pickFirstInsuranceContract(draftRows.map((r) => r.contractId));
+    // 主目标 requestId 在绑落库前后不变；派生行签发前再扩
+    const primaryTargets = targets;
     await withAdviceMutationLoading(async () => {
       try {
+        // 签发前统一带出用法/诊疗绑定（弹窗可改量/删行；取消则仅签主医嘱）
+        const bindRes = await resolveAndPersistAdviceDraftBindsAtSign({
+          encounterId,
+          patientId,
+          draftRows,
+          existingAdviceRows: flattenAdviceRowsForResourceOps(rows.value),
+        });
+        if (bindRes.success === false) {
+          ElMessage.error(String(bindRes.message || '').trim() || '绑定带出失败');
+          return;
+        }
+        // 刷新列表以拿到派生行 requestId，再扩签发目标
+        await loadAdviceList();
+        const signTargets = expandAdviceSignTargetsWithBoundDrafts(
+          primaryTargets,
+          flattenAdviceRowsForResourceOps(rows.value),
+        );
         const res = await signDoctorStationAdviceBatchWithCrossLotPricingConfirm({
           encounterId,
           patientId,
-          signTargets: targets,
+          signTargets,
         });
         if (res.success === false) {
           ElMessage.error(String(res.message || '').trim() || '签发失败');
@@ -434,7 +457,7 @@ export function useAdviceTab(
               const withdrawRes = await httpWithdrawDoctorStationAdviceBatch({
                 encounterId,
                 patientId,
-                targets,
+                targets: signTargets,
               });
               if (withdrawRes.success === false) {
                 ElMessage.error(
@@ -453,7 +476,7 @@ export function useAdviceTab(
               await httpWithdrawDoctorStationAdviceBatch({
                 encounterId,
                 patientId,
-                targets,
+                targets: signTargets,
               });
             } catch {
               /* 签退失败时仍抛出审核错误 */

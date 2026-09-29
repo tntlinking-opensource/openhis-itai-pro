@@ -228,6 +228,10 @@ public class OrderTemplateMapperImpl implements OrderTemplateMapper {
     public UpdateOrderTemplateLineCommand toUpdateLineCommand(OrderTemplateLineEditDto line, Long operatorId) {
         UpdateOrderTemplateLineCommand command = new UpdateOrderTemplateLineCommand();
         command.setLineId(line.getLineId());
+        command.setLineKindEnum(line.getLineKindEnum());
+        command.setMedicationDefinitionId(line.getMedicationDefinitionId());
+        command.setActivityDefinitionId(line.getActivityDefinitionId());
+        command.setDeviceDefinitionId(line.getDeviceDefinitionId());
         command.setGroupKey(line.getGroupKey());
         command.setSortOrder(line.getSortOrder());
         command.setDefaultQuantity(line.getDefaultQuantity());

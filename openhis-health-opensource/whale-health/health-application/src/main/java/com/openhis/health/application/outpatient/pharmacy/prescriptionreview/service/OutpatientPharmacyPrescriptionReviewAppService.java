@@ -36,10 +36,13 @@ import com.openhis.health.domain.custom.prescriptionreview.queries.PrescriptionR
 import com.openhis.health.domain.custom.prescriptionreview.queries.model.PrescriptionReviewQueryModel;
 import com.openhis.health.domain.custom.prescriptionreview.service.PrescriptionReviewDomainService;
 import com.openhis.health.domain.custom.prescriptionreview.service.PrescriptionReviewQueryService;
+import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.OutpatientPharmacyPrescriptionReviewConstants;
+import com.openhis.health.domain.share.enums.KeyDrugType;
+import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.util.AnnotatedExcelExporter;
@@ -97,6 +100,9 @@ public class OutpatientPharmacyPrescriptionReviewAppService {
     /** 开方日窗 → 处方号预解析（仅本聚合读）。 */
     private final MedicationRequestQueryService medicationRequestQueryService;
 
+    /** 特殊药品类型 → 药典主键预解析（B.6.4）。 */
+    private final MedicationDefinitionQueryService medicationDefinitionQueryService;
+
     /** 已发药判定（只读药嘱/发放；不生成业务号）。 */
     private final OutpatientPharmacyPrescriptionReviewDispenseGate dispenseGate;
 
@@ -126,6 +132,9 @@ public class OutpatientPharmacyPrescriptionReviewAppService {
             List<OptionDto> statusOptions = this.reviewSupport.buildStatusOptions();
             // Pre：是否合理下拉
             List<OptionDto> reasonableOptions = this.reviewSupport.buildReasonableOptions();
+            // Pre：重点药类型 + 药品性质下拉（分框）
+            List<OptionDto> keyDrugTypeOptions = this.reviewSupport.buildKeyDrugTypeOptions();
+            List<OptionDto> medicinePropertyOptions = this.reviewSupport.buildMedicinePropertyOptions();
             // Pre：默认本月点评日起止
             OutpatientPharmacyPrescriptionReviewSupport.ReviewedDateWindow window =
                 this.reviewSupport.defaultReviewedDateWindow();
@@ -134,6 +143,8 @@ public class OutpatientPharmacyPrescriptionReviewAppService {
             return this.reviewMapper.toLoadPageInitResponse(
                 statusOptions,
                 reasonableOptions,
+                keyDrugTypeOptions,
+                medicinePropertyOptions,
                 window.getFrom(),
                 window.getTo());
         } catch (BusinessException ex) {
@@ -172,6 +183,9 @@ public class OutpatientPharmacyPrescriptionReviewAppService {
             PrescriptionReviewPageQuery query = this.reviewMapper.toPageQuery(request);
             // Pre：开方日窗 → 处方号 IN（B.6.4 应用层编排）
             this.applyOpenedDateFilter(query, request.getOpenedDateFrom(), request.getOpenedDateTo());
+            // Pre：特殊药品类型 → 处方号 IN 与开方日窗求交
+            this.applySpecialDrugTypeFilter(query, request.getKeyDrugType());
+            this.applySpecialDrugTypeFilter(query, request.getMedicinePropertyCode());
             PageRequest pageable = PageRequest.of(request.springPageIndex(), request.getBoundedPageSize());
             // Pre：有效点评分页（PENDING → 空页由领域处理）
             Page<PrescriptionReviewQueryModel> page =
@@ -223,6 +237,9 @@ public class OutpatientPharmacyPrescriptionReviewAppService {
             PrescriptionReviewPageQuery query = this.reviewMapper.toPageQuery(request);
             // Pre：开方日窗 → 处方号 IN
             this.applyOpenedDateFilter(query, request.getOpenedDateFrom(), request.getOpenedDateTo());
+            // Pre：特殊药品类型 → 处方号 IN 与开方日窗求交
+            this.applySpecialDrugTypeFilter(query, request.getKeyDrugType());
+            this.applySpecialDrugTypeFilter(query, request.getMedicinePropertyCode());
             PageRequest pageable = PageRequest.of(request.springPageIndex(), request.getBoundedPageSize());
             // Pre：当前页点评分页（非全量上限窗）
             Page<PrescriptionReviewQueryModel> page =
@@ -530,6 +547,86 @@ public class OutpatientPharmacyPrescriptionReviewAppService {
                 openedTo);
         // Asm：写入 IN 条件；空列表 → 点评分页空页
         query.setPrescriptionNosIn(prescriptionNos);
+    }
+
+    /**
+     * Pre：重点药类型或药品性质预解析药典主键 → 命中处方号，与已有 {@code prescriptionNosIn} 求交。
+     *
+     * <p>重点药框认四旗；性质框认麻醉/精一/精二；未知码视为无命中（空 IN → 空页）。空筛选跳过。
+     * 两框均选时先后求交，等价 AND。</p>
+     *
+     * @param query       点评分页查询
+     * @param keyDrugType {@link KeyDrugType} code（四旗或麻/精之一）
+     */
+    private void applySpecialDrugTypeFilter(PrescriptionReviewPageQuery query, String keyDrugType) {
+        // 空筛选：不按该框收窄
+        if (StringUtils.isBlank(keyDrugType)) {
+            return;
+        }
+        KeyDrugType type = EnumUtil.fromCode(KeyDrugType.class, keyDrugType.trim());
+        // 点评页开放七类（四旗 + 麻/精）；其余码 → 空结果
+        if (type != KeyDrugType.BASIC
+            && type != KeyDrugType.NATIONAL_MONITOR
+            && type != KeyDrugType.CENTRAL_PURCHASE
+            && type != KeyDrugType.ANTIBIOTIC
+            && type != KeyDrugType.NARCOTIC
+            && type != KeyDrugType.PSYCH_ONE
+            && type != KeyDrugType.PSYCH_TWO) {
+            query.setPrescriptionNosIn(List.of());
+            return;
+        }
+        // Pre：药典主键（B.6.4 本聚合）
+        List<Long> medicationIds = this.medicationDefinitionQueryService.listIdsByKeyDrugType(type.getCode());
+        // 目录无命中 → 点评空页
+        if (medicationIds == null || medicationIds.isEmpty()) {
+            query.setPrescriptionNosIn(List.of());
+            return;
+        }
+        // Pre：药嘱侧投影含该类药品的已签发方号（不限开立日；与开方日窗再求交）
+        List<String> bySpecialDrug =
+            this.medicationRequestQueryService.listSignedPrescriptionNosByMedicationIdsInOpenedWindow(
+                medicationIds,
+                null,
+                null);
+        this.intersectPrescriptionNosIn(query, bySpecialDrug);
+    }
+
+    /**
+     * 将候选处方号与 PageQuery 已有 {@code prescriptionNosIn} 求交后写回。
+     *
+     * @param query               点评分页查询
+     * @param candidatePrescriptionNos 新候选方号；null 视为空
+     */
+    private void intersectPrescriptionNosIn(
+        PrescriptionReviewPageQuery query,
+        List<String> candidatePrescriptionNos) {
+        List<String> candidates = candidatePrescriptionNos;
+        if (candidates == null) {
+            candidates = List.of();
+        }
+        List<String> existing = query.getPrescriptionNosIn();
+        // 尚无开方日等预筛：直接写入特殊药方号
+        if (existing == null) {
+            query.setPrescriptionNosIn(candidates);
+            return;
+        }
+        // 已有 IN（含空列表）：与候选求交；空 ∩ 任意 = 空
+        if (existing.isEmpty() || candidates.isEmpty()) {
+            query.setPrescriptionNosIn(List.of());
+            return;
+        }
+        LinkedHashSet<String> candidateSet = new LinkedHashSet<>(candidates);
+        List<String> intersected = new ArrayList<>();
+        for (String prescriptionNo : existing) {
+            // 空白方号跳过
+            if (StringUtils.isBlank(prescriptionNo)) {
+                continue;
+            }
+            if (candidateSet.contains(prescriptionNo)) {
+                intersected.add(prescriptionNo);
+            }
+        }
+        query.setPrescriptionNosIn(intersected);
     }
 
     /**

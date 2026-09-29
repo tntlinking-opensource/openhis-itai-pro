@@ -186,6 +186,180 @@ export function resolveLongTermMedicationQuantityPayload(item: {
   return { quantity, unitCode };
 }
 
+/**
+ * 首日用量落库：编辑卡按计量单位录入（同写剂量），保存时换算为最小单位（SPLIT），
+ * 与长期 `quantity`/`unit_code` 同口径，执行侧无需再区分计量/拆零。
+ *
+ * @returns 有有效计量数量且能解析拆零单位时返回落库数量+单位；
+ *          无首日量（空/≤0）时 undefined（调用方对长期 UPDATE 应显式传 null 清空）；
+ *          有数量但缺拆零单位时也 undefined（调用方须报错，禁止误清）
+ */
+export function resolveFirstDosePersistPayload(item: {
+  firstDose?: null | number;
+  doseBandConvertK?: number;
+  doseMainUnit?: string;
+  unitBands?: DoctorStationMedicationUnitBandDto[];
+}): { firstDose: number; firstDoseUnitCode: string } | undefined {
+  const doseQty = Number(item.firstDose);
+  if (!Number.isFinite(doseQty) || doseQty <= 0) {
+    return undefined;
+  }
+  const splitUnit =
+    unitCodeByBandKind(item.unitBands, 'SPLIT') ||
+    unitCodeByUnitName(item.unitBands, item.doseMainUnit);
+  if (!splitUnit) {
+    return undefined;
+  }
+  const k = item.doseBandConvertK ?? doseConvertRatioSplitToDose(item.unitBands);
+  const doseUnit = unitCodeByBandKind(item.unitBands, 'DOSE');
+  // 计量与拆零同码，或无换算比：数量按拆零精度落库
+  if (!k || !Number.isFinite(k) || k <= 0 || (doseUnit && doseUnit === splitUnit)) {
+    return {
+      firstDose: roundMedicationSplitQty(doseQty),
+      firstDoseUnitCode: splitUnit,
+    };
+  }
+  // 例：界面 12ml、k=12 → 落库 1 支
+  return {
+    firstDose: roundMedicationSplitQty(doseQty / k),
+    firstDoseUnitCode: splitUnit,
+  };
+}
+
+/**
+ * 库内/列表首日量（最小单位）→ 编辑卡计量数量（与写剂量右侧同口径）。
+ * 若历史误存为剂量单位码则原样展示，避免二次放大。
+ */
+export function hydrateFirstDoseDisplayQty(params: {
+  firstDose?: null | number;
+  firstDoseUnitCode?: null | string;
+  doseBandConvertK?: number;
+  unitBands?: DoctorStationMedicationUnitBandDto[];
+}): number | undefined {
+  const qty = Number(params.firstDose);
+  if (!Number.isFinite(qty) || qty <= 0) {
+    return undefined;
+  }
+  const unit = String(params.firstDoseUnitCode ?? '').trim();
+  const doseCode = unitCodeByBandKind(params.unitBands, 'DOSE');
+  const splitCode = unitCodeByBandKind(params.unitBands, 'SPLIT');
+  const k = params.doseBandConvertK ?? doseConvertRatioSplitToDose(params.unitBands);
+  // 已是计量单位：界面不再 ×k
+  if (doseCode && unit === doseCode) {
+    return roundMedicationQty(qty);
+  }
+  // 最小单位（或未带单位按拆零）：×k 还原计量展示
+  if (!unit || (splitCode && unit === splitCode)) {
+    if (k !== undefined && Number.isFinite(k) && k > 0) {
+      return roundMedicationQty(qty * k);
+    }
+    return roundMedicationQty(qty);
+  }
+  // 其它历史单位无法可靠换算：原样
+  return roundMedicationQty(qty);
+}
+
+/**
+ * 分次剂量框（计量）→ 落库 doseSchedule + quantitySchedule（拆零串）。
+ * 关开关或无框时返回 undefined（调用方对长期 UPDATE 应显式传 null 清空）。
+ */
+export function resolveDoseQuantitySchedulePersistPayload(item: {
+  unevenDoseEnabled?: boolean;
+  doseScheduleSlots?: Array<number | undefined | null>;
+  doseBandConvertK?: number;
+  doseMainUnit?: string;
+  unitBands?: DoctorStationMedicationUnitBandDto[];
+}):
+  | {
+      doseSchedule: string;
+      quantitySchedule: string;
+      /** 序列首项计量，写入 dose 列（有 schedule 时读侧仍按序列） */
+      firstDoseQty: number;
+      /** 序列首项拆零，写入 quantity 列（有 schedule 时算量仍按序列） */
+      firstQuantity: number;
+      doseUnitCode: string;
+      unitCode: string;
+    }
+  | undefined {
+  if (!item.unevenDoseEnabled) {
+    return undefined;
+  }
+  const slots = item.doseScheduleSlots ?? [];
+  if (slots.length === 0) {
+    return undefined;
+  }
+  const splitUnit =
+    unitCodeByBandKind(item.unitBands, 'SPLIT') ||
+    unitCodeByUnitName(item.unitBands, item.doseMainUnit);
+  const doseUnit =
+    unitCodeByBandKind(item.unitBands, 'DOSE') ||
+    String(item.doseMainUnit ?? '').trim() ||
+    splitUnit;
+  if (!splitUnit || !doseUnit) {
+    return undefined;
+  }
+  const k = item.doseBandConvertK ?? doseConvertRatioSplitToDose(item.unitBands);
+  const doseParts: string[] = [];
+  const qtyParts: string[] = [];
+  // 逐框换算：展开几个必填几个；计量≠拆零时必须有换算比，禁止把微克数当片数写入
+  for (const raw of slots) {
+    const doseQty = Number(raw);
+    if (!Number.isFinite(doseQty) || doseQty <= 0) {
+      return undefined;
+    }
+    doseParts.push(String(roundMedicationQty(doseQty)));
+    let splitQty: number;
+    if (doseUnit && splitUnit && doseUnit !== splitUnit) {
+      if (!k || !Number.isFinite(k) || k <= 0) {
+        return undefined;
+      }
+      splitQty = roundMedicationSplitQty(doseQty / k);
+    } else {
+      splitQty = roundMedicationSplitQty(doseQty);
+    }
+    if (!(splitQty > 0)) {
+      return undefined;
+    }
+    qtyParts.push(String(splitQty));
+  }
+  const firstDoseQty = Number(doseParts[0]);
+  const firstQuantity = Number(qtyParts[0]);
+  return {
+    doseSchedule: doseParts.join(','),
+    quantitySchedule: qtyParts.join(','),
+    firstDoseQty,
+    firstQuantity,
+    doseUnitCode: doseUnit,
+    unitCode: splitUnit,
+  };
+}
+
+/**
+ * 库内 doseSchedule（计量串）→ 编辑卡分次框；有值则开启不一致开关。
+ */
+export function hydrateDoseScheduleSlots(params: { doseSchedule?: null | string }): {
+  unevenDoseEnabled: boolean;
+  doseScheduleSlots?: number[];
+} {
+  const raw = String(params.doseSchedule ?? '').trim();
+  if (!raw) {
+    return { unevenDoseEnabled: false };
+  }
+  const slots: number[] = [];
+  // 按逗号还原各计量框
+  for (const part of raw.split(',')) {
+    const n = Number(String(part ?? '').trim());
+    if (!Number.isFinite(n) || n <= 0) {
+      return { unevenDoseEnabled: false };
+    }
+    slots.push(roundMedicationQty(n));
+  }
+  if (slots.length === 0) {
+    return { unevenDoseEnabled: false };
+  }
+  return { unevenDoseEnabled: true, doseScheduleSlots: slots };
+}
+
 /** 草稿保存：单次剂量取 DOSE 带数值（右侧剂量单位，落库 6 位），单位取 DOSE unitCode。 */
 export function resolveMedicationDraftDosePayload(item: {
   singleDose?: number;

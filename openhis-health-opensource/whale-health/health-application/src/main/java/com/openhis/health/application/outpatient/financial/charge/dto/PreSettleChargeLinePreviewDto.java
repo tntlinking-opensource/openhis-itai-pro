@@ -41,4 +41,10 @@ public class PreSettleChargeLinePreviewDto {
     /** 费用性质展示（自费/省医保/市医保等）（业务字段）。 */
     @Schema(description = "费用性质展示（账户 contract_no → fin_contract 名称，与 IF-OPC-03 同口径）")
     private String feeNatureDisplay;
+
+    /**
+     * 本行有效折扣率；未打折为空（门控开启且命中时）。
+     */
+    @Schema(description = "本行有效折扣率")
+    private BigDecimal discountRate;
 }

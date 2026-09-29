@@ -96,11 +96,9 @@ const activeCaseRecordId = computed(() => preserveApiIdForRequest(activeRow.valu
 
 const activeStatus = computed(() => activeRow.value?.statusCode ?? '');
 
-const canStartQc = computed(() => activeStatus.value === 'received');
-const canRerunOrArchive = computed(() => activeStatus.value === 'qcing');
-const canOpenVolume = computed(
-  () => activeStatus.value === 'qcing' || activeStatus.value === 'archived',
-);
+const canStartQc = computed(() => false /* 质控未开放 */);
+const canRerunOrArchive = computed(() => activeStatus.value === 'PENDING_ARCHIVE');
+const canOpenVolume = computed(() => activeStatus.value === 'ARCHIVED');
 
 const { run: runPage, loading: pageLoading } = useRequest(queryCaseRecordPageApi, {
   manual: true,
@@ -410,7 +408,7 @@ onMounted(async () => {
     if (found) {
       openWorkbench(found);
     } else {
-      activeRow.value = { caseRecordId: queryId, statusCode: 'received' };
+      activeRow.value = { caseRecordId: queryId, statusCode: 'DRAFT' };
       drawerVisible.value = true;
       loadDetail();
     }

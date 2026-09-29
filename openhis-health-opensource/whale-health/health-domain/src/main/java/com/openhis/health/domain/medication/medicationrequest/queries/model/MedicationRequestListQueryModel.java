@@ -68,6 +68,14 @@ public class MedicationRequestListQueryModel {
     private BigDecimal firstDose;
     /** 首日/首次用量单位编码（与 {@link #firstDose} 成对）。 */
     private String firstDoseUnitCode;
+    /**
+     * 分次剂量序列（计量、逗号分隔；可空；有值时列表展示走序列；BR-MRQ-035 / BR-IP-ORD-037）。
+     */
+    private String doseSchedule;
+    /**
+     * 分次用量序列（拆零、逗号分隔；与 {@link #doseSchedule} 同序；空=执行侧走 {@link #quantity}）。
+     */
+    private String quantitySchedule;
     /** 产品批号。 */
     private String lotNumber;
     /** 用药天数。 */

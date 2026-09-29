@@ -792,7 +792,7 @@ const handleConfirmRefund = async () => {
     });
 
     try {
-      // 银联只退扫码实付段：金额以 BPC txnAmtFen 为准；此处 selfPayAmount 仅作无 BPC 金额时的兜底提示
+      // 银联 Win 按渠道患者实付（paidAmtFen??txnAmtFen）；医院冲账仍按原下单，selfPayAmount 仅无 BPC 时兜底提示
       clientRefundResult =
         (await submitScanRefund({
           originalPaymentId: snap.originalPaymentId,

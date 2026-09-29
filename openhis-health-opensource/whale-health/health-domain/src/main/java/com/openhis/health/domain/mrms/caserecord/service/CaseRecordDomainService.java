@@ -20,6 +20,8 @@ import com.openhis.health.domain.share.enums.CaseRecordStatus;
 import com.openhis.health.domain.share.enums.CaseRecordTransitionAction;
 import com.openhis.health.domain.share.enums.HomepageDiagType;
 import com.openhis.health.domain.share.enums.WorkflowRole;
+import com.openhis.health.domain.share.events.mrms.caserecord.CaseRecordArchiveRejectedEvent;
+import com.openhis.health.domain.share.events.mrms.caserecord.CaseRecordArchiveSubmittedEvent;
 import com.openhis.health.domain.share.events.mrms.caserecord.CaseRecordArchivedEvent;
 import com.openhis.health.domain.share.events.mrms.caserecord.CaseRecordCreatedEvent;
 import com.openhis.health.domain.share.events.mrms.caserecord.CaseRecordReceivedEvent;
@@ -204,36 +206,94 @@ public class CaseRecordDomainService {
     }
 
     /**
-     * 医生提交病案：校验首页完备后 draft/returned → submitted。
+     * 医生提交病案归档审批：DRAFT → PENDING_ARCHIVE（DM-MRMS-001 v1.2）。
      *
      * @param command 含 caseRecordId 与 operatorId
      * @return 提交后的主档
      */
     @Transactional(rollbackFor = Exception.class)
     public CaseRecord submit(SubmitCaseRecordCommand command) {
+        return submitArchive(command);
+    }
+
+    /**
+     * 提交归档审批（权威写入口）。
+     *
+     * @param command 含 caseRecordId 与 operatorId
+     * @return 提交后的主档
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public CaseRecord submitArchive(SubmitCaseRecordCommand command) {
         // Pre：主档可编辑且首页满足提交校验
         CaseRecord record = requireById(command.getCaseRecordId());
         record.assertEditableByDoctor();
-        // Cmd：提交前兜底发号（未保存直接提交的历史路径）
         this.ensureMedcasnoAssigned(record, command.getOperatorId());
         CaseRecordHomepage homepage = requireHomepage(command.getCaseRecordId());
         List<HomepageDiagnosis> diagnoses = caseRecordHomepageDomainService.listDiagnoses(command.getCaseRecordId());
         homepage.assertReadyToSubmit(diagnoses);
-        // Cmd：聚合根状态迁移
-        record.applyTransition(CaseRecordTransitionAction.SUBMIT, WorkflowRole.DOCTOR, null, command.getOperatorId());
-        // 持久化先于事件发布
+        // Cmd：DRAFT → PENDING_ARCHIVE
+        record.submitArchive(command.getOperatorId());
         CaseRecord saved = caseRecordRepository.save(record);
-        domainEventPublisher.publish(new CaseRecordSubmittedEvent(
+        domainEventPublisher.publish(new CaseRecordArchiveSubmittedEvent(
                 saved.getId(),
                 saved.getTenantId(),
                 command.getOperatorId(),
                 saved.getEncounterId(),
-                saved.getMedcasno()));
+                saved.getPatientId(),
+                java.time.LocalDateTime.now()));
         return saved;
     }
 
     /**
-     * 病案室工作流状态迁移（接收/退回/质控/归档/解档）。
+     * 病案管理员同意归档：PENDING_ARCHIVE → ARCHIVED，冻结首页（不升 version_no）。
+     *
+     * @param caseRecordId 病案
+     * @param operatorId 审批人
+     * @param qualityGradeCode 可选质量等级
+     * @return 归档后主档
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public CaseRecord approveArchive(Long caseRecordId, Long operatorId, String qualityGradeCode) {
+        CaseRecord record = requireById(caseRecordId);
+        record.approveArchive(operatorId, qualityGradeCode);
+        CaseRecord saved = caseRecordRepository.save(record);
+        caseRecordHomepageDomainService.freeze(caseRecordId, operatorId);
+        domainEventPublisher.publish(new CaseRecordArchivedEvent(
+                saved.getId(),
+                saved.getTenantId(),
+                operatorId,
+                saved.getEncounterId(),
+                saved.getPatientId(),
+                saved.getArchivedAt()));
+        return saved;
+    }
+
+    /**
+     * 病案管理员驳回归档：PENDING_ARCHIVE → DRAFT。
+     *
+     * @param caseRecordId 病案
+     * @param rejectReason 驳回原因
+     * @param operatorId 审批人
+     * @return 驳回后主档
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public CaseRecord rejectArchive(Long caseRecordId, String rejectReason, Long operatorId) {
+        CaseRecord record = requireById(caseRecordId);
+        record.rejectArchive(rejectReason, operatorId);
+        CaseRecord saved = caseRecordRepository.save(record);
+        domainEventPublisher.publish(new CaseRecordArchiveRejectedEvent(
+                saved.getId(),
+                saved.getTenantId(),
+                operatorId,
+                saved.getReturnReason()));
+        return saved;
+    }
+
+    /**
+     * 病案室工作流状态迁移。
+     *
+     * <p>主档仅归档三态。{@code RECEIVE}/{@code RETURN}/{@code START_QC}/{@code UNARCHIVE} 由实体拒绝。
+     * 推荐新代码走 {@link #submitArchive}/{@link #approveArchive}/{@link #rejectArchive}。</p>
      *
      * @param command 迁移动作、角色、原因与操作人
      * @return 迁移后的主档
@@ -242,11 +302,11 @@ public class CaseRecordDomainService {
     public CaseRecord transition(TransitionCaseRecordCommand command) {
         // Pre：加载主档
         CaseRecord record = requireById(command.getCaseRecordId());
-        // 解档动作使用 unarchiveReason，其余使用 returnReason
         String reason = command.getReturnReason();
         if (command.getAction() == CaseRecordTransitionAction.UNARCHIVE) {
             reason = command.getUnarchiveReason();
         }
+        // Cmd：实体 Gate（质控相关动作直接拒绝）
         record.applyTransition(
                 command.getAction(),
                 command.getRole(),
@@ -256,11 +316,6 @@ public class CaseRecordDomainService {
         if (command.getAction() == CaseRecordTransitionAction.ARCHIVE) {
             record.applyArchiveMetadata(command.getOperatorId(), command.getQualityGradeCode());
             caseRecordHomepageDomainService.freeze(command.getCaseRecordId(), command.getOperatorId());
-        }
-        // 解档：清除归档元数据并解冻首页
-        if (command.getAction() == CaseRecordTransitionAction.UNARCHIVE) {
-            record.applyUnarchiveMetadata(command.getUnarchiveReason(), command.getOperatorId());
-            caseRecordHomepageDomainService.unfreeze(command.getCaseRecordId(), command.getOperatorId());
         }
         // 持久化先于事件发布
         CaseRecord saved = caseRecordRepository.save(record);
@@ -341,7 +396,7 @@ public class CaseRecordDomainService {
     /**
      * 4401 成功后隐性推进：将病案推到已归档并冻结首页（自动管理病案，用户无感）。
      *
-     * <p>按状态机逐步 SUBMIT→RECEIVE→START_QC→ARCHIVE；已归档仅补冻结。任一步失败抛业务异常。</p>
+     * <p>仅走归档三态：{@code DRAFT}→submitArchive→{@code PENDING_ARCHIVE}→approveArchive→{@code ARCHIVED}。</p>
      *
      * @param caseRecordId 病案主档主键
      * @param operatorId 操作人（与现有迁移口径一致）
@@ -355,28 +410,17 @@ public class CaseRecordDomainService {
             caseRecordHomepageDomainService.freeze(caseRecordId, operatorId);
             return requireById(caseRecordId);
         }
-        // draft/returned → 医生提交
-        if (record.getStatusEnum() == CaseRecordStatus.DRAFT
-                || record.getStatusEnum() == CaseRecordStatus.RETURNED) {
+        // 草稿：先提交归档审批
+        if (record.getStatusEnum() == CaseRecordStatus.DRAFT) {
             SubmitCaseRecordCommand submit = new SubmitCaseRecordCommand();
             submit.setCaseRecordId(caseRecordId);
             submit.setOperatorId(operatorId);
-            submit(submit);
+            submitArchive(submit);
             record = requireById(caseRecordId);
         }
-        // submitted → 病案室接收
-        if (record.getStatusEnum() == CaseRecordStatus.SUBMITTED) {
-            runRoomTransition(caseRecordId, CaseRecordTransitionAction.RECEIVE, operatorId);
-            record = requireById(caseRecordId);
-        }
-        // received → 开始质控
-        if (record.getStatusEnum() == CaseRecordStatus.RECEIVED) {
-            runRoomTransition(caseRecordId, CaseRecordTransitionAction.START_QC, operatorId);
-            record = requireById(caseRecordId);
-        }
-        // qcing → 归档（同步冻结）
-        if (record.getStatusEnum() == CaseRecordStatus.QCING) {
-            runRoomTransition(caseRecordId, CaseRecordTransitionAction.ARCHIVE, operatorId);
+        // 待审：直接同意归档（隐性推进，无人工审批）
+        if (record.getStatusEnum() == CaseRecordStatus.PENDING_ARCHIVE) {
+            approveArchive(caseRecordId, operatorId, null);
             record = requireById(caseRecordId);
         }
         // 终态仍非归档则阻断（避免半吊子）

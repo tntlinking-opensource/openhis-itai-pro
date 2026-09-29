@@ -47,6 +47,7 @@ import com.openhis.health.domain.custom.frequency.service.FrequencyQueryService;
 import com.openhis.health.domain.custom.ordertemplate.command.AddOrderTemplateLineCommand;
 import com.openhis.health.domain.custom.ordertemplate.command.DeleteOrderTemplateCommand;
 import com.openhis.health.domain.custom.ordertemplate.command.PublishOrderTemplateCommand;
+import com.openhis.health.domain.custom.ordertemplate.command.ReactivateOrderTemplateCommand;
 import com.openhis.health.domain.custom.ordertemplate.command.RetireOrderTemplateCommand;
 import com.openhis.health.domain.custom.ordertemplate.queries.model.OrderTemplateHeaderQueryModel;
 import com.openhis.health.domain.custom.ordertemplate.queries.model.OrderTemplateWithLinesQueryModel;
@@ -82,8 +83,10 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 组套模板应用编排（IF-BAS-OTL-01～08、10、11）。
@@ -290,7 +293,10 @@ public class OrderTemplateAppService {
                 continue;
             }
             assertPricingLineKindAllowed(templateKind, line);
+            assertServiceApplyLineAllowed(templateKind, line);
         }
+        // Gate：中药组套同一药品定义不可重复入组
+        assertTcmMedicationUnique(templateKind, request.getLines());
         // Gate：写路径操作人
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT,
@@ -327,7 +333,7 @@ public class OrderTemplateAppService {
     }
 
     /**
-     * IF-BAS-OTL-06：维护端发布 / 停用 / 逻辑删除。
+     * IF-BAS-OTL-06：维护端发布 / 停用 / 重新启用 / 逻辑删除。
      *
      * @param request 头 id + 动作码
      * @return 成功标志
@@ -341,6 +347,7 @@ public class OrderTemplateAppService {
         // Gate：动作码白名单
         if (!OrderTemplateConstants.LifecycleAction.PUBLISH.equals(normalizedAction)
             && !OrderTemplateConstants.LifecycleAction.RETIRE.equals(normalizedAction)
+            && !OrderTemplateConstants.LifecycleAction.REACTIVATE.equals(normalizedAction)
             && !OrderTemplateConstants.LifecycleAction.DELETE.equals(normalizedAction)) {
             throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_INVALID_STATUS, "当前状态不允许该操作");
         }
@@ -358,6 +365,12 @@ public class OrderTemplateAppService {
             retireCommand.setOrderTemplateId(request.getOrderTemplateId());
             retireCommand.setOperatorId(operatorId);
             orderTemplateDomainService.retireOrderTemplate(retireCommand);
+        } else if (OrderTemplateConstants.LifecycleAction.REACTIVATE.equals(normalizedAction)) {
+            // Cmd：停用组套重新启用，恢复套用
+            ReactivateOrderTemplateCommand reactivateCommand = new ReactivateOrderTemplateCommand();
+            reactivateCommand.setOrderTemplateId(request.getOrderTemplateId());
+            reactivateCommand.setOperatorId(operatorId);
+            orderTemplateDomainService.reactivateOrderTemplate(reactivateCommand);
         } else {
             DeleteOrderTemplateCommand deleteCommand = new DeleteOrderTemplateCommand();
             deleteCommand.setOrderTemplateId(request.getOrderTemplateId());
@@ -634,6 +647,37 @@ public class OrderTemplateAppService {
     }
 
     /**
+     * 中药组套有效行中，同一药品定义只允许出现一次。
+     *
+     * @param templateKind 头种类
+     * @param lines 本次提交行（含待删行）
+     */
+    private void assertTcmMedicationUnique(String templateKind, List<OrderTemplateLineEditDto> lines) {
+        if (!OrderTemplateKind.TCM.getCode().equals(templateKind)) {
+            return;
+        }
+        Set<Long> seenMedicationIds = new HashSet<>();
+        for (OrderTemplateLineEditDto line : lines) {
+            if (line == null || Boolean.TRUE.equals(line.getDeleted())) {
+                continue;
+            }
+            if (!OrderTemplateLineKind.MEDICATION.getCode().equals(line.getLineKindEnum())) {
+                continue;
+            }
+            Long medicationId = line.getMedicationDefinitionId();
+            if (medicationId == null) {
+                continue;
+            }
+            // 已出现过的定义主键视为重复入组
+            if (!seenMedicationIds.add(medicationId)) {
+                throw new BusinessException(
+                    ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT,
+                    "同一组套中不允许重复药品");
+            }
+        }
+    }
+
+    /**
      * 划价组套禁止药品行（BR-OTL-026 / EX-BAS-OTL-204）。
      *
      * @param templateKind 头种类
@@ -647,6 +691,41 @@ public class OrderTemplateAppService {
             throw new BusinessException(
                 ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT,
                 "划价组套不可包含药品");
+        }
+    }
+
+    /**
+     * 申请单组套只允许检查/检验/治疗诊疗行（类别码写在 groupKey：TEST/PROOF/TREATMENT）。
+     *
+     * @param templateKind 头种类
+     * @param line 待校验行
+     */
+    private void assertServiceApplyLineAllowed(String templateKind, OrderTemplateLineEditDto line) {
+        if (!OrderTemplateKind.SERVICE_APPLY.getCode().equals(templateKind)) {
+            return;
+        }
+        if (line == null) {
+            return;
+        }
+        if (!OrderTemplateLineKind.SERVICE.getCode().equals(line.getLineKindEnum())) {
+            throw new BusinessException(
+                ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT,
+                "申请单组套仅允许检查、检验、治疗项目");
+        }
+        String categoryCode = line.getGroupKey();
+        if (categoryCode == null || categoryCode.trim().isEmpty()) {
+            throw new BusinessException(
+                ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT,
+                "请选择检查、检验或治疗");
+        }
+        String trimmedCategory = categoryCode.trim();
+        // 与医生站申请单目录 categoryEnum 一致：检查 TEST、检验 PROOF、治疗 TREATMENT
+        if (!"TEST".equals(trimmedCategory)
+            && !"PROOF".equals(trimmedCategory)
+            && !"TREATMENT".equals(trimmedCategory)) {
+            throw new BusinessException(
+                ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT,
+                "申请单类别仅允许检查、检验、治疗");
         }
     }
 

@@ -7,6 +7,7 @@ package com.openhis.health.application.outpatient.financial.charge.request;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -50,4 +51,11 @@ public class PreSettleOutpatientChargesRequest {
      * 真实改支付草稿见 {@code TODO(ADR-CMP-001 D5/D12)}，本字段先落契约供前端联调。</p>
      */
     private String gfChargeMode;
+
+    /**
+     * 款员所选折扣率 (0,1]；仅 {@code discountFeatureEnabled=true} 时可传（BR-OPC-027～030）。
+     *
+     * <p>门控关闭时传值 → 拒绝；无命中可打折行时传值 → 拒绝。</p>
+     */
+    private BigDecimal cashierDiscountRate;
 }

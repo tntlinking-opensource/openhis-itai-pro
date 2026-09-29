@@ -14,7 +14,7 @@
 
     <groupId>com.openhis</groupId>
     <artifactId>whale</artifactId>
-    <version>2.0.7</version>
+    <version>2.0.8</version>
     <packaging>pom</packaging>
 
     <name>OpenHIS All</name>
@@ -46,6 +46,7 @@
         <module>whale-dependencies</module>
         <module>whale-framework</module>
         <module>whale-module-booking</module>
+        <module>whale-module-pacs-imaging</module>
         <module>whale-module-campus</module>
         <module>whale-module-miniapp</module>
         <module>whale-module-emr</module>

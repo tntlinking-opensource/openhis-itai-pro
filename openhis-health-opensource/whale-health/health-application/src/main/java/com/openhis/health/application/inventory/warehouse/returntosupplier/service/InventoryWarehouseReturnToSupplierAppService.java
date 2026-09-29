@@ -1078,8 +1078,9 @@ public class InventoryWarehouseReturnToSupplierAppService {
                 continue;
             }
             // 按物品表批量查源库可用 catalog 行，避免 N+1
+            // Pre：库房账面量回填（不过期、不剔锁定；药库/药房/科室同口径）
             List<InventoryCatalogAvailabilityRowModel> rows =
-                this.inventoryItemQueryService.findAvailableCatalogRowsForOrder(
+                this.inventoryItemQueryService.findWarehouseOperableCatalogRowsForOrder(
                     itemTable, new ArrayList<>(itemIds), List.of(sourceLocationId));
             Map<Long, Map<String, BigDecimal>> availableByItemLot = new HashMap<>();
             for (InventoryCatalogAvailabilityRowModel row : rows) {
@@ -1681,8 +1682,9 @@ public class InventoryWarehouseReturnToSupplierAppService {
             if (itemIds.isEmpty()) {
                 continue;
             }
+            // Pre：库房账面量回填（不过期、不剔锁定；药库/药房/科室同口径）
             List<InventoryCatalogAvailabilityRowModel> rows =
-                this.inventoryItemQueryService.findAvailableCatalogRowsForOrder(
+                this.inventoryItemQueryService.findWarehouseOperableCatalogRowsForOrder(
                     itemTable, new ArrayList<>(itemIds), locationIds);
             Map<Long, Map<String, BigDecimal>> availableByItemLot = new HashMap<>();
             Map<Long, BigDecimal> availableByItemId = new HashMap<>();

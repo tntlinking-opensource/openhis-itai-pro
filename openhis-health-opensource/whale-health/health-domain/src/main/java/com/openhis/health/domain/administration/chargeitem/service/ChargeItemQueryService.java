@@ -3639,12 +3639,11 @@ public class ChargeItemQueryService {
     }
 
     /**
-     * 折后金额：{@code system_discount_price} → 非零 {@code discount_amount} → {@code total_price} 回退链。
+     * 折后金额：非零 {@code discount_amount} → {@code total_price}（DM-ADM-011：discount_amount=折后应收）。
+     *
+     * <p>{@code system_discount_price} 为优惠额（原价−折后），不得再当作折后回退。</p>
      */
     private BigDecimal resolveOutpatientFeeDetailDiscountedAmount(ChargeItem chargeItem) {
-        if (chargeItem.getSystemDiscountPrice() != null) {
-            return chargeItem.getSystemDiscountPrice();
-        }
         if (chargeItem.getDiscountAmount() != null
             && chargeItem.getDiscountAmount().compareTo(BigDecimal.ZERO) != 0) {
             return chargeItem.getDiscountAmount();

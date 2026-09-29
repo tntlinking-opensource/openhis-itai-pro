@@ -15,6 +15,12 @@ import {
   SERVICE_CATEGORY_PROOF,
   SERVICE_CATEGORY_TEST,
 } from './constants/service-request-category-codes';
+import { SPECIMEN_BARCODE_SPLIT_URGENT_FROM_MERGE } from '#/utils/print/constants/specimen-barcode-merge.config';
+
+import {
+  resolveSpecimenBarcodeUrgencyText,
+  SERVICE_REQUEST_PRIORITY_EM,
+} from './constants/service-request-priority';
 
 export interface SpecimenBarcodePrintTarget {
   serviceRequestId: string;
@@ -25,6 +31,36 @@ export interface SpecimenBarcodePrintTarget {
   encounterId?: string;
   bedNo?: string;
   patientName?: string;
+  /**
+   * 开立数量对应贴数（如检验单「2次」→ 2）；合管组取组内最大；缺省按 1。
+   */
+  labelCount?: number;
+  /**
+   * 医嘱优先级 code；合管组内任一条为 EM 则整组为 EM（拆急院点：急项已单独成组，不参与非急合管）。
+   */
+  priorityEnum?: string;
+}
+
+/**
+ * 解析采血贴张数：开立数量展示（如「2次」）或数值；非法/空回落 1。
+ */
+export function resolveSpecimenBarcodeLabelCount(raw?: number | string | null): number {
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return Math.max(1, Math.floor(raw));
+  }
+  const text = String(raw ?? '').trim();
+  if (!text) {
+    return 1;
+  }
+  const match = text.match(/^(\d+(?:\.\d+)?)/u);
+  if (!match) {
+    return 1;
+  }
+  const n = Number(match[1]);
+  if (!Number.isFinite(n) || n < 1) {
+    return 1;
+  }
+  return Math.max(1, Math.floor(n));
 }
 
 export interface TreatmentExecutePrintTarget {
@@ -80,7 +116,90 @@ function filterServiceExecuteRows(
   return serviceRows.filter(isExecuteRowPending);
 }
 
-/** 采血条码：合管设备一组一张标签（条码暂用组内首条 SR；LIS 外发阶段再改 + 拼接） */
+/** 合管设备主键；无合管配置时为空 */
+export function resolveSpecimenMergeDeviceId(deviceId?: null | string): string {
+  return String(deviceId ?? '').trim();
+}
+
+/**
+ * 采血贴用的合管设备主键。
+ * 院点开启「拆急」时：priorityEnum=EM 的行视为无合管，单独成贴、操作列单独出按钮。
+ */
+export function resolveSpecimenBarcodeMergeDeviceId(
+  deviceId?: null | string,
+  priorityEnum?: null | string,
+): string {
+  const mergeId = resolveSpecimenMergeDeviceId(deviceId);
+  if (!mergeId) {
+    return '';
+  }
+  if (
+    SPECIMEN_BARCODE_SPLIT_URGENT_FROM_MERGE &&
+    String(priorityEnum ?? '').trim() === SERVICE_REQUEST_PRIORITY_EM
+  ) {
+    return '';
+  }
+  return mergeId;
+}
+
+/**
+ * 同一合管设备的行排到一起。
+ * 组的位置跟首行，组内保持原顺序；无合管的行原地保留。
+ */
+export function clusterRowsBySpecimenMerge<T>(rows: T[], mergeIdOf: (row: T) => string): T[] {
+  const clustered: T[] = [];
+  const consumed = new Set<number>();
+  for (let index = 0; index < rows.length; index += 1) {
+    if (consumed.has(index)) {
+      continue;
+    }
+    const mergeId = mergeIdOf(rows[index] as T);
+    clustered.push(rows[index] as T);
+    consumed.add(index);
+    if (!mergeId) {
+      continue;
+    }
+    // 把后面同一合管设备的行收到这一组
+    for (let later = index + 1; later < rows.length; later += 1) {
+      if (consumed.has(later)) {
+        continue;
+      }
+      if (mergeIdOf(rows[later] as T) !== mergeId) {
+        continue;
+      }
+      clustered.push(rows[later] as T);
+      consumed.add(later);
+    }
+  }
+  return clustered;
+}
+
+/**
+ * 操作列 rowspan：合管组只在首行占位，续行返回 0（表格隐藏该格）。
+ */
+export function specimenMergeOperateRowSpan<T>(
+  rows: T[],
+  rowIndex: number,
+  mergeIdOf: (row: T) => string,
+): number {
+  const mergeId = mergeIdOf(rows[rowIndex] as T);
+  if (!mergeId) {
+    return 1;
+  }
+  if (rowIndex > 0 && mergeIdOf(rows[rowIndex - 1] as T) === mergeId) {
+    return 0;
+  }
+  let span = 1;
+  for (let next = rowIndex + 1; next < rows.length; next += 1) {
+    if (mergeIdOf(rows[next] as T) !== mergeId) {
+      break;
+    }
+    span += 1;
+  }
+  return span;
+}
+
+/** 采血条码：合管设备一组一张（条码用组内首条；项目名顿号拼接）；张数按开立数量，合管取组内最大；急标组内任一 EM（拆急院点：EM 行单独成贴） */
 export function groupSpecimenBarcodePrintTargets(
   rows: NurseAdviceExecuteRow[],
   selectedKeys?: string[],
@@ -93,16 +212,20 @@ export function groupSpecimenBarcodePrintTargets(
       continue;
     }
     const itemName = String(row.content ?? row.name ?? '').trim();
-    const mergeDeviceId = String(
-      (row as NurseAdviceExecuteRow & { specimenTubeMergeDeviceId?: string })
-        .specimenTubeMergeDeviceId ?? '',
-    ).trim();
+    const mergeDeviceId = resolveSpecimenBarcodeMergeDeviceId(
+      row.specimenTubeMergeDeviceId,
+      row.priorityEnum,
+    );
+    const labelCount = resolveSpecimenBarcodeLabelCount(row.dosageText);
+    const priorityEnum = String(row.priorityEnum ?? '').trim() || undefined;
     const groupKey = mergeDeviceId ? `merge:${mergeDeviceId}` : `sr:${requestId}`;
     const existing = groupMap.get(groupKey);
     if (!existing) {
       groupMap.set(groupKey, {
         serviceRequestId: requestId,
         itemName,
+        labelCount,
+        priorityEnum,
         ...(mergeDeviceId ? { specimenTubeMergeDeviceId: mergeDeviceId } : {}),
       });
       continue;
@@ -110,11 +233,15 @@ export function groupSpecimenBarcodePrintTargets(
     if (itemName && !existing.itemName.includes(itemName)) {
       existing.itemName = existing.itemName ? `${existing.itemName}、${itemName}` : itemName;
     }
+    existing.labelCount = Math.max(existing.labelCount ?? 1, labelCount);
+    if (priorityEnum === SERVICE_REQUEST_PRIORITY_EM) {
+      existing.priorityEnum = SERVICE_REQUEST_PRIORITY_EM;
+    }
   }
   return [...groupMap.values()];
 }
 
-/** 住院打印中心采血贴：按合管设备分组（无 device 则逐 SR） */
+/** 住院打印中心采血贴：按合管设备一组一张（无 device 则逐条）；张数取组内开立数量最大值；急标组内任一 EM（拆急院点：EM 行单独成贴） */
 export function groupPrintPendingSpecimenBarcodeRows(
   rows: readonly {
     orderId?: string;
@@ -123,6 +250,10 @@ export function groupPrintPendingSpecimenBarcodeRows(
     encounterId?: string;
     bedNo?: string;
     patientName?: string;
+    /** 检验开立数量展示（如「2次」；与申请单数量列同源 dosageDisplay） */
+    dosageDisplay?: string;
+    /** 医嘱优先级 code（EM=急） */
+    priorityEnum?: string;
   }[],
 ): SpecimenBarcodePrintTarget[] {
   const groupMap = new Map<string, SpecimenBarcodePrintTarget>();
@@ -132,13 +263,20 @@ export function groupPrintPendingSpecimenBarcodeRows(
       continue;
     }
     const itemName = String(row.title ?? '').trim();
-    const mergeDeviceId = String(row.specimenTubeMergeDeviceId ?? '').trim();
+    const mergeDeviceId = resolveSpecimenBarcodeMergeDeviceId(
+      row.specimenTubeMergeDeviceId,
+      row.priorityEnum,
+    );
+    const labelCount = resolveSpecimenBarcodeLabelCount(row.dosageDisplay);
+    const priorityEnum = String(row.priorityEnum ?? '').trim() || undefined;
     const groupKey = mergeDeviceId ? `merge:${mergeDeviceId}` : `sr:${requestId}`;
     const existing = groupMap.get(groupKey);
     if (!existing) {
       groupMap.set(groupKey, {
         serviceRequestId: requestId,
         itemName,
+        labelCount,
+        priorityEnum,
         encounterId: String(row.encounterId ?? '').trim() || undefined,
         bedNo: String(row.bedNo ?? '').trim() || undefined,
         patientName: String(row.patientName ?? '').trim() || undefined,
@@ -149,9 +287,15 @@ export function groupPrintPendingSpecimenBarcodeRows(
     if (itemName && !existing.itemName.includes(itemName)) {
       existing.itemName = existing.itemName ? `${existing.itemName}、${itemName}` : itemName;
     }
+    existing.labelCount = Math.max(existing.labelCount ?? 1, labelCount);
+    if (priorityEnum === SERVICE_REQUEST_PRIORITY_EM) {
+      existing.priorityEnum = SERVICE_REQUEST_PRIORITY_EM;
+    }
   }
   return [...groupMap.values()];
 }
+
+export { resolveSpecimenBarcodeUrgencyText };
 
 /** 处置执行单：一张 A4 汇总所选（或全部待执行）非检验处置行 */
 export function groupTreatmentExecutePrintTargets(

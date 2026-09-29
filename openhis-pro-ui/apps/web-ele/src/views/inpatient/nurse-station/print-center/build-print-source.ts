@@ -1791,6 +1791,7 @@ export async function buildOrderDispenseSheetPrintSource(
         doseText: string;
         specText: string;
         totalQuantityText: string;
+        chineseHerbsDoseQuantity: null | number | string | undefined;
       }> = [];
 
       function appendGroups(groups: NurseStationOrderExecutePatientGroupDto[]) {
@@ -1849,6 +1850,7 @@ export async function buildOrderDispenseSheetPrintSource(
                   packageUnitDisplay: order.packageUnitDisplay,
                 },
               ),
+              chineseHerbsDoseQuantity: order.chineseHerbsDoseQuantity,
             });
           }
         }

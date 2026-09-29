@@ -38,7 +38,7 @@ export const useInpatientDoctorPatientStore = defineStore('inpatientDoctorStatio
       patientName: p.patientName,
       genderEnumText: p.genderEnumText,
       ageText: p.ageText,
-      phone: '',
+      phone: (p.phone ?? '').trim(),
       medicalRecordNo: (p.encounterBusNo ?? '').trim(),
       idCard: (p.idCard ?? '').trim(),
       serviceTypeName: wardBed || (p.organizationName ?? '').trim(),

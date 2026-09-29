@@ -69,7 +69,9 @@ public class ActivityDefinitionBaseQueryModel {
     private String mrSettlementTypeCode;
     /** childrenJSON。 */
     private String childrenJson;
-    /** children标志。 */
+    /**
+     * 是否已绑定套餐子项（{@code children_flag}，与子表有效行一致，BR-ACTDEF-006）。
+     */
     private Boolean childrenFlag;
     /** 适用性别枚举编码。 */
     private String permittedGenderEnum;

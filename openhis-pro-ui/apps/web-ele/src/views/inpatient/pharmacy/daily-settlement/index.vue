@@ -2,7 +2,10 @@
   住院药房日结（T3）：菜单由后端驱动时可注册路径 /inpatient/pharmacy/daily-settlement
 -->
 <script setup lang="ts">
-import type { PharmacyDailySettlementDispenseItemDto } from '#/api/outpatient/pharmacy-daily-settlement';
+import type {
+  PharmacyDailySettlementDispenseItemDto,
+  PharmacyDailySettlementProductRowDto,
+} from '#/api/outpatient/pharmacy-daily-settlement';
 import type {
   PharmacyDailySettlementHistoryItemDto,
   PreviewInpatientPharmacyDailySettlementResponse,
@@ -76,6 +79,18 @@ const queryForm = reactive<QueryFormState>({
 const locationOptions = ref<ApiOptionItem[]>([]);
 /** 发药人下拉：查询后由本窗发药人回填，可改选再查 */
 const practitionerOptions = ref<ApiOptionItem[]>([]);
+/** 重点药类型下拉（与重点药品报表同构） */
+const keyDrugTypeOptions = ref<ApiOptionItem[]>([]);
+/** 药品性质下拉（麻/精） */
+const medicinePropertyOptions = ref<ApiOptionItem[]>([]);
+/** 品规销售排名重点药类型筛选；空=不限（仅前端筛选展示） */
+const productKeyDrugTypeCode = ref('');
+/** 品规销售排名药品性质筛选；空=不限 */
+const productMedicinePropertyCode = ref('');
+/** 品规排序列：净数量或售价总额。 */
+const productSortKey = ref<'netQuantity' | 'saleAmount'>('saleAmount');
+/** 品规排序方向：升序 / 降序（点击表头整格切换，无第三态）。 */
+const productSortOrder = ref<'ascending' | 'descending'>('descending');
 const previewResult = ref<PreviewInpatientPharmacyDailySettlementResponse | null>(null);
 const hasQueried = ref(false);
 const submitDialogVisible = ref(false);
@@ -127,24 +142,132 @@ const gapHardBlockMessage = computed(
 
 const gapSoftWarnCount = computed(() => previewResult.value?.gapSoftWarnCount ?? 0);
 
-/** 取可比较金额；非法值按 0。 */
+/** 取可比较金额/数量；非法值按 0。 */
 function toComparableAmount(value: unknown): number {
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
 }
 
-/** 按售价总额倒序（金额大在上）。 */
+/** 按售价总额倒序（金额大在上；大类卡片用）。 */
 function sortBySaleAmountDesc<T extends { saleAmount?: string | number }>(rows: T[]): T[] {
   return [...rows].sort(
     (a, b) => toComparableAmount(b.saleAmount) - toComparableAmount(a.saleAmount),
   );
 }
 
+/**
+ * 品规行是否命中重点药类型与药品性质（两框均空=全部通过；同时选时 AND）。
+ *
+ * @param row 品规汇总行
+ * @param keyDrugTypeCode 重点药类型 KeyDrugType code
+ * @param medicinePropertyCode 药品性质 KeyDrugType code
+ */
+function matchesProductKeyFilters(
+  row: PharmacyDailySettlementProductRowDto,
+  keyDrugTypeCode: string,
+  medicinePropertyCode: string,
+): boolean {
+  if (keyDrugTypeCode) {
+    // 基药
+    if (keyDrugTypeCode === 'BASIC' && row.basicFlag !== true) {
+      return false;
+    }
+    // 国家重点监控
+    if (keyDrugTypeCode === 'NATIONAL_MONITOR' && row.nationalMonitorFlag !== true) {
+      return false;
+    }
+    // 集采
+    if (keyDrugTypeCode === 'CENTRAL_PURCHASE' && row.centralPurchaseFlag !== true) {
+      return false;
+    }
+    // 抗生素
+    if (keyDrugTypeCode === 'ANTIBIOTIC' && row.antibioticFlag !== true) {
+      return false;
+    }
+  }
+  if (medicinePropertyCode) {
+    const prop = String(row.pharmacologyCategoryCode ?? '');
+    // 麻醉药品（药品性质码 2）
+    if (medicinePropertyCode === 'NARCOTIC' && prop !== '2') {
+      return false;
+    }
+    // 一类精神药品（药品性质码 4）
+    if (medicinePropertyCode === 'PSYCH_ONE' && prop !== '4') {
+      return false;
+    }
+    // 二类精神药品（药品性质码 5）
+    if (medicinePropertyCode === 'PSYCH_TWO' && prop !== '5') {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * 恢复品规默认排序：售价总额（总金额）降序。
+ */
+function resetProductSortToSaleAmountDesc() {
+  productSortKey.value = 'saleAmount';
+  productSortOrder.value = 'descending';
+}
+
+/**
+ * 点击品规表头切换排序：同列则升↔降；换列则切到该列并默认降序。
+ *
+ * @param key 净数量或售价总额
+ */
+function toggleProductSort(key: 'netQuantity' | 'saleAmount') {
+  // 同列：只翻转升降
+  if (productSortKey.value === key) {
+    productSortOrder.value = productSortOrder.value === 'ascending' ? 'descending' : 'ascending';
+    return;
+  }
+  // 换列：切到新列，默认降序（销售排名习惯）
+  productSortKey.value = key;
+  productSortOrder.value = 'descending';
+}
+
+/**
+ * 品规可排序列表头箭头：当前列 ↑/↓，另一列灰色 ↕（提示也可点）。
+ *
+ * @param key 列字段
+ */
+function productSortArrow(key: 'netQuantity' | 'saleAmount'): string {
+  if (productSortKey.value !== key) {
+    return '↕';
+  }
+  return productSortOrder.value === 'ascending' ? '↑' : '↓';
+}
+
+/**
+ * 当前是否为品规排序生效列（用于表头箭头高亮）。
+ *
+ * @param key 列字段
+ */
+function isProductSortActive(key: 'netQuantity' | 'saleAmount'): boolean {
+  return productSortKey.value === key;
+}
+
 /** 大类汇总卡片数据（售价总额倒序）。 */
 const categoryRows = computed(() => sortBySaleAmountDesc(previewResult.value?.categoryRows ?? []));
 
-/** 品规汇总表数据（售价总额倒序）。 */
-const productRows = computed(() => sortBySaleAmountDesc(previewResult.value?.productRows ?? []));
+/**
+ * 品规销售排名：先重点药筛选，再按表头当前列升/降序排序。
+ */
+const productRows = computed(() => {
+  const source = previewResult.value?.productRows ?? [];
+  // 先筛重点药类型 + 药品性质（空=不限；同时选 AND）
+  const filtered = source.filter((row) =>
+    matchesProductKeyFilters(row, productKeyDrugTypeCode.value, productMedicinePropertyCode.value),
+  );
+  const sortKey = productSortKey.value;
+  const ascending = productSortOrder.value === 'ascending';
+  // 按当前列数值排序（升或降）
+  return [...filtered].sort((left, right) => {
+    const diff = toComparableAmount(left[sortKey]) - toComparableAmount(right[sortKey]);
+    return ascending ? diff : -diff;
+  });
+});
 
 /** 当前选中药房名称。 */
 const selectedPharmacyLabel = computed(() => {
@@ -265,6 +388,12 @@ async function loadPageInit() {
   locationOptions.value = data?.pharmacyOptions ?? [];
   // 药师岗池进下拉；人选非必选（空=不按人过滤）
   practitionerOptions.value = data?.practitionerOptions ?? [];
+  // 重点药类型筛选项（与重点药品报表同构）
+  keyDrugTypeOptions.value = data?.keyDrugTypeOptions ?? [];
+  medicinePropertyOptions.value = data?.medicinePropertyOptions ?? [];
+  productKeyDrugTypeCode.value = '';
+  productMedicinePropertyCode.value = '';
+  resetProductSortToSaleAmountDesc();
   queryForm.practitionerIds = [];
   if (data?.defaultDateFrom) {
     queryForm.dateRange = [
@@ -293,6 +422,8 @@ async function handleSearch() {
     const data = normalizePreviewInpatientPharmacyDailySettlementResponse(
       await runPreview(buildPreviewRequest()),
     );
+    // 每次查询回落默认：售价总额（总金额）降序
+    resetProductSortToSaleAmountDesc();
     previewResult.value = data;
     syncPractitionerOptionsFromPreview(data);
     hasQueried.value = true;
@@ -622,6 +753,36 @@ onMounted(async () => {
               />
             </ElSelect>
           </ElFormItem>
+          <ElFormItem label="重点药类型">
+            <ElSelect
+              v-model="productKeyDrugTypeCode"
+              clearable
+              placeholder="全部"
+              class="!w-[180px]"
+            >
+              <ElOption
+                v-for="item in keyDrugTypeOptions"
+                :key="String(item.value)"
+                :label="item.label"
+                :value="String(item.value)"
+              />
+            </ElSelect>
+          </ElFormItem>
+          <ElFormItem label="药品性质">
+            <ElSelect
+              v-model="productMedicinePropertyCode"
+              clearable
+              placeholder="全部"
+              class="!w-[180px]"
+            >
+              <ElOption
+                v-for="item in medicinePropertyOptions"
+                :key="String(item.value)"
+                :label="item.label"
+                :value="String(item.value)"
+              />
+            </ElSelect>
+          </ElFormItem>
           <div class="ml-auto flex shrink-0 items-center gap-2">
             <ElButton type="primary" :loading="queryLoading || initLoading" @click="handleSearch">
               查询
@@ -714,7 +875,7 @@ onMounted(async () => {
             </div>
 
             <div class="flex min-h-0 flex-1 flex-col">
-              <h4 class="pharmacy-daily-settlement-section-title">品规汇总</h4>
+              <h4 class="pharmacy-daily-settlement-section-title">品规汇总（销售排名）</h4>
               <div class="min-h-0 flex-1">
                 <ReportElTable :loading="queryLoading" :data="productRows" height="100%">
                   <ElTableColumn
@@ -751,12 +912,30 @@ onMounted(async () => {
                   />
                   <ElTableColumn
                     prop="netQuantity"
-                    label="净数量"
-                    width="100"
+                    width="120"
                     align="right"
                     header-align="right"
                     :class-name="REPORT_TABLE_NUM_CELL"
                   >
+                    <template #header>
+                      <button
+                        type="button"
+                        class="product-sort-header"
+                        title="点击切换升序/降序"
+                        @click="toggleProductSort('netQuantity')"
+                      >
+                        <span>净数量</span>
+                        <span
+                          class="product-sort-header__arrow"
+                          :class="{
+                            'product-sort-header__arrow--active':
+                              isProductSortActive('netQuantity'),
+                          }"
+                        >
+                          {{ productSortArrow('netQuantity') }}
+                        </span>
+                      </button>
+                    </template>
                     <template #default="{ row }">
                       {{ formatDisplayAmount(row.netQuantity) }}
                     </template>
@@ -799,12 +978,29 @@ onMounted(async () => {
                   </ElTableColumn>
                   <ElTableColumn
                     prop="saleAmount"
-                    label="售价总额"
-                    width="110"
+                    width="130"
                     align="right"
                     header-align="right"
                     :class-name="REPORT_TABLE_AMOUNT_CELL"
                   >
+                    <template #header>
+                      <button
+                        type="button"
+                        class="product-sort-header"
+                        title="点击切换升序/降序"
+                        @click="toggleProductSort('saleAmount')"
+                      >
+                        <span>售价总额</span>
+                        <span
+                          class="product-sort-header__arrow"
+                          :class="{
+                            'product-sort-header__arrow--active': isProductSortActive('saleAmount'),
+                          }"
+                        >
+                          {{ productSortArrow('saleAmount') }}
+                        </span>
+                      </button>
+                    </template>
                     <template #default="{ row }">
                       {{ formatDisplayAmount(row.saleAmount) }}
                     </template>
@@ -1058,5 +1254,35 @@ onMounted(async () => {
   align-items: center;
   min-height: 48px;
   padding: 0 4px;
+}
+
+.product-sort-header {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+}
+
+.product-sort-header:hover {
+  color: var(--el-color-primary);
+}
+
+.product-sort-header__arrow {
+  font-size: 14px;
+  line-height: 1;
+  color: var(--el-text-color-secondary);
+}
+
+.product-sort-header__arrow--active {
+  color: var(--el-color-primary);
 }
 </style>

@@ -253,6 +253,10 @@ public class DoctorStationAdviceRowDto {
     @Schema(description = "备注")
     private String remark;
 
+    /** 医嘱优先级 code（检验/检查加急为 EM）。 */
+    @Schema(description = "医嘱优先级 code（加急=EM）")
+    private String priorityEnum;
+
     /** 嘱托内容。 */
     @Schema(description = "嘱托内容")
     private String entrustContent;

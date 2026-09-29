@@ -97,6 +97,16 @@ public class MedicationRequestDomainService {
         request.setSpeedCode(command.getSpeedCode());
         request.setFirstDose(command.getFirstDose());
         request.setFirstDoseUnitCode(command.getFirstDoseUnitCode());
+        // Pre：分次用量序列（计量+拆零）；空=读侧走单值 dose/quantity；有值=读侧按槽取段（BR-MRQ-035）
+        request.setDoseSchedule(command.getDoseSchedule());
+        request.setQuantitySchedule(command.getQuantitySchedule());
+        // Pre：dose/quantity 照常落库（字段必填语义不变）；有 schedule 时展示与算量按序列取段
+        if (command.getDose() != null) {
+            request.setDose(command.getDose());
+        }
+        if (command.getDoseUnitCode() != null) {
+            request.setDoseUnitCode(command.getDoseUnitCode());
+        }
         if (command.getSortNumber() != null) {
             request.setSortNumber(command.getSortNumber());
         }
@@ -105,12 +115,6 @@ public class MedicationRequestDomainService {
             request.setGroupId(command.getGroupId());
             // Pre：成组药嘱 package_id 与 group_id 同源，供绑定耗材 package_id 对齐（AS BR-ORD-031）。
             request.setPackageId(command.getGroupId());
-        }
-        if (command.getDose() != null) {
-            request.setDose(command.getDose());
-        }
-        if (command.getDoseUnitCode() != null) {
-            request.setDoseUnitCode(command.getDoseUnitCode());
         }
         if (command.getDispensePerDuration() != null) {
             request.setDispensePerDuration(command.getDispensePerDuration());
@@ -152,7 +156,9 @@ public class MedicationRequestDomainService {
      * <p>通过对比命令入参与现有实体字段，动态计算本次实际变更的字段集合后写入事件载荷，
      * 禁止以静态字符串替代（§D3.6.2 事件变更摘要禁止硬编码）。</p>
      *
-     * @param command 草稿修改命令，包含需要变更的字段（null 表示不变更该字段）
+     * @param command 草稿修改命令；多数字段 null 表示不变更；
+     *                {@code syncFirstDose=true} 时首日量允许以 null 清空；
+     *                {@code syncDoseQuantitySchedule=true} 时分次序列允许以 null 清空
      */
     public void changeMedicationOrderDraft(ChangeMedicationOrderDraftCommand command) {
         MedicationRequest request = this.mustGet(command.getId());
@@ -184,13 +190,29 @@ public class MedicationRequestDomainService {
             request.setSpeedCode(command.getSpeedCode());
             changedFields.add(FieldNameConstants.SPEED_CODE);
         }
-        if (command.getFirstDose() != null && !command.getFirstDose().equals(request.getFirstDose())) {
-            request.setFirstDose(command.getFirstDose());
-            changedFields.add(FieldNameConstants.FIRST_DOSE);
+        // Pre：首日量须可清空；仅 syncFirstDose 时覆盖（含 null），避免局部更新误清
+        if (Boolean.TRUE.equals(command.getSyncFirstDose())) {
+            // 数量变化（含清成 null）才记变更字段
+            if (!Objects.equals(command.getFirstDose(), request.getFirstDose())) {
+                request.setFirstDose(command.getFirstDose());
+                changedFields.add(FieldNameConstants.FIRST_DOSE);
+            }
+            // 单位与数量成对同步（清空时一并 null）
+            if (!Objects.equals(command.getFirstDoseUnitCode(), request.getFirstDoseUnitCode())) {
+                request.setFirstDoseUnitCode(command.getFirstDoseUnitCode());
+                changedFields.add(FieldNameConstants.FIRST_DOSE_UNIT_CODE);
+            }
         }
-        if (command.getFirstDoseUnitCode() != null && !command.getFirstDoseUnitCode().equals(request.getFirstDoseUnitCode())) {
-            request.setFirstDoseUnitCode(command.getFirstDoseUnitCode());
-            changedFields.add(FieldNameConstants.FIRST_DOSE_UNIT_CODE);
+        // Pre：分次序列须可清空；仅 syncDoseQuantitySchedule 时覆盖（含 null），避免局部更新误清
+        if (Boolean.TRUE.equals(command.getSyncDoseQuantitySchedule())) {
+            if (!Objects.equals(command.getDoseSchedule(), request.getDoseSchedule())) {
+                request.setDoseSchedule(command.getDoseSchedule());
+                changedFields.add(FieldNameConstants.DOSE_SCHEDULE);
+            }
+            if (!Objects.equals(command.getQuantitySchedule(), request.getQuantitySchedule())) {
+                request.setQuantitySchedule(command.getQuantitySchedule());
+                changedFields.add(FieldNameConstants.QUANTITY_SCHEDULE);
+            }
         }
         if (command.getSortNumber() != null && !Objects.equals(command.getSortNumber(), request.getSortNumber())) {
             request.setSortNumber(command.getSortNumber());
@@ -586,6 +608,28 @@ public class MedicationRequestDomainService {
     }
 
     /**
+     * 废弃未签发药品草稿：仅 {@code DRAFT} 且从未签发；已签发则静默跳过（防调价并发误伤）。
+     *
+     * @param command 取消命令
+     * @return 实际废弃时 true；已非未签发草稿时 false
+     */
+    public boolean cancelUnsignedMedicationOrderDraft(CancelMedicationOrderCommand command) {
+        MedicationRequest request = this.mustGet(command.getId());
+        // Gate：已签发或非草稿 → 跳过，绝不调用可取消 ACTIVE 的通用 cancel
+        if (!RequestStatus.DRAFT.getCode().equals(request.getStatusEnum())
+            || request.getReqAuthoredTime() != null) {
+            return false;
+        }
+        // 状态迁移：未签发 DRAFT → CANCELLED（不软删）
+        request.ensureUnsignedDraftCancellable();
+        request.toCancelled();
+        medicationRequestRepository.save(request);
+        domainEventPublisher.publish(new MedicationOrderCancelledEvent(
+            request.getId(), command.getCancelReason(), command.getOperatorId()));
+        return true;
+    }
+
+    /**
      * 创建负向退药请求单。
      * <p>
      * <b>BR-MRQ-013 幂等</b>：同一原正向单已有未完结负向单时返回已有主键，不抛「已申请退药」。
@@ -659,6 +703,8 @@ public class MedicationRequestDomainService {
         refund.setMaxDose(origin.getMaxDose());
         refund.setFirstDose(origin.getFirstDose());
         refund.setFirstDoseUnitCode(origin.getFirstDoseUnitCode());
+        refund.setDoseSchedule(origin.getDoseSchedule());
+        refund.setQuantitySchedule(origin.getQuantitySchedule());
         refund.setFirstDuration(origin.getFirstDuration());
         refund.setDispenseInterval(origin.getDispenseInterval());
         refund.setDispensePerQuantity(origin.getDispensePerQuantity());
@@ -1249,6 +1295,8 @@ public class MedicationRequestDomainService {
         out.setMaxDose(source.getMaxDose());
         out.setFirstDose(source.getFirstDose());
         out.setFirstDoseUnitCode(source.getFirstDoseUnitCode());
+        out.setDoseSchedule(source.getDoseSchedule());
+        out.setQuantitySchedule(source.getQuantitySchedule());
         out.setFirstDuration(source.getFirstDuration());
         out.setDispenseInterval(source.getDispenseInterval());
         out.setDispensePerQuantity(source.getDispensePerQuantity());

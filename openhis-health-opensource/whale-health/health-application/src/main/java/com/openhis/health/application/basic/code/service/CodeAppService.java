@@ -39,11 +39,10 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
- * 编码系统（术语）维护应用服务：编码体系与概念 CRUD、枚举字典扫描与展示。
+ * 编码系统（术语）维护应用服务：编码体系与概念 CRUD、枚举字典扫描与展示、运维刷缓存。
  *
  * <p>枚举目录通过 classpath 扫描 {@link TerminologyEnumScanConstants#ENUM_BASE_PACKAGE} 自动发现，无需手工维护白名单。</p>
- *
- *
+ * <p>SQL/运维直写 {@code ter_concept} 后可调用 {@link #refreshConceptCache()} 清空概念字典与术语选项软缓存，无需重启。</p>
  */
 @Slf4j
 @Service
@@ -390,6 +389,26 @@ public class CodeAppService {
                 return dto;
             })
             .collect(Collectors.toList());
+    }
+
+    /**
+     * 清空术语概念字典缓存与术语选项软缓存。
+     *
+     * <p>适用：SQL/运维脚本直接写入 {@code ter_concept} 后，业务下拉仍回显旧选项或裸 code；
+     * 调用本接口即可让后续 init/下拉回源数据库，无需重启进程。</p>
+     *
+     * <p>对应前端：{@code POST /code/refreshConceptCache}（数据字典页「刷新缓存」）。</p>
+     *
+     * <p>注意：Java 枚举（如 {@code ActivityType}）选项来自 classpath，不在本缓存范围内，改枚举仍须发版。</p>
+     */
+    public void refreshConceptCache() {
+        // Gate：运维刷新入口，无入参；任意登录可触发（与字典维护同权限面由网关/菜单控制）
+        // Cmd：清空概念字典 Caffeine 全量分片（CodeSystemQueryService）
+        codeSystemQueryService.clearAllDictCache();
+        // Cmd：清空应用层术语选项软缓存（TerminologyOptionLoader；须与概念缓存一并失效）
+        terminologyOptionLoader.evictAll();
+        // Asm：审计日志，便于运维确认本进程已刷缓存
+        log.info("术语概念字典缓存与术语选项软缓存已手工清空");
     }
 
 }

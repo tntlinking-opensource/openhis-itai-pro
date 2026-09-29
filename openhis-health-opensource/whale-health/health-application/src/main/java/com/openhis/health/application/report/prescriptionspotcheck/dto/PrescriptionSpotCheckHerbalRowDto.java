@@ -151,7 +151,7 @@ public class PrescriptionSpotCheckHerbalRowDto {
     @Schema(description = "脚注")
     private String footnoteText;
 
-    /** 药品顺序（sortNumber）。 */
+    /** 药品顺序（同方内从 1 起的行序）。 */
     @Excel(name = "药品顺序", sort = 26, scale = 0)
     @Schema(description = "药品顺序")
     private Integer drugOrder;

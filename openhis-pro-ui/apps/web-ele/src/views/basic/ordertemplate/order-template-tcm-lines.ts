@@ -90,6 +90,42 @@ export function mapDraftLineToHerbCardItem(line: TcmTemplateDraftLine): TcmHerbC
   };
 }
 
+/** 换药时查找组套内其他行是否已选用同一药品 */
+export function findOtherTcmHerbWithSameDrug(
+  lines: TcmTemplateDraftLine[],
+  medicationDefinitionId: string,
+  excludeClientKey: string,
+): TcmTemplateDraftLine | undefined {
+  const id = preserveApiIdForRequest(medicationDefinitionId);
+  if (!id) {
+    return undefined;
+  }
+  return lines.find((line) => {
+    if (line._clientKey === excludeClientKey) {
+      return false;
+    }
+    return preserveApiIdForRequest(line.medicationDefinitionId) === id;
+  });
+}
+
+/** 保存前检查组套内药品是否重复，有则返回药名 */
+export function findDuplicateTcmHerbName(lines: TcmTemplateDraftLine[]): string | undefined {
+  const seen = new Map<string, string>();
+  for (const line of lines) {
+    const id = preserveApiIdForRequest(line.medicationDefinitionId);
+    if (!id) {
+      continue;
+    }
+    const name = String(line._productLabel || line.productName || '').trim() || '该药品';
+    const prev = seen.get(id);
+    if (prev !== undefined) {
+      return prev || name;
+    }
+    seen.set(id, name);
+  }
+  return undefined;
+}
+
 /** 选药后写回草稿行（组套保存仍走 dosageText） */
 export function applyTcmHerbProductToDraftLine(
   line: TcmTemplateDraftLine,

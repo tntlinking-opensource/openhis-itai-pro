@@ -31,7 +31,10 @@ public class ActivityDefinitionPageQueryModel {
     private String statusEnum;
     /** 医保标志。 */
     private Boolean ybFlag;
-    /** children标志。 */
+    /**
+     * 是否已绑定套餐子项（{@code wkf_activity_definition.children_flag}）。
+     * <p>与子表有效行一致（BR-ACTDEF-006）；列表无需再拉子表即可识别组套。</p>
+     */
     private Boolean childrenFlag;
     /** 适用性别枚举编码。 */
     private String permittedGenderEnum;

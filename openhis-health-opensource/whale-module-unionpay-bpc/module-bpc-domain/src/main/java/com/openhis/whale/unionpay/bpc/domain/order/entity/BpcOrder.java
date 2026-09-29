@@ -35,11 +35,14 @@ public class BpcOrder extends BaseAuditedEntity {
     @Column(name = "tran_type", nullable = false, length = 8)
     private String tranType;
 
-    /** 交易金额（分）：院内下单金额；POS 实付偏小不覆盖本字段。 */
+    /** 交易金额（分）：院内下单金额（HIS 收退权威）；POS 实付偏小不覆盖本字段。 */
     @Column(name = "txn_amt_fen", nullable = false)
     private Long txnAmtFen;
 
-    /** 银联/POS 回传实付（分）；可小于 {@link #txnAmtFen}。 */
+    /**
+     * 银联/POS 回传患者实付（分）；可因渠道优惠小于 {@link #txnAmtFen}。
+     * Win R / BPC 退货 Gate 按本字段；医院账仍用 {@link #txnAmtFen}。
+     */
     @Column(name = "paid_amt_fen")
     private Long paidAmtFen;
 

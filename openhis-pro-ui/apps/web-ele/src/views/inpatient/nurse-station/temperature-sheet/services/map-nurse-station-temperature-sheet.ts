@@ -18,6 +18,7 @@ import {
   readVitalValueFromDetailItems,
   resolveDayHeightWeightDetailItems,
   resolveSlot22DetailItems,
+  TERM_SPECIAL_EVENT_CODE,
   VITAL_ITEM_CODE,
 } from './temperature-sheet-detail-items';
 import {
@@ -255,9 +256,148 @@ export function mergeTemperatureSheetGridRowsWithSkeleton(
   });
 }
 
+/** 曲线描点依赖的体征项：同槽身份优先取贡献了这些项的主表 */
+const TEMPERATURE_SHEET_CURVE_ITEM_CODES = new Set<string>([
+  VITAL_ITEM_CODE.TEMP,
+  VITAL_ITEM_CODE.PULSE,
+  VITAL_ITEM_CODE.HR,
+]);
+
+/** 同槽合并过程中的时分与主表身份（曲线来源优先于最晚一条） */
+interface TemperatureSheetSlotMergeState {
+  curveRecordTime: string;
+  curveVitalSignId?: string;
+  detailItems: TemperatureSheetDetailItemDto[];
+  latestRecordTime: string;
+  latestVitalSignId?: string;
+}
+
+/**
+ * 明细项是否参与同槽合并。
+ * 有测量值或备注即有效；标记类特殊事件 itemValue 可空，存在即有效。
+ */
+function temperatureSheetDetailItemHasMergeValue(item: TemperatureSheetDetailItemDto): boolean {
+  const itemCode = (item.itemCode ?? '').trim();
+  if (!itemCode) {
+    return false;
+  }
+  if ((item.itemValue ?? '').trim()) {
+    return true;
+  }
+  if ((item.remark ?? '').trim()) {
+    return true;
+  }
+  return (item.termCode ?? '').trim() === TERM_SPECIAL_EVENT_CODE;
+}
+
+/** 本批明细是否写了体温、脉搏或心率（用于格子 recordTime / vitalSignId） */
+function temperatureSheetItemsContributeCurve(
+  items: TemperatureSheetDetailItemDto[] | null | undefined,
+): boolean {
+  for (const item of items ?? []) {
+    const itemCode = (item.itemCode ?? '').trim();
+    if (!TEMPERATURE_SHEET_CURVE_ITEM_CODES.has(itemCode)) {
+      continue;
+    }
+    if ((item.itemValue ?? '').trim()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 按 item_code 合并两批明细：同码以后写且有值的为准，不同码并集。
+ * 调用方须按记录时分升序传入（earlier 早于 later）。
+ */
+function mergeTemperatureSheetDetailItemsByCode(
+  earlier: TemperatureSheetDetailItemDto[] | null | undefined,
+  later: TemperatureSheetDetailItemDto[] | null | undefined,
+): TemperatureSheetDetailItemDto[] {
+  const merged = new Map<string, TemperatureSheetDetailItemDto>();
+  for (const item of earlier ?? []) {
+    const itemCode = (item.itemCode ?? '').trim();
+    if (!temperatureSheetDetailItemHasMergeValue(item)) {
+      continue;
+    }
+    merged.set(itemCode, item);
+  }
+  for (const item of later ?? []) {
+    const itemCode = (item.itemCode ?? '').trim();
+    if (!temperatureSheetDetailItemHasMergeValue(item)) {
+      continue;
+    }
+    merged.set(itemCode, item);
+  }
+  return [...merged.values()];
+}
+
+/** 把一条已落格记录并入槽状态：同码后写覆盖，曲线身份优先于最晚时分 */
+function absorbTemperatureSheetSlotSource(
+  state: TemperatureSheetSlotMergeState,
+  detailItems: TemperatureSheetDetailItemDto[] | null | undefined,
+  recordTime: string,
+  vitalSignId?: string,
+): void {
+  const items = detailItems ?? [];
+  const incomingIsLater =
+    !state.latestRecordTime || recordTime.localeCompare(state.latestRecordTime) >= 0;
+  if (recordTime && incomingIsLater) {
+    state.detailItems = mergeTemperatureSheetDetailItemsByCode(state.detailItems, items);
+    state.latestRecordTime = recordTime;
+    state.latestVitalSignId = vitalSignId;
+    if (temperatureSheetItemsContributeCurve(items)) {
+      state.curveRecordTime = recordTime;
+      state.curveVitalSignId = vitalSignId;
+    }
+    return;
+  }
+  // 无时分或更早的记录只补尚未出现的项，避免冲掉已按时间合并的值
+  state.detailItems = mergeTemperatureSheetDetailItemsByCode(items, state.detailItems);
+  if (!state.curveRecordTime && temperatureSheetItemsContributeCurve(items) && recordTime) {
+    state.curveRecordTime = recordTime;
+    state.curveVitalSignId = vitalSignId;
+  }
+}
+
+/** 同槽展示身份：优先体温/脉搏/心率来源，否则最晚一条 */
+function resolveTemperatureSheetMergedSlotIdentity(state: TemperatureSheetSlotMergeState): {
+  recordTime?: string;
+  vitalSignId?: string;
+} {
+  if (state.curveRecordTime || state.curveVitalSignId) {
+    return {
+      recordTime: state.curveRecordTime || undefined,
+      vitalSignId: state.curveVitalSignId,
+    };
+  }
+  return {
+    recordTime: state.latestRecordTime || undefined,
+    vitalSignId: state.latestVitalSignId,
+  };
+}
+
+/** 六个图表槽的空合并状态 */
+function createTemperatureSheetSlotMergeStates(): Map<
+  TemperatureSheetTimeSlot,
+  TemperatureSheetSlotMergeState
+> {
+  return new Map(
+    TEMPERATURE_SHEET_TIME_SLOTS.map((timeSlot) => [
+      timeSlot,
+      {
+        detailItems: [],
+        latestRecordTime: '',
+        curveRecordTime: '',
+      },
+    ]),
+  );
+}
+
 /**
  * 按实际测量时分就近重排日×6 槽（09:40 → 10 时栏）。
  * 格子无 recordTime 时保持接口原槽，兼容未升级后端。
+ * 同槽多格按 item_code 合并，禁止整格只留较晚时分。
  */
 export function rebucketTemperatureSheetGridRowsByNearestSlot(
   gridRows: TemperatureSheetGridRowDto[],
@@ -265,7 +405,7 @@ export function rebucketTemperatureSheetGridRowsByNearestSlot(
   return gridRows.map((gridRow) => rebucketTemperatureSheetGridRowByNearestSlot(gridRow));
 }
 
-/** 将单日格子按 recordTime 就近落到三测时次 */
+/** 将单日格子按 recordTime 就近落到三测时次，同槽按体征项合并 */
 function rebucketTemperatureSheetGridRowByNearestSlot(
   gridRow: TemperatureSheetGridRowDto,
 ): TemperatureSheetGridRowDto {
@@ -275,17 +415,13 @@ function rebucketTemperatureSheetGridRowByNearestSlot(
     return gridRow;
   }
 
-  const slotCells: TemperatureSheetGridSlotCellDto[] = TEMPERATURE_SHEET_TIME_SLOTS.map(
-    (timeSlot) => ({
-      timeSlot,
-      detailItems: [],
-    }),
+  const states = createTemperatureSheetSlotMergeStates();
+  const orderedCells = [...sourceCells].sort((left, right) =>
+    (left.recordTime ?? '').trim().localeCompare((right.recordTime ?? '').trim()),
   );
-  const slotMap = new Map(slotCells.map((cell) => [cell.timeSlot, cell]));
-  const latestHmBySlot = new Map<TemperatureSheetTimeSlot, string>();
 
-  // 有真实时分的格子按就近时次落格；同槽保留较晚时分
-  for (const cell of sourceCells) {
+  // 有真实时分的格子按就近时次落格；同槽按 item_code 合并
+  for (const cell of orderedCells) {
     const recordTime = (cell.recordTime ?? '').trim();
     const chartSlot = recordTime
       ? resolveTemperatureSheetChartTimeSlotFromHm(recordTime)
@@ -293,21 +429,27 @@ function rebucketTemperatureSheetGridRowByNearestSlot(
     if (!TEMPERATURE_SHEET_TIME_SLOTS.includes(chartSlot)) {
       continue;
     }
-    const target = slotMap.get(chartSlot);
-    if (!target) {
+    const state = states.get(chartSlot);
+    if (!state) {
       continue;
     }
-    const previousHm = latestHmBySlot.get(chartSlot);
-    if (previousHm && recordTime && previousHm.localeCompare(recordTime) > 0) {
-      continue;
-    }
-    if (recordTime) {
-      latestHmBySlot.set(chartSlot, recordTime);
-    }
-    target.vitalSignId = cell.vitalSignId;
-    target.detailItems = cell.detailItems ?? [];
-    target.recordTime = recordTime || undefined;
+    absorbTemperatureSheetSlotSource(state, cell.detailItems, recordTime, cell.vitalSignId);
   }
+
+  const slotCells: TemperatureSheetGridSlotCellDto[] = TEMPERATURE_SHEET_TIME_SLOTS.map(
+    (timeSlot) => {
+      const state = states.get(timeSlot);
+      const identity = state
+        ? resolveTemperatureSheetMergedSlotIdentity(state)
+        : { recordTime: undefined, vitalSignId: undefined };
+      return {
+        timeSlot,
+        detailItems: state?.detailItems ?? [],
+        recordTime: identity.recordTime,
+        vitalSignId: identity.vitalSignId,
+      };
+    },
+  );
 
   return {
     recordDate: gridRow.recordDate,
@@ -567,37 +709,48 @@ export function isBloodPressureInputDisabled(
 
 /**
  * 将指定日 fillSlots 压成单日网格行（仅供底部「前一日统计」跨窗 peek，不参与表头列）。
- * 同图表槽多条时保留较晚时分（与后端 resolveLatestHeaderInChartSlot 一致）。
+ * 同图表槽按 item_code 合并，与网格读侧一致；不改录入抽屉逐条回显。
  */
 export function buildTemperatureSheetPeekGridRowFromFillSlots(
   recordDate: string,
   fillSlots: TemperatureSheetFillSlotDto[] | null | undefined,
 ): TemperatureSheetGridRowDto {
-  const slotCells: TemperatureSheetGridSlotCellDto[] = TEMPERATURE_SHEET_TIME_SLOTS.map(
-    (timeSlot) => ({
-      timeSlot,
-      detailItems: [],
-    }),
+  const states = createTemperatureSheetSlotMergeStates();
+  const orderedSlots = [...(fillSlots ?? [])].sort((left, right) =>
+    normalizeTemperatureSheetRecordTime(left.timeSlot).localeCompare(
+      normalizeTemperatureSheetRecordTime(right.timeSlot),
+    ),
   );
-  const slotMap = new Map(slotCells.map((cell) => [cell.timeSlot, cell]));
-  const latestHmBySlot = new Map<TemperatureSheetTimeSlot, string>();
 
-  // 按实际时分就近归入图表槽；同槽取较晚 HH:mm 覆盖
-  for (const slot of fillSlots ?? []) {
+  // 按实际时分就近归入图表槽；同槽按 item_code 合并，较晚有值项覆盖同码
+  for (const slot of orderedSlots) {
     const recordTime = normalizeTemperatureSheetRecordTime(slot.timeSlot);
     const chartSlot = resolveTemperatureSheetChartTimeSlotFromHm(recordTime);
-    const target = slotMap.get(chartSlot);
-    if (!target) {
+    const state = states.get(chartSlot);
+    if (!state) {
       continue;
     }
-    const previousHm = latestHmBySlot.get(chartSlot);
-    if (previousHm && previousHm.localeCompare(recordTime) > 0) {
-      continue;
-    }
-    latestHmBySlot.set(chartSlot, recordTime);
-    target.vitalSignId = slot.vitalSignId?.trim() || undefined;
-    target.detailItems = slot.detailItems ?? [];
+    absorbTemperatureSheetSlotSource(
+      state,
+      slot.detailItems,
+      recordTime,
+      slot.vitalSignId?.trim() || undefined,
+    );
   }
+
+  const slotCells: TemperatureSheetGridSlotCellDto[] = TEMPERATURE_SHEET_TIME_SLOTS.map(
+    (timeSlot) => {
+      const state = states.get(timeSlot);
+      const identity = state
+        ? resolveTemperatureSheetMergedSlotIdentity(state)
+        : { recordTime: undefined, vitalSignId: undefined };
+      return {
+        timeSlot,
+        detailItems: state?.detailItems ?? [],
+        vitalSignId: identity.vitalSignId,
+      };
+    },
+  );
 
   return {
     recordDate: recordDate.trim(),

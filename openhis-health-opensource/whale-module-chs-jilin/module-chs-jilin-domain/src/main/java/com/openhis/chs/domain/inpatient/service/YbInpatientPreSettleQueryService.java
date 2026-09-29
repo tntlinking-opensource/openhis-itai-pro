@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -69,5 +70,20 @@ public class YbInpatientPreSettleQueryService {
         return inpatientPreSettleRepository
             .findFirstByPaymentDraftIdAndStatusAndTenantIdAndIsDeletedFalseOrderByCreatedAtDesc(
                 paymentDraftId, YbInpatientPreSettle.STATUS_SETTLED, tenantId);
+    }
+
+    /**
+     * 按就诊 ID 集合批量查询预结算快照（按创建时间降序）。
+     *
+     * @param encounterIds 就诊 ID 集合
+     * @param tenantId     租户 ID
+     * @return 预结算快照列表；参数无效时返回空列表
+     */
+    public List<YbInpatientPreSettle> listByEncounterIds(Collection<Long> encounterIds, Long tenantId) {
+        if (encounterIds == null || encounterIds.isEmpty() || tenantId == null) {
+            return Collections.emptyList();
+        }
+        return inpatientPreSettleRepository
+            .findAllByEncounterIdInAndTenantIdAndIsDeletedFalseOrderByCreatedAtDesc(encounterIds, tenantId);
     }
 }

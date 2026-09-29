@@ -5,12 +5,15 @@
 package com.openhis.health.application.finance.priceadjustment.service;
 
 import com.openhis.health.application.finance.priceadjustment.dto.AdjustableItemRowDto;
+import com.openhis.health.application.finance.priceadjustment.dto.FreshUnsignedDraftTipDto;
 import com.openhis.health.application.finance.priceadjustment.dto.InTransitCheckDto;
 import com.openhis.health.application.finance.priceadjustment.dto.LockPreviewRowDto;
 import com.openhis.health.application.finance.priceadjustment.dto.PriceAdjustmentDocumentListRowDto;
 import com.openhis.health.application.finance.priceadjustment.mapper.PriceAdjustmentMapper;
 import com.openhis.health.application.finance.priceadjustment.support.PriceAdjustmentDraftPricingAssembler;
 import com.openhis.health.application.finance.priceadjustment.support.PriceAdjustmentLogisticsDetailLocationExpandSupport;
+import com.openhis.health.application.finance.priceadjustment.support.PriceAdjustmentUnsignedDraftPolicySupport;
+import com.openhis.health.domain.share.constants.CustomConstants;
 import com.openhis.health.application.finance.priceadjustment.request.ApprovePriceAdjustmentRequest;
 import com.openhis.health.application.finance.priceadjustment.request.CheckInTransitForSubmitRequest;
 import com.openhis.health.application.finance.priceadjustment.request.ExistsPendingByItemRequest;
@@ -118,7 +121,7 @@ public class PriceAdjustmentAppService {
     /** 会话操作科室解析（制单机构 org_id、列表收窄、医疗服务选品）。 */
     private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
 
-    /** 财务审批 Gate（approve/reject 须持有用户管理分配的 ROLE_FINANCE_APPROVER）。 */
+    /** 财务审批 Gate（approve/reject 须持有用户管理分配的 ROLE_ACCOUNTANT）。 */
     private final FinanceApprovalRoleGate financeApprovalRoleGate;
 
     /** 分页窗口 Gate（列表/选品 IF）。 */
@@ -156,6 +159,9 @@ public class PriceAdjustmentAppService {
 
     /** 提交前在途预检。 */
     private final PriceAdjustmentInTransitChecker inTransitChecker;
+
+    /** 未签发草稿 48h 策略（过期静默废弃 / 新鲜提示）。 */
+    private final PriceAdjustmentUnsignedDraftPolicySupport unsignedDraftPolicySupport;
 
     /** 提交锁预览加载。 */
     private final PriceAdjustmentLockPreviewLoader lockPreviewLoader;
@@ -388,10 +394,22 @@ public class PriceAdjustmentAppService {
         if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "调价单号不能为空");
         }
-        // Pre：querysupport 在途互斥检查
-        PriceAdjustmentInTransitCheckDto checkResult =
-            this.inTransitChecker.checkByBusNo(request.getBusNo().trim());
+        String busNo = request.getBusNo().trim();
+        // Pre：硬在途预检
+        PriceAdjustmentInTransitCheckDto checkResult = this.inTransitChecker.checkByBusNo(busNo);
         InTransitCheckDto check = this.priceAdjustmentMapper.toInTransitCheckDto(checkResult);
+        // 业务分支：硬在途已阻断则直接返回
+        if (checkResult.isBlocked()) {
+            return this.priceAdjustmentMapper.toCheckInTransitForSubmitResponse(check);
+        }
+        // Pre：48h 内未签发草稿提示（不自动废弃）
+        List<FreshUnsignedDraftTipDto> freshTips = this.unsignedDraftPolicySupport.listFreshTipsByBusNo(busNo);
+        if (!freshTips.isEmpty()) {
+            check.setBlocked(Boolean.TRUE);
+            check.setReasonCode(CustomConstants.PriceAdjustment.IN_TRANSIT_REASON_FRESH_UNSIGNED_DRAFT);
+            check.setReasonMessage(this.unsignedDraftPolicySupport.buildFreshDraftBlockMessage(freshTips));
+            check.setFreshUnsignedDraftTips(freshTips);
+        }
         // Asm：映射在途预检响应
         return this.priceAdjustmentMapper.toCheckInTransitForSubmitResponse(check);
     }
@@ -401,7 +419,7 @@ public class PriceAdjustmentAppService {
      *
      * @param request 整单主从表
      * @return 调价单号与 draft 状态
-     * @throws BusinessException 操作人无法解析、会话操作科室缺失或领域校验失败时
+     * @throws BusinessException 操作人无法解析、会话操作科室缺失、48h 内草稿或领域校验失败时
      */
     public SavePriceAdjustmentDraftResponse saveDraft(SavePriceAdjustmentDraftRequest request) {
         // Gate：请求体非空
@@ -419,6 +437,8 @@ public class PriceAdjustmentAppService {
         );
         SavePriceAdjustmentDraftCommand command =
             this.priceAdjustmentMapper.toSavePriceAdjustmentDraftCommand(request, operatorId, orgId);
+        // Gate：物流单先按本单项目处理未签发草稿（>48h 静默废弃；≤48h 提示阻断）
+        this.applyUnsignedDraftPolicyForSaveCommand(command, operatorId);
         // Pre：调前价由读侧定价回填，目标价仅刻度（禁止信任请求体 old*）
         this.draftPricingSupport.applyAuthoritativeDraftPricing(command);
         // Pre：物流批号按当前可用库存拆成库房+批号行（无库存则 loc 空）；不改盈亏公式
@@ -456,15 +476,8 @@ public class PriceAdjustmentAppService {
         boolean logistics = this.isLogisticsDocument(document);
         int lockedInventoryCount = 0;
         if (logistics) {
-            // Gate：在途预检须通过（BR-PRC-SUB-003）
-            PriceAdjustmentInTransitCheckDto inTransit = this.inTransitChecker.checkByBusNo(busNo);
-            if (inTransit.isBlocked()) {
-                String message = inTransit.getReasonMessage();
-                if (StringUtils.isEmpty(message)) {
-                    message = "存在在途医嘱/发药，无法提交调价";
-                }
-                throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_ITEM_IN_TRANSIT, message);
-            }
+            // Gate：未签发草稿策略 + 硬在途预检（BR-PRC-SUB-003 / SUB-003a）
+            this.assertLogisticsInTransitClearForSubmit(busNo, submitterId);
             // Cmd：逐库存行加锁（遇冲突整单失败回滚）
             lockedInventoryCount = this.lockInventoriesForSubmit(busNo, submitterId);
         }
@@ -679,11 +692,86 @@ public class PriceAdjustmentAppService {
     }
 
     /**
-     * 物流提交：按锁预览逐条加锁并统计锁定行数。
+     * Gate：物流提交前未签发草稿策略 + 硬在途互斥（BR-PRC-SUB-003 / SUB-003a）。
      *
-     * @param busNo       调价单号
-     * @param operatorId  操作人
-     * @return 本次新加锁行数
+     * <p>先静默废弃本单项目上超过 48h 的未签发草稿；若仍有 48h 内草稿则阻断并提示开立医生/患者/项目名；
+     * 再查硬在途（已签发/发放）。</p>
+     *
+     * @param busNo      调价单号
+     * @param operatorId 提交人
+     */
+    private void assertLogisticsInTransitClearForSubmit(String busNo, Long operatorId) {
+        // Cmd：本单物流项目上超过 48h 的未签发草稿静默废弃
+        this.unsignedDraftPolicySupport.abandonStaleByBusNo(busNo, operatorId);
+        // Gate：48h 内草稿须医生自行删除，不可确认绕过
+        List<FreshUnsignedDraftTipDto> freshTips = this.unsignedDraftPolicySupport.listFreshTipsByBusNo(busNo);
+        if (!freshTips.isEmpty()) {
+            throw new BusinessException(
+                ErrorCodeConstants.PRICE_ADJUSTMENT_ITEM_IN_TRANSIT,
+                this.unsignedDraftPolicySupport.buildFreshDraftBlockMessage(freshTips));
+        }
+        // Gate：硬在途不可绕过
+        PriceAdjustmentInTransitCheckDto inTransit = this.inTransitChecker.checkHardByBusNo(busNo);
+        if (!inTransit.isBlocked()) {
+            return;
+        }
+        String message = inTransit.getReasonMessage();
+        if (StringUtils.isEmpty(message)) {
+            message = "存在在途医嘱/发药，无法提交调价";
+        }
+        throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_ITEM_IN_TRANSIT, message);
+    }
+
+    /**
+     * Gate：保存草稿前对本单物流项目应用未签发草稿策略。
+     *
+     * @param command    保存命令
+     * @param operatorId 操作人
+     */
+    private void applyUnsignedDraftPolicyForSaveCommand(
+        SavePriceAdjustmentDraftCommand command,
+        Long operatorId
+    ) {
+        if (command == null || command.getLines() == null || command.getLines().isEmpty()) {
+            return;
+        }
+        List<PriceAdjustmentLineQueryModel> lines = new ArrayList<>();
+        for (SavePriceAdjustmentDraftCommand.Line line : command.getLines()) {
+            // 业务分支：空行跳过
+            if (line == null || line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
+                continue;
+            }
+            // 业务分支：非物流表不参与未签发草稿策略
+            if (!PriceAdjustmentItemTableSupport.isLogisticsItemTable(line.getItemTable())) {
+                continue;
+            }
+            PriceAdjustmentLineQueryModel queryLine = new PriceAdjustmentLineQueryModel();
+            queryLine.setItemTable(line.getItemTable().trim());
+            queryLine.setItemId(line.getItemId());
+            lines.add(queryLine);
+        }
+        // 业务分支：本单无物流行则跳过
+        if (lines.isEmpty()) {
+            return;
+        }
+        // Cmd：超过 48h 静默废弃
+        this.unsignedDraftPolicySupport.abandonStaleForLines(lines, operatorId);
+        // Gate：48h 内仍存在则阻断保存
+        List<FreshUnsignedDraftTipDto> freshTips = this.unsignedDraftPolicySupport.listFreshTipsForLines(lines);
+        if (freshTips.isEmpty()) {
+            return;
+        }
+        throw new BusinessException(
+            ErrorCodeConstants.PRICE_ADJUSTMENT_ITEM_IN_TRANSIT,
+            this.unsignedDraftPolicySupport.buildFreshDraftBlockMessage(freshTips));
+    }
+
+    /**
+     * 物流提交：按锁预览结果逐库存行加锁。
+     *
+     * @param busNo      调价单号
+     * @param operatorId 操作人
+     * @return 新加锁行数
      * @throws BusinessException 其它单已锁冲突时
      */
     private int lockInventoriesForSubmit(String busNo, Long operatorId) {

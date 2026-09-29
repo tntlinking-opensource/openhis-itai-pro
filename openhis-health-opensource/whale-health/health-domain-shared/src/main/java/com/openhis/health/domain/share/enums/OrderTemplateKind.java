@@ -5,7 +5,7 @@
 package com.openhis.health.domain.share.enums;
 
 /**
- * 组套模板种类（通用 / 中医 / 划价）。
+ * 组套模板种类（通用 / 中医 / 划价 / 申请单）。
  */
 public enum OrderTemplateKind implements EnumInterface {
     /**
@@ -19,7 +19,11 @@ public enum OrderTemplateKind implements EnumInterface {
     /**
      * 护士站划价组套（行仅 SERVICE/DEVICE）。
      */
-    PRICING(0L, "PRICING", "划价组套", "", 3L);
+    PRICING(0L, "PRICING", "划价组套", "", 3L),
+    /**
+     * 医生站申请单组套（行仅检查/检验/治疗诊疗项目，类别记在行 groupKey）。
+     */
+    SERVICE_APPLY(0L, "SERVICE_APPLY", "申请单组套", "", 4L);
 
     private final Long codeSystemId;
     private final String code;

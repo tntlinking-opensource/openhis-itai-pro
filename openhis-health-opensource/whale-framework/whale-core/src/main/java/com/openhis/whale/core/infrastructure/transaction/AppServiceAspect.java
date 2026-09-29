@@ -5,23 +5,32 @@
 package com.openhis.whale.core.infrastructure.transaction;
 
 import com.openhis.whale.core.application.util.StringUtils;
+import com.openhis.whale.core.infrastructure.job.SchedulableJob;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
+import org.aspectj.lang.reflect.MethodSignature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.aop.support.AopUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
 
+import java.lang.reflect.Method;
+
 /**
  * AppService事务切面（UoW 自动管理）
  * 自动为所有 AppService 方法添加读写事务。
  * 切点覆盖 com.openhis 下所有子包（whale 框架 + health 等业务模块）。
+ *
+ * <p>{@link SchedulableJob#openAppServiceTransaction()} 为 false 的定时任务方法跳过本切面外层事务，
+ * 由仓储/领域短事务提交，避免长批次中途异常污染整批。</p>
  */
 @Aspect
 @Component
@@ -36,6 +45,11 @@ public class AppServiceAspect {
     @Around("execution(* com.openhis..*AppService.*(..))")
     public Object aroundAppService(ProceedingJoinPoint joinPoint) throws Throwable {
         String methodName = joinPoint.getSignature().toShortString();
+        // Gate：定时任务显式关闭外层 UoW 时直接放行（住院滚费等长批次）
+        if (this.shouldSkipOuterTransaction(joinPoint)) {
+            logger.debug("🔵 AppServiceAspect: 跳过外层事务 method={}", methodName);
+            return joinPoint.proceed();
+        }
         logger.debug("🔵 AppServiceAspect: 开始处理方法 {}", methodName);
 
         // 使用编程式事务管理，确保事务正确开启
@@ -89,6 +103,28 @@ public class AppServiceAspect {
             }
             throw e;
         }
+    }
+
+    /**
+     * 是否跳过 AppService 外层事务（仅 {@link SchedulableJob#openAppServiceTransaction()} = false）。
+     *
+     * @param joinPoint 切点
+     * @return true 表示本方法不由本切面开启 UoW
+     */
+    private boolean shouldSkipOuterTransaction(ProceedingJoinPoint joinPoint) {
+        if (!(joinPoint.getSignature() instanceof MethodSignature methodSignature)) {
+            return false;
+        }
+        Method method = methodSignature.getMethod();
+        Object target = joinPoint.getTarget();
+        if (target != null) {
+            method = AopUtils.getMostSpecificMethod(method, target.getClass());
+        }
+        SchedulableJob marker = AnnotationUtils.findAnnotation(method, SchedulableJob.class);
+        if (marker == null) {
+            return false;
+        }
+        return !marker.openAppServiceTransaction();
     }
 
     private Throwable getRootCause(Throwable throwable) {

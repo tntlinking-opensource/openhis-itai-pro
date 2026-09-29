@@ -30,6 +30,27 @@ import {
 /** keydown 已处理删键时，跳过同一次按键的 beforeinput，避免连删两字 */
 let islandDeleteHandledByKeydown = false;
 
+/** 上屏 insertFromComposition 刚写入时，随后 insertText 再手插会变成双标点（B21） */
+let lastIslandCompositionInsert: null | { at: number; data: string } = null;
+const COMPOSITION_INSERT_DEDUP_MS = 400;
+
+/** 全角/中文标点：输入法自己上屏，beforeinput 再手插会一次出两个 */
+function isCjkPunctuationInsert(data: string): boolean {
+  return /^[\u00B7\u2010-\u2027\u3000-\u303F\uFF00-\uFFEF]+$/.test(data);
+}
+
+/** 刚组字过的上屏内容，用来挡住随后那次重复 insertText */
+function isDuplicateAfterComposition(data: string): boolean {
+  const recent = lastIslandCompositionInsert;
+  if (!recent || Date.now() - recent.at >= COMPOSITION_INSERT_DEDUP_MS) return false;
+  if (data === recent.data) return true;
+  if (recent.data !== '' && (recent.data.endsWith(data) || data.endsWith(recent.data))) {
+    return true;
+  }
+  // Chromium 上 insertFromComposition.data 常为空，随后才来一次中文标点 insertText
+  return recent.data === '' && isCjkPunctuationInsert(data);
+}
+
 export type InlineFieldNavMode =
   | 'checkbox'
   | 'contentEditable'
@@ -224,19 +245,56 @@ export function deleteIslandContentEditableChar(
 /**
  * beforeinput 普通字符（含 Shift 符号、标点）：部分环境 insertText 不更新 DOM，
  * 或随后 attrs 回写把 DOM 盖掉；统一手插并走 input 回写。
+ * 中文输入法上屏后常再来一次 insertText：原生已写入则不再手插（B21）。
  */
 export function handleIslandContentEditableBeforeInputText(
   el: HTMLElement,
   e: InputEvent,
   onCommitted: () => void,
 ): boolean {
-  if (e.isComposing) return false;
-  const t = e.inputType;
-  if (t !== 'insertText' && t !== 'insertReplacementText') return false;
+  const inputType = e.inputType;
+  if (inputType === 'insertFromComposition') {
+    lastIslandCompositionInsert = { data: e.data ?? '', at: Date.now() };
+    return false;
+  }
+  if (e.isComposing) {
+    const composingData = e.data ?? '';
+    if ((inputType === 'insertText' || inputType === 'insertReplacementText') && composingData) {
+      lastIslandCompositionInsert = { data: composingData, at: Date.now() };
+    }
+    return false;
+  }
+  if (inputType !== 'insertText' && inputType !== 'insertReplacementText') return false;
   const data = e.data;
   if (data == null || data === '') return false;
+
+  if (isDuplicateAfterComposition(data)) {
+    lastIslandCompositionInsert = null;
+    e.preventDefault();
+    e.stopPropagation();
+    onCommitted();
+    return true;
+  }
+
+  // 中文标点由 IME 直接写入；preventDefault 后再手插就是「，，」「。。」
+  if (isCjkPunctuationInsert(data)) {
+    onCommitted();
+    return true;
+  }
+
+  if (!e.cancelable) {
+    onCommitted();
+    return true;
+  }
+
+  const before = readContentEditablePlainText(el);
   e.preventDefault();
   e.stopPropagation();
+  const after = readContentEditablePlainText(el);
+  if (after.length !== before.length) {
+    onCommitted();
+    return true;
+  }
   insertPlainTextAtCaret(data);
   onCommitted();
   return true;

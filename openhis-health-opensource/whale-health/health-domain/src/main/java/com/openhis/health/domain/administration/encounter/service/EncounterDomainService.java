@@ -1363,36 +1363,46 @@ public class EncounterDomainService {
     /**
      * 撤销转科/出院过渡态（GAP-ATD-008：悲观行锁 + {@code ON_HOLD} → {@code IN_PROGRESS}）。
      *
-     * @param command 命令
+     * <p>对称于校对转科/出院进入待转科/待出院。调用方（护士取消校对、医生签退/停嘱/删草稿）须已确认
+     * 无其它已校对转科/出院残留；本方法仅校验 {@code IMP+ON_HOLD} 后回在科。
+     * 已办理出院的 {@code PENDING} 不在本方法范围。</p>
+     *
+     * @param command 含操作人及按就诊升序的撤销项（转科轨另恢复参与者）
      */
     public void revertTransferOrDischargeHold(RevertTransferOrDischargeHoldCommand command) {
         List<RevertTransferOrDischargeHoldCommand.RevertTransferOrDischargeHoldItemCommand> items =
             command.resolveItems();
         List<RevertTransferOrDischargeHoldCommand.RevertTransferOrDischargeHoldItemCommand> sortedItems =
             new ArrayList<>(items);
+        // 前置校验：按就诊 id 升序加锁，降低多就诊并发死锁概率
         sortedItems.sort(Comparator.comparing(
             RevertTransferOrDischargeHoldCommand.RevertTransferOrDischargeHoldItemCommand::getEncounterId,
             Comparator.nullsLast(Comparator.naturalOrder())));
         List<Encounter> toSave = new ArrayList<>();
         List<EncounterParticipant> participantsToSave = new ArrayList<>();
         for (RevertTransferOrDischargeHoldCommand.RevertTransferOrDischargeHoldItemCommand item : sortedItems) {
+            // 加载/组装：悲观行锁取就诊，断言住院类
             Encounter encounter = this.requireEncounterForUpdate(
                 item.getEncounterId(), EncounterClass.IMP.getCode());
             encounter.assertClass(EncounterClass.IMP.getCode());
             boolean transferHold = Boolean.TRUE.equals(item.getTransferHold());
             LocalDateTime revertedAt;
+            // 撤销时刻未传则取当前，供转科参与者恢复批次对齐
             if (item.getRevertedAt() == null) {
                 revertedAt = LocalDateTime.now();
             } else {
                 revertedAt = item.getRevertedAt();
             }
+            // 状态迁移：ON_HOLD → IN_PROGRESS；出院轨清 outWayCode
             encounter.revertHoldToInProgress(!transferHold);
             toSave.add(encounter);
+            // 转科轨：按最近收口批次恢复活动参与者
             if (transferHold) {
                 this.restoreParticipantsFromLatestCompletedBatch(
                     item.getEncounterId(), revertedAt, participantsToSave);
             }
         }
+        // 持久化：先参与者后主档，同事务提交
         if (!participantsToSave.isEmpty()) {
             participantRepository.saveAll(participantsToSave);
         }

@@ -20,7 +20,7 @@ import com.openhis.health.application.finance.cashiersettlementapproval.response
 import com.openhis.health.application.finance.cashiersettlementapproval.support.CashierSettlementApprovalDetailBodySupport;
 import com.openhis.health.application.finance.cashiersettlementapproval.support.CashierSettlementApprovalDisplayEnricher;
 import com.openhis.health.application.finance.cashiersettlementapproval.support.CashierSettlementApprovalTypeSupport;
-import com.openhis.health.application.finance.pharmacydailysettlement.support.PharmacyDailySettlementPreviewAssembler;
+import com.openhis.health.application.shared.pharmacydailysettlement.PharmacyDailySettlementPreviewAssembler;
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.application.shared.validator.PageWindowGate;

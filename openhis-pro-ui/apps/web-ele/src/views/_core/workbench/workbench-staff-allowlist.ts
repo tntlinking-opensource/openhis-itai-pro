@@ -8,6 +8,7 @@ export const WORKBENCH_STAFF_ALLOWLIST = new Set<string>([
   'InpatientDoctorStation',
   'OutpatientNurseStation',
   'InpatientNurseStation',
+  'MedicalTechWorkstation',
 
   // 收费处（门诊）
   'ChargeOpRegister',

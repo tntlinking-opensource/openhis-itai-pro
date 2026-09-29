@@ -111,6 +111,7 @@ import {
 import {
   applyWarehouseNonInboundBandKindToRow,
   canConvertDisplayQtyToSplitForBands,
+  normalizeInboundProductUnitBands,
   persistDisplayQtyAsSplitForBands,
   resolveInboundLinePersistUnitCodeForBands,
   warehouseNonInboundResolveDisplayUnitPrice,
@@ -496,7 +497,24 @@ function mapDetailLineToGrid(ln: ReturnToWarehouseDetailLineDto, rowIdx: number)
   });
   applyHydratedInventoryDetailQtyToRow(row, hydrated);
   applyInventoryRowQtyUnitList(row);
+  const bands = normalizeInboundProductUnitBands(catalog?.unitBands, catalog?.unitBandsJson);
+  if (bands.length > 0) {
+    row.unitBands = bands;
+  }
   applyWarehouseNonInboundBandKindToRow(row, String(row.selectedBandKind ?? ''), ln.price);
+  if (row.price === undefined || row.price === null) {
+    const catalogPrice = Number(
+      (catalog as { purchasePrice?: number } | null | undefined)?.purchasePrice,
+    );
+    const fromBands = warehouseNonInboundResolveDisplayUnitPrice({
+      bands: row.unitBands ?? [],
+      displayBandKind: row.selectedBandKind,
+      legacyUnitPrice: ln.price ?? (Number.isFinite(catalogPrice) ? catalogPrice : undefined),
+    });
+    if (fromBands !== undefined) {
+      row.price = fromBands;
+    }
+  }
   return row;
 }
 
@@ -1325,9 +1343,11 @@ function resolveReturnPrintExpiryDate(row: ReturnPreviewRow): string {
 
 /** 打印单价：行上已有则用，否则按当前计量带从目录价解析 */
 function resolveReturnPrintUnitPrice(row: ReturnPreviewRow): number | undefined {
-  const fromRow = Number(row.price);
-  if (Number.isFinite(fromRow)) {
-    return fromRow;
+  if (row.price !== undefined && row.price !== null && String(row.price) !== '') {
+    const fromRow = Number(row.price);
+    if (Number.isFinite(fromRow)) {
+      return fromRow;
+    }
   }
   return warehouseNonInboundResolveDisplayUnitPrice({
     bands: row.unitBands ?? [],

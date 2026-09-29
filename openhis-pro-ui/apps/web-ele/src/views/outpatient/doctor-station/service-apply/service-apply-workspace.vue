@@ -44,6 +44,7 @@ const {
   documentGroups,
   getAdviceChargeStatusTagType,
   getAdviceStatusTagType,
+  handleCopy,
   handleDelete,
   handlePrint,
   handleSign,
@@ -112,6 +113,9 @@ defineExpose({ reload });
         </ElButton>
         <ElButton type="danger" plain :loading="mutationLoading" @click="handleDelete">
           删除
+        </ElButton>
+        <ElButton type="success" plain :loading="mutationLoading" @click="handleCopy">
+          复制
         </ElButton>
         <ElButton plain :loading="printLoading" @click="handlePrint">打印申请单</ElButton>
       </div>

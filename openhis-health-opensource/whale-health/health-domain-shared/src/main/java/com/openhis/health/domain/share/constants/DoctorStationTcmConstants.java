@@ -38,9 +38,12 @@ public interface DoctorStationTcmConstants {
     /** IF-DOR-38：单行范围。 */
     String SCOPE_LINE = "LINE";
 
-    /** 租户代煎诊疗项目默认检索名称（ActivityDefinition）。 */
+    /**
+     * 代煎中药诊疗项目名称（产品内置；{@code ActivityDefinition.name} 精确匹配）。
+     *
+     * <p>见 {@link BuiltInActivityDefinitionConstants}：禁止删/改名/改类型与类目。</p>
+     */
     String DECOCTION_ACTIVITY_NAME = "代煎中药";
-
     /** IF-DOR-31 病名 source 集合。 */
     List<String> TCM_DISEASE_SOURCES = List.of(TCM_SOURCE_DISEASE);
 

@@ -1,0 +1,84 @@
+/**
+ * 医技工作站样式微调。外挂 css，不走 SFC scoped，避免院点打包丢表头色。
+ * 只收表头和队列筛选区，三栏操作保持原样。
+ */
+.mt-workstation .execute-el-table-wrap .el-table__header-wrapper th.el-table__cell {
+  background: var(--el-fill-color) !important;
+  color: var(--el-text-color-primary);
+}
+
+.mt-workstation .mt-queue-filters {
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+.mt-workstation .mt-scope-buttons {
+  display: flex;
+  width: 100%;
+}
+
+.mt-workstation .mt-scope-buttons .el-radio-button {
+  flex: 1;
+}
+
+.mt-workstation .mt-scope-buttons .el-radio-button__inner {
+  width: 100%;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.mt-workstation .mt-fee-query {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.mt-workstation .mt-fee-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+}
+
+.mt-workstation .mt-fee-query__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.mt-workstation .mt-fee-table .el-table__header-wrapper th.el-table__cell {
+  background: var(--el-fill-color) !important;
+}
+
+.mt-workstation .mt-fee-table .el-table__header-wrapper th.el-table__cell .cell {
+  white-space: nowrap;
+}
+
+.mt-workstation .mt-supply-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 320px));
+  gap: 8px;
+  align-content: start;
+}
+
+/* 医技计费表头与已选行高亮。外挂 css，避免院点打包丢掉 scoped。 */
+.mt-workstation .mt-charging-table .el-table__header-wrapper th.el-table__cell {
+  background: var(--el-fill-color) !important;
+}
+
+.mt-workstation .mt-charging-catalog-table .mt-charging-catalog-row {
+  cursor: pointer;
+}
+
+.mt-workstation .mt-charging-catalog-table .el-table__body tr.is-picked > td.el-table__cell {
+  background: var(--el-color-primary-light-9) !important;
+}
+
+.mt-workstation .mt-charging-qty {
+  width: 108px;
+}

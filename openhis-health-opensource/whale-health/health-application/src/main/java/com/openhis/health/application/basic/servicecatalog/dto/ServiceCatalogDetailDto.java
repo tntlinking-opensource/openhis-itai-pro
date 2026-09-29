@@ -167,6 +167,13 @@ public class ServiceCatalogDetailDto {
     @Schema(description = "项目最高零售价")
     private BigDecimal maximumRetailPrice;
 
+    /**
+     * 是否已绑定套餐子项（1=是，0=否；对齐 {@code children_flag} / BR-ACTDEF-006）。
+     * <p>与 {@link #children} 列表同向：有有效子项时为 1，无子项时为 0。</p>
+     */
+    @Schema(description = "是否已绑定套餐子项（1=是，0=否）")
+    private Integer childrenFlag;
+
     /** 子项。 */
     @Schema(description = "子项")
     private List<ServiceCatalogChildDto> children;

@@ -2,32 +2,23 @@ import type { FormItemOption } from '@vben-core/table-layout-ui';
 
 import type { CaseRecordStatusCode } from '#/api/mrms/types';
 
-/** 病案状态展示 */
+/** 病案状态展示（仅归档三态；质控另开） */
 export const CASE_RECORD_STATUS_OPTIONS: FormItemOption[] = [
-  { label: '草稿', value: 'draft' },
-  { label: '已提交', value: 'submitted' },
-  { label: '已接收', value: 'received' },
-  { label: '已退回', value: 'returned' },
-  { label: '质控中', value: 'qcing' },
-  { label: '已归档', value: 'archived' },
+  { label: '草稿', value: 'DRAFT' },
+  { label: '待归档审批', value: 'PENDING_ARCHIVE' },
+  { label: '已归档', value: 'ARCHIVED' },
 ];
 
 export const CASE_RECORD_STATUS_LABEL: Record<string, string> = {
-  draft: '草稿',
-  submitted: '已提交',
-  received: '已接收',
-  returned: '已退回',
-  qcing: '质控中',
-  archived: '已归档',
+  DRAFT: '草稿',
+  PENDING_ARCHIVE: '待归档审批',
+  ARCHIVED: '已归档',
 };
 
 export const CASE_RECORD_STATUS_TAG: Record<string, 'danger' | 'info' | 'success' | 'warning'> = {
-  draft: 'info',
-  submitted: 'warning',
-  received: 'success',
-  returned: 'danger',
-  qcing: 'warning',
-  archived: 'success',
+  DRAFT: 'info',
+  PENDING_ARCHIVE: 'warning',
+  ARCHIVED: 'success',
 };
 
 /** 首页诊断行类型 */
@@ -272,18 +263,22 @@ export const TRT_TYPE_OPTIONS: FormItemOption[] = [
   { label: '3.中西医', value: '3' },
 ];
 
+/** ABO：对齐医保 blotype_abo（V1.6.8），未查=9（勿用老 HIS 提示里的 6） */
 export const ABO_OPTIONS: FormItemOption[] = [
   { label: 'A', value: '1' },
   { label: 'B', value: '2' },
   { label: 'O', value: '3' },
   { label: 'AB', value: '4' },
   { label: '不详', value: '5' },
+  { label: '未查', value: '9' },
 ];
 
+/** Rh：对齐医保 blotype_rh（V1.6.8），未查=4 */
 export const RH_OPTIONS: FormItemOption[] = [
   { label: '阴', value: '1' },
   { label: '阳', value: '2' },
   { label: '不详', value: '3' },
+  { label: '未查', value: '4' },
 ];
 
 export const MEDCAS_QLT_OPTIONS: FormItemOption[] = [
@@ -292,12 +287,13 @@ export const MEDCAS_QLT_OPTIONS: FormItemOption[] = [
   { label: '丙', value: '3' },
 ];
 
-/** 医生可编辑状态 */
-export const DOCTOR_EDITABLE_STATUS: CaseRecordStatusCode[] = ['draft', 'returned'];
+/** 医生可编辑状态（仅草稿；归档后走编辑申请） */
+export const DOCTOR_EDITABLE_STATUS: CaseRecordStatusCode[] = ['DRAFT'];
 
-/** 病案室可操作状态 */
-export const RECORD_ROOM_RECEIVE_STATUS: CaseRecordStatusCode[] = ['submitted'];
-export const RECORD_ROOM_RETURN_STATUS: CaseRecordStatusCode[] = ['submitted', 'received'];
+/** @deprecated 收案流已拆出；保留空数组避免旧引用编译失败 */
+export const RECORD_ROOM_RECEIVE_STATUS: CaseRecordStatusCode[] = [];
+/** @deprecated 退回流已拆出 */
+export const RECORD_ROOM_RETURN_STATUS: CaseRecordStatusCode[] = [];
 
 /**
  * 拼病案相关页签标题（前缀-姓名-住院号，缺省段省略）。

@@ -28,6 +28,10 @@ export interface LoadInpatientPharmacyDailySettlementPageInitResponse {
   pharmacyOptions?: ApiOptionItem[];
   /** 药师岗发药人下拉 */
   practitionerOptions?: ApiOptionItem[];
+  /** 重点药类型下拉（基药/监控/集采/抗生素）；品规销售排名筛选 */
+  keyDrugTypeOptions?: ApiOptionItem[];
+  /** 药品性质下拉（麻醉/精一/精二）；品规销售排名筛选 */
+  medicinePropertyOptions?: ApiOptionItem[];
 }
 
 export interface PreviewInpatientPharmacyDailySettlementRequest {

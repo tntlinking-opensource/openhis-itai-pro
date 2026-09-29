@@ -4,6 +4,8 @@ import type { FormInstance, FormRules } from 'element-plus';
 import type { DraftLine } from './order-template-lines';
 import type { TcmTemplateDraftLine } from './order-template-tcm-lines';
 
+import type { BodyTreeOption } from '#/api/basic/body';
+import type { SpecimenDefinitionItem } from '#/api/basic/specimen-definition';
 import type {
   OrderTemplateHeaderItem,
   OrderTemplateInitResponse,
@@ -27,29 +29,43 @@ import {
   ElOption,
   ElScrollbar,
   ElSelect,
+  ElTreeSelect,
 } from 'element-plus';
 
+import { getBodyTreeApi } from '#/api/basic/body';
 import { pageFrequencyApi } from '#/api/basic/frequency';
+import { pageSpecimenDefinitionApi, SPECIMEN_STATUS_ENUM } from '#/api/basic/specimen-definition';
 import {
   changeOrderTemplateLifecycleApi,
   getOrderTemplateDetailApi,
+  ORDER_TEMPLATE_KIND_SERVICE_APPLY,
   ORDER_TEMPLATE_KIND_TCM,
   ORDER_TEMPLATE_LIFECYCLE_PUBLISH,
   saveMaintainedOrderTemplateHeaderApi,
   saveMaintainedOrderTemplateLinesApi,
+  SERVICE_APPLY_TEMPLATE_CATEGORY_EXAM,
+  SERVICE_APPLY_TEMPLATE_CATEGORY_LAB,
+  SERVICE_APPLY_TEMPLATE_CATEGORY_OPTIONS,
 } from '#/api/basic/order-template';
 import { medicationCatalogInitApi } from '#/api/core/system/catalog';
 import TcmHerbAddCard from '#/components/doctor-station/tcm-advice/components/tcm-herb-add-card.vue';
 import TcmHerbCard from '#/components/doctor-station/tcm-advice/components/tcm-herb-card.vue';
 import TcmPrescriptionSummary from '#/components/doctor-station/tcm-advice/components/tcm-prescription-summary.vue';
 import SelectTable from '#/components/select-table.vue';
+import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { calcMoneyLineTotal } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
-import { getProductSelectColumns, useOrderTemplateLines } from './order-template-lines';
+import {
+  decodeServiceApplyDetailIds,
+  getProductSelectColumns,
+  useOrderTemplateLines,
+} from './order-template-lines';
 import {
   applyTcmHerbProductToDraftLine,
   calcTcmTemplateSingleDoseAmount,
+  findDuplicateTcmHerbName,
+  findOtherTcmHerbWithSameDrug,
   mapCatalogSelectRowToAdviceProductOption,
   mapDraftLineToHerbCardItem,
   tcmTemplateProductColumns,
@@ -84,6 +100,8 @@ const formModel = reactive({
   name: '',
   defaultChineseHerbsDoseQuantity: undefined as number | undefined,
   defaultSufferingFlag: false,
+  /** 申请单组套整单类别：检查 TEST / 检验 PROOF / 治疗 TREATMENT */
+  applyCategoryCode: '',
   /** 用法 → 行 routeCode（tcm_method_code） */
   tcmRouteCode: '',
   /** 频次 → 行 frequencyId */
@@ -141,6 +159,9 @@ const headerRules = computed<FormRules>(() => {
       { required: true, message: '中药组套须填写默认付数', trigger: 'change' },
     ];
   }
+  if (formModel.templateKindEnum === ORDER_TEMPLATE_KIND_SERVICE_APPLY) {
+    rules.applyCategoryCode = [{ required: true, message: '请选择申请类型', trigger: 'change' }];
+  }
   return rules;
 });
 
@@ -186,6 +207,9 @@ const {
   getProductId,
   handleAddLine,
   handleRemoveLine,
+  applyServiceApplyCategory,
+  writeServiceApplyDetailIds,
+  isServiceApplyKind,
   handleLineSelectionChange,
   handleAssignGroup,
   handleUngroup,
@@ -225,6 +249,7 @@ const {
   methodCodeOptions: () => methodCodeOptionsRef.value,
   unitCodeOptions: () => unitCodeOptionsRef.value,
   editingLineKey: () => editingLineKey.value,
+  applyCategoryCode: () => formModel.applyCategoryCode,
 });
 
 /** 中药组套可见药材行 */
@@ -381,9 +406,22 @@ function handleTcmHerbAutofocusConsumed(clientLineKey: string) {
   }
 }
 
+/** 选药写入当前卡片；同一药品已在组套内则拒绝 */
 function handleTcmHerbProductSelect(clientLineKey: string, product: AdviceProductOption) {
   const line = findTcmDraftLine(clientLineKey);
   if (!line || isReadonly.value) {
+    return;
+  }
+  const defId =
+    preserveApiIdForRequest(product.productDefinitionId) ??
+    preserveApiIdForRequest(product.id) ??
+    '';
+  const duplicate = findOtherTcmHerbWithSameDrug(tcmVisibleLines.value, defId, clientLineKey);
+  if (duplicate) {
+    const name =
+      String(duplicate._productLabel || duplicate.productName || product.name || '').trim() ||
+      '该药品';
+    ElMessage.info(`同一组套中不允许重复药品：${name}`);
     return;
   }
   applyTcmHerbProductToDraftLine(line, product);
@@ -513,6 +551,106 @@ function lineRowClassName({ row }: { row: Record<string, unknown>; rowIndex: num
   return isLineEditing(row as unknown as DraftLine) ? 'order-template-line-row--editing' : '';
 }
 
+/** 从明细行回填整单申请类型（检查/检验/治疗存在行 groupKey） */
+function loadServiceApplyCategoryFromLines() {
+  if (!isServiceApplyKind.value) {
+    return;
+  }
+  const category = String(visibleLines.value.find((line) => line.groupKey)?.groupKey ?? '').trim();
+  const allowed = SERVICE_APPLY_TEMPLATE_CATEGORY_OPTIONS.some((item) => item.value === category);
+  formModel.applyCategoryCode = allowed ? category : '';
+}
+
+/** 检验组套选样本，检查/治疗组套选部位 */
+const isServiceApplyLab = computed(
+  () => formModel.applyCategoryCode === SERVICE_APPLY_TEMPLATE_CATEGORY_LAB,
+);
+
+interface ApplyDetailOption {
+  label: string;
+  value: string;
+}
+
+const specimenDetailOptions = ref<ApplyDetailOption[]>([]);
+const bodyDetailTree = ref<BodyTreeOption[]>([]);
+
+/** 部位树压成主键→名称，供非编辑态展示 */
+function flattenBodyDetailLabels(nodes: BodyTreeOption[], labels: Map<string, string>) {
+  for (const node of nodes) {
+    const value = String(node.value ?? '').trim();
+    const label = String(node.label ?? '').trim();
+    if (value) {
+      labels.set(value, label || value);
+    }
+    if (node.children?.length) {
+      flattenBodyDetailLabels(node.children, labels);
+    }
+  }
+}
+
+/** 部位树 value 保持字符串，避免雪花主键被转成 number */
+function mapBodyDetailTree(nodes: BodyTreeOption[]): BodyTreeOption[] {
+  return nodes
+    .map((node) => {
+      const value = String(node.value ?? '').trim();
+      const children = node.children?.length ? mapBodyDetailTree(node.children) : undefined;
+      return {
+        label: String(node.label ?? '').trim() || value,
+        value,
+        children,
+      };
+    })
+    .filter((node) => node.value);
+}
+
+/** 加载启用样本与部位树，供申请单组套行选择 */
+async function loadServiceApplyDetailOptions() {
+  if (!isServiceApplyKind.value) {
+    return;
+  }
+  const [bodyTree, specimenPage] = await Promise.all([
+    getBodyTreeApi(),
+    pageSpecimenDefinitionApi({
+      pageNo: 1,
+      pageSize: 500,
+      statusEnum: SPECIMEN_STATUS_ENUM.ACTIVE,
+    }),
+  ]);
+  bodyDetailTree.value = mapBodyDetailTree(bodyTree ?? []);
+  const specimenBody =
+    specimenPage && typeof specimenPage === 'object' && 'data' in specimenPage
+      ? specimenPage.data
+      : specimenPage;
+  const { content } = parsePagedRowsFromApiData<SpecimenDefinitionItem>(specimenBody);
+  specimenDetailOptions.value = content
+    .map((item) => {
+      const value = String(item.id ?? '').trim();
+      return { value, label: String(item.name ?? '').trim() || value };
+    })
+    .filter((item) => item.value);
+}
+
+/** 非编辑态展示已选样本或部位名称 */
+function formatApplyDetailText(row: DraftLine): string {
+  const ids = decodeServiceApplyDetailIds(row.dosageText);
+  if (ids.length === 0) {
+    return '—';
+  }
+  if (isServiceApplyLab.value) {
+    return ids
+      .map((id) => specimenDetailOptions.value.find((item) => item.value === id)?.label ?? id)
+      .join('、');
+  }
+  const labels = new Map<string, string>();
+  flattenBodyDetailLabels(bodyDetailTree.value, labels);
+  return ids.map((id) => labels.get(id) ?? id).join('、');
+}
+
+/** 整单切换申请类型，已选项目与新类别不一致时清空 */
+function handleTemplateApplyCategoryChange() {
+  applyServiceApplyCategory(formModel.applyCategoryCode);
+}
+
 /** 新增行并自动进入编辑 */
 function onAddLineClick() {
   handleAddLine();
@@ -563,6 +701,7 @@ function fillHeaderForm() {
   formModel.tcmRouteCode = '';
   formModel.tcmFrequencyId = '';
   formModel.tcmDefaultDays = 1;
+  formModel.applyCategoryCode = '';
   statusEnum.value = row.statusEnum ?? '';
 }
 
@@ -580,6 +719,7 @@ function resetHeaderForm() {
   formModel.tcmRouteCode = '';
   formModel.tcmFrequencyId = '';
   formModel.tcmDefaultDays = 1;
+  formModel.applyCategoryCode = '';
   statusEnum.value = '';
   void nextTick(() => headerFormRef.value?.clearValidate());
 }
@@ -651,6 +791,7 @@ async function loadFormData() {
       }
       await setLinesFromApi(detail.lines);
       loadTcmHeaderFieldsFromLines();
+      loadServiceApplyCategoryFromLines();
       clearLineEditing();
       selectedLineKeys.value = new Set();
       autofocusProductLineKey.value = null;
@@ -741,6 +882,14 @@ async function handleSubmit(bindingEnum?: string, objectId?: string, objectName?
   if (!(await validateHeader()) || !validateAllLines()) {
     return;
   }
+  // 中药组套保存前再拦一次重复药品，避免绕过选药拦截
+  if (isTcmKind.value) {
+    const duplicateName = findDuplicateTcmHerbName(tcmVisibleLines.value);
+    if (duplicateName) {
+      ElMessage.info(`同一组套中不允许重复药品：${duplicateName}`);
+      return;
+    }
+  }
   syncTcmHeaderFieldsToLines();
 
   const headerPayload: SaveOrderTemplateHeaderParams = {
@@ -802,6 +951,7 @@ watch(
     preserveApiIdForRequest(props.formData?.orderTemplateId),
     props.templateKindEnum,
     props.formData?.bindingEnum,
+    props.formData?.statusEnum,
   ],
   () => {
     void loadFormData();
@@ -811,6 +961,7 @@ watch(
 onMounted(() => {
   bindLineEditBlurListener();
   void loadFormData();
+  void loadServiceApplyDetailOptions();
 });
 
 onUnmounted(() => {
@@ -879,6 +1030,22 @@ onUnmounted(() => {
                 placeholder="保存时必填"
                 maxlength="128"
               />
+            </ElFormItem>
+            <ElFormItem v-if="isServiceApplyKind" label="申请类型" prop="applyCategoryCode">
+              <ElSelect
+                v-model="formModel.applyCategoryCode"
+                :validate-event="false"
+                placeholder="检查 / 检验 / 治疗"
+                class="w-full"
+                @change="handleTemplateApplyCategoryChange"
+              >
+                <ElOption
+                  v-for="item in SERVICE_APPLY_TEMPLATE_CATEGORY_OPTIONS"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </ElSelect>
             </ElFormItem>
             <ElFormItem label="适用场景" prop="sceneEnum">
               <ElSelect
@@ -958,7 +1125,7 @@ onUnmounted(() => {
         </ElForm>
       </section>
 
-      <section class="flex min-h-0 flex-col" :class="isEditMode ? 'order-1 flex-1' : 'order-2'">
+      <section class="flex min-h-0 flex-1 flex-col" :class="isEditMode ? 'order-1' : 'order-2'">
         <template v-if="isTcmKind">
           <p v-if="isReadonly" class="m-0 mb-2 text-sm text-[var(--el-text-color-regular)]">
             已停用的组套不可编辑。
@@ -1005,306 +1172,498 @@ onUnmounted(() => {
         </template>
 
         <template v-else>
-          <div class="mb-2 flex items-center gap-2">
-            <ElButton type="primary" :disabled="isReadonly" @click="onAddLineClick">
-              新增行
-            </ElButton>
-            <template v-if="canGroupLines">
-              <ElButton plain :disabled="isReadonly" @click="onAssignGroupClick">并组</ElButton>
-              <ElButton plain :disabled="isReadonly" @click="onUngroupClick">拆组</ElButton>
-            </template>
-          </div>
-          <p v-if="isReadonly" class="m-0 mb-2 text-sm text-[var(--el-text-color-regular)]">
-            已停用的组套不可编辑。
-          </p>
-
-          <TableLayout
-            ref="linesTableRef"
-            class="order-template-lines-table min-h-[360px] flex-1"
-            :table-data="visibleLines"
-            :loading="detailLoading || saving"
-            :total="visibleLines.length"
-            :query-params="lineQueryParams"
-            :form-items="[]"
-            :table-columns="tableColumns"
-            :show-top-query="false"
-            :show-pagination="false"
-            :row-class-name="lineRowClassName"
-            row-key="_clientKey"
-            @selection-change="handleLineSelectionChange"
-            @row-click="handleLineRowClick"
-          >
-            <template #toolbar-actions></template>
-
-            <template #lineKind="{ row }">
-              <div v-if="isLineEditing(row as DraftLine)" class="line-edit-cell">
-                <ElSelect
-                  v-model="row.lineKindEnum"
-                  :disabled="isReadonly"
-                  placeholder="类型"
-                  class="w-full"
-                  @change="handleLineKindChange(row as DraftLine)"
-                >
-                  <ElOption
-                    v-for="item in lineKindOptions"
-                    :key="item.value"
-                    :label="item.label"
-                    :value="item.value"
-                  />
-                </ElSelect>
-              </div>
-              <span v-else class="order-template-line-display-text">
-                {{ formatLineKindText(row as DraftLine) || '—' }}
+          <div class="order-template-lines-card">
+            <div class="order-template-lines-card__toolbar">
+              <ElButton type="primary" :disabled="isReadonly" @click="onAddLineClick">
+                新增行
+              </ElButton>
+              <template v-if="canGroupLines">
+                <ElButton plain :disabled="isReadonly" @click="onAssignGroupClick">并组</ElButton>
+                <ElButton plain :disabled="isReadonly" @click="onUngroupClick">拆组</ElButton>
+              </template>
+              <span v-if="isReadonly" class="text-sm text-[var(--el-text-color-regular)]">
+                已停用的组套不可编辑。
               </span>
-            </template>
+            </div>
 
-            <template #product="{ row }">
-              <div
-                class="order-template-product-cell"
-                :class="getProductGroupCellClass(row as DraftLine)"
-              >
-                <template v-if="isLineEditing(row as DraftLine)">
-                  <div class="line-edit-cell">
-                    <SelectTable
-                      :model-value="getProductId(row as DraftLine)"
-                      :selected-label="row._productLabel || row.productName || ''"
-                      :disabled="isReadonly || !row.lineKindEnum"
-                      :remote-method="(params) => searchProductPage(row as DraftLine, params)"
-                      :columns="getProductSelectColumns(row.lineKindEnum)"
-                      value-key="value"
-                      label-key="label"
-                      placeholder="搜索项目"
-                      :panel-width="720"
-                      :before-close="
-                        (item, val) => handleProductTableClose(row as DraftLine, item, String(val))
-                      "
-                      @update:model-value="(val) => handleProductIdChange(row as DraftLine, val)"
-                    />
-                  </div>
-                </template>
-                <span v-else class="order-template-line-display-text">
-                  {{ formatLineProductText(row as DraftLine) || '—' }}
-                </span>
-              </div>
-            </template>
+            <TableLayout
+              ref="linesTableRef"
+              class="order-template-lines-table"
+              table-height="100%"
+              :table-data="visibleLines"
+              :loading="detailLoading || saving"
+              :total="visibleLines.length"
+              :query-params="lineQueryParams"
+              :form-items="[]"
+              :table-columns="tableColumns"
+              :show-top-query="false"
+              :show-pagination="false"
+              :row-class-name="lineRowClassName"
+              row-key="_clientKey"
+              @selection-change="handleLineSelectionChange"
+              @row-click="handleLineRowClick"
+            >
+              <template #toolbar-actions></template>
 
-            <template #dose="{ row }">
-              <template v-if="isMedicationLineRow(row as DraftLine)">
+              <template #lineKind="{ row }">
                 <div v-if="isLineEditing(row as DraftLine)" class="line-edit-cell">
-                  <div class="dose-convert-wrap">
+                  <ElSelect
+                    v-model="row.lineKindEnum"
+                    :disabled="isReadonly"
+                    placeholder="类型"
+                    class="w-full"
+                    @change="handleLineKindChange(row as DraftLine)"
+                  >
+                    <ElOption
+                      v-for="item in lineKindOptions"
+                      :key="item.value"
+                      :label="item.label"
+                      :value="item.value"
+                    />
+                  </ElSelect>
+                </div>
+                <span v-else class="order-template-line-display-text">
+                  {{ formatLineKindText(row as DraftLine) || '—' }}
+                </span>
+              </template>
+
+              <template #product="{ row }">
+                <div
+                  class="order-template-product-cell"
+                  :class="getProductGroupCellClass(row as DraftLine)"
+                >
+                  <template v-if="isLineEditing(row as DraftLine)">
+                    <div class="line-edit-cell">
+                      <SelectTable
+                        :model-value="getProductId(row as DraftLine)"
+                        :selected-label="row._productLabel || row.productName || ''"
+                        :disabled="
+                          isReadonly ||
+                          !row.lineKindEnum ||
+                          (isServiceApplyKind && !formModel.applyCategoryCode)
+                        "
+                        :remote-method="(params) => searchProductPage(row as DraftLine, params)"
+                        :columns="getProductSelectColumns(row.lineKindEnum)"
+                        value-key="value"
+                        label-key="label"
+                        placeholder="搜索项目"
+                        :panel-width="720"
+                        :before-close="
+                          (item, val) =>
+                            handleProductTableClose(row as DraftLine, item, String(val))
+                        "
+                        @update:model-value="(val) => handleProductIdChange(row as DraftLine, val)"
+                      />
+                    </div>
+                  </template>
+                  <span v-else class="order-template-line-display-text">
+                    {{ formatLineProductText(row as DraftLine) || '—' }}
+                  </span>
+                </div>
+              </template>
+
+              <template #dose="{ row }">
+                <template v-if="isMedicationLineRow(row as DraftLine)">
+                  <div v-if="isLineEditing(row as DraftLine)" class="line-edit-cell">
+                    <div class="dose-convert-wrap">
+                      <div class="dose-num-with-unit">
+                        <ElInputNumber
+                          class="dose-qty-input"
+                          :class="
+                            getProductId(row as DraftLine)
+                              ? 'order-template-single-dose-primary'
+                              : ''
+                          "
+                          :model-value="row._singleDose ?? undefined"
+                          :disabled="isReadonly"
+                          :min="0"
+                          :precision="2"
+                          :controls="false"
+                          @update:model-value="
+                            (val) => handleLineSingleDoseChange(row as DraftLine, val)
+                          "
+                        />
+                        <span class="dose-unit-tail" :title="row._doseMainUnit || ''">{{
+                          row._doseMainUnit || '—'
+                        }}</span>
+                      </div>
+                      <span class="equals-sign">=</span>
+                      <div class="dose-num-with-unit">
+                        <ElInputNumber
+                          class="dose-qty-input"
+                          :model-value="displayMedicationDoseQty(row._doseConvertRatio)"
+                          :disabled="isReadonly"
+                          :min="0"
+                          :precision="3"
+                          :controls="false"
+                          @update:model-value="
+                            (val) => handleLineDoseConvertRatioChange(row as DraftLine, val)
+                          "
+                        />
+                        <span class="dose-unit-tail" :title="row._doseSubUnit || ''">{{
+                          row._doseSubUnit || '—'
+                        }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <span v-else class="order-template-line-display-text">
+                    {{ formatLineDoseText(row as DraftLine) }}
+                  </span>
+                </template>
+                <template v-else-if="isServiceLineRow(row as DraftLine)">
+                  <div v-if="isLineEditing(row as DraftLine)" class="line-edit-cell">
                     <div class="dose-num-with-unit">
                       <ElInputNumber
-                        class="dose-qty-input"
-                        :class="
-                          getProductId(row as DraftLine) ? 'order-template-single-dose-primary' : ''
-                        "
-                        :model-value="row._singleDose ?? undefined"
+                        v-model="row.defaultQuantity"
+                        class="dose-qty-input order-template-single-dose-primary"
                         :disabled="isReadonly"
                         :min="0"
                         :precision="2"
                         :controls="false"
-                        @update:model-value="
-                          (val) => handleLineSingleDoseChange(row as DraftLine, val)
-                        "
                       />
-                      <span class="dose-unit-tail" :title="row._doseMainUnit || ''">{{
-                        row._doseMainUnit || '—'
-                      }}</span>
+                      <span
+                        class="dose-unit-tail"
+                        :title="
+                          getPricingUnitOptions(row as DraftLine)[0]?.label ||
+                          row.defaultUnitName ||
+                          row.defaultUnitCode ||
+                          ''
+                        "
+                      >
+                        {{
+                          getPricingUnitOptions(row as DraftLine)[0]?.label ||
+                          row.defaultUnitName ||
+                          row.defaultUnitCode ||
+                          '—'
+                        }}
+                      </span>
                     </div>
-                    <span class="equals-sign">=</span>
-                    <div class="dose-num-with-unit">
+                  </div>
+                  <span v-else class="order-template-line-display-text">
+                    {{ formatLineServiceQuantityText(row as DraftLine) }}
+                  </span>
+                </template>
+                <template v-else-if="isDeviceLineRow(row as DraftLine)">
+                  <div v-if="isLineEditing(row as DraftLine)" class="line-edit-cell">
+                    <div class="total-amount-wrap device-qty-wrap">
                       <ElInputNumber
+                        v-model="row.defaultQuantity"
                         class="dose-qty-input"
-                        :model-value="displayMedicationDoseQty(row._doseConvertRatio)"
                         :disabled="isReadonly"
                         :min="0"
-                        :precision="3"
+                        :precision="2"
                         :controls="false"
-                        @update:model-value="
-                          (val) => handleLineDoseConvertRatioChange(row as DraftLine, val)
-                        "
                       />
-                      <span class="dose-unit-tail" :title="row._doseSubUnit || ''">{{
-                        row._doseSubUnit || '—'
+                      <ElSelect
+                        v-if="getPricingUnitOptions(row as DraftLine).length > 0"
+                        :model-value="row.defaultUnitCode"
+                        class="total-unit-select"
+                        disabled
+                        placeholder="单位"
+                      >
+                        <ElOption
+                          v-for="item in getPricingUnitOptions(row as DraftLine)"
+                          :key="item.value"
+                          :label="item.label"
+                          :value="item.value"
+                        />
+                      </ElSelect>
+                      <span v-else class="dose-unit-tail">{{
+                        row.defaultUnitName || row.defaultUnitCode || '—'
                       }}</span>
                     </div>
                   </div>
-                </div>
-                <span v-else class="order-template-line-display-text">
-                  {{ formatLineDoseText(row as DraftLine) }}
-                </span>
+                  <span v-else class="order-template-line-display-text">
+                    {{ formatLineDeviceQuantityText(row as DraftLine) }}
+                  </span>
+                </template>
+                <span v-else class="text-[var(--el-text-color-placeholder)]">—</span>
               </template>
-              <template v-else-if="isServiceLineRow(row as DraftLine)">
-                <div v-if="isLineEditing(row as DraftLine)" class="line-edit-cell">
-                  <div class="dose-num-with-unit">
-                    <ElInputNumber
-                      v-model="row.defaultQuantity"
-                      class="dose-qty-input order-template-single-dose-primary"
-                      :disabled="isReadonly"
-                      :min="0"
-                      :precision="2"
-                      :controls="false"
-                    />
-                    <span
-                      class="dose-unit-tail"
-                      :title="
-                        getPricingUnitOptions(row as DraftLine)[0]?.label ||
-                        row.defaultUnitName ||
-                        row.defaultUnitCode ||
-                        ''
-                      "
-                    >
-                      {{
-                        getPricingUnitOptions(row as DraftLine)[0]?.label ||
-                        row.defaultUnitName ||
-                        row.defaultUnitCode ||
-                        '—'
-                      }}
-                    </span>
-                  </div>
-                </div>
-                <span v-else class="order-template-line-display-text">
-                  {{ formatLineServiceQuantityText(row as DraftLine) }}
-                </span>
-              </template>
-              <template v-else-if="isDeviceLineRow(row as DraftLine)">
-                <div v-if="isLineEditing(row as DraftLine)" class="line-edit-cell">
-                  <div class="total-amount-wrap device-qty-wrap">
-                    <ElInputNumber
-                      v-model="row.defaultQuantity"
-                      class="dose-qty-input"
-                      :disabled="isReadonly"
-                      :min="0"
-                      :precision="2"
-                      :controls="false"
-                    />
+
+              <template #routeCode="{ row }">
+                <template v-if="isMedicationLineRow(row as DraftLine)">
+                  <div
+                    v-if="isLineEditing(row as DraftLine) && isGroupLeaderRow(row as DraftLine)"
+                    class="line-edit-cell"
+                  >
                     <ElSelect
-                      v-if="getPricingUnitOptions(row as DraftLine).length > 0"
-                      :model-value="row.defaultUnitCode"
-                      class="total-unit-select"
-                      disabled
-                      placeholder="单位"
+                      v-model="row.routeCode"
+                      :disabled="isReadonly"
+                      filterable
+                      clearable
+                      placeholder="用法"
+                      class="w-full"
+                      @change="onGroupSharedFieldChange(row as DraftLine)"
                     >
                       <ElOption
-                        v-for="item in getPricingUnitOptions(row as DraftLine)"
+                        v-for="item in methodCodeOptionsRef"
                         :key="item.value"
                         :label="item.label"
                         :value="item.value"
                       />
                     </ElSelect>
-                    <span v-else class="dose-unit-tail">{{
-                      row.defaultUnitName || row.defaultUnitCode || '—'
-                    }}</span>
                   </div>
-                </div>
-                <span v-else class="order-template-line-display-text">
-                  {{ formatLineDeviceQuantityText(row as DraftLine) }}
-                </span>
-              </template>
-              <span v-else class="text-[var(--el-text-color-placeholder)]">—</span>
-            </template>
-
-            <template #routeCode="{ row }">
-              <template v-if="isMedicationLineRow(row as DraftLine)">
-                <div
-                  v-if="isLineEditing(row as DraftLine) && isGroupLeaderRow(row as DraftLine)"
-                  class="line-edit-cell"
-                >
-                  <ElSelect
-                    v-model="row.routeCode"
-                    :disabled="isReadonly"
-                    filterable
-                    clearable
-                    placeholder="用法"
-                    class="w-full"
-                    @change="onGroupSharedFieldChange(row as DraftLine)"
-                  >
-                    <ElOption
-                      v-for="item in methodCodeOptionsRef"
-                      :key="item.value"
-                      :label="item.label"
-                      :value="item.value"
+                  <span v-else class="order-template-line-display-text">
+                    {{ formatLineRouteText(row as DraftLine) }}
+                  </span>
+                </template>
+                <template v-else-if="isServiceLineRow(row as DraftLine)">
+                  <div v-if="isLineEditing(row as DraftLine)" class="line-edit-cell">
+                    <ElInputNumber
+                      v-model="row.defaultDays"
+                      :disabled="isReadonly"
+                      :min="1"
+                      :precision="0"
+                      :controls="false"
+                      class="!w-full"
                     />
-                  </ElSelect>
-                </div>
-                <span v-else class="order-template-line-display-text">
-                  {{ formatLineRouteText(row as DraftLine) }}
-                </span>
+                  </div>
+                  <span v-else class="order-template-line-display-text">
+                    {{ formatLineServiceExecutionCountText(row as DraftLine) }}
+                  </span>
+                </template>
+                <span v-else class="text-[var(--el-text-color-placeholder)]">—</span>
               </template>
-              <template v-else-if="isServiceLineRow(row as DraftLine)">
-                <div v-if="isLineEditing(row as DraftLine)" class="line-edit-cell">
-                  <ElInputNumber
-                    v-model="row.defaultDays"
-                    :disabled="isReadonly"
-                    :min="1"
-                    :precision="0"
-                    :controls="false"
-                    class="!w-full"
-                  />
-                </div>
-                <span v-else class="order-template-line-display-text">
-                  {{ formatLineServiceExecutionCountText(row as DraftLine) }}
-                </span>
-              </template>
-              <span v-else class="text-[var(--el-text-color-placeholder)]">—</span>
-            </template>
 
-            <template #frequencyId="{ row }">
-              <template v-if="isMedicationLineRow(row as DraftLine)">
-                <div
-                  v-if="isLineEditing(row as DraftLine) && isGroupLeaderRow(row as DraftLine)"
-                  class="line-edit-cell"
-                >
+              <template #frequencyId="{ row }">
+                <template v-if="isMedicationLineRow(row as DraftLine)">
+                  <div
+                    v-if="isLineEditing(row as DraftLine) && isGroupLeaderRow(row as DraftLine)"
+                    class="line-edit-cell"
+                  >
+                    <ElSelect
+                      :model-value="preserveApiIdForRequest(row.frequencyId) || ''"
+                      :disabled="isReadonly"
+                      filterable
+                      clearable
+                      placeholder="频次"
+                      class="w-full"
+                      @update:model-value="
+                        (val) => handleLineFrequencyChange(row as DraftLine, String(val || ''))
+                      "
+                    >
+                      <ElOption
+                        v-for="item in frequencyOptionsRef"
+                        :key="item.value"
+                        :label="item.label"
+                        :value="item.value"
+                      />
+                    </ElSelect>
+                  </div>
+                  <span v-else class="order-template-line-display-text">
+                    {{ formatLineFrequencyText(row as DraftLine) }}
+                  </span>
+                </template>
+                <span v-else class="text-[var(--el-text-color-placeholder)]">—</span>
+              </template>
+
+              <template #defaultDays="{ row }">
+                <template v-if="isMedicationLineRow(row as DraftLine)">
+                  <div
+                    v-if="isLineEditing(row as DraftLine) && isGroupLeaderRow(row as DraftLine)"
+                    class="line-edit-cell"
+                  >
+                    <ElInputNumber
+                      v-model="row.defaultDays"
+                      :disabled="isReadonly"
+                      :min="1"
+                      :controls="false"
+                      class="!w-full"
+                      @change="onGroupSharedFieldChange(row as DraftLine)"
+                    />
+                  </div>
+                  <span v-else class="order-template-line-display-text">
+                    {{ formatLineDaysText(row as DraftLine) }}
+                  </span>
+                </template>
+                <span v-else class="text-[var(--el-text-color-placeholder)]">—</span>
+              </template>
+
+              <template #totalAmount="{ row }">
+                <template v-if="isMedicationLineRow(row as DraftLine)">
+                  <div v-if="isLineEditing(row as DraftLine)" class="line-edit-cell">
+                    <div class="total-amount-wrap">
+                      <ElInputNumber
+                        v-model="row.defaultQuantity"
+                        class="dose-qty-input"
+                        :disabled="isReadonly"
+                        :min="0"
+                        :precision="2"
+                        :controls="false"
+                      />
+                      <ElSelect
+                        :model-value="row.defaultUnitCode"
+                        class="total-unit-select"
+                        :disabled="isReadonly || getTotalUnitOptions(row as DraftLine).length === 0"
+                        placeholder="单位"
+                        @update:model-value="
+                          (val) => handleLineTotalUnitCodeChange(row as DraftLine, val)
+                        "
+                      >
+                        <ElOption
+                          v-for="item in getTotalUnitOptions(row as DraftLine)"
+                          :key="item.value"
+                          :label="item.label"
+                          :value="item.value"
+                        />
+                      </ElSelect>
+                    </div>
+                  </div>
+                  <span v-else class="order-template-line-display-text">
+                    {{ formatLineTotalText(row as DraftLine) }}
+                  </span>
+                </template>
+                <span v-else class="text-[var(--el-text-color-placeholder)]">—</span>
+              </template>
+
+              <template #applyDetail="{ row }">
+                <div v-if="isLineEditing(row as DraftLine)" class="line-edit-cell">
                   <ElSelect
-                    :model-value="preserveApiIdForRequest(row.frequencyId) || ''"
-                    :disabled="isReadonly"
+                    v-if="isServiceApplyLab"
+                    :model-value="decodeServiceApplyDetailIds((row as DraftLine).dosageText)"
+                    multiple
+                    collapse-tags
+                    collapse-tags-tooltip
                     filterable
                     clearable
-                    placeholder="频次"
                     class="w-full"
+                    :disabled="isReadonly || !formModel.applyCategoryCode"
+                    placeholder="选填样本"
                     @update:model-value="
-                      (val) => handleLineFrequencyChange(row as DraftLine, String(val || ''))
+                      (ids: string[]) => writeServiceApplyDetailIds(row as DraftLine, ids)
                     "
                   >
                     <ElOption
-                      v-for="item in frequencyOptionsRef"
+                      v-for="item in specimenDetailOptions"
                       :key="item.value"
                       :label="item.label"
                       :value="item.value"
                     />
                   </ElSelect>
-                </div>
-                <span v-else class="order-template-line-display-text">
-                  {{ formatLineFrequencyText(row as DraftLine) }}
-                </span>
-              </template>
-              <span v-else class="text-[var(--el-text-color-placeholder)]">—</span>
-            </template>
-
-            <template #defaultDays="{ row }">
-              <template v-if="isMedicationLineRow(row as DraftLine)">
-                <div
-                  v-if="isLineEditing(row as DraftLine) && isGroupLeaderRow(row as DraftLine)"
-                  class="line-edit-cell"
-                >
-                  <ElInputNumber
-                    v-model="row.defaultDays"
-                    :disabled="isReadonly"
-                    :min="1"
-                    :controls="false"
-                    class="!w-full"
-                    @change="onGroupSharedFieldChange(row as DraftLine)"
+                  <ElTreeSelect
+                    v-else
+                    :model-value="decodeServiceApplyDetailIds((row as DraftLine).dosageText)"
+                    multiple
+                    collapse-tags
+                    collapse-tags-tooltip
+                    filterable
+                    check-strictly
+                    clearable
+                    class="w-full"
+                    :data="bodyDetailTree"
+                    :props="{ value: 'value', label: 'label', children: 'children' }"
+                    node-key="value"
+                    :disabled="isReadonly || !formModel.applyCategoryCode"
+                    :placeholder="
+                      formModel.applyCategoryCode === SERVICE_APPLY_TEMPLATE_CATEGORY_EXAM
+                        ? '请选择部位'
+                        : '选填部位'
+                    "
+                    @update:model-value="
+                      (ids: string[]) => writeServiceApplyDetailIds(row as DraftLine, ids)
+                    "
                   />
                 </div>
                 <span v-else class="order-template-line-display-text">
-                  {{ formatLineDaysText(row as DraftLine) }}
+                  {{ formatApplyDetailText(row as DraftLine) }}
                 </span>
               </template>
-              <span v-else class="text-[var(--el-text-color-placeholder)]">—</span>
-            </template>
 
-            <template #totalAmount="{ row }">
-              <template v-if="isMedicationLineRow(row as DraftLine)">
+              <template #serviceQuantity="{ row }">
+                <template v-if="isServiceLineRow(row as DraftLine)">
+                  <div v-if="isLineEditing(row as DraftLine)" class="line-edit-cell">
+                    <div class="dose-num-with-unit">
+                      <ElInputNumber
+                        v-model="row.defaultQuantity"
+                        class="dose-qty-input order-template-single-dose-primary"
+                        :disabled="isReadonly"
+                        :min="0"
+                        :precision="2"
+                        :controls="false"
+                      />
+                      <span
+                        class="dose-unit-tail"
+                        :title="
+                          getPricingUnitOptions(row as DraftLine)[0]?.label ||
+                          row.defaultUnitName ||
+                          row.defaultUnitCode ||
+                          ''
+                        "
+                      >
+                        {{
+                          getPricingUnitOptions(row as DraftLine)[0]?.label ||
+                          row.defaultUnitName ||
+                          row.defaultUnitCode ||
+                          '—'
+                        }}
+                      </span>
+                    </div>
+                  </div>
+                  <span v-else class="order-template-line-display-text">
+                    {{ formatLineServiceQuantityText(row as DraftLine) }}
+                  </span>
+                </template>
+                <span v-else class="text-[var(--el-text-color-placeholder)]">—</span>
+              </template>
+
+              <template #serviceExecutionCount="{ row }">
+                <template v-if="isServiceLineRow(row as DraftLine)">
+                  <div v-if="isLineEditing(row as DraftLine)" class="line-edit-cell">
+                    <ElInputNumber
+                      v-model="row.defaultDays"
+                      :disabled="isReadonly"
+                      :min="1"
+                      :precision="0"
+                      :controls="false"
+                      class="!w-full"
+                    />
+                  </div>
+                  <span v-else class="order-template-line-display-text">
+                    {{ formatLineServiceExecutionCountText(row as DraftLine) }}
+                  </span>
+                </template>
+                <span v-else class="text-[var(--el-text-color-placeholder)]">—</span>
+              </template>
+
+              <template #deviceQuantity="{ row }">
+                <template v-if="isDeviceLineRow(row as DraftLine)">
+                  <div v-if="isLineEditing(row as DraftLine)" class="line-edit-cell">
+                    <div class="total-amount-wrap device-qty-wrap">
+                      <ElInputNumber
+                        v-model="row.defaultQuantity"
+                        class="dose-qty-input"
+                        :disabled="isReadonly"
+                        :min="0"
+                        :precision="2"
+                        :controls="false"
+                      />
+                      <ElSelect
+                        v-if="getPricingUnitOptions(row as DraftLine).length > 0"
+                        :model-value="row.defaultUnitCode"
+                        class="total-unit-select"
+                        disabled
+                        placeholder="单位"
+                      >
+                        <ElOption
+                          v-for="item in getPricingUnitOptions(row as DraftLine)"
+                          :key="item.value"
+                          :label="item.label"
+                          :value="item.value"
+                        />
+                      </ElSelect>
+                      <span v-else class="dose-unit-tail">{{
+                        row.defaultUnitName || row.defaultUnitCode || '—'
+                      }}</span>
+                    </div>
+                  </div>
+                  <span v-else class="order-template-line-display-text">
+                    {{ formatLineDeviceQuantityText(row as DraftLine) }}
+                  </span>
+                </template>
+                <span v-else class="text-[var(--el-text-color-placeholder)]">—</span>
+              </template>
+
+              <template #quantityWithUnit="{ row }">
                 <div v-if="isLineEditing(row as DraftLine)" class="line-edit-cell">
                   <div class="total-amount-wrap">
                     <ElInputNumber
@@ -1318,100 +1677,6 @@ onUnmounted(() => {
                     <ElSelect
                       :model-value="row.defaultUnitCode"
                       class="total-unit-select"
-                      :disabled="isReadonly || getTotalUnitOptions(row as DraftLine).length === 0"
-                      placeholder="单位"
-                      @update:model-value="
-                        (val) => handleLineTotalUnitCodeChange(row as DraftLine, val)
-                      "
-                    >
-                      <ElOption
-                        v-for="item in getTotalUnitOptions(row as DraftLine)"
-                        :key="item.value"
-                        :label="item.label"
-                        :value="item.value"
-                      />
-                    </ElSelect>
-                  </div>
-                </div>
-                <span v-else class="order-template-line-display-text">
-                  {{ formatLineTotalText(row as DraftLine) }}
-                </span>
-              </template>
-              <span v-else class="text-[var(--el-text-color-placeholder)]">—</span>
-            </template>
-
-            <template #serviceQuantity="{ row }">
-              <template v-if="isServiceLineRow(row as DraftLine)">
-                <div v-if="isLineEditing(row as DraftLine)" class="line-edit-cell">
-                  <div class="dose-num-with-unit">
-                    <ElInputNumber
-                      v-model="row.defaultQuantity"
-                      class="dose-qty-input order-template-single-dose-primary"
-                      :disabled="isReadonly"
-                      :min="0"
-                      :precision="2"
-                      :controls="false"
-                    />
-                    <span
-                      class="dose-unit-tail"
-                      :title="
-                        getPricingUnitOptions(row as DraftLine)[0]?.label ||
-                        row.defaultUnitName ||
-                        row.defaultUnitCode ||
-                        ''
-                      "
-                    >
-                      {{
-                        getPricingUnitOptions(row as DraftLine)[0]?.label ||
-                        row.defaultUnitName ||
-                        row.defaultUnitCode ||
-                        '—'
-                      }}
-                    </span>
-                  </div>
-                </div>
-                <span v-else class="order-template-line-display-text">
-                  {{ formatLineServiceQuantityText(row as DraftLine) }}
-                </span>
-              </template>
-              <span v-else class="text-[var(--el-text-color-placeholder)]">—</span>
-            </template>
-
-            <template #serviceExecutionCount="{ row }">
-              <template v-if="isServiceLineRow(row as DraftLine)">
-                <div v-if="isLineEditing(row as DraftLine)" class="line-edit-cell">
-                  <ElInputNumber
-                    v-model="row.defaultDays"
-                    :disabled="isReadonly"
-                    :min="1"
-                    :precision="0"
-                    :controls="false"
-                    class="!w-full"
-                  />
-                </div>
-                <span v-else class="order-template-line-display-text">
-                  {{ formatLineServiceExecutionCountText(row as DraftLine) }}
-                </span>
-              </template>
-              <span v-else class="text-[var(--el-text-color-placeholder)]">—</span>
-            </template>
-
-            <template #deviceQuantity="{ row }">
-              <template v-if="isDeviceLineRow(row as DraftLine)">
-                <div v-if="isLineEditing(row as DraftLine)" class="line-edit-cell">
-                  <div class="total-amount-wrap device-qty-wrap">
-                    <ElInputNumber
-                      v-model="row.defaultQuantity"
-                      class="dose-qty-input"
-                      :disabled="isReadonly"
-                      :min="0"
-                      :precision="2"
-                      :controls="false"
-                    />
-                    <ElSelect
-                      v-if="getPricingUnitOptions(row as DraftLine).length > 0"
-                      :model-value="row.defaultUnitCode"
-                      class="total-unit-select"
                       disabled
                       placeholder="单位"
                     >
@@ -1422,60 +1687,25 @@ onUnmounted(() => {
                         :value="item.value"
                       />
                     </ElSelect>
-                    <span v-else class="dose-unit-tail">{{
-                      row.defaultUnitName || row.defaultUnitCode || '—'
-                    }}</span>
                   </div>
                 </div>
                 <span v-else class="order-template-line-display-text">
-                  {{ formatLineDeviceQuantityText(row as DraftLine) }}
+                  {{ formatLinePricingQuantityText(row as DraftLine) }}
                 </span>
               </template>
-              <span v-else class="text-[var(--el-text-color-placeholder)]">—</span>
-            </template>
 
-            <template #quantityWithUnit="{ row }">
-              <div v-if="isLineEditing(row as DraftLine)" class="line-edit-cell">
-                <div class="total-amount-wrap">
-                  <ElInputNumber
-                    v-model="row.defaultQuantity"
-                    class="dose-qty-input"
-                    :disabled="isReadonly"
-                    :min="0"
-                    :precision="2"
-                    :controls="false"
-                  />
-                  <ElSelect
-                    :model-value="row.defaultUnitCode"
-                    class="total-unit-select"
-                    disabled
-                    placeholder="单位"
-                  >
-                    <ElOption
-                      v-for="item in getPricingUnitOptions(row as DraftLine)"
-                      :key="item.value"
-                      :label="item.label"
-                      :value="item.value"
-                    />
-                  </ElSelect>
-                </div>
-              </div>
-              <span v-else class="order-template-line-display-text">
-                {{ formatLinePricingQuantityText(row as DraftLine) }}
-              </span>
-            </template>
-
-            <template #actions="{ row }">
-              <ElButton
-                link
-                type="danger"
-                :disabled="isReadonly"
-                @click="handleRemoveLine(row as DraftLine)"
-              >
-                删除
-              </ElButton>
-            </template>
-          </TableLayout>
+              <template #actions="{ row }">
+                <ElButton
+                  link
+                  type="danger"
+                  :disabled="isReadonly"
+                  @click="handleRemoveLine(row as DraftLine)"
+                >
+                  删除
+                </ElButton>
+              </template>
+            </TableLayout>
+          </div>
         </template>
       </section>
     </div>
@@ -1517,8 +1747,36 @@ onUnmounted(() => {
   min-height: 0;
 }
 
-.order-template-lines-table {
+.order-template-lines-card {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-blank);
+}
+
+.order-template-lines-card__toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-light);
+}
+
+.order-template-lines-table {
+  flex: 1 1 auto;
+  height: 0;
+  min-height: 0;
+}
+
+.order-template-lines-table :deep(> div) {
+  height: 100%;
+  padding: 0;
 }
 
 .order-template-lines-table :deep(.vxe-grid),

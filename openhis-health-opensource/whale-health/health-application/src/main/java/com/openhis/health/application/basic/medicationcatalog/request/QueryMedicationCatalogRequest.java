@@ -25,9 +25,16 @@ public class QueryMedicationCatalogRequest extends AbstractHealthPageRequest {
     private String categoryCode;
 
     /**
-     * 重点药类型筛选（{@link com.openhis.health.domain.share.enums.KeyDrugType#getCode()}）；空/{@code null} 表示不限，非空时筛对应标识为 true 的药品。
+     * 重点药类型筛选（{@link com.openhis.health.domain.share.enums.KeyDrugType#getCode()}）；
+     * 仅认基药/监控/集采/抗生素；空/{@code null} 表示不限。麻/精见 {@link #medicinePropertyCode}。
      */
     private String keyDrugType;
+
+    /**
+     * 药品性质筛选（KeyDrugType：NARCOTIC/PSYCH_ONE/PSYCH_TWO）；空/{@code null} 表示不限。
+     * 与 {@link #keyDrugType} 同时非空时按 AND 收窄。
+     */
+    private String medicinePropertyCode;
 
     /**
      * 发布状态筛选（{@code ACTIVE} 已启用 / {@code INACTIVE} 已停用）；空/{@code null} 表示不限。

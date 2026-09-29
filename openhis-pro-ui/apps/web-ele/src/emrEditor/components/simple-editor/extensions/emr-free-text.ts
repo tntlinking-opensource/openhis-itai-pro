@@ -3,6 +3,7 @@ import { VueNodeViewRenderer } from '@tiptap/vue-3';
 
 import { buildFillableNodeInsertJson } from '../emr-fillable-json';
 import { fillableNodeExtraClass } from '../node-views/fillable-field-view.shared';
+import { keepVueNodeViewIfEq } from '../node-views/keep-vue-node-view-if-eq';
 import { fillableCaretAfterInsertCommand } from '../../../fillable-field/runtime/caret-policy';
 import EmrFillableFieldView from '../node-views/EmrFillableFieldView.vue';
 
@@ -81,7 +82,7 @@ export const EmrFreeText = Node.create({
   },
 
   addNodeView() {
-    return VueNodeViewRenderer(EmrFillableFieldView);
+    return VueNodeViewRenderer(EmrFillableFieldView, { update: keepVueNodeViewIfEq });
   },
 
   addCommands() {

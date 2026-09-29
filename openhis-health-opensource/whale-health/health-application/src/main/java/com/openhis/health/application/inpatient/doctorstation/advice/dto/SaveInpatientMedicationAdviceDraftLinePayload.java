@@ -28,7 +28,7 @@ public class SaveInpatientMedicationAdviceDraftLinePayload {
     @Schema(description = "药品定义主键")
     private Long medicationDefinitionId;
 
-    /** 开立数量（与 {@link #unitCode} 同语义）。 */
+    /** 开立数量（与 {@link #unitCode} 同语义；有 quantitySchedule 时本列仍落库，读侧/算量按序列取段）。 */
     @Schema(description = "数量")
     private BigDecimal quantity;
 
@@ -56,7 +56,7 @@ public class SaveInpatientMedicationAdviceDraftLinePayload {
     @Schema(description = "组号")
     private Long groupId;
 
-    /** 单次用量（与 doseUnitCode 同语义，与统一列表 dose / doseUnitCode 列回显一致）。 */
+    /** 单次用量（与 doseUnitCode 同语义；有 doseSchedule 时本列仍落库，读侧按序列取段）。 */
     @Schema(description = "单次用量（药品）")
     private BigDecimal dose;
 
@@ -67,15 +67,35 @@ public class SaveInpatientMedicationAdviceDraftLinePayload {
     /**
      * 首日/首次用量（仅长期药品；可空；BR-IP-ORD-030）。
      *
-     * <p>空 = 首次执行槽仍用 {@link #quantity}；有值须 &gt;0，与 {@link #firstDoseUnitCode} 成对。
-     * 临时/出院带药不得传值（域 BR-MRQ-010）。</p>
+     * <p>落库为<strong>最小/拆零单位</strong>数量（开立 UI 按计量录入，前端换算后写入）。
+     * 空 = 首次执行槽仍用 {@link #quantity}；有值须 &gt;0，与 {@link #firstDoseUnitCode} 成对。
+     * UPDATE 清空时显式传 null（域层 {@code syncFirstDose}）。临时/出院带药不得传值（域 BR-MRQ-010）。</p>
      */
-    @Schema(description = "首日/首次用量（仅长期）")
+    @Schema(description = "首日/首次用量（仅长期；UPDATE 清空时传 null）")
     private BigDecimal firstDose;
 
-    /** 首日/首次用量单位术语编码（与 {@link #firstDose} 成对）。 */
+    /**
+     * 首日/首次用量单位术语编码（与 {@link #firstDose} 成对；须为最小/拆零单位码；清空时传 null）。
+     */
     @Schema(description = "首日用量单位编码")
     private String firstDoseUnitCode;
+
+    /**
+     * 分次剂量序列（计量、逗号分隔；仅长期西药/中成药；BR-IP-ORD-037）。
+     *
+     * <p>与 {@link #quantitySchedule} 同空或同有值；有值时段数须=频次日次数。UPDATE 清空时传 null/空串
+     * （域层 {@code syncDoseQuantitySchedule}）。临时/出院带药/中药不得传值。</p>
+     */
+    @Schema(description = "分次剂量序列（计量；仅长期西药/中成药）")
+    private String doseSchedule;
+
+    /**
+     * 分次用量序列（拆零、逗号分隔；与 {@link #doseSchedule} 同序同段数；由前端按原计量→拆零换算写出；BR-IP-ORD-037）。
+     *
+     * <p>有值时读侧/执行侧按序列取段<strong>只改正算量</strong>；开嘱写路径与相同计量共用暂存/签发/改量 IF。</p>
+     */
+    @Schema(description = "分次用量序列（拆零；与 doseSchedule 同序）")
+    private String quantitySchedule;
 
     /** 用药天数（与统一列表 dispensePerDuration 列回显一致）。 */
     @Schema(description = "用药天数")

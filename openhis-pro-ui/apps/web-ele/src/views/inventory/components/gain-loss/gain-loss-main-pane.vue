@@ -1264,7 +1264,7 @@ function resolveGainLossPrintUnitLabel(row: GainLossPreviewRow): string {
   return String(row.unitCodeDictText ?? row.unitCode ?? '').trim();
 }
 
-/** 打印或预览损益单（盘点盈亏模版；损益量写入 actualQtyText） */
+/** 打印或预览损益单（复用盘点模版；打印前裁掉账面/实盘列，仅填 diffQty/diffAmount） */
 async function handlePrint(payload?: { preview?: boolean }) {
   const busNo = String(headerBusNo.value ?? '').trim();
   if (!busNo) {
@@ -1288,18 +1288,15 @@ async function handlePrint(payload?: { preview?: boolean }) {
     queueCardRow: props.queueCardRow as null | Record<string, unknown>,
   });
 
-  // 损益量写入 actualQtyText / diffQty（无账面列）
+  // 仅填盈亏/损益字段；禁止写入 actualQty（盘点模版「实盘」），避免盈亏量被印成实盘
   const lineRows = productRows.map((row) => ({
     productName: String(row.productName ?? '').trim(),
     specText: String(row.spec ?? '').trim(),
     manufacturerText: String(row.manufacturer ?? '').trim(),
     lotNumber: String(row.lotNumber ?? '').trim(),
-    bookQtyText: '',
-    actualQty: row.gainLossQuantity,
     diffQty: row.gainLossQuantity,
     unitLabel: resolveGainLossPrintUnitLabel(row),
     unitPrice: row.price,
-    actualAmount: row.gainLossAmount,
     diffAmount: row.gainLossAmount,
     reasonText: String(row.reason ?? '').trim(),
   }));

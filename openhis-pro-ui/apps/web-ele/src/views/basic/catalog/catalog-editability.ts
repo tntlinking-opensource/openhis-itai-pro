@@ -1,9 +1,10 @@
 /** 三大目录编辑业务码，对齐后端 CatalogEditabilityConstants
  *
  * 编辑（药/材）：先 LOCK_CLINICAL（开过）再 LOCK_INVENTORY（入库）。
- * LOCK_INVENTORY：名称/分类/业务单位/拆零/价格等不可改；临床与规格段仍可改。
- * LOCK_CLINICAL：在入库锁基础上另锁药品性质/规格/剂型/剂量单位与倍数。
- * 拆分属性、医保等级、病案结算类型、追溯码单位/倍数两种锁定态均可改。
+ * LOCK_INVENTORY：名称/分类/业务单位/拆零/价格等不可改；临床段仍可改。
+ * LOCK_CLINICAL：在入库锁基础上另锁药品性质/剂型/剂量单位（不含剂量→拆零倍数、规格）。
+ * 规格 totalVolume、拆分属性、医保等级、病案结算类型、药品 doseUnitRatio、追溯码单位/倍数
+ * 两种锁定态均可改（含卖完/已开立）。
  * 追溯码贴码单位与倍数游离于五类业务单位，与发布/业务引用锁定无关。
  * 删除：任一锁定码均整单禁删（与编辑优先级无关）。
  */
@@ -21,16 +22,14 @@ export interface CatalogEditabilityDto {
   editabilityMessage?: string;
 }
 
-/** 仅医生开立（LOCK_CLINICAL）后锁定的临床与规格字段 */
+/** 仅医生开立（LOCK_CLINICAL）后锁定的临床字段（doseUnitRatio / totalVolume 始终可改，不入本集合） */
 const MEDICATION_CLINICAL_LOCKED_FIELDS = new Set([
   'pharmacologyCategoryCode',
-  'totalVolume',
   'doseFormCode',
   'doseUnitCode',
-  'doseUnitRatio',
 ]);
 
-/** 入库或开立后均锁定的结构/价格字段（不含临床与规格段） */
+/** 入库或开立后均锁定的结构/价格字段（不含临床段；规格不入本集合） */
 const MEDICATION_STRUCTURE_LOCKED_FIELDS = new Set([
   'name',
   'merchandiseName',
@@ -49,6 +48,7 @@ const MEDICATION_STRUCTURE_LOCKED_FIELDS = new Set([
   'retailPrice',
 ]);
 
+/** 耗材结构/价格锁定字段（规格 totalVolume 始终可改，不入本集合） */
 const DEVICE_STRUCTURE_LOCKED_FIELDS = new Set([
   'name',
   'merchandiseName',
@@ -57,7 +57,6 @@ const DEVICE_STRUCTURE_LOCKED_FIELDS = new Set([
   'typeCode',
   'itemTypeCode',
   'ybType',
-  'totalVolume',
   'doseUnitCode',
   'doseUnitRatio',
   'purchaseUnitCode',
@@ -117,7 +116,7 @@ export function applyCatalogEditabilityFromDetail(
   };
 }
 
-/** 是否医生开立锁定（临床与规格段） */
+/** 是否医生开立锁定（临床段：性质/剂型/剂量单位） */
 export function isCatalogClinicalLocked(editabilityCode?: string | null): boolean {
   const code = String(editabilityCode ?? CATALOG_EDITABILITY_OK)
     .trim()

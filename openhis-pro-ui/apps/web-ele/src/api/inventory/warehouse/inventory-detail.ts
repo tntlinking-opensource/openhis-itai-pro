@@ -61,8 +61,10 @@ export interface PageInventoryDetailCurrentRequest {
   warehouseIds?: string[];
   supplierIds?: string[];
   chrgitmLvList?: number[];
-  /** 重点药类型（KeyDrugType code）；仅收窄药品行 */
+  /** 重点药类型（四旗 KeyDrugType code）；仅收窄药品行 */
   keyDrugType?: string;
+  /** 药品性质（NARCOTIC/PSYCH_ONE/PSYCH_TWO）；与重点药类型分框 */
+  medicinePropertyCode?: string;
   zeroStockOnly?: boolean;
   expireWithinDays?: number;
   inventoryStatusEnums?: string[];
@@ -157,8 +159,10 @@ export interface SumInventoryDetailCurrentRequest {
   warehouseIds?: string[];
   supplierIds?: string[];
   chrgitmLvList?: number[];
-  /** 重点药类型（KeyDrugType code）；仅收窄药品行 */
+  /** 重点药类型（四旗 KeyDrugType code）；仅收窄药品行 */
   keyDrugType?: string;
+  /** 药品性质（NARCOTIC/PSYCH_ONE/PSYCH_TWO）；与重点药类型分框 */
+  medicinePropertyCode?: string;
   zeroStockOnly?: boolean;
   expireWithinDays?: number;
   inventoryStatusEnums?: string[];

@@ -13,7 +13,7 @@ declare module '@tiptap/core' {
   }
 }
 
-/** 行内可点复选框（纸质勾选：□清醒 □嗜睡）；文书固定模板下也可改 checked */
+/** 行内纸质勾选（□ / √ + 标签）；不用系统 checkbox，打印与屏幕同一套字 */
 export const EmrCheckboxField = Node.create({
   name: 'emrCheckboxField',
 

@@ -298,31 +298,23 @@
   caret-color: #111827;
 }
 
-.ProseMirror .emr-fillable-field__shell .emr-fillable-field__input:focus:empty::before,
-.ProseMirror .emr-fillable-field__shell .emr-fillable-field__input:focus-visible:empty::before {
-  content: none;
+/* 空槽点选：用 shell--active-empty 藏占位，不依赖 contenteditable :focus（atom 常抢走 :focus） */
+.ProseMirror .emr-fillable-field__shell--active-empty .emr-fillable-field__input::before,
+.ProseMirror .emr-fillable--empty.emr-fillable--active .emr-fillable-field__input::before,
+.ProseMirror .emr-fillable--empty.is-active .emr-fillable-field__input::before,
+.ProseMirror .emr-fillable--empty.ProseMirror-selectednode .emr-fillable-field__input::before,
+.ProseMirror .emr-fillable-field__shell .emr-fillable-field__input:focus::before,
+.ProseMirror .emr-fillable-field__shell .emr-fillable-field__input:focus-visible::before {
+  content: none !important;
 }
 
+.ProseMirror .emr-fillable-field__shell--active-empty .emr-fillable-field__input:empty,
+.ProseMirror .emr-fillable--empty.emr-fillable--active .emr-fillable-field__input:empty,
+.ProseMirror .emr-fillable--empty.is-active .emr-fillable-field__input:empty,
 .ProseMirror .emr-fillable-field__shell .emr-fillable-field__input:focus:empty,
 .ProseMirror .emr-fillable-field__shell .emr-fillable-field__input:focus-visible:empty {
   min-width: 1ch;
-}
-
-.ProseMirror .emr-fillable-field__shell .emr-fillable-field__input:focus:empty::after,
-.ProseMirror .emr-fillable-field__shell .emr-fillable-field__input:focus-visible:empty::after {
-  content: '';
-  display: inline-block;
-  width: 1px;
-  height: 1.05em;
-  background: #111827;
-  vertical-align: text-bottom;
-  animation: emr-fillable-caret-blink 1s step-end infinite;
-}
-
-@keyframes emr-fillable-caret-blink {
-  50% {
-    opacity: 0;
-  }
+  caret-color: #111827;
 }
 
 .ProseMirror .emr-fillable-field__shell .emr-fillable-field__readonly-text {

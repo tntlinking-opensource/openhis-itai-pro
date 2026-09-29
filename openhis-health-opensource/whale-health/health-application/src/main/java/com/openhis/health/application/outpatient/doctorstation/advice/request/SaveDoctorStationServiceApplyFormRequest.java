@@ -48,9 +48,10 @@ public class SaveDoctorStationServiceApplyFormRequest {
     private Long orgId;
 
     /**
-     * 整单执行次数（写入该单全部 {@code ServiceRequest.execution_count}）；空或非法时编排层回落为 1。
+     * 整单执行次数回落值（行未传 {@code executionCount} 时使用）；空或非法时编排层回落为 1。
+     * <p>新前端按行传执行次数后可省略；保留字段以兼容旧客户端。</p>
      */
-    @Schema(description = "整单执行次数（各明细行共用）")
+    @Schema(description = "整单执行次数回落值（行未传时使用；兼容旧客户端）")
     private Integer executionCount;
 
     /** 整单绑定就诊诊断主键有序串（写入该单全部 {@code ServiceRequest.encounter_diagnosis_ids}）。 */

@@ -47,7 +47,7 @@ public class CaseRecord extends BaseAuditedEntity {
     @Column(name = "medcasno", length = 32)
     private String medcasno;
 
-    /** 工作流状态，持久化 {@link CaseRecordStatus#getCode()}（draft/submitted/archived 等）。 */
+    /** 工作流状态，持久化 {@link CaseRecordStatus#getCode()}（仅 DRAFT/PENDING_ARCHIVE/ARCHIVED）。 */
     @Convert(converter = CaseRecordStatusConverter.class)
     @Column(name = "status_code", nullable = false, length = 32)
     private CaseRecordStatus statusEnum;
@@ -216,21 +216,78 @@ public class CaseRecord extends BaseAuditedEntity {
     }
 
     /**
-     * 断言医生可编辑首页（draft/returned）。
+     * 断言医生可编辑首页（仅 DRAFT）。
      */
     public void assertEditableByDoctor() {
-        // 仅 draft/returned 允许医生编辑首页
-        if (statusEnum != CaseRecordStatus.DRAFT && statusEnum != CaseRecordStatus.RETURNED) {
+        // 仅草稿允许医生直接编辑首页；归档后走编辑申请
+        if (statusEnum != CaseRecordStatus.DRAFT) {
             throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "当前状态不允许医生编辑首页");
         }
     }
 
     /**
+     * 提交归档审批：DRAFT → PENDING_ARCHIVE（DM-MRMS-001）。
+     *
+     * @param operatorId 提交人
+     */
+    public void submitArchive(Long operatorId) {
+        if (statusEnum != CaseRecordStatus.DRAFT) {
+            throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "仅草稿可提交归档");
+        }
+        this.statusEnum = CaseRecordStatus.PENDING_ARCHIVE;
+        this.returnReason = null;
+        this.setUpdatedAt(LocalDateTime.now());
+        this.setUpdatedBy(operatorId);
+    }
+
+    /**
+     * 归档审批同意：PENDING_ARCHIVE → ARCHIVED。
+     *
+     * @param operatorId 审批人
+     * @param qualityGradeCode 可选质量等级
+     */
+    public void approveArchive(Long operatorId, String qualityGradeCode) {
+        if (statusEnum != CaseRecordStatus.PENDING_ARCHIVE) {
+            throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "仅待归档审批可同意");
+        }
+        this.statusEnum = CaseRecordStatus.ARCHIVED;
+        applyArchiveMetadata(operatorId, qualityGradeCode);
+        this.setUpdatedAt(LocalDateTime.now());
+        this.setUpdatedBy(operatorId);
+    }
+
+    /**
+     * 归档审批驳回：PENDING_ARCHIVE → DRAFT。
+     *
+     * @param rejectReason 驳回原因
+     * @param operatorId 审批人
+     */
+    public void rejectArchive(String rejectReason, Long operatorId) {
+        if (statusEnum != CaseRecordStatus.PENDING_ARCHIVE) {
+            throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "仅待归档审批可驳回");
+        }
+        String reason = trimToNull(rejectReason);
+        if (reason == null) {
+            throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "驳回原因不能为空");
+        }
+        this.statusEnum = CaseRecordStatus.DRAFT;
+        this.returnReason = reason;
+        this.setUpdatedAt(LocalDateTime.now());
+        this.setUpdatedBy(operatorId);
+    }
+
+    /**
      * 执行状态迁移并更新审计字段。
+     *
+     * <p>主档 {@code status_code} 仅承载归档三态。质控/收案/退回/解档已拆出：
+     * {@link CaseRecordTransitionAction#RECEIVE}/{@link CaseRecordTransitionAction#RETURN}/
+     * {@link CaseRecordTransitionAction#START_QC}/{@link CaseRecordTransitionAction#UNARCHIVE} 一律拒绝。
+     * {@link CaseRecordTransitionAction#SUBMIT}→{@link CaseRecordStatus#PENDING_ARCHIVE}；
+     * {@link CaseRecordTransitionAction#ARCHIVE} 仅允许自 {@link CaseRecordStatus#PENDING_ARCHIVE}。</p>
      *
      * @param action 迁移动作
      * @param role 操作角色
-     * @param returnReason 退回原因（退回时必填）
+     * @param returnReason 退回原因（旧退回动作已禁用，忽略）
      * @param operatorId 操作人
      */
     public void applyTransition(
@@ -240,13 +297,6 @@ public class CaseRecord extends BaseAuditedEntity {
             Long operatorId) {
         assertTransitionAllowed(action, role);
         this.statusEnum = resolveTargetStatus(action);
-        // 退回/解档须落库原因字段供列表与审计展示
-        if (action == CaseRecordTransitionAction.RETURN) {
-            this.returnReason = trimToNull(returnReason);
-        }
-        if (action == CaseRecordTransitionAction.UNARCHIVE) {
-            this.unarchiveReason = trimToNull(returnReason);
-        }
         this.setUpdatedAt(LocalDateTime.now());
         this.setUpdatedBy(operatorId);
     }
@@ -278,7 +328,7 @@ public class CaseRecord extends BaseAuditedEntity {
     }
 
     /**
-     * 病案流转 Gate：按动作与角色校验当前 statusEnum 是否允许迁移。
+     * 病案流转 Gate：主档仅归档三态；质控/收案/退回/解档拒绝。
      *
      * @param action 流转动作
      * @param role   操作角色（医生/病案室等）
@@ -288,65 +338,36 @@ public class CaseRecord extends BaseAuditedEntity {
         if (statusEnum == null) {
             throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "病案状态无效");
         }
-        // 医生提交：draft/returned → submitted
+        // 质控与旧收案流已从主档拆出，禁止再经本入口改 status_code
+        if (action == CaseRecordTransitionAction.RECEIVE
+                || action == CaseRecordTransitionAction.RETURN
+                || action == CaseRecordTransitionAction.START_QC
+                || action == CaseRecordTransitionAction.UNARCHIVE) {
+            throw new BusinessException(
+                    MrmsErrorCodes.CASE_RECORD_INVALID_STATUS,
+                    "质控/收案/退回/解档已从主档归档状态拆出；归档请用提交归档与归档审批");
+        }
+        // 医生提交归档：DRAFT → PENDING_ARCHIVE
         if (action == CaseRecordTransitionAction.SUBMIT) {
             if (role != WorkflowRole.DOCTOR) {
-                throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "仅医生可提交");
+                throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "仅医生可提交归档");
             }
-            if (statusEnum != CaseRecordStatus.DRAFT && statusEnum != CaseRecordStatus.RETURNED) {
-                throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "当前状态不可提交");
-            }
-            return;
-        }
-        // 病案室接收：submitted → received
-        if (action == CaseRecordTransitionAction.RECEIVE) {
-            if (role != WorkflowRole.RECORD_ROOM) {
-                throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "仅病案室可接收");
-            }
-            if (statusEnum != CaseRecordStatus.SUBMITTED) {
-                throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "仅已提交病案可接收");
+            if (statusEnum != CaseRecordStatus.DRAFT) {
+                throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "仅草稿可提交归档");
             }
             return;
         }
-        // 病案室退回：submitted/received → returned
-        if (action == CaseRecordTransitionAction.RETURN) {
-            if (role != WorkflowRole.RECORD_ROOM) {
-                throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "仅病案室可退回");
-            }
-            if (statusEnum != CaseRecordStatus.SUBMITTED && statusEnum != CaseRecordStatus.RECEIVED) {
-                throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "当前状态不可退回");
-            }
-            return;
-        }
-        // 开始质控：received → qcing
-        if (action == CaseRecordTransitionAction.START_QC) {
-            if (role != WorkflowRole.RECORD_ROOM) {
-                throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "仅病案室可开始质控");
-            }
-            if (statusEnum != CaseRecordStatus.RECEIVED) {
-                throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "仅已接收病案可开始质控");
-            }
-            return;
-        }
-        // 归档：qcing → archived
+        // 病案室同意归档：PENDING_ARCHIVE → ARCHIVED（兼容旧 ARCHIVE 动作名）
         if (action == CaseRecordTransitionAction.ARCHIVE) {
             if (role != WorkflowRole.RECORD_ROOM) {
                 throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "仅病案室可归档");
             }
-            if (statusEnum != CaseRecordStatus.QCING) {
-                throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "仅质控中病案可归档");
+            if (statusEnum != CaseRecordStatus.PENDING_ARCHIVE) {
+                throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "仅待归档审批可归档");
             }
             return;
         }
-        // 解档：archived → received
-        if (action == CaseRecordTransitionAction.UNARCHIVE) {
-            if (role != WorkflowRole.RECORD_ROOM) {
-                throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "仅病案室可解档");
-            }
-            if (statusEnum != CaseRecordStatus.ARCHIVED) {
-                throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "仅已归档病案可解档");
-            }
-        }
+        throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "不支持的状态迁移");
     }
 
     /**
@@ -365,43 +386,27 @@ public class CaseRecord extends BaseAuditedEntity {
     }
 
     /**
-     * 解档元数据（与 {@link CaseRecordTransitionAction#UNARCHIVE} 同事务调用）。
+     * 解档元数据（解档能力已取消；保留方法供存量调用方编译，调用方须先拒绝）。
      *
      * @param reason 解档原因
      * @param operatorId 操作人
      */
     public void applyUnarchiveMetadata(String reason, Long operatorId) {
-        this.archivedAt = null;
-        this.archivedBy = null;
-        this.unarchiveReason = trimToNull(reason);
-        this.setUpdatedAt(LocalDateTime.now());
-        this.setUpdatedBy(operatorId);
+        throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "已禁止解档");
     }
 
     /**
-     * 流转动作 → 目标病案状态。
+     * 流转动作 → 目标病案归档状态。
      *
      * @param action 流转动作
      * @return 目标状态枚举
      */
     private CaseRecordStatus resolveTargetStatus(CaseRecordTransitionAction action) {
         if (action == CaseRecordTransitionAction.SUBMIT) {
-            return CaseRecordStatus.SUBMITTED;
-        }
-        if (action == CaseRecordTransitionAction.RECEIVE) {
-            return CaseRecordStatus.RECEIVED;
-        }
-        if (action == CaseRecordTransitionAction.RETURN) {
-            return CaseRecordStatus.RETURNED;
-        }
-        if (action == CaseRecordTransitionAction.START_QC) {
-            return CaseRecordStatus.QCING;
+            return CaseRecordStatus.PENDING_ARCHIVE;
         }
         if (action == CaseRecordTransitionAction.ARCHIVE) {
             return CaseRecordStatus.ARCHIVED;
-        }
-        if (action == CaseRecordTransitionAction.UNARCHIVE) {
-            return CaseRecordStatus.RECEIVED;
         }
         throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "不支持的状态迁移");
     }

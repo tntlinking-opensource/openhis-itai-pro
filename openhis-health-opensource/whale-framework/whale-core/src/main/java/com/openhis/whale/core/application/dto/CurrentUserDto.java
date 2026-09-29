@@ -113,7 +113,7 @@ public class CurrentUserDto {
     private Long organizationId;
 
     /**
-     * 是否具备财务审批登录角色（{@code whale_user_roles} 绑定 {@code ROLE_FINANCE_APPROVER}；动账类供应单与调价 approve/reject）。
+     * 是否具备财务登录角色（{@code whale_user_roles} 绑定 {@code ROLE_ACCOUNTANT}；动账类供应单与调价 approve/reject）。
      */
     private Boolean canFinanceApprove;
 

@@ -5,8 +5,8 @@
 package com.openhis.health.application.finance.cashiersettlementapproval.response;
 
 import com.openhis.health.application.finance.cashiersettlementapproval.dto.CashierSettlementApprovalHeaderDto;
-import com.openhis.health.application.finance.pharmacydailysettlement.dto.PharmacyDailySettlementCategoryRowDto;
-import com.openhis.health.application.finance.pharmacydailysettlement.dto.PharmacyDailySettlementProductRowDto;
+import com.openhis.health.application.shared.pharmacydailysettlement.PharmacyDailySettlementCategoryRowDto;
+import com.openhis.health.application.shared.pharmacydailysettlement.PharmacyDailySettlementProductRowDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;

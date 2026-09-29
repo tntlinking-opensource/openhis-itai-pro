@@ -28,14 +28,17 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 住院长嘱计划点解析（可拆频次 + 院点一盒一点 + 产品拆零下限）。
+ * 住院长嘱计划点解析（可拆频次 + 长嘱不可拆一盒一点 + 产品拆零下限）。
  *
  * <p>IF-IP-EXE-01 列表与 BR-IP-NUR-005 待执计数共用，避免两套展槽漂移。</p>
  * <ul>
- *   <li><strong>BR-IP-EXE-035</strong>（院点）：不可拆开关 + 口服 + 包装≠拆零 → 按 {@code packageUnitRatio}
- *       刚好整除切盒，回传盒首锚点</li>
+ *   <li><strong>BR-IP-EXE-035</strong>（设置 {@code inpatientStandingOrderSplittable=0}）：
+ *       长期 + 口服 + 包装≠拆零 → 按 {@code packageUnitRatio}
+ *       <strong>≥</strong> 包装拆零量 ceil 切盒（余量结转），回传盒首锚点；剂量不必整除包装比</li>
  *   <li><strong>BR-IP-EXE-036</strong>（产品默认）：单槽临床拆零 &lt; 1 → 按满 1 拆零单位切批，回传单位首槽；
  *       与 035 正交，命中 035 终态后不再叠 036</li>
+ *   <li><strong>BR-IP-EXE-040</strong>：有 {@code quantitySchedule} 时切批/抬量按槽取段<strong>只改正算量</strong>；
+ *       切批 SUCCESS/FALLBACK、盒首/日点形态、执行/取消/不执行/出院门禁与相同计量同一套规则，不另开业务分支</li>
  * </ul>
  */
 @Component
@@ -75,6 +78,10 @@ public class StandingOrderPackageBatchPlanTimeResolver {
         private String firstDoseUnitCode;
         /** 用法 code（一盒一点口服类判定）。 */
         private String methodCode;
+        /** 分次用量序列（拆零、逗号分隔；可空；有值时切批累加按槽取段，只改正算量；BR-IP-EXE-040）。 */
+        private String quantitySchedule;
+        /** 频次 code（解析当日点下标用；可空）。 */
+        private String rateCode;
 
         /**
          * @return 治疗类型
@@ -158,6 +165,34 @@ public class StandingOrderPackageBatchPlanTimeResolver {
          */
         public void setMethodCode(String methodCode) {
             this.methodCode = methodCode;
+        }
+
+        /**
+         * @return 分次用量序列
+         */
+        public String getQuantitySchedule() {
+            return quantitySchedule;
+        }
+
+        /**
+         * @param quantitySchedule 分次用量序列
+         */
+        public void setQuantitySchedule(String quantitySchedule) {
+            this.quantitySchedule = quantitySchedule;
+        }
+
+        /**
+         * @return 频次 code
+         */
+        public String getRateCode() {
+            return rateCode;
+        }
+
+        /**
+         * @param rateCode 频次 code
+         */
+        public void setRateCode(String rateCode) {
+            this.rateCode = rateCode;
         }
     }
 
@@ -337,7 +372,9 @@ public class StandingOrderPackageBatchPlanTimeResolver {
     }
 
     /**
-     * 院点一盒一点：按包装拆零比刚好切盒；失败回落可拆日点。
+     * 长嘱不可拆一盒一点：按包装拆零比累加，满一盒（≥ 包装比）即封盒并把余量结转下一盒；
+     * 只回传各盒首锚点。仅单槽超量、缺包装比、单位换算失败等才回落可拆日点——
+     * 禁止因剂量×频次除不尽包装比而展成全日频次点。
      *
      * @param rateCode          频次
      * @param openedTime        开立
@@ -397,7 +434,7 @@ public class StandingOrderPackageBatchPlanTimeResolver {
                 return result;
             }
             if (StandingOrderPackageBatchExpandSupport.CutKind.FALLBACK.equals(cut.getKind())) {
-                // 累加无法刚好整除包装：与可拆同形，禁止硬凑
+                // 单槽超量等：与可拆同形；非整除已改 ceil 封盒，不再因「无法刚好整除」走本分支
                 result.setPlanTimes(splittablePlanned);
                 return result;
             }
@@ -420,10 +457,10 @@ public class StandingOrderPackageBatchPlanTimeResolver {
     }
 
     /**
-     * 停嘱/探测硬顶后收口一盒一点：SUCCESS 用切盒结果；无法整除才降级可拆；其余禁止日点。
+     * 停嘱/探测硬顶后收口一盒一点：SUCCESS 用切盒结果；单槽超量等才降级可拆；其余禁止日点。
      *
      * @param hardCapCut         硬顶下第二次切盒结果
-     * @param splittablePlanned  可拆日点（仅 BR-IP-EXE-035⑥ 无法整除时使用）
+     * @param splittablePlanned  可拆日点（仅 BR-IP-EXE-035⑥ 单槽超量等 FALLBACK 时使用）
      * @return 已结算的一盒一点结果
      */
     private ExpandResult finishPackageBatchWhenCannotExtend(
@@ -441,7 +478,7 @@ public class StandingOrderPackageBatchPlanTimeResolver {
             return success;
         }
         if (StandingOrderPackageBatchExpandSupport.CutKind.FALLBACK.equals(hardCapCut.getKind())) {
-            // 单槽超量或累加无法整除包装：BR-IP-EXE-035⑥ 允许降级可拆
+            // 单槽超量或入参不足：BR-IP-EXE-035⑥ 允许降级可拆（非整除已改 ceil，不走本分支）
             ExpandResult fallback = this.newEmptyExpandResult();
             fallback.setPlanTimes(splittablePlanned);
             return fallback;
@@ -639,6 +676,10 @@ public class StandingOrderPackageBatchPlanTimeResolver {
     /**
      * 解析常规单次（非首日槽）临床拆零量，判定是否触发拆零下限。
      *
+     * <p>有 {@code quantitySchedule} 时取各段换算拆零的<strong>最小值</strong>：任一段 &lt; 1
+     * 即应走拆零下限切批（BR-IP-EXE-036 / BR-IP-EXE-040）；禁止只看首项或空 schedule 时的 {@code quantity}，
+     * 否则胰岛素「早 0.03、晚 1」等会漏切批。</p>
+     *
      * @param measure 槽量
      * @param product 目录
      * @return 拆零量；失败 null
@@ -649,15 +690,23 @@ public class StandingOrderPackageBatchPlanTimeResolver {
         if (measure == null || product == null) {
             return null;
         }
-        BigDecimal qty = InpatientMedicationRequestExecutionMeasureHelper.resolveDispenseQuantityFromRequest(
-            measure.getQuantity());
-        String unitCode = InpatientMedicationRequestExecutionMeasureHelper.resolveDispenseUnitCodeFromRequest(
-            measure.getUnitCode());
         MedicationProductUnitConversionSource conversionSource =
             ProductDefinitionDisplaySupport.toUnitConversionSource(product);
-        if (conversionSource == null || StringUtils.isEmpty(unitCode)) {
+        if (conversionSource == null) {
             return null;
         }
+        String unitCode = InpatientMedicationRequestExecutionMeasureHelper.resolveDispenseUnitCodeFromRequest(
+            measure.getUnitCode());
+        if (StringUtils.isEmpty(unitCode)) {
+            return null;
+        }
+        // 有分次序列：各段拆零最小值决定是否触发 036（与切批累加同源取段）
+        if (!StringUtils.isBlank(measure.getQuantitySchedule())) {
+            return this.resolveMinScheduleSegmentSplitQuantity(
+                measure.getQuantitySchedule(), unitCode, conversionSource);
+        }
+        BigDecimal qty = InpatientMedicationRequestExecutionMeasureHelper.resolveDispenseQuantityFromRequest(
+            measure.getQuantity());
         try {
             return MedicationProductQuantityToSplitUnitConverter.medicationQuantityToSplitUnit(
                 conversionSource, unitCode, qty);
@@ -665,6 +714,54 @@ public class StandingOrderPackageBatchPlanTimeResolver {
             // 换算失败：上层按「不触发切批」处理
             return null;
         }
+    }
+
+    /**
+     * 将 {@code quantity_schedule} 各正数段换算为拆零后取最小值（拆零下限资格判定用）。
+     *
+     * @param quantitySchedule 拆零逗号串；调用方已判非空
+     * @param unitCode         发药单位（与 schedule 同口径）
+     * @param conversionSource 目录换算源
+     * @return 最小拆零量；无有效段或任一段无法换算时 null
+     */
+    private BigDecimal resolveMinScheduleSegmentSplitQuantity(
+        String quantitySchedule,
+        String unitCode,
+        MedicationProductUnitConversionSource conversionSource) {
+        if (StringUtils.isBlank(quantitySchedule) || StringUtils.isEmpty(unitCode) || conversionSource == null) {
+            return null;
+        }
+        BigDecimal minSplit = null;
+        String[] parts = quantitySchedule.split(",");
+        for (String part : parts) {
+            String trimmed = StringUtils.trimToEmpty(part);
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            BigDecimal segmentQty;
+            try {
+                segmentQty = new BigDecimal(trimmed);
+            } catch (NumberFormatException badSegment) {
+                // 非法段：整串不可信，放弃下限资格（开立侧应已拒）
+                return null;
+            }
+            if (segmentQty.compareTo(BigDecimal.ZERO) <= 0) {
+                // 非正段：与开立校验同口径，放弃
+                return null;
+            }
+            BigDecimal split;
+            try {
+                split = MedicationProductQuantityToSplitUnitConverter.medicationQuantityToSplitUnit(
+                    conversionSource, unitCode, segmentQty);
+            } catch (BusinessException conversionFailure) {
+                // 任一段换算失败：不误判触发切批
+                return null;
+            }
+            if (minSplit == null || split.compareTo(minSplit) < 0) {
+                minSplit = split;
+            }
+        }
+        return minSplit;
     }
 
     /**
@@ -712,7 +809,8 @@ public class StandingOrderPackageBatchPlanTimeResolver {
     /**
      * 按槽解析<strong>临床</strong>拆零用量（首次槽可换 firstDose；禁止抬量后再用于切批累加）。
      *
-     * <p>供一盒一点切盒与口服剩余计数（BR-IP-EXE-038）同源换算，禁止两套槽量口径。</p>
+     * <p>有 {@code quantitySchedule} 时按当日频次点下标取段（BR-IP-EXE-040），仅改正算量；
+     * 供一盒一点切盒与口服剩余计数（BR-IP-EXE-038）同源换算，禁止两套槽量口径。</p>
      *
      * @param orderedPlanTimes 有序计划点
      * @param openedTime       开立时刻
@@ -737,18 +835,26 @@ public class StandingOrderPackageBatchPlanTimeResolver {
         }
         List<BigDecimal> splitQuantities = new ArrayList<>(orderedPlanTimes.size());
         for (LocalDateTime planTime : orderedPlanTimes) {
+            int slotIndex = this.resolveQuantityScheduleSlotIndex(measure.getRateCode(), planTime);
             BigDecimal qty = InpatientMedicationRequestExecutionMeasureHelper.resolveDispenseQuantityForExecutionSlot(
                 measure.getTherapyEnum(),
                 measure.getQuantity(),
                 measure.getFirstDose(),
                 planTime,
-                firstPlanTime);
+                firstPlanTime,
+                false,
+                measure.getQuantitySchedule(),
+                slotIndex);
             String unitCode = InpatientMedicationRequestExecutionMeasureHelper.resolveDispenseUnitCodeForExecutionSlot(
                 measure.getTherapyEnum(),
                 measure.getUnitCode(),
                 measure.getFirstDoseUnitCode(),
                 planTime,
                 firstPlanTime);
+            if (qty == null || StringUtils.isEmpty(unitCode)) {
+                // 槽量或单位缺失：整单放弃切批
+                return null;
+            }
             try {
                 BigDecimal split = MedicationProductQuantityToSplitUnitConverter.medicationQuantityToSplitUnit(
                     conversionSource, unitCode, qty);
@@ -759,5 +865,31 @@ public class StandingOrderPackageBatchPlanTimeResolver {
             }
         }
         return splitQuantities;
+    }
+
+    /**
+     * 按当日频次展开点解析 planTime 在 quantity_schedule 中的 0-based 下标（BR-IP-EXE-040）。
+     *
+     * @param rateCode 频次 code；可空
+     * @param planTime 本槽
+     * @return 下标；无法解析返回 -1
+     */
+    private int resolveQuantityScheduleSlotIndex(String rateCode, LocalDateTime planTime) {
+        if (planTime == null || StringUtils.isEmpty(rateCode)) {
+            return -1;
+        }
+        LocalDateTime dayStart = planTime.toLocalDate().atStartOfDay();
+        LocalDateTime dayEnd = planTime.toLocalDate().atTime(23, 59, 59);
+        try {
+            List<FrequencyExecutionTimePointQueryModel> points =
+                frequencyQueryService.computeExecutionTimePoints(rateCode.trim(), dayStart, dayEnd);
+            List<LocalDateTime> ordered =
+                InpatientMedicationRequestExecutionMeasureHelper.collectOrderedExecutionAts(points);
+            return InpatientMedicationRequestExecutionMeasureHelper.resolveZeroBasedSlotIndexInOrderedDay(
+                ordered, planTime);
+        } catch (BusinessException ex) {
+            // 频次不可用：不取 schedule 段，该槽用常规 quantity
+            return -1;
+        }
     }
 }

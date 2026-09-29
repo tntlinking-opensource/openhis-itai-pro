@@ -30,7 +30,8 @@ public class ActivityDefinitionPageQuery extends AbstractPageQuery {
 
     /**
      * 是否套餐/含子项（可选）。
-     * <p>体检目录：单项项目传 {@code false}，套餐传 {@code true}。</p>
+     * <p>体检目录：单项传 {@code false}、套餐传 {@code true}；
+     * 诊疗目录维护列表亦可按「是否绑定子项」筛选。</p>
      */
     private Boolean childrenFlag;
 

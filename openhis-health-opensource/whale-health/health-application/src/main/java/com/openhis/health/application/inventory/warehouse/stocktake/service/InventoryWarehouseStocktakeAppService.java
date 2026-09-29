@@ -28,7 +28,7 @@ import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
-import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
+import com.openhis.health.application.shared.practitioner.PractitionerRoleScopeLoader;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionSelectionTerminologyMaps;
@@ -753,8 +753,9 @@ public class InventoryWarehouseStocktakeAppService {
             }
             Map<Long, Map<String, BigDecimal>> availableQtyByItemIdAndNormLot = new HashMap<>();
             if (!pageItemIds.isEmpty()) {
+                    // Pre：盘点选品回填账面量（不过期、不剔锁定）
                 List<InventoryCatalogAvailabilityRowModel> availRows =
-                    this.inventoryItemQueryService.findAvailableCatalogRowsForOrder(
+                    this.inventoryItemQueryService.findWarehouseBookCatalogRowsForOrder(
                         itemTable, pageItemIds, List.of(request.getPurposeLocationId()));
                 for (InventoryCatalogAvailabilityRowModel ar : availRows) {
                     if (ar == null || ar.getItemId() == null || ar.getQuantity() == null) {
@@ -1000,8 +1001,9 @@ public class InventoryWarehouseStocktakeAppService {
             }
             String itemTable = src.getItemTable().trim();
             List<Long> itemIds = List.of(src.getItemId());
+            // Pre：库房账面量回填（不过期、不剔锁定；药库/药房/科室同口径）
             List<InventoryCatalogAvailabilityRowModel> availRows =
-                this.inventoryItemQueryService.findAvailableCatalogRowsForOrder(itemTable, itemIds, locationIds);
+                this.inventoryItemQueryService.findWarehouseBookCatalogRowsForOrder(itemTable, itemIds, locationIds);
             String normLot = InventoryItemQueryService.normalizeLotNumberForAvailabilityMatch(src.getLotNumber());
             BigDecimal bookQty = BigDecimal.ZERO;
             for (InventoryCatalogAvailabilityRowModel ar : availRows) {

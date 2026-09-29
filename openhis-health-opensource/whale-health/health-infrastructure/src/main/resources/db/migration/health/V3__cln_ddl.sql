@@ -226,6 +226,7 @@ CREATE TABLE IF NOT EXISTS "public"."cln_procedure_definition" (
     "yb_match_flag" bool,
     "clinic_code" varchar(255),
     "status_enum" varchar(255) NOT NULL,
+    "activity_definition_id" int8,
     CONSTRAINT "cln_procedure_definition_pkey" PRIMARY KEY ("id")
 );
 COMMENT ON TABLE cln_procedure_definition IS '手术操作定义目录（国临/医保对照）';
@@ -251,11 +252,15 @@ COMMENT ON COLUMN cln_procedure_definition.yb_no IS '医保手术操作编码';
 COMMENT ON COLUMN cln_procedure_definition.yb_match_flag IS '医保对码标记';
 COMMENT ON COLUMN cln_procedure_definition.clinic_code IS '国家临床版手术编码（国临码）';
 COMMENT ON COLUMN cln_procedure_definition.status_enum IS '发布状态';
+COMMENT ON COLUMN cln_procedure_definition.activity_definition_id IS
+    '挂靠诊疗项目定义主键（wkf_activity_definition.id）；国临选品→计费 AD；开立/首页经 AD 反查 PD，可空';
 
 CREATE INDEX IF NOT EXISTS idx_cln_proc_def_source_code
     ON cln_procedure_definition (source_enum, procedure_code);
 CREATE INDEX IF NOT EXISTS idx_cln_proc_def_clinic_code
     ON cln_procedure_definition (clinic_code);
+CREATE INDEX IF NOT EXISTS idx_cln_procedure_definition_activity_definition_id
+    ON cln_procedure_definition (activity_definition_id);
 
 -- from V27__cln_procedure.sql
 -- cln_procedure（建表）
@@ -300,6 +305,13 @@ CREATE TABLE IF NOT EXISTS "public"."cln_procedure" (
     "group_id" int8,
     "refund_id" int8,
     "occurrence_slot_active" bool NOT NULL DEFAULT true,
+    "procedure_time" timestamptz(6),
+    "anesthesia_start_time" timestamptz(6),
+    "anesthesia_end_time" timestamptz(6),
+    "incision_type_code" varchar(64),
+    "send_lab_flag" bool,
+    "specimen" varchar(500),
+    "note" varchar(500),
     CONSTRAINT "cln_procedure_pkey" PRIMARY KEY ("id")
 );
 COMMENT ON TABLE cln_procedure IS '临床 procedure';
@@ -341,6 +353,20 @@ COMMENT ON COLUMN cln_procedure.follow_up_json IS '随访JSON';
 COMMENT ON COLUMN cln_procedure.group_id IS '分组标识';
 COMMENT ON COLUMN cln_procedure.refund_id IS 'refund标识';
 COMMENT ON COLUMN cln_procedure.occurrence_slot_active IS '计划点占用标记；CANCEL 对冲后释放，允许同 occurrence 再执行';
+COMMENT ON COLUMN cln_procedure.procedure_time IS
+    '手术时间（申请可预填后拷贝；护士站手术执行弹窗可改；禁止写入/混用 occurrence_time）';
+COMMENT ON COLUMN cln_procedure.anesthesia_start_time IS
+    '麻醉开始时间（护士站麻醉执行弹窗；医生开立不填；可空）';
+COMMENT ON COLUMN cln_procedure.anesthesia_end_time IS
+    '麻醉结束时间（护士站麻醉执行弹窗；医生开立不填；可空）';
+COMMENT ON COLUMN cln_procedure.incision_type_code IS
+    '切口类别（术中可填；可空）';
+COMMENT ON COLUMN cln_procedure.send_lab_flag IS
+    '是否送检（术中可填；可空）';
+COMMENT ON COLUMN cln_procedure.specimen IS
+    '样本（护士可填；与备注分列；可空）';
+COMMENT ON COLUMN cln_procedure.note IS
+    '备注（护士可填；与样本分列；可空）';
 
 CREATE UNIQUE INDEX IF NOT EXISTS uk_cln_procedure_request_occurrence_terminal
     ON cln_procedure (request_id, request_table, occurrence_time)

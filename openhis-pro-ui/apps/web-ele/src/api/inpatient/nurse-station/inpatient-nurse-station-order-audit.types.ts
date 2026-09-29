@@ -46,6 +46,16 @@ export interface NurseStationOrderAuditRowDto {
    * 日剂量友好展示（如 `每日三片`；长期药且频次可解析每日次数时有值）。
    */
   dailyDoseDisplay?: string | null;
+  /** 首日/首次用量（仅长期药品；BR-IP-ORD-030） */
+  firstDose?: number | string | null;
+  /** 首日用量单位编码 */
+  firstDoseUnitCode?: string | null;
+  /** 首日用量单位展示名 */
+  firstDoseUnitName?: string | null;
+  /** 分次剂量序列（计量） */
+  doseSchedule?: string | null;
+  /** 分次用量序列（拆零） */
+  quantitySchedule?: string | null;
   usageDisplay?: string;
   frequencyDisplay?: string;
   /** 输液滴速编码（仅药嘱） */
@@ -91,6 +101,12 @@ export interface NurseStationOrderAuditRowDto {
   skinTestOutcomeCode?: string;
   /** 皮试临床状态展示文案（如 阳性 / 阴性） */
   skinTestOutcomeText?: string;
+  /**
+   * 计划出院时间（出院医嘱 occurrence_start_time；医生填写；非清床/结算）
+   */
+  plannedDischargeTime?: string;
+  /** 出院/转科原因 */
+  reasonText?: string;
 }
 
 /** 按就诊分组的医嘱列表 */

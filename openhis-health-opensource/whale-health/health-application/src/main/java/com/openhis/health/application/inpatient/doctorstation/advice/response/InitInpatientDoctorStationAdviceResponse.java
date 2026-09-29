@@ -10,6 +10,7 @@ import lombok.Data;
 import lombok.experimental.Accessors;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * IF-IP-DOR-18：医嘱开立页初始化响应（用药频次、给药途径、输液滴速术语下拉与费用性质下拉）。
@@ -22,6 +23,12 @@ public class InitInpatientDoctorStationAdviceResponse {
     @Schema(description = "用药频次下拉")
     /** 给药途径（用法）下拉。 */
     private List<OptionDto> medicationRateOptions;
+
+    /**
+     * 频次码 → day_times 非空段数（任意周期；供「用量不一致」展开框数与 Gate 对齐；BR-IP-ORD-037）。
+     */
+    @Schema(description = "频次码→日内时刻段数（分次用量不一致）")
+    private Map<String, Integer> dayTimesCountByRateCode;
 
     @Schema(description = "给药途径（用法）下拉")
     private List<OptionDto> medicationRouteOptions;

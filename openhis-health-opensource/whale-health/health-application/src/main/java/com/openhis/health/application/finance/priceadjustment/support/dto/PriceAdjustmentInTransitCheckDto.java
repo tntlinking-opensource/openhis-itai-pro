@@ -8,7 +8,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 物流调价在途预检结果（IF-PRC-08 / BR-PRC-SUB-003）。
+ * 物流调价在途预检结果（IF-PRC-08 / BR-PRC-SUB-003 硬在途）。
  */
 @Getter
 @Setter

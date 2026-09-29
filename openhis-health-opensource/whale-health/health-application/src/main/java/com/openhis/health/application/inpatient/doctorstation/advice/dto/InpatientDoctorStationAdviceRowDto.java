@@ -140,6 +140,18 @@ public class InpatientDoctorStationAdviceRowDto {
     @Schema(description = "首日用量单位展示名")
     private String firstDoseUnitName;
 
+    /**
+     * 分次剂量序列（计量、逗号分隔；仅长期药；可空；有值时剂量列走序列展示；BR-IP-ORD-037）。
+     */
+    @Schema(description = "分次剂量序列（计量；仅长期）")
+    private String doseSchedule;
+
+    /**
+     * 分次用量序列（拆零、逗号分隔；与 {@link #doseSchedule} 同序；空=执行侧走 quantity）。
+     */
+    @Schema(description = "分次用量序列（拆零；仅长期）")
+    private String quantitySchedule;
+
     /** 给药途径/用法编码。 */
     @Schema(description = "给药途径/用法编码")
     private String methodCode;

@@ -24,10 +24,21 @@ export interface AdviceEditForm {
   pharmacy: string;
   /** 未录入时为 `undefined`，避免界面默认显示 0 */
   singleDose?: number;
-  /** 首日/首次用量（仅长期；空=首次槽用常规单次量） */
+  /**
+   * 首日/首次用量：编辑卡内存为<strong>计量单位数量</strong>（同写剂量）；
+   * 暂存落库由草稿层换算为最小单位（与长期 quantity 同口径）。
+   */
   firstDose?: number;
-  /** 首日用量单位编码 */
+  /** 首日用量单位编码（编辑卡可不持；落库为最小/拆零单位码） */
   firstDoseUnitCode?: string;
+  /**
+   * 用量是否不一致（仅住院长期西药；开则按频次展开多剂量框；BR-IP-ORD-037）。
+   */
+  unevenDoseEnabled?: boolean;
+  /**
+   * 分次剂量框（计量单位数量；长度=频次 day_times 段数；早→晚）。
+   */
+  doseScheduleSlots?: Array<number | undefined>;
   frequency: string;
   usage: string;
   /** 输液滴速编码（术语 speed_code） */
@@ -85,6 +96,8 @@ export interface AdviceDrugItem extends AdviceEditForm {
   therapyEnum?: string;
   /** 目录分类码（如 52=嘱托、26=护理级别） */
   catalogCategoryCode?: string;
+  /** 医嘱优先级 code（检验/检查加急=EM） */
+  priorityEnum?: string;
   /** 嘱托正文（servicePayload.entrustContent；BR-IP-ORD-028） */
   entrustContent?: string;
   /** 医嘱备注（药嘱/诊嘱 remark；与嘱托正文分立） */
@@ -199,6 +212,8 @@ export interface AdviceRowItem {
   skinTestText: string;
   /** 皮试结果 code（AllergyIntolerance clinicalStatus），驱动 Tag 颜色 */
   skinTestOutcomeCode?: string;
+  /** 皮试检查锚定的皮试药请求主键；非空表示伴随行，复制时排除 */
+  basedOnMedicationRequestId?: string;
   /** 长嘱皮试药换批提示：建议追加皮试检查 */
   needAppendSkinTestFlag?: boolean;
   dosageText?: string;
@@ -239,6 +254,12 @@ export interface AdviceRowItem {
   /** 首日/首次用量（列表回显 → 编辑卡） */
   listFirstDose?: number;
   listFirstDoseUnitCode?: string;
+  /** 首日用量单位展示名（列表剂量列「首日…」） */
+  listFirstDoseUnitName?: string;
+  /** 分次剂量序列（列表回显 → 编辑卡多框；BR-IP-ORD-037） */
+  listDoseSchedule?: string;
+  /** 分次用量序列（拆零；编辑卡可忽略，落库由计量框重算） */
+  listQuantitySchedule?: string;
   listUnitCode?: string;
   /** 列表行单位展示名（与 listUnitCode 成对，编辑卡回显） */
   listUnitName?: string;
@@ -250,12 +271,16 @@ export interface AdviceRowItem {
   dispensePerDuration?: number;
   /** 申请单整单号（诊疗 AR 前缀 prescriptionNo，同单多行共享） */
   applyFormNo?: string;
+  /** 行绑定就诊诊断 ids 串（申请单复制沿用） */
+  encounterDiagnosisIds?: string;
   /** 申请单部位/样本明细（编辑弹窗回显） */
   serviceRequestDetails?: ServiceRequestDetailSummaryDto[];
   /** 诊疗服务类目 code（26=护理级别） */
   serviceCategoryEnum?: string;
   /** 目录分类码（与 serviceCategoryEnum 对齐时可用于识别护理级别） */
   catalogCategoryCode?: string;
+  /** 医嘱优先级 code（加急=EM） */
+  priorityEnum?: string;
   /** 医保项目等级码（CHRGITM_LV） */
   chrgitmLv?: number | string;
   /** 医保项目等级展示（甲类/乙类/丙类） */

@@ -2,6 +2,10 @@
 export const SERVICE_CATEGORY_TREATMENT = '21';
 export const SERVICE_CATEGORY_PROOF = '22';
 export const SERVICE_CATEGORY_TEST = '23';
+/** 手术 */
+export const SERVICE_CATEGORY_PROCEDURE = '24';
+/** 麻醉 */
+export const SERVICE_CATEGORY_ANESTHESIA = '25';
 /** 护理级别 */
 export const SERVICE_CATEGORY_NURSING = '26';
 /** 转科 */

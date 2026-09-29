@@ -230,6 +230,31 @@ public class OrderTemplateDomainService {
     }
 
     /**
+     * 重新启用已停用模板：须仍有有效明细，状态迁回 ACTIVE 后可再次套用。
+     *
+     * @param command 模板主键与操作人
+     * @throws BusinessException 非停用、已删除或无有效行时
+     */
+    public void reactivateOrderTemplate(ReactivateOrderTemplateCommand command) {
+        OrderTemplate template = requireTemplate(command.getOrderTemplateId());
+        // 已删除头不允许写侧恢复
+        template.assertEditable();
+        List<OrderTemplateLine> lines = orderTemplateLineRepository
+            .findAllByOrderTemplateIdAndIsDeletedFalseOrderBySortOrderAscIdAsc(template.getId());
+        // 空壳重新启用后仍无法套用，与发布门禁一致
+        if (lines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_INVALID_STATUS, "空壳组套不可启用");
+        }
+        for (OrderTemplateLine line : lines) {
+            line.assertLineKindAllowedForTemplateKind(template.getTemplateKindEnum());
+        }
+        template.assertReadyToPublish();
+        template.reactivate();
+        OrderTemplate saved = orderTemplateRepository.save(template);
+        domainEventPublisher.publish(new OrderTemplateReactivatedEvent(saved.getId(), command.getOperatorId()));
+    }
+
+    /**
      * 软删组套模板头并级联软删全部明细行，发布删除事件；已删则幂等返回。
      *
      * @param command 模板主键与操作人
@@ -300,15 +325,23 @@ public class OrderTemplateDomainService {
     }
 
     /**
-     * 更新组套模板行：仅覆盖命令中非空字段，组套须允许维护行，保存后发布行更新事件。
+     * 更新组套模板行：剂量等可空字段按非空覆盖；行种类与目录主键在命令带行类型时整行替换（支持换药）。
      *
-     * @param command 行主键与增量字段
+     * @param command 行主键与待写字段
      * @throws BusinessException 行或模板不存在、不允许维护或校验失败时
      */
     public void updateOrderTemplateLine(UpdateOrderTemplateLineCommand command) {
         OrderTemplateLine line = requireLine(command.getLineId());
         OrderTemplate template = requireTemplate(line.getOrderTemplateId());
         template.assertLineMaintainable();
+
+        // 维护端全量对齐换药：有行类型时用本次三类目录主键整行替换，空主键清掉原引用
+        if (command.getLineKindEnum() != null && !command.getLineKindEnum().trim().isEmpty()) {
+            line.setLineKindEnum(command.getLineKindEnum().trim());
+            line.setMedicationDefinitionId(command.getMedicationDefinitionId());
+            line.setActivityDefinitionId(command.getActivityDefinitionId());
+            line.setDeviceDefinitionId(command.getDeviceDefinitionId());
+        }
 
         // 命令传入分组键时覆盖行分组。
         if (command.getGroupKey() != null) {

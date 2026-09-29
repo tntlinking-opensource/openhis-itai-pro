@@ -59,6 +59,7 @@ import com.openhis.health.application.shared.product.ClinicalCatalogPriceResolve
 import com.openhis.health.application.shared.validator.PageWindowGate;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.application.shared.encounter.EncounterContextReader;
+import com.openhis.health.application.shared.pricing.PendingPriceAdjustmentSignGate;
 import com.openhis.health.application.outpatient.doctorstation.advice.support.OrderRequestFifoSignContextLoader;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogPageLoader;
@@ -143,6 +144,8 @@ public class DoctorStationTcmAppService {
     private final ClinicalCatalogPriceResolver clinicalCatalogPriceResolver;
     /** 门诊药品签发 FIFO 分段挂费（与 IF-DOR-15 共用）。 */
     private final OutpatientMedicationSignChargeOrchestrator outpatientMedicationSignChargeOrchestrator;
+    /** BR-PRC-LOCK-007：pending 调价窗口禁止签发中药饮片。 */
+    private final PendingPriceAdjustmentSignGate pendingPriceAdjustmentSignGate;
     /** 产品定义读模型批量加载（暂存挂费与 IF-DOR-14 西药口径一致）。 */
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     /** 分页窗口门控。 */
@@ -485,6 +488,8 @@ public class DoctorStationTcmAppService {
             }
             herbalDefinitionIds.add(fifoCtx.getMedicationId());
         }
+        // Gate（BR-PRC-LOCK-007）：pending 调价窗口禁止签发饮片
+        this.pendingPriceAdjustmentSignGate.assertNoPendingForMedications(herbalDefinitionIds);
         outpatientMedicationSignChargeOrchestrator.prefetchMedicationCatalogReads(signChargeReadCache, herbalDefinitionIds);
         Map<String, List<Long>> groupKeyToIds = new LinkedHashMap<>();
         for (SignTcmRxTargetRequest target : request.getSignTargets()) {

@@ -60,7 +60,7 @@ public class RoleAppService {
             RoleStaffScopeConstants.DOCTOR_VISIT_ORG,
             RoleStaffScopeConstants.WAREHOUSE_LOCATION,
             RoleStaffScopeConstants.PHARMACY_LOCATION,
-            RoleStaffScopeConstants.NURSE_ORG,
+            RoleStaffScopeConstants.WORK_ORG,
             RoleStaffScopeConstants.NURSE_WARD_LOCATION
     );
 
@@ -75,6 +75,9 @@ public class RoleAppService {
 
     @Autowired
     private UserAppService userAppService;
+
+    @Autowired
+    private BuiltInBusinessRoleOptionLoader builtInBusinessRoleOptionLoader;
 
     /**
      * 根据ID获取角色。
@@ -389,7 +392,8 @@ public class RoleAppService {
     public List<String> getStaffScopes(Long id) {
         roleRepository.findById(id)
             .orElseThrow(() -> new EntityNotFoundException("角色", id));
-        return readClaimValues(id, RoleStaffScopeConstants.CLAIM_TYPE);
+        // 内置角色走 code 模板，与人员维护联动同口径（护士/技师=工作科室，非出诊科室）
+        return builtInBusinessRoleOptionLoader.resolveStaffScopesForRoleId(id);
     }
 
     /**

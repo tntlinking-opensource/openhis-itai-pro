@@ -369,6 +369,9 @@ public class MrmsSettleListPreviewAppService {
             dto.setHealGradeCode(trimToNull(row.getHealGradeCode()));
             dto.setAnstWayCode(trimToNull(row.getAnstWayCode()));
             dto.setOperDrName(trimToNull(row.getOperDrName()));
+            dto.setAsit1Name(trimToNull(row.getAsit1Name()));
+            dto.setAsit2Name(trimToNull(row.getAsit2Name()));
+            dto.setNurseName(trimToNull(row.getNurseName()));
             dto.setAnstDrName(trimToNull(row.getAnstDrName()));
             // DRG 扩展码本期无独立字段，列保留空
             dto.setDrgExtCode(null);

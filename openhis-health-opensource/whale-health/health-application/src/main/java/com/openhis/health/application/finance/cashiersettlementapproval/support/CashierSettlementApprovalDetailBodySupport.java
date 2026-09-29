@@ -5,9 +5,9 @@
 package com.openhis.health.application.finance.cashiersettlementapproval.support;
 
 import com.openhis.health.application.finance.cashiersettlementapproval.response.LoadCashierSettlementApprovalDetailResponse;
-import com.openhis.health.application.finance.pharmacydailysettlement.dto.PharmacyDailySettlementCategoryRowDto;
-import com.openhis.health.application.finance.pharmacydailysettlement.dto.PharmacyDailySettlementProductRowDto;
-import com.openhis.health.application.finance.pharmacydailysettlement.support.PharmacyDailySettlementPreviewAssembler;
+import com.openhis.health.application.shared.pharmacydailysettlement.PharmacyDailySettlementCategoryRowDto;
+import com.openhis.health.application.shared.pharmacydailysettlement.PharmacyDailySettlementProductRowDto;
+import com.openhis.health.application.shared.pharmacydailysettlement.PharmacyDailySettlementPreviewAssembler;
 import com.openhis.health.application.inpatient.financial.dailysettlement.request.LoadInpatientCashierSettlementVoucherRequest;
 import com.openhis.health.application.inpatient.financial.dailysettlement.response.LoadInpatientCashierSettlementVoucherResponse;
 import com.openhis.health.application.inpatient.financial.dailysettlement.service.InpatientDailySettlementAppService;

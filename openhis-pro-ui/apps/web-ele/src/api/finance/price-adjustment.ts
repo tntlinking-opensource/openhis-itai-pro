@@ -246,10 +246,27 @@ export interface CheckInTransitForSubmitRequest {
   busNo: string;
 }
 
+export interface FreshUnsignedDraftTipDto {
+  requestId?: number | string;
+  itemTable?: string;
+  itemId?: number | string;
+  /** 药品/耗材名称 */
+  itemName?: string;
+  doctorId?: number | string;
+  doctorName?: string;
+  patientId?: number | string;
+  patientName?: string;
+  openedAt?: string;
+}
+
 export interface InTransitCheckDto {
   blocked?: boolean;
   reasonCode?: string;
   reasonMessage?: string;
+  itemTable?: string;
+  itemId?: number | string;
+  /** 48小时内未签发草稿提示（须开立医生自行删除；含项目名） */
+  freshUnsignedDraftTips?: FreshUnsignedDraftTipDto[];
 }
 
 export interface CheckInTransitForSubmitResponse {

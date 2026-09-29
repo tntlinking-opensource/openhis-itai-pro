@@ -8,10 +8,11 @@ package com.openhis.health.domain.share.enums;
  * 诊疗活动类型（{@code ActivityDefinition.type_enum} / 目录维护下拉）。
  *
  * <p>持久化存 {@link #getCode()} 字符串；展示名见 {@link #getDisplay()}。
- * 与 {@code DM-WKF-001} §4.2 对齐；初始化接口 {@code typeEnumOptions} 由本枚举直接生成。</p>
+ * 与 {@code DM-WKF-001} §4.2 对齐（code {@code 1~7}）；初始化接口 {@code typeEnumOptions} 由本枚举直接生成。</p>
  *
  * <p>住院嘱托医嘱<strong>不</strong>使用本枚举新增值，而以
- * {@code ActivityDefinition.category_code=52}（{@code ServiceRequestCategoryConstants.SERVICE_CATEGORY_ENTRUST}）识别。</p>
+ * {@code ActivityDefinition.category_code=52}（{@code ServiceRequestCategoryConstants.SERVICE_CATEGORY_ENTRUST}）识别。
+ * 诊查费目录项宜配合 {@code category_code=53}（{@code SERVICE_CATEGORY_CONSULTATION}）与 {@link #CONSULTATION}。</p>
  */
 public enum ActivityType implements EnumInterface {
     /** 检验（ActivityType，编码 {@code 1}）。 */
@@ -25,7 +26,9 @@ public enum ActivityType implements EnumInterface {
     /** 其他（ActivityType，编码 {@code 5}）。 */
     OTHER(0L, "5", "其他", "", 5L),
     /** 外检（ActivityType，编码 {@code 6}；外送检验/检查，非本院执行）。 */
-    EXTERNAL(0L, "6", "外检", "外送检验或检查，由外部机构执行", 6L);
+    EXTERNAL(0L, "6", "外检", "外送检验或检查，由外部机构执行", 6L),
+    /** 诊查（ActivityType，编码 {@code 7}；门诊/急诊/住院/互联网诊查费等）。 */
+    CONSULTATION(0L, "7", "诊查", "诊查费类诊疗项目", 7L);
 
     private final Long codeSystemId;
     private final String code;

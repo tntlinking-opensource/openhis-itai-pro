@@ -228,6 +228,42 @@ public class ContractQueryService {
     }
 
     /**
+     * 按费用性质业务号批量解析合同分类码（{@code category_enum}）。
+     *
+     * @param busNos 合同业务号集合，允许含空白，将被忽略
+     * @return 业务号 → category_enum；无命中或不含分类码时该业务号不在映射中
+     */
+    public Map<String, String> mapCategoryEnumByBusNoIn(Collection<String> busNos) {
+        if (busNos == null || busNos.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        LinkedHashSet<String> unique = new LinkedHashSet<>();
+        // Loop：去重非空业务号
+        for (String busNo : busNos) {
+            if (StringUtils.isNotEmpty(busNo)) {
+                unique.add(busNo.trim());
+            }
+        }
+        if (unique.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<Contract> list = contractRepository.findAllByBusNoIn(unique);
+        Map<String, String> out = new HashMap<>(list.size() * 2);
+        // Loop：业务号 → 分类码（空分类跳过）
+        for (Contract contract : list) {
+            if (contract == null || contract.getBusNo() == null) {
+                continue;
+            }
+            String categoryEnum = StringUtils.trimToNull(contract.getCategoryEnum());
+            if (categoryEnum == null) {
+                continue;
+            }
+            out.put(contract.getBusNo(), categoryEnum);
+        }
+        return out;
+    }
+
+    /**
      * 按业务号批量加载费用性质实体（交账/报表 enrichment 用）。
      *
      * @param busNos 合同业务号集合

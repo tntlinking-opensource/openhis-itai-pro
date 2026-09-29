@@ -12,9 +12,10 @@ import com.openhis.health.domain.share.enums.PriceType;
 import com.openhis.health.application.shared.pricing.ChargePricingCommandAssembler;
 import com.openhis.health.application.shared.option.OptionDtoAssembler;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
-import com.openhis.health.application.basic.catalog.dto.CatalogLotPriceRowDto;
-import com.openhis.health.application.basic.catalog.support.CatalogEditWriteGate;
-import com.openhis.health.application.basic.catalog.support.CatalogLotPriceAssembler;
+import com.openhis.health.application.shared.catalog.CatalogLotPriceRowDto;
+import com.openhis.health.application.shared.catalog.CatalogEditWriteGate;
+import com.openhis.health.application.shared.catalog.CatalogLotPriceAssembler;
+import com.openhis.health.application.shared.catalog.DeviceCatalogEditMutation;
 import com.openhis.health.application.basic.devicecatalog.dto.DeviceCatalogDto;
 import com.openhis.health.application.basic.devicecatalog.dto.DeviceCatalogImportFileResponse;
 import com.openhis.health.application.basic.devicecatalog.dto.DeviceCatalogImportProgressResponse;
@@ -58,8 +59,8 @@ import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
 import com.openhis.health.domain.share.enums.SupplierType;
 import com.openhis.health.domain.share.utils.OptionDtoLegacyRowUtil;
 import com.openhis.health.domain.share.utils.GatewayIdParseUtil;
-import com.openhis.health.application.basic.catalog.support.CatalogEditabilityQueryModel;
-import com.openhis.health.application.basic.catalog.support.CatalogEditabilityResolver;
+import com.openhis.health.application.shared.catalog.CatalogEditabilityQueryModel;
+import com.openhis.health.application.shared.catalog.CatalogEditabilityResolver;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.EntityNotFoundException;
 import com.openhis.whale.core.application.exception.ValidationException;
@@ -453,7 +454,7 @@ public class DeviceCatalogAppService {
         catalogEditWriteGate.assertDeviceCatalogUpdateAllowed(
             existing,
             this.loadPriceLines(id),
-            request,
+            this.toDeviceCatalogEditMutation(request),
             editability.getEditabilityCode());
 
         this.normalizeManufacturerSupplyForWrite(request);
@@ -1163,5 +1164,35 @@ public class DeviceCatalogAppService {
         SaveAllChargeItemDefinitionsCommand saveCmd = new SaveAllChargeItemDefinitionsCommand();
         saveCmd.setItems(items);
         chargeItemDefinitionDomainService.saveAllChargeItemDefinitions(saveCmd);
+    }
+
+    /**
+     * 将耗材目录更新请求投影为 shared 写侧 Mutation（禁 shared 依赖 Feature Request）。
+     *
+     * @param request 更新请求
+     * @return 中性 Mutation；{@code null} 入参返回 null
+     */
+    private DeviceCatalogEditMutation toDeviceCatalogEditMutation(UpdateDeviceCatalogRequest request) {
+        if (request == null) {
+            return null;
+        }
+        DeviceCatalogEditMutation mutation = new DeviceCatalogEditMutation();
+        mutation.setName(request.getName());
+        mutation.setMerchandiseName(request.getMerchandiseName());
+        mutation.setBusNo(request.getBusNo());
+        mutation.setCategoryCode(request.getCategoryCode());
+        mutation.setTypeCode(request.getTypeCode());
+        mutation.setItemTypeCode(request.getItemTypeCode());
+        mutation.setYbType(request.getYbType());
+        mutation.setPurchaseUnitCode(request.getPurchaseUnitCode());
+        mutation.setSplitUnitCode(request.getSplitUnitCode());
+        mutation.setPackageUnitCode(request.getPackageUnitCode());
+        mutation.setStockUnitCode(request.getStockUnitCode());
+        mutation.setDoseUnitCode(request.getDoseUnitCode());
+        mutation.setDoseUnitRatio(request.getDoseUnitRatio());
+        mutation.setPurchaseUnitRatio(request.getPurchaseUnitRatio());
+        mutation.setStockUnitRatio(request.getStockUnitRatio());
+        mutation.setPackageUnitRatio(request.getPackageUnitRatio());
+        return mutation;
     }
 }

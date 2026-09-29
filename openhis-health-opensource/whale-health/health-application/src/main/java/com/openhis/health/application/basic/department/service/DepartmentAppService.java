@@ -11,7 +11,7 @@ import com.openhis.health.application.basic.department.mapper.DepartmentMapper;
 import com.openhis.health.application.basic.department.request.CreateDepartmentRequest;
 import com.openhis.health.application.basic.department.request.QueryDepartmentListRequest;
 import com.openhis.health.application.basic.department.request.UpdateDepartmentRequest;
-import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
+import com.openhis.health.application.shared.practitioner.PractitionerRoleScopeLoader;
 import com.openhis.health.infrastructure.platform.organization.OrganizationUnitLinkCode;
 import com.openhis.health.domain.administration.organization.command.AbolishOrganizationCommand;
 import com.openhis.health.domain.administration.organization.command.RelocateOrganizationCommand;
