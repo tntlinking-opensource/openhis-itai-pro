@@ -41,6 +41,7 @@ import DoctorHeader from '#/components/outpatient/doctor-header.vue';
 import MedicalRecordForm from '#/components/outpatient/medical-record-form.vue';
 import PatientInfoBar from '#/components/outpatient/patient-info-bar.vue';
 import { useEncounterFeeSummary } from '#/components/outpatient/use-encounter-fee-summary';
+import { confirmEmrDiscardUnsaved } from '#/emrEditor';
 import { useAuthStore } from '#/store';
 import { isEncounterClinicalOrderMutationBlocked } from '#/utils/inpatient/encounter-clinical-order-gate';
 import {
@@ -80,8 +81,10 @@ import { INPATIENT_DOCTOR_SESSION_MAX } from './session/inpatient-doctor-session
 import InpatientDoctorSessionTabs from './session/inpatient-doctor-session-tabs.vue';
 import { useInpatientDoctorSessionStore } from './session/inpatient-doctor-session-store';
 import { resolveDoctorSessionEncounterId } from './session/map-inpatient-doctor-session';
+import { INPATIENT_DOCTOR_MULTI_SESSION_ENABLED } from '#/views/inpatient/doctor-station/inpatient-doctor-multi-session.config';
 import { DOCTOR_STATION_LARGE_SCREEN_DEFAULT_OPEN } from '#/views/inpatient/doctor-station/patient-large-screen-default.config';
 import { INPATIENT_SURGERY_ANESTH_ENABLED } from '#/views/inpatient/surgery-anesth/inpatient-surgery-anesth.config';
+import '#/views/inpatient/doctor-station/inpatient-doctor-station-session.css';
 
 defineOptions({
   name: 'InpatientDoctorStation',
@@ -136,6 +139,8 @@ const doctorPatientStore = useInpatientDoctorPatientStore();
 const sessionStore = useInpatientDoctorSessionStore();
 const { selectedPatient, currentPatientInfo } = storeToRefs(doctorPatientStore);
 const { sessions, activeEncounterId } = storeToRefs(sessionStore);
+/** 国基 true：多人页签；红旗/产品 false：同时只看一人 */
+const multiSessionEnabled = INPATIENT_DOCTOR_MULTI_SESSION_ENABLED;
 const feeEncounterId = computed(() => String(selectedPatient.value?.encounterId ?? '').trim());
 const feePatientId = computed(() => String(selectedPatient.value?.patientId ?? '').trim());
 const { feeSummary, refreshEncounterFee } = useEncounterFeeSummary({
@@ -213,7 +218,7 @@ function emrBindingsFor(patient: InpatientDoctorStationPatient) {
     patientId: patient.patientId ?? '',
     stationKind: 'INPATIENT' as const,
     archiveEnabled: false,
-    hostOwnsUnsavedGuard: true,
+    hostOwnsUnsavedGuard: multiSessionEnabled,
     patientInfo: buildEmrPatientInfo(patient),
   };
 }
@@ -263,7 +268,7 @@ const doctorStationContextBindings = computed(() => {
       ...base,
       stationKind: 'INPATIENT' as const,
       archiveEnabled: false,
-      hostOwnsUnsavedGuard: true,
+      hostOwnsUnsavedGuard: multiSessionEnabled,
     };
   }
   if (
@@ -302,18 +307,37 @@ const doctorStationContextBindings = computed(() => {
   return base;
 });
 
-/** 同步选中患者：只回写已打开页签，进站不自动选人 */
-async function syncSelectedPatientAfterQueueLoad(rows: InpatientDoctorStationPatient[]) {
-  sessionStore.syncFromQueue(rows);
-  if (sessionStore.activeSession) {
-    applyActiveSession(sessionStore.activeSession);
+/** 同步选中患者：多开只回写已打开页签；单人刷新后尽量保留原选中行 */
+async function syncSelectedPatientAfterQueueLoad(
+  rows: InpatientDoctorStationPatient[],
+  skipDefaultSelection?: boolean,
+) {
+  if (multiSessionEnabled) {
+    sessionStore.syncFromQueue(rows);
+    if (sessionStore.activeSession) {
+      applyActiveSession(sessionStore.activeSession);
+    }
+    return;
   }
+  if (skipDefaultSelection) {
+    return;
+  }
+  const selId = (selectedPatient.value?.encounterId ?? '').trim();
+  const keep = selId && rows.some((row) => row.encounterId.trim() === selId);
+  if (keep && selectedPatient.value) {
+    const fresh = rows.find((row) => row.encounterId.trim() === selId);
+    await applySelectedPatientChange(fresh ?? selectedPatient.value);
+    return;
+  }
+  await applySelectedPatientChange(rows[0] ?? null);
 }
 
 /** 拉取在院患者队列（IF-IP-DOR-01） */
 async function loadInpatientDoctorStationList(options?: { skipDefaultSelection?: boolean }) {
   if (!assertOrganizationSelected(() => Number(authStore.getSelectedOrganization()))) {
-    sessionStore.closeAll();
+    if (multiSessionEnabled) {
+      sessionStore.closeAll();
+    }
     doctorPatientStore.setSelectedPatient(null);
     return;
   }
@@ -322,10 +346,12 @@ async function loadInpatientDoctorStationList(options?: { skipDefaultSelection?:
     if (!result?.rows) {
       return;
     }
-    await syncSelectedPatientAfterQueueLoad(result.rows);
+    await syncSelectedPatientAfterQueueLoad(result.rows, options?.skipDefaultSelection);
   } catch {
     inHospitalPatients.value = [];
-    sessionStore.closeAll();
+    if (multiSessionEnabled) {
+      sessionStore.closeAll();
+    }
     doctorPatientStore.setSelectedPatient(null);
   }
 }
@@ -392,14 +418,45 @@ function applyActiveSession(
   return true;
 }
 
-/** 切换功能页；各患者自己记住，不再因换人丢掉 */
+async function guardEmrUnsavedBeforeLeaveMedicalRecord(): Promise<boolean> {
+  return confirmEmrDiscardUnsaved();
+}
+
+/** 单人工作台：换人/离病历前确认未保存 */
+async function applySelectedPatientChange(
+  next: InpatientDoctorStationPatient | null,
+): Promise<boolean> {
+  const prevId = (selectedPatient.value?.encounterId ?? '').trim();
+  const nextId = (next?.encounterId ?? '').trim();
+  if (prevId && prevId !== nextId) {
+    const ok = await guardEmrUnsavedBeforeLeaveMedicalRecord();
+    if (!ok) return false;
+  }
+  doctorPatientStore.setSelectedPatient(next);
+  return true;
+}
+
+/** 切换功能页；多开时各患者自己记住 */
 const handleTabChange = async (tab: string) => {
-  applyFunctionTab(tab as DoctorTab);
+  if (multiSessionEnabled) {
+    applyFunctionTab(tab as DoctorTab);
+    return;
+  }
+  const next = tab as DoctorTab;
+  if (activeTab.value === DOCTOR_TABS.MEDICAL_RECORD && next !== DOCTOR_TABS.MEDICAL_RECORD) {
+    const ok = await guardEmrUnsavedBeforeLeaveMedicalRecord();
+    if (!ok) return;
+  }
+  activeTab.value = next;
 };
 
-/** 侧栏点选患者：已打开则切过去，未打开则加页签 */
+/** 侧栏点选患者：多开加页签，单人直接切换 */
 const handlePatientSelect = async (patient: InpatientDoctorStationPatient) => {
-  applyActiveSession(patient);
+  if (multiSessionEnabled) {
+    applyActiveSession(patient);
+    return;
+  }
+  await applySelectedPatientChange(patient);
 };
 
 const patientListRef = ref<{ locatePatient: (encounterId: string) => void } | null>(null);
@@ -437,13 +494,28 @@ function openPatientLargeScreen() {
   largeScreenVisible.value = true;
 }
 
-/** 大屏进入工作台：打开/激活患者并切到指定功能页 */
+/** 大屏进入工作台：选中患者并切到指定功能页 */
 async function leaveLargeScreenToPatient(
   patient: InpatientDoctorStationPatient,
   tab: DoctorTab,
 ) {
-  const ok = applyActiveSession(patient, tab);
-  if (!ok) return;
+  if (multiSessionEnabled) {
+    const ok = applyActiveSession(patient, tab);
+    if (!ok) return;
+    largeScreenVisible.value = false;
+    return;
+  }
+  const prevId = (selectedPatient.value?.encounterId ?? '').trim();
+  const nextId = (patient.encounterId ?? '').trim();
+  const patientChanged = prevId !== nextId;
+  if (patientChanged) {
+    const ok = await applySelectedPatientChange(patient);
+    if (!ok) return;
+  } else if (activeTab.value === DOCTOR_TABS.MEDICAL_RECORD && tab !== DOCTOR_TABS.MEDICAL_RECORD) {
+    const ok = await guardEmrUnsavedBeforeLeaveMedicalRecord();
+    if (!ok) return;
+  }
+  activeTab.value = tab;
   largeScreenVisible.value = false;
 }
 
@@ -458,7 +530,9 @@ async function handleLargeScreenShortcut(payload: {
   tab: DoctorTab | '病案首页';
 }) {
   if (payload.tab === '病案首页') {
-    const ok = applyActiveSession(payload.patient);
+    const ok = multiSessionEnabled
+      ? applyActiveSession(payload.patient)
+      : await applySelectedPatientChange(payload.patient);
     if (!ok) return;
     const encounterId = preserveApiIdForRequest(payload.patient.encounterId);
     if (!encounterId) {
@@ -478,11 +552,17 @@ async function handleLargeScreenShortcut(payload: {
 /** 关键字检索后刷新队列 */
 const handlePatientSearch = async (keyword: string) => {
   if (!assertOrganizationSelected(() => Number(authStore.getSelectedOrganization()))) {
-    applyActiveSession(null);
+    if (multiSessionEnabled) {
+      applyActiveSession(null);
+    } else {
+      await applySelectedPatientChange(null);
+    }
     return;
   }
   listKeyword.value = keyword;
-  void loadInpatientDoctorStationList({ skipDefaultSelection: true });
+  void loadInpatientDoctorStationList(
+    multiSessionEnabled ? { skipDefaultSelection: true } : undefined,
+  );
 };
 
 /** 侧栏刷新 */
@@ -511,7 +591,12 @@ function setEmrFormRef(
   emrFormRefMap.delete(key);
 }
 
+const tabPanelRef = ref<StationTabPanelExpose | null>(null);
+
 function currentTabPanel(): StationTabPanelExpose | null {
+  if (!multiSessionEnabled) {
+    return tabPanelRef.value;
+  }
   if (activeTab.value === DOCTOR_TABS.MEDICAL_RECORD) {
     const key = resolveDoctorSessionEncounterId(selectedPatient.value);
     return emrFormRefMap.get(key) ?? null;
@@ -522,7 +607,9 @@ const dischargeDialogVisible = ref(false);
 const nursingDialogVisible = ref(false);
 
 onMounted(() => {
-  void loadInpatientDoctorStationList({ skipDefaultSelection: true });
+  void loadInpatientDoctorStationList(
+    multiSessionEnabled ? { skipDefaultSelection: true } : undefined,
+  );
   // 进入住院医生站后静默本机传染病前置 SSO（失败不挡；同会话只尝试一次）
   void tryCrbSsoOnDoctorStationEnter();
 });
@@ -682,7 +769,15 @@ const handleQuickAction = async (
     action === 'anesthesia';
   if (isWriteQuickAction && adviceWriteDisabled.value) return;
   if (action === 'report') {
-    applyFunctionTab(DOCTOR_TABS.REPORT_QUERY);
+    if (multiSessionEnabled) {
+      applyFunctionTab(DOCTOR_TABS.REPORT_QUERY);
+      return;
+    }
+    if (activeTab.value === DOCTOR_TABS.MEDICAL_RECORD) {
+      const ok = await guardEmrUnsavedBeforeLeaveMedicalRecord();
+      if (!ok) return;
+    }
+    activeTab.value = DOCTOR_TABS.REPORT_QUERY;
     return;
   }
   if (action === 'lab' || action === 'exam' || action === 'treatment') {
@@ -698,7 +793,16 @@ const handleQuickAction = async (
     return;
   }
   if (action === 'surgery' || action === 'anesthesia') {
-    applyFunctionTab(action === 'surgery' ? DOCTOR_TABS.SURGERY : DOCTOR_TABS.ANESTHESIA);
+    const nextTab = action === 'surgery' ? DOCTOR_TABS.SURGERY : DOCTOR_TABS.ANESTHESIA;
+    if (multiSessionEnabled) {
+      applyFunctionTab(nextTab);
+      return;
+    }
+    if (activeTab.value === DOCTOR_TABS.MEDICAL_RECORD) {
+      const ok = await guardEmrUnsavedBeforeLeaveMedicalRecord();
+      if (!ok) return;
+    }
+    activeTab.value = nextTab;
     return;
   }
   const actionTextMap: Record<
@@ -825,6 +929,7 @@ const handleNursing = () => {
 
     <div class="bg-background-page ml-[2px] flex min-h-0 flex-1 flex-col overflow-hidden">
       <InpatientDoctorSessionTabs
+        v-if="multiSessionEnabled"
         :sessions="sessions"
         :active-encounter-id="activeEncounterId"
         @activate="handleActivateSession"
@@ -833,7 +938,7 @@ const handleNursing = () => {
         @close-all="handleCloseAllSessions"
       />
       <div
-        v-loading="sessionSwitching"
+        v-loading="multiSessionEnabled && sessionSwitching"
         class="flex min-h-0 flex-1 flex-col overflow-hidden"
       >
       <PatientInfoBar
@@ -880,7 +985,7 @@ const handleNursing = () => {
           <div
             class="border-border-base bg-background-card ml-0 flex min-h-0 flex-1 flex-col overflow-hidden rounded-none border border-t-0 shadow-sm"
           >
-            <div class="ip-station-panels">
+            <div v-if="multiSessionEnabled" class="ip-station-panels">
               <div
                 v-for="session in sessions"
                 :key="`emr:${resolveDoctorSessionEncounterId(session)}`"
@@ -913,6 +1018,21 @@ const handleNursing = () => {
                 />
               </KeepAlive>
             </div>
+            <KeepAlive v-else>
+              <component
+                :is="tabComponents[activeTab]"
+                ref="tabPanelRef"
+                :key="activeTab"
+                v-if="tabComponents[activeTab]"
+                class="h-full min-h-0 overflow-hidden"
+                :patient-info="emrPatientInfo"
+                :form-data="medicalRecordData"
+                v-bind="doctorStationContextBindings"
+                @quick-action="handleQuickAction"
+                @edit-service-apply="handleEditServiceApply"
+                @update="handleFormUpdate"
+              />
+            </KeepAlive>
           </div>
         </div>
       </div>
@@ -984,25 +1104,3 @@ const handleNursing = () => {
     />
   </div>
 </template>
-
-<style scoped>
-.ip-station-panels {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-}
-
-.ip-station-panels__emr {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  visibility: hidden;
-}
-
-.ip-station-panels__emr.is-active {
-  z-index: 1;
-  pointer-events: auto;
-  visibility: visible;
-}
-</style>

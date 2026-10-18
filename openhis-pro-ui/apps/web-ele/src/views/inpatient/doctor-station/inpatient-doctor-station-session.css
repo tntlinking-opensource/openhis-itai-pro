@@ -1,0 +1,19 @@
+.ip-station-panels {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.ip-station-panels__emr {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.ip-station-panels__emr.is-active {
+  z-index: 1;
+  pointer-events: auto;
+  visibility: visible;
+}

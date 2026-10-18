@@ -1,0 +1,74 @@
+.ip-session-tabs {
+  align-items: center;
+  background: #eef1f6;
+  border-bottom: 1px solid var(--el-border-color);
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  min-height: 40px;
+  overflow-x: auto;
+  padding: 5px 8px 5px 0;
+}
+
+.ip-session-tabs__menu,
+.ip-session-tabs__menu .el-tooltip__trigger {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.ip-session-tabs__tab {
+  align-items: center;
+  background: #e5e7eb;
+  border: 1px solid #c5cad3;
+  border-radius: 8px;
+  color: #303133;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 12px 0 14px;
+}
+
+.ip-session-tabs__tab:hover {
+  border-color: var(--el-color-primary-light-5);
+}
+
+.ip-session-tabs__tab.is-active {
+  background: #fff;
+  border-color: var(--el-color-primary-light-5);
+}
+
+.ip-session-tabs__bed {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ip-session-tabs__name {
+  font-size: 15px;
+  font-weight: 600;
+  max-width: 6em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ip-session-tabs__close {
+  border-radius: 4px;
+  color: #303133;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.7;
+  padding: 0 2px;
+}
+
+.ip-session-tabs__close:hover {
+  background: rgb(0 0 0 / 8%);
+  opacity: 1;
+}
+
+.ip-session-tabs__hint {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  padding: 0 4px;
+}

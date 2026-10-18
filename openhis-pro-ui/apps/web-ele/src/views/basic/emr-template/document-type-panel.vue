@@ -151,8 +151,10 @@ defineExpose({
       <ElTableColumn label="分类" width="88" align="center">
         <template #default="{ row }">
           {{
-            row.categoryCode === 'OUTPATIENT'
-              ? '门诊病历'
+            row.categoryCode === 'GUOJI'
+              ? '国基病历'
+              : row.categoryCode === 'OUTPATIENT'
+                ? '门诊病历'
               : row.categoryCode === 'INPATIENT'
                 ? '住院病历'
                 : row.categoryCode === 'NOTICE'

@@ -45,6 +45,7 @@ const form = reactive({
 });
 
 const categoryOptions = [
+  { label: '国基病历', value: 'GUOJI' },
   { label: '门诊病历', value: 'OUTPATIENT' },
   { label: '住院病历', value: 'INPATIENT' },
   { label: '告知书', value: 'NOTICE' },

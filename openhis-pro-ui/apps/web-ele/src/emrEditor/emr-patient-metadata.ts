@@ -1,6 +1,7 @@
 import type { JSONContent } from '@tiptap/core';
 
 import { isCanvasPayload } from '#/emr-canvas/utils/emr-content';
+import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 
 import { syncFillableJsonNodeContent } from './components/simple-editor/emr-data-element-text';
 
@@ -297,7 +298,23 @@ export function ensureContextDateMetadataDefaults(
     if (String(out[key] ?? '').trim()) continue;
     out[key] = dateOnly;
   }
+  fillHospitalMetadataAliases(out);
   return out;
+}
+
+/** Canvas 页眉用 hospitalName，Tiptap 页眉用 orgName；空则登录选院 */
+function fillHospitalMetadataAliases(out: Record<string, string>) {
+  const hospital =
+    String(out.hospitalName ?? '').trim() ||
+    String(out.orgName ?? '').trim() ||
+    resolvePrintHospitalName().trim();
+  if (!hospital) return;
+  if (!String(out.hospitalName ?? '').trim()) {
+    out.hospitalName = hospital;
+  }
+  if (!String(out.orgName ?? '').trim()) {
+    out.orgName = hospital;
+  }
 }
 
 function canvasControlText(control: Record<string, unknown>): string {

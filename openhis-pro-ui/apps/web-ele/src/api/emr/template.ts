@@ -24,6 +24,8 @@ export interface TemplateDto {
   ownerPractitionerId?: number | string;
   encounterClassCode?: string;
   encounterClassName?: string;
+  /** 侧栏目录分类；Canvas 本地/国基模板可用 GUOJI，后端可无此字段 */
+  categoryCode?: string;
   isEnabled?: boolean;
   enabled?: boolean;
   createdAt?: string;

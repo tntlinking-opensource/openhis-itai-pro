@@ -35,8 +35,9 @@ export interface EmrTemplateTreeNode {
   children?: EmrTemplateTreeNode[];
 }
 
-/** 侧栏目录五类（顺序即展示顺序） */
+/** 侧栏目录分类（顺序即展示顺序） */
 export const EMR_DIRECTORY_CATEGORIES = [
+  { code: 'GUOJI', label: '国基病历' },
   { code: 'OUTPATIENT', label: '门诊病历模板' },
   { code: 'INPATIENT', label: '住院病历' },
   { code: 'NOTICE', label: '告知书' },
@@ -481,6 +482,9 @@ export function resolveEmrDirectoryCategory(
     return cat;
   }
   const code = typeCode.trim().toUpperCase();
+  if (code === 'GUOJI_RECORD' || code === 'GUOJI_OUTPATIENT' || code.startsWith('GUOJI::')) {
+    return 'GUOJI';
+  }
   if (code === 'OUTPATIENT_RECORD') return 'OUTPATIENT';
   if (code === 'NOTICE') return 'NOTICE';
   if (code === 'PREOP_SUMMARY' || code === 'PREOP_DISCUSSION' || code === 'SURGERY_HANDOVER') {
@@ -500,6 +504,33 @@ export function resolveEmrDirectoryCategory(
     return code === 'OUTPATIENT_RECORD' ? 'OUTPATIENT' : 'INPATIENT';
   }
   return 'OTHER';
+}
+
+/** 模板侧栏分类：本地 categoryCode 可把模板挂到国基病历等父级，不改文书类型 */
+function resolveTemplateTreeCategory(
+  tpl: TemplateDto,
+  typeByCode: Map<string, DocumentTypeDto>,
+): string {
+  const override = String(tpl.categoryCode ?? '').trim().toUpperCase();
+  if (override && CATEGORY_LABEL_BY_CODE[override]) {
+    return override;
+  }
+  const typeCode = String(tpl.documentTypeCode ?? '').trim();
+  return resolveEmrDirectoryCategory(typeCode, typeByCode.get(typeCode)?.categoryCode);
+}
+
+/** 与文书类型桶错开时用「分类::类型」键，避免国基模板混进门诊目录 */
+function templateTreeBucketKey(
+  tpl: TemplateDto,
+  typeByCode: Map<string, DocumentTypeDto>,
+): string {
+  const typeCode = String(tpl.documentTypeCode ?? '').trim();
+  const cat = resolveTemplateTreeCategory(tpl, typeByCode);
+  const typeCat = resolveEmrDirectoryCategory(typeCode, typeByCode.get(typeCode)?.categoryCode);
+  if (cat !== typeCat) {
+    return `${cat}::${typeCode}`;
+  }
+  return typeCode;
 }
 
 /** 按目录分类白名单过滤文书（类型表优先带 categoryCode） */
@@ -627,7 +658,7 @@ export function buildEmrTemplateTree(
 
   const templatesByCode = new Map<string, TemplateDto[]>();
   for (const t of templates) {
-    const code = (t.documentTypeCode ?? '').trim();
+    const code = templateTreeBucketKey(t, typeByCode);
     const bucket = templatesByCode.get(code) ?? [];
     bucket.push(t);
     templatesByCode.set(code, bucket);
@@ -686,10 +717,16 @@ export function buildEmrTemplateTree(
     if (!typesByCategory.has(cat)) {
       typesByCategory.set(cat, []);
     }
-    // 用占位类型，便于后续收集模板
+    const realTypeCode = typeCode.includes('::')
+      ? typeCode.slice(typeCode.indexOf('::') + 2)
+      : typeCode;
     const placeholder: DocumentTypeDto = {
       code: typeCode,
-      name: typeCode || '未归类',
+      name:
+        typeByCode.get(realTypeCode)?.name?.trim() ||
+        CATEGORY_LABEL_BY_CODE[cat] ||
+        realTypeCode ||
+        '未归类',
       categoryCode: cat,
     };
     typesByCategory.get(cat)!.push(placeholder);
