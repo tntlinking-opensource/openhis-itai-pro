@@ -159,8 +159,8 @@
 
 | scenarioCode | 中文 | 推荐主键 | 现状 | 主要入口 |
 | --- | --- | --- | --- | --- |
-| `ip-longOrder-print` | 长期医嘱 | `encounterId` + 行键集合（或打印模式快照） | 弱 | 打印中心 |
-| `ip-tempOrder-print` | 临时医嘱 | 同上 | 弱 | 打印中心 |
+| `ip-longOrder-print` | 长期医嘱 | `encounterId` + 行键集合（或打印模式快照） | 弱 | 打印中心、病案侧栏；**表 field=`orderRows`** |
+| `ip-tempOrder-print` | 临时医嘱 | 同上 | 弱 | 打印中心、病案侧栏；**表 field=`orderRows`** |
 | `ip-feeList-print` | 费用清单 | `encounterId` + `dateFrom`/`dateTo` | 弱 | 打印中心、费用明细 |
 | `ip-feeDetail-print` | 费用明细单 | 同上 | 弱 | 同上 |
 | `ip-examApply-print` | 住院检查单 | `serviceRequestId` + `encounterId` | OK | 打印中心、医嘱执行 |
