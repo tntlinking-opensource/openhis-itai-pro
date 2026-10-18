@@ -1,5 +1,5 @@
 {
-  "name": "@vben/constants",
+  "name": "@zxplat/constants",
   "version": "5.5.9",
   "homepage": "https://github.com/vbenjs/vue-vben-admin",
   "bugs": "https://github.com/vbenjs/vue-vben-admin/issues",
@@ -20,6 +20,6 @@
     }
   },
   "dependencies": {
-    "@vben-core/shared": "workspace:*"
+    "@zxplat-core/shared": "workspace:*"
   }
 }

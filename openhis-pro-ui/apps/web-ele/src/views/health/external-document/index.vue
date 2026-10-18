@@ -6,7 +6,7 @@ import type {
 
 import { ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import { ElAlert, ElButton, ElCard, ElOption, ElSelect } from 'element-plus';
 
@@ -17,7 +17,7 @@ import {
 import { useRequest } from '#/hooks/use-request';
 
 defineOptions({
-  name: 'WhaleReportExternalViewer',
+  name: 'ZxplatReportExternalViewer',
 });
 
 const sources = ref<ExternalDocumentSourceDto[]>([]);

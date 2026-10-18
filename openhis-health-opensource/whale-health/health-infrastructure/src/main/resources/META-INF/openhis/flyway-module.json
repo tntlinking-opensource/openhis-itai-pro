@@ -1,6 +1,0 @@
-{
-  "moduleId": "peis",
-  "enabledProperty": "openhis.modules.peis.enabled",
-  "locations": "classpath:db/migration/peis",
-  "historyTable": "flyway_schema_history_peis"
-}

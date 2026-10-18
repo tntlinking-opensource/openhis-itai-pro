@@ -81,6 +81,12 @@ const props = withDefaults(
      * 是否展示「发药完成自动点评」开关（门诊发药开启；住院等可关）。
      */
     showAutoReviewSwitch?: boolean;
+    /**
+     * 是否展示「发药后自动打印」开关（门诊发药开启；住院按患者发药开启）。
+     */
+    showAutoPrintPrescriptionSwitch?: boolean;
+    /** 自动打印开关文案。门诊默认「发药后自动打印处方」。 */
+    autoPrintSwitchLabel?: string;
   }>(),
   {
     prescriptionSheetBlocks: () => [],
@@ -93,11 +99,18 @@ const props = withDefaults(
     sheetNoLabel: '处方号',
     msfxHisScene: MSFX_HIS_SCENE.OP_DISPENSE,
     showAutoReviewSwitch: false,
+    showAutoPrintPrescriptionSwitch: false,
+    autoPrintSwitchLabel: '发药后自动打印处方',
   },
 );
 
 /** 发药完成自动点评开关（与父级双向绑定）。 */
 const autoReviewEnabled = defineModel<boolean>('autoReviewEnabled', {
+  default: false,
+});
+
+/** 发药后自动打印处方开关（与父级双向绑定）。 */
+const autoPrintPrescriptionEnabled = defineModel<boolean>('autoPrintPrescriptionEnabled', {
   default: false,
 });
 
@@ -187,7 +200,12 @@ watch(
     await nextTick();
     const table = rxTableRef.value;
     if (!table) return;
+    // 已发药队列：不清空表格勾选，允许用户勾选后批量打印
+    if (disabled && !fp) {
+      return;
+    }
     table.clearSelection();
+    // 待发提交/加载门控中或无可发行：仅清空不默认勾
     if (disabled || !fp) return;
     for (const row of props.displayTableRows) {
       if (!isDefaultSelectableRxGroupHead(row)) continue;
@@ -202,6 +220,25 @@ function isSheetDispensableStatus(status: DispensePrescriptionBlock['status']): 
   return status === 'pending' || status === 'prepared' || status === 'partial';
 }
 
+/**
+ * 笺面是否可勾选：可发药态；或已发药（仅供批量打印，发药按钮仍由 canDispense 关闭）。
+ * 待发队列提交中 `batchDispenseDisabled` 为 true 时仍禁止勾选可发行，避免并发误选。
+ */
+function isSheetSelectable(item: {
+  canDispense: boolean;
+  status: DispensePrescriptionBlock['status'];
+}): boolean {
+  // 已发药：允许勾选以便批量打印（与「禁止发药」解耦）
+  if (item.status === 'completed') {
+    return true;
+  }
+  // 可发药态：仅待发队列且未在提交/加载门控中
+  if (item.canDispense && !props.batchDispenseDisabled) {
+    return true;
+  }
+  return false;
+}
+
 /** 发药单视图：按当前中西药 tab 过滤后的笺面（与列表明细同源切换） */
 const prescriptionSheetViewItems = computed(() => {
   const patient = props.selectedPatient;
@@ -214,6 +251,7 @@ const prescriptionSheetViewItems = computed(() => {
   return blocks.map((block) => ({
     key: block.id,
     rxId: block.id,
+    status: block.status,
     canDispense: isSheetDispensableStatus(block.status),
     data: buildPrescriptionSheetData(patient, block, {
       tcmDiagnosisText: props.sheetTcmDiagnosisText,
@@ -230,7 +268,9 @@ const prescriptionSheetViewItems = computed(() => {
   }));
 });
 
-/** 当前笺面可勾选的处方块 id */
+/**
+ * 笺面默认勾选的处方块 id（仅可发药态；已发药不默认勾选，需用户显式勾选后打印）。
+ */
 const selectableSheetRxIds = computed(() =>
   prescriptionSheetViewItems.value.filter((item) => item.canDispense).map((item) => item.rxId),
 );
@@ -244,7 +284,17 @@ watch(
     return { pid, ids, disabled };
   },
   ({ pid, ids, disabled }) => {
-    if (!pid || !ids || disabled) {
+    // 无患者：清空勾选
+    if (!pid) {
+      selectedSheetRxIds.value = [];
+      return;
+    }
+    // 已发药队列（禁发药且无可发行）：保留用户为批量打印勾选的项；切患者/中西药由其它 watch 清空
+    if (disabled && !ids) {
+      return;
+    }
+    // 待发提交/加载门控中，或无可发行：清空，避免误发
+    if (disabled || !ids) {
       selectedSheetRxIds.value = [];
       return;
     }
@@ -534,6 +584,21 @@ const msfxDispenseBusNo = computed(() => {
                 inactive-text="关"
               />
             </div>
+            <div
+              v-if="props.showAutoPrintPrescriptionSwitch"
+              class="flex shrink-0 items-center gap-1.5 whitespace-nowrap"
+              :title="`开启后，单张或批量发药成功会自动打印本次发出的单据`"
+            >
+              <span class="text-xs text-[var(--el-text-color-regular)]">{{
+                props.autoPrintSwitchLabel
+              }}</span>
+              <ElSwitch
+                v-model="autoPrintPrescriptionEnabled"
+                inline-prompt
+                active-text="开"
+                inactive-text="关"
+              />
+            </div>
           </div>
           <template v-if="props.enableSheetView">
             <div class="dispense-rx-toolbar-spacer"></div>
@@ -571,7 +636,7 @@ const msfxDispenseBusNo = computed(() => {
               comfortable
               workbench-actions
               :selected="isSheetSelected(item.rxId)"
-              :selectable="item.canDispense && !props.batchDispenseDisabled"
+              :selectable="isSheetSelectable(item)"
               :can-dispense="item.canDispense"
               :dispense-disabled="props.batchDispenseDisabled"
               :print-disabled="props.printPrescriptionsDisabled"

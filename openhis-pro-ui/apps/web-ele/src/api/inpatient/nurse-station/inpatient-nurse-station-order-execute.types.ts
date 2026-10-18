@@ -26,6 +26,12 @@ export interface ListNurseStationOrderExecuteRequest {
   therapyType?: NurseStationOrderExecuteTherapyFilter;
   medicineCategoryTab?: NurseStationOrderExecuteMedicineCategoryTab;
   executionDeadline: string;
+  /**
+   * 麻醉申请范围（与后端 BR-IP-NUR-004-ANES-001 对齐）：
+   * true=仅麻醉申请（申请单号 AA 前缀）；false/不传=排除麻醉申请。
+   * 无类目 25 / 同单号池兼容。
+   */
+  anesthesiaApplyOnly?: boolean;
 }
 
 /**
@@ -187,6 +193,8 @@ export interface NurseStationOrderExecuteRowDto {
   /** 是否中药饮片方（方级折叠行） */
   tcmFlag?: boolean;
   prescriptionNo?: string;
+  /** 申请业务号（采血贴/LIS applyNo；缺省前端回落 orderId） */
+  busNo?: string;
   /** 方内全部药品申请 id（整方执行扩行） */
   lineRequestIds?: string[];
   sufferingFlag?: boolean;
@@ -195,6 +203,7 @@ export interface NurseStationOrderExecuteRowDto {
   activityDefinitionId?: string;
   /** 合管检验设备主键（采血贴分组） */
   specimenTubeMergeDeviceId?: string;
+  specimenTubeMergeGroupNo?: number | string;
   /** 医嘱优先级 code（加急=EM） */
   priorityEnum?: string;
   /** 是否皮试药（仅药嘱） */

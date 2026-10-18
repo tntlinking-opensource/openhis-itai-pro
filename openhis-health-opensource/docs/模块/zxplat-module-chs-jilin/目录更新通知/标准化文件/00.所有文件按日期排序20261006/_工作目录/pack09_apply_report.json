@@ -1,0 +1,63 @@
+{
+  "stats": {
+    "insert": 7132,
+    "update": 46
+  },
+  "key_kind": {
+    "hilist_L": 6,
+    "hilist_old": 7111,
+    "project_01": 61
+  },
+  "stopped_hit_n": 0,
+  "stopped_hit_sample": [],
+  "catalog": {
+    "SERVICE:ACTIVE": 14,
+    "SERVICE_F:STOPPED": 374,
+    "SERVICE_F:ACTIVE": 7542
+  },
+  "total": 7930,
+  "scale": {
+    "catalog_kind": "SERVICE_F",
+    "status": "ACTIVE",
+    "project_code": "011102010010000",
+    "hilist_code": "",
+    "hilist_name": "临床量表评估(自评)",
+    "chrgitm_lv": "1",
+    "list_type": "201",
+    "begin_date": "2025-03-05",
+    "end_date": "",
+    "计价单位": "次·日",
+    "定价上限": "20",
+    "地方编码": "",
+    "限制使用标志": "0",
+    "限制使用范围": "",
+    "诊疗项目说明": "",
+    "诊疗除外内容": "",
+    "诊疗项目内涵": "服务产出：基于患者自主完成的临床量表，对患者生理或心理的功能状态形成评估结论。价格构成：所定价格涵盖完成自评所需的人力资源和基本物质资源消耗。",
+    "last_pack": "09",
+    "last_action": "MODIFY",
+    "last_notice_date": "2026-03-24"
+  },
+  "tb": {
+    "catalog_kind": "SERVICE_F",
+    "status": "ACTIVE",
+    "project_code": "",
+    "hilist_code": "002505020100000-250502012(z)",
+    "hilist_name": "结核/非结核分枝杆菌核酸检测",
+    "chrgitm_lv": "2",
+    "list_type": "201",
+    "begin_date": "2025-10-15",
+    "end_date": "",
+    "计价单位": "次",
+    "定价上限": "400",
+    "地方编码": "",
+    "限制使用标志": "0",
+    "限制使用范围": "",
+    "诊疗项目说明": "",
+    "诊疗除外内容": "",
+    "诊疗项目内涵": "",
+    "last_pack": "09",
+    "last_action": "MODIFY",
+    "last_notice_date": "2026-03-24"
+  }
+}

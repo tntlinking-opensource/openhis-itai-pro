@@ -1,13 +1,13 @@
 <script lang="ts" setup>
-import type { FormItemConfig, TableColumn, TreeNodeData } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn, TreeNodeData } from '@zxplat-core/table-layout-ui';
 
 import type { ProcedureCatalogInitResponse, ProcedureCatalogItem } from '#/api';
 
 import { computed, nextTick, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { ElButton, ElMessage } from 'element-plus';
 

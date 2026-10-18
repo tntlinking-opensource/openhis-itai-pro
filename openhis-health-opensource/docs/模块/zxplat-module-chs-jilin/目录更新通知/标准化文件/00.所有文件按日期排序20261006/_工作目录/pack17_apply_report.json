@@ -1,0 +1,40 @@
+{
+  "stats": {
+    "lv_same": 495,
+    "hit_codes": 495,
+    "hit_rows": 495,
+    "skip_dirty": 1
+  },
+  "lv_change": {},
+  "miss_n": 0,
+  "miss_sample": [],
+  "catalog": {
+    "SERVICE:ACTIVE": 561,
+    "SERVICE_F:STOPPED": 4152,
+    "SERVICE_F:ACTIVE": 5356,
+    "SERVICE:STOPPED": 7
+  },
+  "total": 10076,
+  "a_us": {
+    "catalog_kind": "SERVICE_F",
+    "status": "ACTIVE",
+    "project_code": "012302010010000",
+    "hilist_code": "",
+    "hilist_name": "A型超声检查",
+    "chrgitm_lv": "1",
+    "list_type": "201",
+    "begin_date": "2026-04-30",
+    "end_date": "",
+    "计价单位": "单侧",
+    "定价上限": "20",
+    "地方编码": "",
+    "限制使用标志": "0",
+    "限制使用范围": "",
+    "诊疗项目说明": "",
+    "诊疗除外内容": "",
+    "诊疗项目内涵": "通过A型超声技术，对组织器官进行超声成像及诊断。",
+    "last_pack": "17",
+    "last_action": "SET_PAY_CLASS",
+    "last_notice_date": ""
+  }
+}

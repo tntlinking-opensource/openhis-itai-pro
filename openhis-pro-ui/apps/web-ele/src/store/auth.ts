@@ -1,15 +1,15 @@
-import type { Recordable } from '@vben/types';
+import type { Recordable } from '@zxplat/types';
 
 import type { AuthApi } from '#/api/core/auth';
 
 import { ref } from 'vue';
 
-import { LOGIN_PATH } from '@vben/constants';
-import { resetAllStores, useAccessStore, useUserStore } from '@vben/stores';
+import { LOGIN_PATH } from '@zxplat/constants';
+import { resetAllStores, useAccessStore, useUserStore } from '@zxplat/stores';
 
 import { defineStore } from 'pinia';
 
-import { stopProgress } from '@vben/utils';
+import { stopProgress } from '@zxplat/utils';
 
 import { getTenantsApi, loginApi, logoutApi } from '#/api/core/auth';
 import { getUserInfoApi } from '#/api/core/user';
@@ -284,7 +284,7 @@ export const useAuthStore = defineStore('auth', () => {
     configuration: AuthApi.LoginConfiguration | null | undefined,
   ) {
     const fromFlag = configuration?.currentUser?.canMrmsAdmin === true;
-    // 兼容：框架 currentUser.roles 存的是 whale_roles.name（如 mrms_admin），非 ROLE_* code
+    // 兼容：框架 currentUser.roles 存的是 zxplat_roles.name（如 mrms_admin），非 ROLE_* code
     const roleList = configuration?.currentUser?.roles ?? [];
     let fromRoles = false;
     for (const role of roleList) {

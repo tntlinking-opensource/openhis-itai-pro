@@ -1,6 +1,6 @@
 import type { CAC } from 'cac';
 
-import { getPackages } from '@vben/node-utils';
+import { getPackages } from '@zxplat/node-utils';
 
 import depcheck from 'depcheck';
 
@@ -11,23 +11,23 @@ const DEFAULT_CONFIG = {
     'vite',
     'vitest',
     'unbuild',
-    '@vben/tsconfig',
-    '@vben/vite-config',
-    '@vben/tailwind-config',
+    '@zxplat/tsconfig',
+    '@zxplat/vite-config',
+    '@zxplat/tailwind-config',
     '@types/*',
-    '@vben-core/design',
+    '@zxplat-core/design',
   ],
   // 需要忽略的包
   ignorePackages: [
-    '@vben/backend-mock',
-    '@vben/eslint-config',
-    '@vben/node-utils',
-    '@vben/prettier-config',
-    '@vben/stylelint-config',
-    '@vben/tailwind-config',
-    '@vben/tsconfig',
-    '@vben/vite-config',
-    '@vben/vsh',
+    '@zxplat/backend-mock',
+    '@zxplat/eslint-config',
+    '@zxplat/node-utils',
+    '@zxplat/prettier-config',
+    '@zxplat/stylelint-config',
+    '@zxplat/tailwind-config',
+    '@zxplat/tsconfig',
+    '@zxplat/vite-config',
+    '@zxplat/vsh',
   ],
   // 需要忽略的文件模式
   ignorePatterns: ['dist', 'node_modules', 'public'],

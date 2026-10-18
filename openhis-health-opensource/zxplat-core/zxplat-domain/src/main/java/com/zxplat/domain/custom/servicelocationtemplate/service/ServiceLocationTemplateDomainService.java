@@ -1,0 +1,236 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.zxplat.domain.custom.servicelocationtemplate.service;
+
+import com.zxplat.domain.custom.servicelocationtemplate.command.BatchInsertDistributionRulesCommand;
+import com.zxplat.domain.custom.servicelocationtemplate.command.DeleteDistributionRulesByOrganizationCommand;
+import com.zxplat.domain.custom.servicelocationtemplate.command.SaveDistributionConfigCommand;
+import com.zxplat.domain.custom.servicelocationtemplate.entity.ServiceLocationTemplate;
+import com.zxplat.domain.custom.servicelocationtemplate.repository.ServiceLocationTemplateRepository;
+import com.zxplat.domain.share.constants.ErrorCodeConstants;
+import com.zxplat.domain.share.events.custom.servicelocationtemplate.ServiceLocationTemplateEditedEvent;
+import com.zxplat.framework.core.application.exception.BusinessException;
+import com.zxplat.framework.core.domain.event.IDomainEventPublisher;
+import org.springframework.stereotype.Service;
+
+import java.time.LocalTime;
+import java.util.*;
+import lombok.RequiredArgsConstructor;
+
+/**
+ * 取药科室模板（{@code cus_service_location_template}）聚合写侧领域服务。
+ *
+ * <p>职责：按开立科室维护发放规则（整科覆盖保存、批量插入、按科软删）。</p>
+ * <p>不变量：配置键（匹配条件+默认发药位置）不重复（BR-SLT-004）、优先级从 1 连续；持久化先于 {@link ServiceLocationTemplateEditedEvent}。</p>
+ * <p>仅注入本聚合 {@link ServiceLocationTemplateRepository}。</p>
+ */
+@Service
+@RequiredArgsConstructor
+public class ServiceLocationTemplateDomainService {
+
+    private final ServiceLocationTemplateRepository repository;
+    private final IDomainEventPublisher domainEventPublisher;
+
+    /**
+     * 整科覆盖保存（单事务：先软删后插，避免中间态对外可见）。
+     *
+     * @param command 开立科室与规则行列表
+     */
+    public void saveDistributionConfig(SaveDistributionConfigCommand command) {
+        // 前置校验：开立科室、组合键与优先级连续
+        if (command.getOrganizationId() == null) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT, "开立科室标识不能为空");
+        }
+        List<SaveDistributionConfigCommand.DistributionRuleItemCommand> items = command.resolveItems();
+        this.assertNoDuplicateKey(command.getOrganizationId(), items);
+        this.assertPriorityContinuous(items);
+
+        // 整科覆盖：先软删后插；由应用层提供事务边界，避免中间态对外可见。
+        List<ServiceLocationTemplate> existed = repository.findAllByOrganizationId(command.getOrganizationId());
+        for (ServiceLocationTemplate row : existed) {
+            row.markDeleted(command.getOperatorId());
+        }
+        // 存在存量规则时先批量软删，再插入新配置实现整科覆盖。
+        if (!existed.isEmpty()) {
+            repository.saveAll(existed);
+        }
+
+        List<ServiceLocationTemplate> toSave = new ArrayList<>();
+        for (SaveDistributionConfigCommand.DistributionRuleItemCommand item : items) {
+            ServiceLocationTemplate row = new ServiceLocationTemplate();
+            row.setOrganizationId(command.getOrganizationId());
+            row.setItemTable(item.getItemTable());
+            row.setDistributionCategoryCode(item.getDistributionCategoryCode());
+            row.setDefLocationId(item.getDefLocationId());
+            row.setItemDefinitionId(item.getItemDefinitionId());
+            row.setTypeCode(item.getTypeCode());
+            row.setMethodCode(item.getMethodCode());
+            row.setStartTime(item.getStartTime());
+            row.setEndTime(item.getEndTime());
+            row.setPriority(item.getPriority());
+            row.setDisplayOrder(item.getDisplayOrder());
+            row.setRemark(item.getRemark());
+            row.assertRequiredFields();
+            toSave.add(row);
+        }
+        repository.saveAll(toSave);
+
+        // 发布事件：整科规则已覆盖保存
+        domainEventPublisher.publish(new ServiceLocationTemplateEditedEvent(
+            command.getOrganizationId(),
+            command.getOrganizationId(),
+            items.size()
+        , command.getOperatorId()));
+    }
+
+    /**
+     * 删除科室下全部规则。
+     *
+     * @param command 开立科室与操作人
+     */
+    public void deleteDistributionRulesByOrganization(DeleteDistributionRulesByOrganizationCommand command) {
+        // 加载/组装：软删科室下全部存量规则
+        List<ServiceLocationTemplate> existed = repository.findAllByOrganizationId(command.getOrganizationId());
+        for (ServiceLocationTemplate row : existed) {
+            row.markDeleted(command.getOperatorId());
+        }
+        // 存在存量规则时先批量软删，再插入新配置实现整科覆盖。
+        if (!existed.isEmpty()) {
+            repository.saveAll(existed);
+        }
+    }
+
+    /**
+     * 批量插入规则。
+     *
+     * @param command 开立科室与规则行列表
+     */
+    public void batchInsertDistributionRules(BatchInsertDistributionRulesCommand command) {
+        // 加载/组装：逐行装配规则实体
+        List<BatchInsertDistributionRulesCommand.DistributionRuleItemCommand> items = command.resolveItems();
+        List<ServiceLocationTemplate> toSave = new ArrayList<>();
+        for (BatchInsertDistributionRulesCommand.DistributionRuleItemCommand item : items) {
+            ServiceLocationTemplate row = new ServiceLocationTemplate();
+            row.setOrganizationId(command.getOrganizationId());
+            row.setItemTable(item.getItemTable());
+            row.setDistributionCategoryCode(item.getDistributionCategoryCode());
+            row.setDefLocationId(item.getDefLocationId());
+            row.setItemDefinitionId(item.getItemDefinitionId());
+            row.setTypeCode(item.getTypeCode());
+            row.setMethodCode(item.getMethodCode());
+            row.setStartTime(item.getStartTime());
+            row.setEndTime(item.getEndTime());
+            row.setPriority(item.getPriority());
+            row.setDisplayOrder(item.getDisplayOrder());
+            row.setRemark(item.getRemark());
+            row.assertRequiredFields();
+            toSave.add(row);
+        }
+        // 持久化
+        repository.saveAll(toSave);
+    }
+
+    /**
+     * 校验「物品表 + 发放类别 + 具体项 + 种类 + 用法 + 生效时段 + 默认发药位置」在本次提交中不重复（BR-SLT-004）。
+     *
+     * <p>同匹配条件可指向多个药房，由 {@code priority} 排候选序；仅条件与库位全同才拒绝。</p>
+     *
+     * @param organizationId 开立科室/机构标识
+     * @param items 待保存规则列表
+     */
+    private void assertNoDuplicateKey(Long organizationId, List<SaveDistributionConfigCommand.DistributionRuleItemCommand> items) {
+        Set<String> keys = new HashSet<>();
+        for (SaveDistributionConfigCommand.DistributionRuleItemCommand item : items) {
+            String key = organizationId + "\u0001"
+                + item.getItemTable() + "\u0001"
+                + item.getDistributionCategoryCode() + "\u0001"
+                + String.valueOf(item.getItemDefinitionId()) + "\u0001"
+                + String.valueOf(item.getTypeCode()) + "\u0001"
+                + String.valueOf(item.getMethodCode()) + "\u0001"
+                + this.timeWindowKey(item.getStartTime(), item.getEndTime()) + "\u0001"
+                + String.valueOf(item.getDefLocationId());
+            // 同一科室下匹配条件（含种类）与默认发药位置全同视为重复行
+            if (keys.contains(key)) {
+                throw new BusinessException(ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT, "规则配置键不可重复");
+            }
+            keys.add(key);
+        }
+    }
+
+    /**
+     * 将生效时段规范化为组合键片段；双空表示全天有效。
+     *
+     * @param startTime 生效开始
+     * @param endTime 生效结束
+     * @return 时段键
+     */
+    private String timeWindowKey(LocalTime startTime, LocalTime endTime) {
+        String startPart;
+        if (startTime == null) {
+            startPart = "";
+        } else {
+            startPart = startTime.toString();
+        }
+        String endPart;
+        if (endTime == null) {
+            endPart = "";
+        } else {
+            endPart = endTime.toString();
+        }
+        return startPart + "\u0002" + endPart;
+    }
+
+    /**
+     * 校验优先级：仅在同一匹配竞争组内须从 1 起连续（BR-SLT-005）。
+     *
+     * <p>竞争组 = 物品表 + 发放类别 + 具体项 + 种类 + 用法 + 生效时段（不含药房）。
+     * 同组多药房时 priority 表示候选序（1 先试，无库存再试 2）；不同品类/种类各自独立从 1 起，允许整科出现多个 1。</p>
+     *
+     * @param items 待保存规则列表
+     */
+    private void assertPriorityContinuous(List<SaveDistributionConfigCommand.DistributionRuleItemCommand> items) {
+        Map<String, List<Integer>> prioritiesByGroup = new HashMap<>();
+        for (SaveDistributionConfigCommand.DistributionRuleItemCommand item : items) {
+            // 未配置优先级的规则不参与连续性校验
+            if (item.getPriority() == null) {
+                continue;
+            }
+            String groupKey = this.priorityGroupKey(item);
+            List<Integer> groupPriorities = prioritiesByGroup.get(groupKey);
+            if (groupPriorities == null) {
+                groupPriorities = new ArrayList<>();
+                prioritiesByGroup.put(groupKey, groupPriorities);
+            }
+            groupPriorities.add(item.getPriority());
+        }
+        for (List<Integer> priorities : prioritiesByGroup.values()) {
+            priorities.sort(Integer::compareTo);
+            for (int i = 0; i < priorities.size(); i++) {
+                int expected = i + 1;
+                // 同组内须 1..N 连续，否则同条件多药房候选序不确定
+                if (priorities.get(i) != expected) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT,
+                        "同一匹配条件下优先级必须从 1 开始连续分配");
+                }
+            }
+        }
+    }
+
+    /**
+     * 组装优先级竞争组键（与 BR-SLT-004 匹配条件一致，不含默认发药位置）。
+     *
+     * @param item 规则行
+     * @return 组键
+     */
+    private String priorityGroupKey(SaveDistributionConfigCommand.DistributionRuleItemCommand item) {
+        return item.getItemTable() + "\u0001"
+            + item.getDistributionCategoryCode() + "\u0001"
+            + String.valueOf(item.getItemDefinitionId()) + "\u0001"
+            + String.valueOf(item.getTypeCode()) + "\u0001"
+            + String.valueOf(item.getMethodCode()) + "\u0001"
+            + this.timeWindowKey(item.getStartTime(), item.getEndTime());
+    }
+}

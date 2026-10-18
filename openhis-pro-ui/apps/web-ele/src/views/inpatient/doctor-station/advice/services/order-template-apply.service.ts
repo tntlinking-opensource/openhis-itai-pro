@@ -51,6 +51,8 @@ import {
   isInpatientLongTermMedicationTherapy,
   validateWesternEditLineItem,
 } from './advice-row';
+import { ADVICE_CATALOG_EXCLUDE_SERVICE_APPLY_CATEGORY_CODES } from '#/views/outpatient/doctor-station/advice/constants/advice-catalog-exclude-service-apply-categories.config';
+
 import {
   INPATIENT_ADVICE_CATALOG_TABLE_NAMES,
   WESTERN_ADVICE_CATALOG_EXCLUDE_MEDICATION_CATEGORY_CODES,
@@ -354,6 +356,7 @@ async function fetchCatalogOptionsByPrepickedKeys(
     prepickedProductKeys: keys,
     productTableNames: [...INPATIENT_ADVICE_CATALOG_TABLE_NAMES],
     excludeMedicationCategoryCodes: [...WESTERN_ADVICE_CATALOG_EXCLUDE_MEDICATION_CATEGORY_CODES],
+    excludeCategoryCodes: [...ADVICE_CATALOG_EXCLUDE_SERVICE_APPLY_CATEGORY_CODES],
   });
   const { content: rawRows } = parsePagedRowsFromApiData<DoctorStationAdviceCatalogRowDto>(res);
   return rawRows.map((item) => mapCatalogRowToOption(item));
@@ -597,9 +600,7 @@ function buildAdviceDrugItemFromTemplateLine(
     };
   }
 
-  const catalogPatch = buildWesternProductSelectPatch(seed, catalog, {
-    totalUnitDefaultKind: params.therapyTypeCode === 'TEMPORARY' ? 'PACKAGE' : 'SALES',
-  });
+  const catalogPatch = buildWesternProductSelectPatch(seed, catalog);
   const item: AdviceDrugItem = {
     ...seed,
     ...catalogPatch,

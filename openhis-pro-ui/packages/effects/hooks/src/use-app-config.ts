@@ -1,4 +1,4 @@
-import type { ApplicationConfig, VbenAdminProAppConfigRaw } from '@vben/types/global';
+import type { ApplicationConfig, VbenAdminProAppConfigRaw } from '@zxplat/types/global';
 
 /**
  * 由 vite-inject-app-config 注入的全局配置

@@ -16,9 +16,16 @@ import {
   resolveInfusionLabelPrintDayCount,
   resolveInfusionLabelPrintTimesPerDay,
 } from './mappers/outpatient-infusion-label';
+import {
+  normalizeIpInfusionLabelPrintJson,
+  rebindOutpatientInfusionLabelDoseColumn,
+} from './normalize-ip-infusion-label-print-json';
+import { normalizeIpSpecimenBarcodePrintJson } from './normalize-ip-specimen-barcode-print-json';
+import { normalizeOpSpecimenBarcodePrintJson } from './normalize-op-specimen-barcode-print-json';
 import { resolveNursePrescriptionPrintTargets } from './nurse-prescription-print';
 import { resolveSpecimenBarcodeLabelCount } from './nurse-station-print-targets';
 import { resolveSpecimenBarcodeUrgencyText } from './constants/service-request-priority';
+import { normalizeSpecimenBarcodePrintJson } from './normalize-specimen-barcode-print-json';
 import { print, PRINT_SCENARIO } from './runtime';
 import { resolveOutpatientPrescriptionPrintScenario } from './resolve-outpatient-prescription-scenario';
 
@@ -70,6 +77,8 @@ export interface PrintInfusionLabelOptions {
   scenarioCode?: string;
   /** 合并进每张瓶签 bizRef（如打印中心 listRowKeys） */
   bizRefExtra?: Record<string, unknown>;
+  /** 显式指定打印机时跳过选机弹窗 */
+  printer?: string;
 }
 
 /**
@@ -139,6 +148,11 @@ export async function printInfusionLabel(options: PrintInfusionLabelOptions) {
             executeTimeText: buildExecuteTimeTextForInfusionDay(baseExecuteTimeText, dayIndex),
             quantitySplitCount,
           },
+          // 住院：国基才收紧贴面，红旗沿用库模板；门诊只把剂量列改成医生开的计量单位
+          transformPrintJson:
+            scenarioCode === PRINT_SCENARIO.ipInfusionLabelPrint
+              ? normalizeIpInfusionLabelPrintJson
+              : rebindOutpatientInfusionLabelDoseColumn,
           bizRef: {
             scenarioCode,
             encounterId,
@@ -152,6 +166,8 @@ export async function printInfusionLabel(options: PrintInfusionLabelOptions) {
             ...(options.bizRefExtra ?? {}),
           },
           jobName: `${options.jobName ?? '输液瓶签'}${suffix}`,
+          printer: options.printer,
+          selectPrinter: options.printer?.trim() ? 'never' : undefined,
         });
         if (result.ok) {
           printedCount += 1;
@@ -170,14 +186,23 @@ export async function printInfusionLabel(options: PrintInfusionLabelOptions) {
 }
 
 export interface PrintSpecimenBarcodeItem {
-  /** 检验申请主键（条码内容，string） */
+  /** 检验申请主键（bizRef / 回落条码；string） */
   serviceRequestId: string;
+  /**
+   * 条码内容（与 LIS applyNo 一致：SR.busNo）；空则回落 serviceRequestId。
+   */
+  barcode?: string;
   /** 检验项目名称 */
   itemName?: string;
   /** 开立数量对应贴数（如「2次」→ 2）；缺省 1 */
   labelCount?: number;
   /** 医嘱优先级 code（EM=急） */
   priorityEnum?: string;
+  /**
+   * 合管组内全部申请主键；有值时写入 bizRef.serviceRequestIds，
+   * 避免只记锚点导致组内其余行仍显示未打。
+   */
+  memberServiceRequestIds?: string[];
 }
 
 export interface PrintSpecimenBarcodeOptions {
@@ -192,6 +217,17 @@ export interface PrintSpecimenBarcodeOptions {
   jobName?: string;
   /** 默认门诊采血贴；住院护士站请传 PRINT_SCENARIO.ipSpecimenBarcodePrint */
   scenarioCode?: string;
+}
+
+/** 采血贴打印前改模板：住院放大条码，门诊项目名不折行 */
+function resolveSpecimenBarcodePrintJson(scenarioCode: string) {
+  if (scenarioCode === PRINT_SCENARIO.ipSpecimenBarcodePrint) {
+    return normalizeIpSpecimenBarcodePrintJson;
+  }
+  if (scenarioCode === PRINT_SCENARIO.opSpecimenBarcodePrint) {
+    return normalizeOpSpecimenBarcodePrintJson;
+  }
+  return undefined;
 }
 
 /** 护士站采血贴：按检验项目主键逐张打印；开立数量 N 打 N 份 */
@@ -211,11 +247,28 @@ export async function printSpecimenBarcode(options: PrintSpecimenBarcodeOptions)
       continue;
     }
     seen.add(serviceRequestId);
+    const explicitBarcode = strId(raw.barcode);
+    // 无 busNo 时回落主键：与 LIS applyNo=SR.busNo 可能不一致，打印仍发出但打日志便于排查
+    if (!explicitBarcode) {
+      console.warn(
+        '[print] 采血贴缺少 busNo，条码回落 serviceRequestId，可能与 LIS applyNo 不一致',
+        serviceRequestId,
+      );
+    }
+    const barcode = explicitBarcode || serviceRequestId;
+    const memberServiceRequestIds = (raw.memberServiceRequestIds ?? [])
+      .map((id) => strId(id))
+      .filter(Boolean);
+    if (!memberServiceRequestIds.includes(serviceRequestId)) {
+      memberServiceRequestIds.unshift(serviceRequestId);
+    }
     items.push({
       serviceRequestId,
+      barcode,
       itemName: strId(raw.itemName),
       labelCount: resolveSpecimenBarcodeLabelCount(raw.labelCount),
       priorityEnum: strId(raw.priorityEnum) || undefined,
+      memberServiceRequestIds,
     });
   }
   if (!items.length) {
@@ -235,6 +288,10 @@ export async function printSpecimenBarcode(options: PrintSpecimenBarcodeOptions)
     const item = items[index]!;
     const labelCount = resolveSpecimenBarcodeLabelCount(item.labelCount);
     const suffix = items.length > 1 ? ` (${index + 1}/${items.length})` : '';
+    const serviceRequestIds =
+      item.memberServiceRequestIds && item.memberServiceRequestIds.length > 0
+        ? item.memberServiceRequestIds
+        : [item.serviceRequestId];
     const result = await print({
       scenarioCode,
       source: {
@@ -244,6 +301,7 @@ export async function printSpecimenBarcode(options: PrintSpecimenBarcodeOptions)
         ageText,
         itemName: item.itemName,
         serviceRequestId: item.serviceRequestId,
+        barcode: item.barcode || item.serviceRequestId,
         priorityEnum: item.priorityEnum,
         urgencyText: resolveSpecimenBarcodeUrgencyText(item.priorityEnum),
       },
@@ -252,9 +310,15 @@ export async function printSpecimenBarcode(options: PrintSpecimenBarcodeOptions)
         scenarioCode,
         encounterId,
         serviceRequestId: item.serviceRequestId,
-        serviceRequestIds: [item.serviceRequestId],
+        serviceRequestIds,
       },
       jobName: `${options.jobName ?? '采血贴'}${suffix}`,
+      // 国基才改采血贴 JSON；红旗沿用库模板
+      transformPrintJson: (printJson) => {
+        const next = normalizeSpecimenBarcodePrintJson(printJson);
+        const extra = resolveSpecimenBarcodePrintJson(scenarioCode);
+        return extra ? extra(next) : next;
+      },
     });
     if (result.ok) {
       printedCount += labelCount;

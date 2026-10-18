@@ -12,15 +12,19 @@ import { print, PRINT_SCENARIO } from '#/utils/print/runtime';
 import type { PrintResult } from '#/utils/print/runtime/types';
 import {
   groupPrintPendingSpecimenBarcodeRows,
+  isBloodCollectionFeePrintItem,
   resolveSpecimenBarcodeLabelCount,
 } from '#/utils/print/nurse-station-print-targets';
 import { normalizeOralMedSheetPrintJson } from '#/utils/print/normalize-oral-med-sheet-print-json';
+import { normalizeSpecimenBarcodePrintJson } from '#/utils/print/normalize-specimen-barcode-print-json';
 import { resolveInfusionLabelPrintTimesPerDay } from '#/utils/print/mappers/outpatient-infusion-label';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { ORAL_MED_SHEET_SPLIT_TCM_SHEETS } from '#/views/inpatient/nurse-station/print-center/oral-med-sheet-print.config';
 
 import {
   buildDispenseSheetPrintSource,
   buildDispenseSummaryPrintSource,
+  buildPharmacyDispenseSummaryPrintSource,
   buildFeeDetailPrintSource,
   buildFeeListPrintSource,
   buildInfusionPrintSource,
@@ -36,7 +40,8 @@ import {
   buildWristbandPrintSource,
   resolvePatient,
   type OrderPrintDataSource,
-} from './build-print-source';
+} from '#/views/inpatient/nurse-station/print-center/build-print-source';
+import type { TempOrderSurgeryAnesthFilter } from './doc-registry';
 import { buildInfusionPrintListRowKey } from './enrich-printed-status';
 
 /**
@@ -97,6 +102,8 @@ export interface PrintInpatientPrintCenterOptions {
   executionDeadline: string;
   /** 费用清单/明细单：与费用明细页「费用状态」一致；未传则待结算 */
   costStatusEnum?: NurseStationCostDetailStatusFilter;
+  /** 费用清单/明细单：与费用明细页「麻醉统计」一致；未传则不过滤 */
+  anesthesiaStatisticsOnly?: boolean;
   /**
    * 长期/临时医嘱明细按开立时间排序；true=正序（先开在上）。
    * 仅病案首页临床侧栏传 true；护士站打印中心不传，保持原序。
@@ -111,6 +118,45 @@ export interface PrintInpatientPrintCenterOptions {
    * true：同一张卡按每日次数出纸（日两次打两张）；false：每患者一张。
    */
   splitByFrequency?: boolean;
+  /** 临时医嘱：全部 / 手术 / 麻醉（麻醉时只打麻醉申请内容） */
+  tempOrderSurgeryAnesthFilter?: TempOrderSurgeryAnesthFilter;
+  /**
+   * 汇总领药单取数：nurse_station=护士站 IF-IP-SUM-03（管辖病区门控）；
+   * pharmacy=药房 IF-IPS-02（药房可见范围）。未传默认护士站。
+   */
+  dispenseSummaryDataSource?: 'nurse_station' | 'pharmacy';
+  /** 打印中心下拉指定的打印机；传入后不再弹选机框 */
+  printer?: string;
+  /** 批量进度（采血贴等逐张打） */
+  onProgress?: (progress: PrintCenterProgress) => void;
+}
+
+/** 打印中心场景 → 模板校正（用药单 rowspan / 采血贴 busNo 条码可扫） */
+function resolvePrintCenterTransform(
+  scenarioCode: string,
+): ((printJson: Record<string, unknown>) => Record<string, unknown>) | undefined {
+  if (scenarioCode === PRINT_SCENARIO.ipOralMedSheetPrint) {
+    return normalizeOralMedSheetPrintJson;
+  }
+  if (
+    scenarioCode === PRINT_SCENARIO.ipSpecimenBarcodePrint ||
+    scenarioCode === PRINT_SCENARIO.opSpecimenBarcodePrint
+  ) {
+    return normalizeSpecimenBarcodePrintJson;
+  }
+  // 住院检查/检验单勿挂 normalizeServiceApplyPrintJson：
+  // 该改写面向门诊申请单（把 diagnosisText.left 拽到 38），
+  // 挂到住院模板会与科别(left=24)叠字。门诊场景见 print-service-apply.ts。
+  return undefined;
+}
+
+export interface PrintCenterProgress {
+  /** 已完成张数（含失败跳过） */
+  current: number;
+  /** 计划总张数 */
+  total: number;
+  /** 当前任务简述 */
+  label?: string;
 }
 
 async function printOnce(options: {
@@ -119,18 +165,27 @@ async function printOnce(options: {
   copies?: number;
   jobName?: string;
   bizRef?: Record<string, unknown>;
+  printer?: string;
+  /** 批量静默：失败不弹排查框，由调用方汇总 */
+  background?: boolean;
 }): Promise<PrintResult> {
+  const printer = options.printer?.trim();
   return print({
     scenarioCode: options.scenarioCode,
     source: options.source,
     copies: options.copies ?? 1,
     jobName: options.jobName ?? resolvePrintScenarioLabel(options.scenarioCode),
     bizRef: options.bizRef,
-    transformPrintJson:
-      options.scenarioCode === PRINT_SCENARIO.ipOralMedSheetPrint
-        ? normalizeOralMedSheetPrintJson
-        : undefined,
+    transformPrintJson: resolvePrintCenterTransform(options.scenarioCode),
+    printer,
+    selectPrinter: printer ? 'never' : 'auto',
+    background: options.background === true,
   });
+}
+
+/** 批量贴签间隔，减轻老机器 / 共享队列连打压力 */
+function delayPrintMs(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 /** 住院护士站打印中心：按单据拉取业务数据后走 print() */
@@ -146,10 +201,15 @@ export async function printInpatientPrintCenter(
     dateTo,
     executionDeadline,
     costStatusEnum = 'PENDING_SETTLEMENT',
+    anesthesiaStatisticsOnly = false,
     orderOpenedTimeAsc = false,
     orderPrintDataSource = 'nurse_audited',
     splitByFrequency = true,
+    tempOrderSurgeryAnesthFilter = 'all',
+    dispenseSummaryDataSource = 'nurse_station',
   } = options;
+  const printer = String(options.printer ?? '').trim() || undefined;
+  const onProgress = options.onProgress;
   const rows = selectedRows;
 
   if (docType === 'temp_sheet') {
@@ -174,23 +234,25 @@ export async function printInpatientPrintCenter(
   try {
     if (docType === 'infusion_label') {
       let printedCount = 0;
-      const fromDay = dateFrom || dateTo || dayjs().format('YYYY-MM-DD');
+      const fallbackDay = dateFrom || dateTo || dayjs().format('YYYY-MM-DD');
       for (const row of rows) {
         const patient = resolvePatient(patients, row);
         const encounterId = String(patient?.id || row.encounterId || '').trim();
         const groupKey = String(row.groupId || row.orderId || '').trim();
+        // 跨天待打行自带 queryDate；否则从 listRowKey 末段或区间起日回落
+        const rowDay = resolveInfusionPendingQueryDate(row, fallbackDay);
         const listRowKey =
           String(row.listRowKey ?? '').trim() ||
-          buildInfusionPrintListRowKey(encounterId, groupKey, fromDay);
-        // 查询日取区间起日（与待打列表 loadInfusionPending 同构；跨日区间后续再扩）
-        const source = await buildInfusionPrintSource(patients, row, fromDay);
+          buildInfusionPrintListRowKey(encounterId, groupKey, rowDay);
+        const source = await buildInfusionPrintSource(patients, row, rowDay);
         const result = await printInfusionLabel({
           encounterId: encounterId || row.id,
           source,
           jobName: `输液贴·${row.bedNo}${row.patientName}`,
           scenarioCode: PRINT_SCENARIO.ipInfusionLabelPrint,
+          printer,
           bizRefExtra: {
-            queryDate: fromDay,
+            queryDate: rowDay,
             listRowKeys: listRowKey ? [listRowKey] : [],
             encounterIds: encounterId ? [encounterId] : [],
           },
@@ -230,6 +292,7 @@ export async function printInpatientPrintCenter(
         for (let timeIndex = 0; timeIndex < timesPerDay; timeIndex += 1) {
           const suffix = timesPerDay > 1 ? ` (第${timeIndex + 1}/${timesPerDay}次)` : '';
           const result = await printOnce({
+            printer,
             scenarioCode: PRINT_SCENARIO.ipPatrolCardPrint,
             source,
             copies,
@@ -262,6 +325,7 @@ export async function printInpatientPrintCenter(
         const patient = resolvePatient(patients, row);
         const allergyText = await loadWristbandAllergyText(patient, allergyTextByPatientId);
         const result = await printOnce({
+            printer,
           scenarioCode: PRINT_SCENARIO.ipWristbandPrint,
           source: buildWristbandPrintSource(patients, row, allergyText),
           copies,
@@ -284,6 +348,7 @@ export async function printInpatientPrintCenter(
       for (const row of rows) {
         const patient = resolvePatient(patients, row);
         const result = await printOnce({
+            printer,
           scenarioCode: PRINT_SCENARIO.ipBedCardPrint,
           source: buildBedCardPrintSource(patients, row),
           copies,
@@ -310,6 +375,7 @@ export async function printInpatientPrintCenter(
         const source = await buildOralMedLabelPrintSource(patients, row, fromDay, toDay);
         const listRowKey = String(row.listRowKey || row.orderId || row.id || '').trim();
         const result = await printOnce({
+            printer,
           scenarioCode: PRINT_SCENARIO.ipOralMedLabelPrint,
           source,
           copies,
@@ -355,6 +421,7 @@ export async function printInpatientPrintCenter(
           rows.filter((row) => strBiz(row.encounterId) === strBiz(item.encounterId)),
         );
         const result = await printOnce({
+            printer,
           scenarioCode,
           source: item.source,
           copies,
@@ -373,10 +440,28 @@ export async function printInpatientPrintCenter(
       return { ok: printedCount > 0, count: printedCount };
     }
 
-    // 采血贴：住院模板 ip-specimenBarcode-print；合管 device 一组；张数=开立数量×份数
+    // 采血贴：合管一组一张（组内项目名拼接）；无合管逐条。一次发完全部组，bizRef 带组内全部 SR。
     if (docType === 'specimen_barcode') {
-      let printedCount = 0;
+      const selectedItemCount = rows.filter((row) => {
+        const orderId = String(row.orderId ?? '').trim();
+        if (!orderId) {
+          return false;
+        }
+        return !isBloodCollectionFeePrintItem(String(row.title ?? '').trim());
+      }).length;
       const groupedTargets = groupPrintPendingSpecimenBarcodeRows(rows);
+      const jobs: Array<{
+        encounterId: string;
+        serviceRequestId: string;
+        memberServiceRequestIds: string[];
+        bedNo: string;
+        patientName: string;
+        genderEnumText: string;
+        ageText: string;
+        itemName: string;
+        barcode: string;
+        priorityEnum?: string;
+      }> = [];
       for (const target of groupedTargets) {
         const anchorRow =
           rows.find((row) => String(row.orderId ?? '').trim() === target.serviceRequestId) ??
@@ -389,41 +474,112 @@ export async function printInpatientPrintCenter(
         if (!encounterId || !serviceRequestId) {
           continue;
         }
-        const labelCount = resolveSpecimenBarcodeLabelCount(target.labelCount);
-        const labelCopies = labelCount * Math.max(1, copies);
-        const result = await printOnce({
-          scenarioCode: PRINT_SCENARIO.ipSpecimenBarcodePrint,
-          source: {
-            bedNo: String(patient?.bedNo ?? target.bedNo ?? '').trim(),
-            patientName: String(patient?.name ?? target.patientName ?? '').trim(),
-            genderEnumText: String(patient?.gender ?? '').trim(),
-            ageText: patient?.age == null ? '' : `${patient.age}岁`,
-            itemName: String(target.itemName ?? '').trim(),
-            serviceRequestId,
-            priorityEnum: String(target.priorityEnum ?? '').trim() || undefined,
-          },
-          copies: labelCopies,
-          jobName: `采血贴·${target.bedNo ?? ''}${target.patientName ?? ''}`,
-          bizRef: {
-            scenarioCode: PRINT_SCENARIO.ipSpecimenBarcodePrint,
-            encounterId,
-            serviceRequestId,
-            serviceRequestIds: [serviceRequestId],
-          },
-        });
-        if (result.ok) {
-          printedCount += labelCopies;
+        const memberServiceRequestIds = (
+          target.memberServiceRequestIds?.length
+            ? target.memberServiceRequestIds
+            : [serviceRequestId]
+        )
+          .map((id) => String(id ?? '').trim())
+          .filter(Boolean);
+        const labelCopies =
+          resolveSpecimenBarcodeLabelCount(target.labelCount) * Math.max(1, copies);
+        const bedNo = String(patient?.bedNo ?? target.bedNo ?? '').trim();
+        const patientName = String(patient?.name ?? target.patientName ?? '').trim();
+        const jobBase = {
+          encounterId,
+          serviceRequestId,
+          memberServiceRequestIds,
+          bedNo,
+          patientName,
+          genderEnumText: String(patient?.gender ?? '').trim(),
+          ageText: patient?.age == null ? '' : `${patient.age}岁`,
+          itemName: String(target.itemName ?? '').trim(),
+          barcode: String(target.barcode ?? '').trim() || serviceRequestId,
+          priorityEnum: String(target.priorityEnum ?? '').trim() || undefined,
+        };
+        for (let i = 0; i < labelCopies; i += 1) {
+          jobs.push(jobBase);
         }
       }
-      if (printedCount <= 0) {
+      if (jobs.length <= 0) {
         ElMessage.warning('没有可打印的采血贴');
+        return { ok: false, count: 0 };
       }
-      return { ok: printedCount > 0, count: printedCount };
+
+      let printedCount = 0;
+      let failedCount = 0;
+      const total = jobs.length;
+      onProgress?.({ current: 0, total, label: '准备打印采血贴…' });
+      for (let index = 0; index < jobs.length; index += 1) {
+        const job = jobs[index]!;
+        const label = `${job.bedNo}${job.patientName} · ${job.itemName || '采血贴'}`;
+        onProgress?.({ current: index, total, label });
+        try {
+          const result = await printOnce({
+            printer,
+            scenarioCode: PRINT_SCENARIO.ipSpecimenBarcodePrint,
+            source: {
+              bedNo: job.bedNo,
+              patientName: job.patientName,
+              genderEnumText: job.genderEnumText,
+              ageText: job.ageText,
+              itemName: job.itemName,
+              serviceRequestId: job.serviceRequestId,
+              barcode: job.barcode,
+              priorityEnum: job.priorityEnum,
+            },
+            copies: 1,
+            background: true,
+            jobName: `采血贴·${job.bedNo}${job.patientName} (${index + 1}/${total})`,
+            bizRef: {
+              scenarioCode: PRINT_SCENARIO.ipSpecimenBarcodePrint,
+              encounterId: job.encounterId,
+              serviceRequestId: job.serviceRequestId,
+              // 合管组内全部 SR，一次点打印后组内行全部记已打
+              serviceRequestIds: job.memberServiceRequestIds,
+            },
+          });
+          if (result.ok) {
+            printedCount += 1;
+          } else {
+            failedCount += 1;
+          }
+        } catch {
+          failedCount += 1;
+        }
+        onProgress?.({ current: index + 1, total, label });
+        // 张与张之间稍歇，避免老机 / 共享队列连打中断
+        if (index + 1 < jobs.length) {
+          await delayPrintMs(280);
+        }
+      }
+      onProgress?.({ current: total, total, label: '采血贴发送完毕' });
+      if (printedCount <= 0) {
+        ElMessage.warning(
+          failedCount > 0
+            ? `采血贴全部失败（${failedCount} 张），请检查打印机队列后重试`
+            : '没有可打印的采血贴',
+        );
+        return { ok: false, count: 0 };
+      }
+      const mergeHint =
+        selectedItemCount > total
+          ? `（勾选 ${selectedItemCount} 项，合管后 ${total} 张）`
+          : '';
+      if (failedCount > 0) {
+        ElMessage.warning(
+          `采血贴已发送 ${printedCount}/${total} 张${mergeHint}，失败 ${failedCount} 张`,
+        );
+      } else {
+        ElMessage.success(`采血贴已发送 ${printedCount} 张${mergeHint}`);
+      }
+      return { ok: true, count: printedCount };
     }
 
     if (docType === 'nursing_record') {
       const source = await buildNursingRecordPrintSource(patients, dateFrom, dateTo);
       const result = await printOnce({
+            printer,
         scenarioCode: PRINT_SCENARIO.ipNursingRecordPrint,
         source,
         copies,
@@ -439,12 +595,19 @@ export async function printInpatientPrintCenter(
     }
 
     if (docType === 'fee_list') {
-      const source = await buildFeeListPrintSource(patients, dateFrom, dateTo, costStatusEnum);
+      const source = await buildFeeListPrintSource(
+        patients,
+        dateFrom,
+        dateTo,
+        costStatusEnum,
+        anesthesiaStatisticsOnly === true,
+      );
       if ((source.feeRows ?? []).length <= 0) {
         ElMessage.warning('没有可打印的费用清单');
         return { ok: false, count: 0 };
       }
       const result = await printOnce({
+            printer,
         scenarioCode: PRINT_SCENARIO.ipFeeListPrint,
         source,
         copies,
@@ -460,12 +623,19 @@ export async function printInpatientPrintCenter(
     }
 
     if (docType === 'fee_detail') {
-      const source = await buildFeeDetailPrintSource(patients, dateFrom, dateTo, costStatusEnum);
+      const source = await buildFeeDetailPrintSource(
+        patients,
+        dateFrom,
+        dateTo,
+        costStatusEnum,
+        anesthesiaStatisticsOnly === true,
+      );
       if ((source.feeRows ?? []).length <= 0) {
         ElMessage.warning('没有可打印的费用明细');
         return { ok: false, count: 0 };
       }
       const result = await printOnce({
+            printer,
         scenarioCode: PRINT_SCENARIO.ipFeeDetailPrint,
         source,
         copies,
@@ -481,6 +651,7 @@ export async function printInpatientPrintCenter(
     }
 
     if (docType === 'temp_order') {
+      const anesthOnly = tempOrderSurgeryAnesthFilter === 'anesthesia';
       const source = await buildTempOrderPrintSource(
         patients,
         rows,
@@ -489,21 +660,36 @@ export async function printInpatientPrintCenter(
         dateTo,
         orderOpenedTimeAsc,
         orderPrintDataSource,
+        anesthOnly,
       );
       if (source.orderRows.length <= 0) {
-        ElMessage.warning('没有可打印的临时医嘱');
+        // 麻醉筛选无数据与普通临嘱空态文案区分，避免护士误以为「没有临嘱」
+        if (anesthOnly) {
+          ElMessage.warning('没有可打印的麻醉申请医嘱');
+        } else {
+          ElMessage.warning('没有可打印的临时医嘱');
+        }
         return { ok: false, count: 0 };
       }
+      let jobName: string | undefined;
+      let therapyTypeBiz: string = 'temp';
+      if (anesthOnly) {
+        jobName = '麻醉医嘱';
+        therapyTypeBiz = 'anesth';
+      }
       const result = await printOnce({
+            printer,
         scenarioCode: PRINT_SCENARIO.ipTempOrderPrint,
         source,
         copies,
+        jobName,
         bizRef: {
           scenarioCode: PRINT_SCENARIO.ipTempOrderPrint,
           encounterIds: collectEncounterIds(rows),
           listRowKeys: collectListRowKeys(rows),
           dateFrom,
           dateTo,
+          therapyType: therapyTypeBiz,
         },
       });
       return { ok: result.ok, count: result.ok ? 1 : 0 };
@@ -524,6 +710,7 @@ export async function printInpatientPrintCenter(
         return { ok: false, count: 0 };
       }
       const result = await printOnce({
+            printer,
         scenarioCode: PRINT_SCENARIO.ipLongOrderPrint,
         source,
         copies,
@@ -547,8 +734,14 @@ export async function printInpatientPrintCenter(
         if (!summaryNo) {
           continue;
         }
-        const source = await buildDispenseSummaryPrintSource(summaryNo);
+        let source;
+        if (dispenseSummaryDataSource === 'pharmacy') {
+          source = await buildPharmacyDispenseSummaryPrintSource(summaryNo);
+        } else {
+          source = await buildDispenseSummaryPrintSource(summaryNo);
+        }
         const result = await printOnce({
+            printer,
           scenarioCode: PRINT_SCENARIO.ipDispenseSummaryPrint,
           source,
           copies,
@@ -575,6 +768,7 @@ export async function printInpatientPrintCenter(
         }
         const source = await buildDispenseSheetPrintSource(summaryNo);
         const result = await printOnce({
+            printer,
           scenarioCode: PRINT_SCENARIO.ipDispenseSheetPrint,
           source,
           copies,
@@ -603,6 +797,7 @@ export async function printInpatientPrintCenter(
       const listRowKeys = collectListRowKeys(rows);
       const encounterIds = collectEncounterIds(rows);
       const result = await printOnce({
+            printer,
         scenarioCode: PRINT_SCENARIO.ipOrderDispenseSheetPrint,
         source,
         copies,
@@ -618,16 +813,48 @@ export async function printInpatientPrintCenter(
     }
 
     if (docType === 'oral_med_sheet') {
-      // 一张连续多人：勾选药品按患者分块排在同一 PrintData（每块含患者签字）
+      // 默认一张连续多人；红旗按患者 / 每张中药方各打一张，字段对齐库模板
       const fromDay = dateFrom || dateTo || dayjs().format('YYYY-MM-DD');
       const source = await buildOralMedSheetPrintSource(patients, rows, fromDay);
-      if ((source.patientBlocks ?? []).length <= 0) {
+      const blocks = source.patientBlocks ?? [];
+      if (blocks.length <= 0) {
         ElMessage.warning('没有可打印的已执行药品');
         return { ok: false, count: 0 };
       }
       const listRowKeys = collectListRowKeys(rows);
       const encounterIds = collectEncounterIds(rows);
+      if (ORAL_MED_SHEET_SPLIT_TCM_SHEETS === true) {
+        let printedCount = 0;
+        for (const block of blocks) {
+          const result = await printOnce({
+            printer,
+            scenarioCode: PRINT_SCENARIO.ipOralMedSheetPrint,
+            source: {
+              hospitalName: source.hospitalName,
+              documentTitle: source.documentTitle,
+              executeDateText: source.executeDateText,
+              patientHeadText: block.patientHeadText,
+              patientSignLabel: block.patientSignLabel,
+              drugRows: block.drugRows,
+              patientBlocks: [block],
+            },
+            copies,
+            jobName: `患者用药单·${fromDay}`,
+            bizRef: {
+              scenarioCode: PRINT_SCENARIO.ipOralMedSheetPrint,
+              queryDate: fromDay,
+              listRowKeys,
+              encounterIds,
+            },
+          });
+          if (result.ok) {
+            printedCount += 1;
+          }
+        }
+        return { ok: printedCount > 0, count: printedCount };
+      }
       const result = await printOnce({
+            printer,
         scenarioCode: PRINT_SCENARIO.ipOralMedSheetPrint,
         source,
         copies,
@@ -674,6 +901,20 @@ function collectOrderIds(rows: PrintPendingRow[]): string[] {
 
 function resolveQueryDate(dateFrom: string, dateTo: string): string {
   return dateFrom || dateTo || dayjs().format('YYYY-MM-DD');
+}
+
+/** 输液贴待打行查询日：优先 row.queryDate，其次 listRowKey 末段 YYYY-MM-DD */
+function resolveInfusionPendingQueryDate(row: PrintPendingRow, fallback: string): string {
+  const fromField = strBiz(row.queryDate);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(fromField)) {
+    return fromField;
+  }
+  const key = strBiz(row.listRowKey);
+  const day = key.split('|').pop() ?? '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+    return day;
+  }
+  return fallback;
 }
 
 /** 巡视卡勾选行按就诊归并（同一患者合成一张卡） */

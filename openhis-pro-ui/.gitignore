@@ -20,8 +20,8 @@ Desktop.ini
 apps/web-ele/dist/
 apps/web-ele/dist.zip
 
-# Hospital customization (kept in private repo only)
-projects/
+# Hospital site overlays (private only); project-openhis is kept in opensource tree
+projects/project-H*/
 
 # Private export tooling / msfx stubs (kept in private repo only)
 tools/

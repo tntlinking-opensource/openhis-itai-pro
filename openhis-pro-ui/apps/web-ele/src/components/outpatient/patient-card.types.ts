@@ -16,6 +16,13 @@ export interface OutpatientPatientCardPayload extends OutpatientInfoItemDto {
   accountBalanceSub?: string;
   /** 低余额预警（负余额等） */
   lowBalanceWarning?: boolean;
+  /**
+   * 住院医技队列：入院时间。
+   * 有值时卡片展示「入院时间/出院时间」，不再展示门诊「就诊时间」。
+   */
+  admissionTime?: null | string;
+  /** 住院医技队列：出院时间（未出院可空） */
+  dischargeTime?: null | string;
 }
 
 /**
@@ -46,6 +53,8 @@ export interface InpatientPatientCardPayload {
   /** 账户余额副文案 */
   accountBalanceSub?: string;
   lowBalanceWarning?: boolean;
+  /** 今日入院（住院医生站卡片配色与角标） */
+  admittedToday?: boolean;
 }
 
 export type PatientCardPatient = InpatientPatientCardPayload | OutpatientPatientCardPayload;

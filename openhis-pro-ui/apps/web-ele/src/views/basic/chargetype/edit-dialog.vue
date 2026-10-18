@@ -4,7 +4,7 @@ import type { ApiOptionItem } from '#/types/api-response';
 
 import { computed, reactive, ref, watch } from 'vue';
 
-import { useVbenModal } from '@vben/common-ui';
+import { useVbenModal } from '@zxplat/common-ui';
 
 import { ElMessage } from 'element-plus';
 

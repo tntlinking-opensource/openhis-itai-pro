@@ -10,7 +10,7 @@ import type {
 
 import { computed, nextTick, reactive, ref, watch } from 'vue';
 
-import { formatDateTime } from '@vben/utils';
+import { formatDateTime } from '@zxplat/utils';
 
 import InvDocActions from '@inventory/components/inv-doc-actions.vue';
 import InvMainShell from '@inventory/components/inv-main-shell.vue';

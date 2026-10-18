@@ -1,0 +1,137 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.zxplat.application.inpatient.nursestation.inpatientbilling.dto;
+
+import com.zxplat.domain.share.constants.GeneralSharedConstants;
+import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.Data;
+import lombok.experimental.Accessors;
+
+import java.time.LocalDateTime;
+
+/**
+ * 医嘱补费父医嘱列表行（IF-IP-PRC-03）。
+ *
+ * <p>展示列与护士站医嘱视图 {@code NurseStationOrderViewDisplayCore} 对齐，供补费弹窗选父医嘱。</p>
+ */
+@Data
+@Accessors(chain = true)
+@Schema(description = "医嘱补费父医嘱列表行")
+public class NurseStationSupplementParentOrderRowDto {
+
+    @Schema(description = "稳定行键：requestId + SOH(U+0001) + orderType")
+    /** 稳定行键：requestId + SOH(U+0001) + orderType。 */
+    private String listRowKey;
+
+    @Schema(description = "药品/诊疗申请主键")
+    @JsonSerialize(using = ToStringSerializer.class)
+    /** 药品/诊疗申请主键。 */
+    private Long requestId;
+
+    /** 医嘱类型：MED_REQUEST / SERVICE_REQUEST。 */
+    @Schema(description = "医嘱类型：MED_REQUEST / SERVICE_REQUEST")
+    private String orderType;
+
+    /** 就诊主键。 */
+    @Schema(description = "就诊主键")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long encounterId;
+
+    /** 患者主键。 */
+    @Schema(description = "患者主键")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long patientId;
+
+    /** 状态 code。 */
+    @Schema(description = "状态 code")
+    private String statusEnum;
+
+    /** 状态展示。 */
+    @Schema(description = "状态展示")
+    private String statusDisplay;
+
+    /** 长临 code。 */
+    @Schema(description = "长临 code")
+    private String therapyEnum;
+
+    /** 长临展示。 */
+    @Schema(description = "长临展示")
+    private String therapyDisplay;
+
+    /** 医嘱摘要。 */
+    @Schema(description = "医嘱摘要")
+    private String adviceDisplayName;
+
+    /** 规格。 */
+    @Schema(description = "规格")
+    private String specificationText;
+
+    /** 剂量展示。 */
+    @Schema(description = "剂量展示")
+    private String dosageDisplay;
+
+    /** 用法展示。 */
+    @Schema(description = "用法展示")
+    private String usageDisplay;
+
+    /** 频次展示。 */
+    @Schema(description = "频次展示")
+    private String frequencyDisplay;
+
+    /** 开立时间（{@code req_opened_time}）。 */
+    @Schema(description = "开立时间（req_opened_time）")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    private LocalDateTime reqOpenedTime;
+
+    /** 签发时间（{@code req_authored_time}；仅追溯，组内按开立倒序）。 */
+    @Schema(description = "签发时间（req_authored_time）")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    private LocalDateTime reqAuthoredTime;
+
+    /** 停嘱时间（{@code stop_time}）。 */
+    @Schema(description = "停嘱时间（stop_time）")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    private LocalDateTime stopTime;
+
+    /** 开立医生。 */
+    @Schema(description = "开立医生")
+    private String requesterName;
+
+    /** 停嘱人主键（{@code stopper_id}）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "停嘱人主键")
+    private Long stopperId;
+
+    /** 停嘱人姓名。 */
+    @Schema(description = "停嘱人姓名")
+    private String stopperName;
+
+    /** 执行/发药位置。 */
+    @Schema(description = "执行/发药位置")
+    private String performerLocationDisplay;
+
+    /** 诊疗类目。 */
+    @Schema(description = "诊疗类目")
+    private String categoryEnum;
+
+    /**
+     * 药品成组号（{@code med_medication_request.group_id}；与医生站列表同源；仅药嘱行有效，诊嘱为 null）。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "药品成组号（仅药嘱）")
+    /** 药品成组号（仅药嘱）。 */
+    private Long groupId;
+
+    @Schema(description = "组号")
+    /** 组号。 */
+    private Integer groupNo;
+
+    @Schema(description = "排序号")
+    /** 排序号。 */
+    private Integer sortNumber;
+}

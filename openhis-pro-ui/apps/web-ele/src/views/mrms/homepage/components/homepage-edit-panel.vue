@@ -13,8 +13,10 @@ import {
   CASE_RECORD_STATUS_TAG,
   HOMEPAGE_ANCHOR_SECTIONS,
 } from '../../mrms.constants';
+import HomepageBldGrid from './homepage-bld-grid.vue';
 import HomepageDiagnosisSection from './homepage-diagnosis-section.vue';
 import HomepageFeeForm from './homepage-fee-form.vue';
+import HomepageIcuGrid from './homepage-icu-grid.vue';
 import HomepagePatientForm from './homepage-patient-form.vue';
 import HomepageProcedureGrid from './homepage-procedure-grid.vue';
 
@@ -149,7 +151,7 @@ function handleAnchorClick(e: MouseEvent) {
           :disabled="saving"
           @click="emit('submit')"
         >
-          提交
+          {{ statusCode === 'DRAFT' ? '提交归档' : '重新提交归档' }}
         </ElButton>
         <ElButton
           v-if="canReceive"
@@ -257,6 +259,33 @@ function handleAnchorClick(e: MouseEvent) {
             <div class="hp-edit__panel">
               <HomepageProcedureGrid
                 v-model="formModel.procedures"
+                :encounter-id="formModel.encounterId"
+                :readonly="readonly"
+                @dirty="markDirty"
+              />
+            </div>
+          </section>
+
+          <section id="sec-icu" class="hp-edit__section">
+            <div class="hp-edit__section-head">
+              <SectionTitle title="重症监护" />
+            </div>
+            <div class="hp-edit__panel">
+              <HomepageIcuGrid
+                v-model="formModel.icus"
+                :readonly="readonly"
+                @dirty="markDirty"
+              />
+            </div>
+          </section>
+
+          <section id="sec-bld" class="hp-edit__section">
+            <div class="hp-edit__section-head">
+              <SectionTitle title="输血记录" />
+            </div>
+            <div class="hp-edit__panel">
+              <HomepageBldGrid
+                v-model="formModel.blds"
                 :readonly="readonly"
                 @dirty="markDirty"
               />

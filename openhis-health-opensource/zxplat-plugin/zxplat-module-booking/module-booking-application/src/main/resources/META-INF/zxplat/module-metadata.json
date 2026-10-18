@@ -1,0 +1,17 @@
+{
+  "moduleId": "booking",
+  "displayName": "统一预约（Booking）",
+  "enabledProperty": "zxplat.modules.booking.enabled",
+  "autoConfigurationClass": "com.zxplat.plugin.booking.application.config.BookingAutoConfiguration",
+  "appServiceNames": [
+    "outpatientSchedule",
+    "slotManage",
+    "bookingRegister",
+    "queueBoard",
+    "bookingPolicy",
+    "medTechBooking",
+    "bedBooking",
+    "healthCheckupBooking",
+    "channelBooking"
+  ]
+}

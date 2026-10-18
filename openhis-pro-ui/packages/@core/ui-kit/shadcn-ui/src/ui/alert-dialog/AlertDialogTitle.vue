@@ -3,7 +3,7 @@ import type { AlertDialogTitleProps } from 'reka-ui';
 
 import { computed } from 'vue';
 
-import { cn } from '@vben-core/shared/utils';
+import { cn } from '@zxplat-core/shared/utils';
 
 import { AlertDialogTitle, useForwardProps } from 'reka-ui';
 

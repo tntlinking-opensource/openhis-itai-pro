@@ -49,20 +49,26 @@ export function httpGetSurgeryApplyFormDetail(body: {
   >('getSurgeryApplyFormDetail', body);
 }
 
-/** 国临术式检索 */
-export function httpSearchClinicalProcV3(body: { keyword: string }) {
-  return post<{ keyword: string }, { items?: ClinicalProcV3SearchItemDto[] }>(
-    'searchClinicalProcV3',
-    body,
-  );
+/** 术式目录检索（关键字可空，打开下拉即可分页浏览） */
+export function httpSearchClinicalProcV3(body: {
+  keyword?: string;
+  pageNo?: number;
+  pageSize?: number;
+}) {
+  return post<
+    typeof body,
+    { items?: ClinicalProcV3SearchItemDto[]; totalCount?: number }
+  >('searchClinicalProcV3', body);
 }
 
-/** 按手术侧或麻醉侧检索诊疗项目 */
+/** 按手术/麻醉侧检索选品：MAIN 主项 AD、EXTRA 附加诊疗、MEDICATION 药品 */
 export function httpSearchSurchargeActivityDefinition(body: {
   keyword?: string;
   pageNo?: number;
   pageSize?: number;
   sideCode: SurgeryAnesthSideCode;
+  /** MAIN / EXTRA / MEDICATION；空=MAIN */
+  itemKindCode?: 'EXTRA' | 'MAIN' | 'MEDICATION';
 }) {
   return post<typeof body, { items?: SurchargeActivityDefinitionItemDto[]; totalCount?: number }>(
     'searchSurchargeActivityDefinition',
@@ -76,7 +82,10 @@ export function httpSaveSurgeryApplyForm(body: {
   previousPrescriptionNo?: string;
   lines: SurgeryApplyFormLineRequest[];
   planned?: PlannedSurgeryFieldsDto;
+  /** 勾选需要麻醉时 true；须同时带 anesthesiaLines */
   nestAnesthesia?: boolean;
+  /** 嵌套麻醉明细（与独立麻醉页同构） */
+  anesthesiaLines?: AnesthesiaApplyFormLineRequest[];
 }) {
   return post<
     typeof body,
@@ -107,6 +116,17 @@ export function httpWithdrawSurgeryApplyForm(body: {
 }) {
   return post<typeof body, { prescriptionNo?: string; withdrawnServiceRequestIds?: string[] }>(
     'withdrawSurgeryApplyForm',
+    body,
+  );
+}
+
+/** 删除草稿手术申请（一并清理嵌套麻醉草稿） */
+export function httpDeleteSurgeryApplyForm(body: {
+  encounterId: string;
+  prescriptionNo: string;
+}) {
+  return post<typeof body, { prescriptionNo?: string; deletedServiceRequestIds?: string[] }>(
+    'deleteSurgeryApplyForm',
     body,
   );
 }
@@ -179,6 +199,17 @@ export function httpWithdrawAnesthesiaApplyForm(body: {
 }) {
   return post<typeof body, { prescriptionNo?: string; withdrawnServiceRequestIds?: string[] }>(
     'withdrawAnesthesiaApplyForm',
+    body,
+  );
+}
+
+/** 删除草稿麻醉申请 */
+export function httpDeleteAnesthesiaApplyForm(body: {
+  encounterId: string;
+  prescriptionNo: string;
+}) {
+  return post<typeof body, { prescriptionNo?: string; deletedServiceRequestIds?: string[] }>(
+    'deleteAnesthesiaApplyForm',
     body,
   );
 }

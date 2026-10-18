@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { EchartsUIType } from '@vben/plugins/echarts';
+import type { EchartsUIType } from '@zxplat/plugins/echarts';
 
 import type { NurseStationModulePatient } from '../components/nurse-station-module-patient.types';
 import type { TemperatureSheetChartPoint } from './services/map-nurse-station-temperature-sheet';
@@ -15,7 +15,7 @@ import type { OptionDto } from '#/api/inpatient/nurse-station/inpatient-nurse-st
 
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
+import { EchartsUI, useEcharts } from '@zxplat/plugins/echarts';
 
 import dayjs from 'dayjs';
 import { ElLoading, ElMessage } from 'element-plus';
@@ -30,19 +30,21 @@ import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
   buildChartPointsFromGridRows,
   buildFooterDayCellsFromGridRows,
+  buildPostoperativeDaysByDateForWindow,
   buildTemperatureSheetPeekGridRowFromFillSlots,
   extendDerivedMetaForWindow,
   resolveMergedTemperatureSheetGridRows,
   resolveTemperatureSheetWindowStartDate,
   shiftTemperatureSheetRecordDateYmd,
-  TEMPERATURE_SHEET_FOOTER_SUPPLEMENT_ROWS,
 } from './services/map-nurse-station-temperature-sheet';
+import { TEMPERATURE_SHEET_FOOTER_SUPPLEMENT_ROWS } from '#/views/inpatient/nurse-station/temperature-sheet/temperature-sheet-footer.config';
 import { printTemperatureSheetPaper } from './services/temperature-sheet-browser-print';
 import {
   buildChartTextMarkers,
   buildPhysicalCoolingChartPoints,
   buildSpecialEventLabelMap,
   buildSpecialEventStoreFromGridRows,
+  collectSurgeryDatesFromSpecialEventStore,
   createEmptySpecialEventStore,
   TEMPERATURE_SHEET_PHYSICAL_COOLING_DELAY_MINUTES,
 } from './services/temperature-sheet-special-events';
@@ -103,6 +105,8 @@ const derivedMeta = ref<{
   postoperativeDaysByDate: {},
   weekNoByDate: {},
 });
+/** 当前就诊是否死亡出院（图表竖排用死亡替代出院） */
+const deathDischarge = ref(false);
 const totalPages = ref(1);
 const fillDrawerRef = ref<InstanceType<typeof TemperatureSheetSingleFillDrawer> | null>(null);
 const batchFillDrawerVisible = ref(false);
@@ -247,6 +251,7 @@ async function loadTemperatureSheetData() {
     chartPoints.value = [];
     sheetGridRows.value = [];
     footerPeekGridRows.value = [];
+    deathDischarge.value = false;
     totalPages.value = 1;
     return;
   }
@@ -271,7 +276,22 @@ async function loadTemperatureSheetData() {
     windowStartDate,
     windowDayCount,
   );
+  deathDischarge.value = response.deathDischarge === true;
   specialEventStore.value = buildSpecialEventStoreFromGridRows(sheetGridRows.value);
+  // 术后天数以体温单「手术」事件日为准，避免后端误用其它执行记录计划点
+  const surgeryDatesFromChart = collectSurgeryDatesFromSpecialEventStore(
+    specialEventStore.value,
+  );
+  if (surgeryDatesFromChart.length > 0) {
+    derivedMeta.value = {
+      ...derivedMeta.value,
+      postoperativeDaysByDate: buildPostoperativeDaysByDateForWindow(
+        surgeryDatesFromChart,
+        windowStartDate,
+        windowDayCount,
+      ),
+    };
+  }
 
   // 窗口内已有次日列则不必 peek；否则用 focus 日 fillSlots 合成次日网格
   const resolvedPeekDate =
@@ -413,13 +433,14 @@ const chartTextMarkers = computed(() =>
     specialEventLabelMap.value,
     selectedPatient.value?.admissionAt,
     selectedPatient.value?.dischargeAt,
+    deathDischarge.value,
   ),
 );
 const physicalCoolingChartPoints = computed(() =>
   buildPhysicalCoolingChartPoints(visiblePoints.value, specialEventStore.value),
 );
 
-/** 计算竖排事件标记定位 */
+/** 计算竖排事件标记定位（同槽已在 buildChartTextMarkers 合成一条，stackOrder 一般为 0） */
 function resolveChartTextMarkerStyle(marker: TemperatureSheetChartTextMarker) {
   const columns = Math.max(chartColumns.value, 1);
   return {
@@ -473,6 +494,17 @@ function resolveHospitalizationDayLabel(fullDate: string, fallbackIndex: number)
     return `第 ${dayNo} 日`;
   }
   return `第 ${fallbackIndex + 1} 日`;
+}
+
+/**
+ * 解析某日术后天数。手术当日为空，次日起「术后第 1 日」。
+ */
+function resolvePostoperativeDayLabel(fullDate: string): string {
+  const dayNo = derivedMeta.value.postoperativeDaysByDate[fullDate];
+  if (dayNo == null || dayNo < 1) {
+    return '';
+  }
+  return `术后第 ${dayNo} 日`;
 }
 
 function isDayDividerColumn(index: number): boolean {
@@ -807,6 +839,17 @@ watch(isFullscreen, () => {
                     {{ resolveHospitalizationDayLabel(header.fullDate, index) }}
                   </span>
                 </div>
+                <div class="head-label">术后天数</div>
+                <div class="head-content day-content" :style="slotGridStyle">
+                  <span
+                    v-for="header in dayHeaders"
+                    :key="`post-op-${header.fullDate}-${header.startIndex}`"
+                    class="head-day-cell head-postop-cell"
+                    :style="{ gridColumn: `${header.startIndex + 1} / span ${header.span}` }"
+                  >
+                    {{ resolvePostoperativeDayLabel(header.fullDate) }}
+                  </span>
+                </div>
                 <div class="head-label">时间</div>
                 <div class="head-content time-content" :style="slotGridStyle">
                   <span
@@ -1123,6 +1166,11 @@ watch(isFullscreen, () => {
   border-right: 1px solid #222;
 }
 
+.head-postop-cell {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .time-content {
   display: grid;
 }
@@ -1225,6 +1273,9 @@ watch(isFullscreen, () => {
   font-size: 12px;
   line-height: 1.1;
   letter-spacing: 1px;
+  white-space: nowrap;
+  max-width: 1.15em;
+  overflow: visible;
   pointer-events: none;
 }
 .slot-vline-overlay {

@@ -1,5 +1,5 @@
 /**
- * 科室药房请领单 — 对接 Whale {@code POST /api/app/inventoryDepartmentRequisition/<method>}
+ * 科室药房请领单 — 对接 ZXPlat {@code POST /api/app/inventoryDepartmentRequisition/<method>}
  */
 import type { ApiResponse } from '#/types/api-response';
 
@@ -15,9 +15,9 @@ import {
 
 const BASE = '/inventoryDepartmentRequisition';
 
-/** {@link com.openhis.health.domain.share.enums.SupplyType#DEPT_REQUISITION} */
+/** {@link com.zxplat.domain.share.enums.SupplyType#DEPT_REQUISITION} */
 export const DEPT_REQUISITION_TYPE_ENUM = 'DEPT_REQUISITION';
-/** {@link com.openhis.health.domain.share.enums.SupplyCategory#STOCK_SUPPLY} */
+/** {@link com.zxplat.domain.share.enums.SupplyCategory#STOCK_SUPPLY} */
 export const DEPT_REQUISITION_CATEGORY_ENUM = 'STOCK_SUPPLY';
 
 export interface RequisitionOptionDto {

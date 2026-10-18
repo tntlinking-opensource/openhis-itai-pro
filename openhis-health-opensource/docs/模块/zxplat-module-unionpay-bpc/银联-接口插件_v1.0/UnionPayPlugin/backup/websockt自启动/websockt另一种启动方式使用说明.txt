@@ -1,0 +1,4 @@
+只需要在第一次装机时部署即可
+1、将startup_mspringm.vbs 和创建自启动.bat 拷贝到C盘根目录下的gmc文件夹中、以及将gmc里面bankup文件夹下的RunWebsocket.bat拷贝到gmc目录下
+2、双击运行 “创建自启动.bat”  创建开机自启动websockt。
+3、可以查看任务管理器里的启动里面有没有startup_mspringm.vbs，若有表示创建开机自启动websockt成功。

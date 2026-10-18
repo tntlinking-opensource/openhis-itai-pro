@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ComputedRef } from 'vue';
-import type { FormItemConfig } from '@vben-core/table-layout-ui';
+import type { FormItemConfig } from '@zxplat-core/table-layout-ui';
 
 import type { VxeGridProps } from '#/adapter/vxe-table';
 import type { InventoryItemDetail } from '#/api/core/common';
@@ -17,9 +17,9 @@ import type { ApiOptionItem } from '#/types/api-response';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
-import { Filter } from '@vben-core/table-layout-ui';
+import { Filter } from '@zxplat-core/table-layout-ui';
 
 import { dayjs, ElButton, ElMessage, ElMessageBox } from 'element-plus';
 

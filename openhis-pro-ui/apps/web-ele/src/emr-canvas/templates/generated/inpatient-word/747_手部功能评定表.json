@@ -1,0 +1,2379 @@
+{
+  "code": "IP_WORD_747",
+  "name": "手部功能评定表",
+  "category": "病程记录",
+  "sourceTemplateId": "747",
+  "typeCode": "INPATIENT_病程记录",
+  "summary": "Word原样迁移v1 · 段49/表5 · 元2/日1/勾10/单0 · 约4页",
+  "estimatedPages": 4,
+  "structure": {
+    "paraCount": 49,
+    "tableCount": 5,
+    "meta": 2,
+    "date": 1,
+    "plainFill": 0,
+    "fill": 3,
+    "checkbox": 10,
+    "radio": 0
+  },
+  "data": {
+    "header": [
+      {
+        "id": "emrHospitalTitle",
+        "value": "医院名称",
+        "font": "SimHei",
+        "size": 29,
+        "bold": true,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center",
+        "rowMargin": 1
+      },
+      {
+        "id": "emrDocumentTitle",
+        "value": "手部功能评定表",
+        "font": "SimSun",
+        "size": 21,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "type": "separator",
+        "value": "",
+        "lineWidth": 1.15
+      }
+    ],
+    "main": [
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "手部功能评定表",
+        "bold": true,
+        "rowFlex": "center"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "患者姓名：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "姓名 ",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "性别：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "性别",
+          "conceptId": "gender",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false,
+          "disabled": true
+        },
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "年龄：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "年龄",
+          "conceptId": "age",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false,
+          "disabled": true
+        },
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "评估日期：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "date",
+          "value": null,
+          "placeholder": "评估日期",
+          "conceptId": "date_001",
+          "dateFormat": "yyyy-MM-dd HH:mm",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false
+        },
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "诊 ",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "断：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "评估者：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "一、手部关节活动度（ROM）评定",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_002",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 139
+          },
+          {
+            "width": 139
+          },
+          {
+            "width": 139
+          },
+          {
+            "width": 139
+          },
+          {
+            "width": 142
+          }
+        ],
+        "tableToolDisabled": true,
+        "rowFlex": "left",
+        "trList": [
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "关节部位",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "运动方向",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "正常范围",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "实测值（左/右）",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "评分（0-4分）",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "掌指关节（MCP）",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "屈曲",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "0-90°",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "伸展",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "0-30°",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "近端指间（PIP）",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "屈曲",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "0-100°",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "远端指间（DIP）",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "屈曲",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "0-80°",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "腕关节",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "背屈",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "0-70°",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "掌屈",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "0-80°",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "评分标准：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "4分：活动范围≥正常值的75%",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "3分：50-74%",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "2分：25-49%",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "1分：＜25%",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "0分：无活动",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "二、肌力评定（MRC肌力分级）",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_003",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 232
+          },
+          {
+            "width": 232
+          },
+          {
+            "width": 234
+          }
+        ],
+        "tableToolDisabled": true,
+        "rowFlex": "left",
+        "trList": [
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "测试动作",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "左侧评分（0-5级）",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "右侧评分（0-5级）",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "握力（握力计测量）",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "捏力（指尖捏、侧捏）",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "腕背屈/掌屈抗阻",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "MRC分级标准：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "5级：正常肌力，完全抗阻",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "4级：抗部分阻力",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "3级：可抗重力完成全范围活动",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "2级：无法抗重力，仅可在平面滑动",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "1级：轻微肌肉收缩",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "0级：无收缩",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "三、感觉功能评定",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_004",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 174
+          },
+          {
+            "width": 174
+          },
+          {
+            "width": 174
+          },
+          {
+            "width": 176
+          }
+        ],
+        "tableToolDisabled": true,
+        "rowFlex": "left",
+        "trList": [
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "测试项目",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "方法",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "左侧评分（0-2）",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "右侧评分（0-2）",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "轻触觉",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "棉絮轻触皮肤",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "痛觉",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "针尖轻刺",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "两点辨别觉",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "两脚规测试（mm）",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "评分标准：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "2分：正常（两点辨别觉≤5mm）",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "1分：减退或过敏",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "0分：缺失",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "四、协调与灵活性评定",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_005",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 139
+          },
+          {
+            "width": 139
+          },
+          {
+            "width": 139
+          },
+          {
+            "width": 139
+          },
+          {
+            "width": 142
+          }
+        ],
+        "tableToolDisabled": true,
+        "rowFlex": "left",
+        "trList": [
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "测试项目",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "方法",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "左侧结果",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "右侧结果",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "评分（0-4）",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "九孔柱测试",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "完成9次插棒时间（秒）",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "捏硬币测试",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "30秒内捏起硬币次数",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "书写/系纽扣",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "完成质量（流畅/费力/无法）",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "评分标准：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "4分：正常速度与准确性",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "3分：轻度延迟/失误",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "2分：明显延迟/需多次尝试",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "1分：严重困难",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "0分：无法完成",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "五、日常生活活动能力（ADL）",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_006",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 232
+          },
+          {
+            "width": 232
+          },
+          {
+            "width": 234
+          }
+        ],
+        "tableToolDisabled": true,
+        "rowFlex": "left",
+        "trList": [
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "活动项目",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "评分（0-4分）",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "备注",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "穿衣（扣纽扣）",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "独立/需辅助/完全依赖",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "进食（用筷子）",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "书 写",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "拧瓶盖",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "使用手机",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "评分标准：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "4分：独立完成，无困难",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "3分：轻度困难，稍慢",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "2分：需辅助工具",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "1分：需部分协助",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "0分：完全依赖他人",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "六、总评与建议",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "总分： ",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "___",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": " / 40分",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "功能障碍分级：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "36-40分：轻度障碍，建议家庭训练",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "25-35分：中度障碍，需门诊康复",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "15-24分：重度障碍，建议住院康复",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "0-14分：极重度障碍，多学科干预",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "个性化康复建议：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "1. 关节活动度训练：",
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_007",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "主动运动",
+              "code": "chk_007"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_008",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "被动牵拉",
+              "code": "chk_008"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_009",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "支具",
+              "code": "chk_009"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "2. 肌力强化： ",
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_010",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "握力器",
+              "code": "chk_010"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_011",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "橡皮筋抗阻",
+              "code": "chk_011"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_012",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "负重训练",
+              "code": "chk_012"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "3. 感觉再教育： ",
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_013",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "触觉刺激",
+              "code": "chk_013"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_014",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "脱敏训练",
+              "code": "chk_014"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "4. ADL适应性训练：",
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_015",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "辅助器具",
+              "code": "chk_015"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_016",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "环境改造",
+              "code": "chk_016"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      }
+    ],
+    "footer": []
+  }
+}

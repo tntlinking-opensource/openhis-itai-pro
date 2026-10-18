@@ -1,0 +1,123 @@
+{
+  "input": {
+    "data": {
+      "syscode": "ims",
+      "rule_ids": null,
+      "task_id": null,
+      "trig_scen": "10",
+      "patient_dtos": [
+        {
+          "patn_id": "149402417",
+          "patn_name": "测试药店人员",
+          "gend": "1",
+          "brdy": "1998-01-01",
+          "poolarea": "220299",
+          "curr_mdtrt_id": "149402417",
+          "fsi_encounter_dtos": [
+            {
+              "mdtrt_id": "149402417",
+              "medins_id": "P22020300392",
+              "medins_name": "测试药店",
+              "medins_admdvs": "220299",
+              "medins_type": "A",
+              "medins_lv": "11",
+              "wardarea_codg": null,
+              "wardno": null,
+              "bedno": null,
+              "adm_date": "2026-03-30 10:58:54",
+              "dscg_date": "2026-03-30 10:58:54",
+              "dscg_main_dise_codg": "001",
+              "dscg_main_dise_name": "默认诊断",
+              "fsi_diagnose_dtos": [
+                {
+                  "dise_id": "Z00.001",
+                  "inout_dise_type": "1",
+                  "maindise_flag": "1",
+                  "dias_srt_no": "1",
+                  "dise_codg": "001",
+                  "dise_name": "默认诊断",
+                  "dise_date": "2026-03-30 10:58:54"
+                }
+              ],
+              "dr_codg": "D220104017206",
+              "adm_dept_codg": "LD-99",
+              "adm_dept_name": "LD-99",
+              "dscg_dept_codg": "LD-99",
+              "dscg_dept_name": "LD-99",
+              "med_mdtrt_type": "3",
+              "med_type": "41",
+              "fsi_order_dtos": [
+                {
+                  "rx_id": "1054440262",
+                  "rxno": "1024313560",
+                  "grpno": null,
+                  "long_drord_flag": "0",
+                  "hilist_type": "101",
+                  "chrg_type": "05",
+                  "drord_bhvr": "0",
+                  "hilist_code": "ZD02AAK0062010305555",
+                  "hilist_name": "抗妇炎胶囊0.35g*48粒",
+                  "hilist_dosform": "120312",
+                  "hilist_lv": "01",
+                  "hilist_pric": 0.0,
+                  "lv1_hosp_item_pric": null,
+                  "lv2_hosp_item_pric": null,
+                  "lv3_hosp_item_pric": null,
+                  "hilist_memo": null,
+                  "hosplist_code": "24408",
+                  "hosplist_name": "抗妇炎胶囊0.35g*48粒",
+                  "hosplist_dosform": "120312",
+                  "cnt": 1.0,
+                  "pric": 31.92,
+                  "sumamt": 31.92,
+                  "ownpay_amt": 0.0,
+                  "selfpay_amt": 0.0,
+                  "spec": "0.35g*48粒",
+                  "spec_unt": "盒",
+                  "drord_begn_date": "2026-03-30 10:58:54",
+                  "drord_stop_date": "2026-03-30 10:58:54",
+                  "drord_dept_codg": "LD-99",
+                  "drord_dept_name": "LD-99",
+                  "drord_dr_codg": "D220104017206",
+                  "drord_dr_name": "默认药师",
+                  "drord_dr_profttl": "1",
+                  "curr_drord_flag": "1"
+                }
+              ],
+              "matn_stas": "0",
+              "medfee_sumamt": 31.92,
+              "ownpay_amt": 0.0,
+              "selfpay_amt": 0.0,
+              "acct_payamt": null,
+              "ma_amt": null,
+              "hifp_payamt": 0.0,
+              "setl_totlnum": 1,
+              "insutype": "310",
+              "reim_flag": "1",
+              "out_setl_flag": null,
+              "operation_dtos": []
+            }
+          ],
+          "fsi_his_data_dto": {}
+        }
+      ]
+    }
+  },
+  "infno": "3101",
+  "msgid": "H22020400020202303231104040942",
+  "mdtrtarea_admvs": "220299",
+  "insuplc_admdvs": "220299",
+  "recer_sys_code": "MBS_LOCAL",
+  "dev_no": "",
+  "dev_safe_info": "",
+  "cainfo": "",
+  "signtype": "",
+  "infver": "1.0",
+  "opter_type": "1",
+  "opter": "D1069",
+  "opter_name": "测试医师",
+  "inf_time": "2026-03-30 11:03:41",
+  "fixmedins_code": "P22020300392",
+  "fixmedins_name": "测试药店",
+  "sign_no": "220000202303230906210106092971"
+}

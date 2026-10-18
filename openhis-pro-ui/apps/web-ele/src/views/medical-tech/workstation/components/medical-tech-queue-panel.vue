@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type {
   MedicalTechEncounterScope,
+  MedicalTechExecutionQueueFilter,
   MedicalTechInpatientStayFilter,
   MedicalTechPatientQueueItemDto,
 } from '#/api/medical-tech/medical-tech-execution.types';
@@ -9,7 +10,7 @@ import type {
   PatientCardPatient,
 } from '#/components/outpatient/patient-card.types';
 
-import { Search } from '@vben/icons';
+import { Search } from '@zxplat/icons';
 
 import {
   ElButton,
@@ -17,6 +18,7 @@ import {
   ElDatePicker,
   ElInput,
   ElOption,
+  ElRadio,
   ElRadioButton,
   ElRadioGroup,
   ElSelect,
@@ -36,6 +38,8 @@ defineOptions({
 interface Props {
   /** 就诊类别（门诊/住院） */
   encounterScope: MedicalTechEncounterScope;
+  /** 队列执行态（待执行/已执行） */
+  executionQueueFilter: MedicalTechExecutionQueueFilter;
   /** 住院在院态筛选（仅住院展示） */
   inpatientStayFilter: MedicalTechInpatientStayFilter;
   /** 当前日期范围内的全部队列行 */
@@ -51,6 +55,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   encounterScopeChange: [scope: MedicalTechEncounterScope];
+  executionQueueFilterChange: [filter: MedicalTechExecutionQueueFilter];
   inpatientStayFilterChange: [filter: MedicalTechInpatientStayFilter];
   pendingDeviceOnlyChange: [checked: boolean];
   queueDateRangeChange: [range: [string, string] | null];
@@ -68,7 +73,9 @@ const pendingDeviceOnly = defineModel<boolean>('pendingDeviceOnly', { required: 
 const dateRangeShortcuts = buildDefaultDateRangeShortcuts();
 
 /** 通知父级重新拉取队列 */
-function handleRefresh() {
+function handleRefresh(event?: Event) {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
   emit('refresh');
 }
 
@@ -79,14 +86,35 @@ function handleSearch() {
 
 /** 就诊类别单选变更 */
 function handleEncounterScopeChange(value: string | number | boolean | undefined) {
-  const next = String(value ?? 'OUTPATIENT') as MedicalTechEncounterScope;
+  const next = String(value ?? '');
+  if (next !== 'OUTPATIENT' && next !== 'INPATIENT') {
+    return;
+  }
+  if (next === props.encounterScope) {
+    return;
+  }
   emit('encounterScopeChange', next);
 }
 
-/** 住院在院态单选变更 */
+/** 待执行/已执行分桶变更：同值不回传 */
+function handleExecutionQueueFilterChange(value: string | number | boolean | undefined) {
+  const next = String(value ?? '');
+  if (next !== 'PENDING' && next !== 'EXECUTED') {
+    return;
+  }
+  if (next === props.executionQueueFilter) {
+    return;
+  }
+  emit('executionQueueFilterChange', next);
+}
+
+/** 住院在院态单选变更：同值不回传，避免误清选中 */
 function handleInpatientStayFilterChange(value: string | number | boolean | undefined) {
-  const next = String(value ?? 'IN_HOSPITAL') as MedicalTechInpatientStayFilter;
+  const next = String(value ?? '');
   if (next !== 'IN_HOSPITAL' && next !== 'NOT_IN_HOSPITAL') {
+    return;
+  }
+  if (next === props.inpatientStayFilter) {
     return;
   }
   emit('inpatientStayFilterChange', next);
@@ -166,6 +194,15 @@ function isRowSelected(row: MedicalTechPatientQueueItemDto): boolean {
           <Search class="h-4 w-4" />
         </template>
       </ElInput>
+      <!-- 姓名下方：先执行态圆点一行，再「辅筛 + 刷新」一行，侧栏窄宽不挤折 -->
+      <ElRadioGroup
+        :model-value="props.executionQueueFilter"
+        class="mt-execution-filter-dots"
+        @change="handleExecutionQueueFilterChange"
+      >
+        <ElRadio value="PENDING">待执行</ElRadio>
+        <ElRadio value="EXECUTED">已执行</ElRadio>
+      </ElRadioGroup>
       <div class="flex min-w-0 items-center justify-between gap-1.5">
         <div v-if="props.encounterScope === 'INPATIENT'" class="w-[108px] shrink-0">
           <ElSelect
@@ -187,9 +224,10 @@ function isRowSelected(row: MedicalTechPatientQueueItemDto): boolean {
         </ElCheckbox>
         <ElButton
           type="default"
+          native-type="button"
           class="shrink-0 !px-2"
           :loading="props.queueLoading"
-          @click="handleRefresh"
+          @click.stop="handleRefresh"
         >
           刷新
         </ElButton>
@@ -215,10 +253,23 @@ function isRowSelected(row: MedicalTechPatientQueueItemDto): boolean {
 </template>
 
 <style scoped>
-.mt-scope-radio {
+.mt-execution-filter-dots {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 20px;
+  height: auto;
+}
+
+.mt-execution-filter-dots :deep(.el-radio) {
+  margin-right: 0;
+  height: auto;
+}
+
+.mt-execution-filter-dots :deep(.el-radio__label) {
+  padding-left: 6px;
+  font-size: 13px;
 }
 
 .mt-daterange-row :deep(.el-date-editor.el-date-editor--daterange) {

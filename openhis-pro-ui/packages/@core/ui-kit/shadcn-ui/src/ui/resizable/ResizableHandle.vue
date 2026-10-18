@@ -5,8 +5,8 @@ import type { HTMLAttributes } from 'vue';
 
 import { computed } from 'vue';
 
-import { GripVertical } from '@vben-core/icons';
-import { cn } from '@vben-core/shared/utils';
+import { GripVertical } from '@zxplat-core/icons';
+import { cn } from '@zxplat-core/shared/utils';
 
 import { SplitterResizeHandle, useForwardPropsEmits } from 'reka-ui';
 

@@ -24,6 +24,7 @@ import {
   type DetailAuditRemindDialogExpose,
 } from '#/chs/composables/use-detail-audit-gate';
 import { pickFirstInsuranceContract } from '#/chs/utils/resolve-insurance-contract-bus-no';
+import { notifyEncounterFeeRefresh } from '#/components/outpatient/encounter-fee-summary';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { isStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
 import { printServiceApplyFromAdviceRows } from '#/utils/print/print-service-apply';
@@ -142,6 +143,7 @@ export function useServiceApplyTab(
       const merged = mergeMedicationAdviceRowsForListDisplay(list);
       allAdviceRowsForBind.value = merged;
       rows.value = filterServiceApplyFormAdviceRows(merged);
+      notifyEncounterFeeRefresh();
     } catch {
       rows.value = [];
       allAdviceRowsForBind.value = [];
@@ -425,6 +427,9 @@ export function useServiceApplyTab(
         rows: printable,
         printMeta: props.serviceApplyPrintMeta,
       });
+      if (results.some((item) => item.errorCode === 'USER_CANCELLED')) {
+        return;
+      }
       if (results.length === 0) {
         ElMessage.warning('所选行无法识别为检验/检查申请单');
         return;

@@ -3,7 +3,7 @@ import type { DropdownMenuCheckboxItemEmits, DropdownMenuCheckboxItemProps } fro
 
 import { computed } from 'vue';
 
-import { cn } from '@vben-core/shared/utils';
+import { cn } from '@zxplat-core/shared/utils';
 
 import { Check } from 'lucide-vue-next';
 import { DropdownMenuCheckboxItem, DropdownMenuItemIndicator, useForwardPropsEmits } from 'reka-ui';

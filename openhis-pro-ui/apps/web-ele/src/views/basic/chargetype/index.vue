@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { ChargeType } from '#/api/core/system/charge-type';
 
 import { onMounted, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { ElButton, ElMessage, ElMessageBox, ElTag } from 'element-plus';
 
@@ -185,7 +185,7 @@ onMounted(() => {
       <template #activeFlag="{ row }">
         <ElTag
           v-if="row.activeFlag !== undefined"
-          :type="row.activeFlag === CHARGE_TYPE_ACTIVE_FLAG.ACTIVE ? 'success' : 'info'"
+          :type="row.activeFlag === CHARGE_TYPE_ACTIVE_FLAG.ACTIVE ? 'success' : 'warning'"
         >
           {{ row.activeFlag === CHARGE_TYPE_ACTIVE_FLAG.ACTIVE ? '启用' : '停用' }}
         </ElTag>

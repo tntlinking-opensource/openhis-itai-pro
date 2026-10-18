@@ -1,0 +1,6 @@
+{
+  "moduleId": "chs",
+  "enabledProperty": "zxplat.modules.chs.enabled",
+  "locations": "classpath:db/migration/chs",
+  "historyTable": "flyway_schema_history_chs"
+}

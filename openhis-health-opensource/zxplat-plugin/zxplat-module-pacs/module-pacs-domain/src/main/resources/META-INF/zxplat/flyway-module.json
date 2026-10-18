@@ -1,0 +1,6 @@
+{
+  "moduleId": "pacs-imaging",
+  "enabledProperty": "zxplat.modules.pacs.enabled",
+  "locations": "classpath:db/migration/imaging",
+  "historyTable": "flyway_schema_history_pacs_imaging"
+}

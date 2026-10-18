@@ -8,8 +8,8 @@ import type {
 
 import { computed, ref } from 'vue';
 
-import { RotateCw, Search } from '@vben/icons';
-import { formatDateTime, getOutpatientStatusTagStyles, getPaymentTypeTagStyles } from '@vben/utils';
+import { RotateCw, Search } from '@zxplat/icons';
+import { formatDateTime, getOutpatientStatusTagStyles, getPaymentTypeTagStyles } from '@zxplat/utils';
 
 import dayjs from 'dayjs';
 import {

@@ -1,8 +1,8 @@
 /** 药品/耗材：批号多行、进价与售价双侧调价 */
 const LOGISTICS_ITEM_TABLES = new Set(['med_medication_definition', 'adm_device_definition']);
 
-/** 诊疗/医疗服务：一对一、仅调前/目标售价 */
-const CLINICAL_ITEM_TABLES = new Set(['wkf_activity_definition', 'adm_healthcare_service']);
+/** 诊疗：一对一、仅调前/目标售价（不含医疗服务） */
+const CLINICAL_ITEM_TABLES = new Set(['wkf_activity_definition']);
 
 export type PriceAdjustmentStyle = 'clinical' | 'logistics';
 

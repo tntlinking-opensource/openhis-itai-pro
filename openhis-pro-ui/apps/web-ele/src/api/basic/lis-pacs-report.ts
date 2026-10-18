@@ -18,7 +18,7 @@ export interface LisPacsReportItem {
 }
 
 const SITE =
-  String(import.meta.env.VITE_OPENHIS_PROJECT ?? 'H22010402403').trim() || 'H22010402403';
+  String(import.meta.env.VITE_ZXPLAT_PROJECT ?? 'H22010402403').trim() || 'H22010402403';
 const BASE = `/${SITE.toLowerCase()}LisPacsReport`;
 
 /** 按就诊列出 LIS/PACS 报告打开链接 */

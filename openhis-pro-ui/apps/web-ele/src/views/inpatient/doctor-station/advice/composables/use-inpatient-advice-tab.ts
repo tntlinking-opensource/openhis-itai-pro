@@ -32,7 +32,7 @@ import {
   watch,
 } from 'vue';
 
-import { formatDateTime } from '@vben/utils';
+import { formatDateTime } from '@zxplat/utils';
 
 import dayjs from 'dayjs';
 import { ElMessage, ElTable } from 'element-plus';
@@ -53,6 +53,7 @@ import {
 } from '#/api/inpatient/doctor-station/inpatient-doctor-station-advice.http';
 import { ENSURE_CLINICAL_RECEPTION_KEY } from '#/components/doctor-station/clinical-reception-context';
 import { useAuthStore } from '#/store';
+import { notifyEncounterFeeRefresh } from '#/components/outpatient/encounter-fee-summary';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { isStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
 import { isEncounterClinicalOrderMutationBlocked } from '#/utils/inpatient/encounter-clinical-order-gate';
@@ -107,6 +108,8 @@ import {
   therapyDraftFieldsFromAdviceRow,
   validateWesternEditLineItem,
 } from '../services/advice-row';
+import { ADVICE_CATALOG_EXCLUDE_SERVICE_APPLY_CATEGORY_CODES } from '#/views/outpatient/doctor-station/advice/constants/advice-catalog-exclude-service-apply-categories.config';
+
 import {
   ADVICE_ESC_OVERLAY_SELECTOR,
   ADVICE_PRODUCT_COLUMNS,
@@ -1557,6 +1560,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
       const { content: list } = parsePagedRowsFromApiData<InpatientDoctorStationAdviceRowDto>(res);
       adviceListSourceDtos.value = list;
       applyAdviceListFromSource();
+      notifyEncounterFeeRefresh();
     } catch {
       adviceListSourceDtos.value = [];
       rows.value = [];
@@ -1629,6 +1633,8 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
         excludeMedicationCategoryCodes: [
           ...WESTERN_ADVICE_CATALOG_EXCLUDE_MEDICATION_CATEGORY_CODES,
         ],
+        // 院点可排除检验/检查/治疗，迫使仅走申请单（申请单选品不传）
+        excludeCategoryCodes: [...ADVICE_CATALOG_EXCLUDE_SERVICE_APPLY_CATEGORY_CODES],
         positiveQuantityOnly: params.positiveQuantityOnly,
       });
       const { content: rawRows, totalCount } =
@@ -1667,6 +1673,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
         excludeMedicationCategoryCodes: [
           ...WESTERN_ADVICE_CATALOG_EXCLUDE_MEDICATION_CATEGORY_CODES,
         ],
+        excludeCategoryCodes: [...ADVICE_CATALOG_EXCLUDE_SERVICE_APPLY_CATEGORY_CODES],
       });
       const { content: rawRows } =
         parsePagedRowsFromApiData<InpatientDoctorStationAdviceCatalogRowDto>(res);
@@ -1707,7 +1714,6 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
         ? mergeCatalogIntoAdviceDrugItemForEdit({ ...base, ...seed }, catalog, {
             resourceType: row.resourceType,
             therapyTypeCode: row.therapyTypeCode,
-            totalUnitDefaultKind: therapyCode === 'TEMPORARY' ? 'PACKAGE' : 'SALES',
           })
         : {
             ...seed,

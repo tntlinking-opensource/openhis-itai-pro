@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import type { TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { PrepayPaymentRecordDto, PrepayQueueItemDto } from '#/api/inpatient-prepay';
 import type { BillingPatientCardPatient } from '#/components/charge/billing-patient-card.types';
 
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 import {
   ElButton,
@@ -14,6 +14,7 @@ import {
   ElForm,
   ElFormItem,
   ElInput,
+  ElInputNumber,
   ElMessage,
   ElOption,
   ElRadio,
@@ -56,11 +57,18 @@ import {
   resolveInpatientAccountBalanceLabel,
 } from '#/utils/inpatient/account-balance-display';
 import {
+  buildPrepayChangeSourceFromCollect,
+  buildPrepayChangeSourceFromRecord,
+  printInpatientPrepayChange,
+} from '#/utils/print/print-inpatient-prepay-change';
+import {
   buildPrepayReceiptSourceFromCollect,
   buildPrepayReceiptSourceFromRecord,
   printInpatientPrepayReceipt,
-  schedulePrintInpatientPrepayReceipt,
 } from '#/utils/print/print-inpatient-prepay-receipt';
+import { scheduleBackgroundPrint } from '#/utils/print/runtime';
+import { INPATIENT_PREPAY_CHANGE_SLIP_ENABLED } from '#/views/inpatient/charge/prepay/inpatient-prepay-print.config';
+
 
 import InpatientQueuePanel from './components/inpatient-queue-panel.vue';
 import {
@@ -93,11 +101,60 @@ const queuePager = reactive({
   pageSize: 50,
 });
 
+/**
+ * 预交金办理表单：组合收款用多渠道明细行，合计即收费总额。
+ */
 const prepayForm = reactive({
-  amount: '',
-  payChannelCode: DEFAULT_PAY_CHANNEL_CODE,
+  /** 支付分配行（款员拆分渠道） */
+  paymentDetailRows: [
+    { payChannelCode: DEFAULT_PAY_CHANNEL_CODE, amount: 0 },
+  ] as Array<{ amount: number; payChannelCode: string }>,
   remark: '',
   scanCode: '',
+});
+
+/**
+ * 组合收款合计金额（展示与提交用）。
+ */
+const prepayCollectTotalAmount = computed(() => {
+  let sum = 0;
+  for (const row of prepayForm.paymentDetailRows) {
+    const amount = Number(row?.amount);
+    // 仅累加正数行
+    if (Number.isFinite(amount) && amount > 0) {
+      sum += amount;
+    }
+  }
+  return Number(sum.toFixed(2));
+});
+
+/**
+ * 明细中是否包含扫码渠道（展示付款码）。
+ */
+const hasScanPayInCollectRows = computed(() =>
+  prepayForm.paymentDetailRows.some((row) => isScanPayChannel(row.payChannelCode)),
+);
+
+/**
+ * 唯一扫码渠道行金额；多条扫码时返回 null（提交前拦截）。
+ */
+const exclusiveScanPayRowAmount = computed(() => {
+  const scanRows = prepayForm.paymentDetailRows.filter((row) =>
+    isScanPayChannel(row.payChannelCode),
+  );
+  // 无扫码行
+  if (scanRows.length === 0) {
+    return null;
+  }
+  // 多于一条扫码不允许
+  if (scanRows.length > 1) {
+    return null;
+  }
+  const amount = Number(scanRows[0]?.amount);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return null;
+  }
+  return amount;
 });
 
 const refundForm = reactive({
@@ -165,7 +222,7 @@ const recordTableColumns: TableColumn[] = [
   {
     prop: 'action',
     label: '操作',
-    width: 160,
+    width: 200,
     slot: 'action',
     align: 'center',
     headerAlign: 'center',
@@ -175,7 +232,9 @@ const recordTableColumns: TableColumn[] = [
 
 const draftSettlePaymentId = ref('');
 const reprintPaymentId = ref('');
+const reprintChangePaymentId = ref('');
 const printLatestLoading = ref(false);
+const printLatestChangeLoading = ref(false);
 
 const currentPatient = computed(
   () => queueData.value.find((item) => item.encounterId === selectedEncounterId.value) ?? null,
@@ -341,9 +400,71 @@ async function handleRefreshQueue() {
   ElMessage.success('患者列表已刷新');
 }
 
-/** 快捷金额用于快速写入预交金金额 */
+/**
+ * 快捷金额写入首行支付明细（组合收款起点）。
+ *
+ * @param amount 快捷金额
+ */
 function handleApplyQuickAmount(amount: number) {
-  prepayForm.amount = String(amount);
+  // 无明细行时补一行再写入
+  if (prepayForm.paymentDetailRows.length === 0) {
+    prepayForm.paymentDetailRows.push({
+      payChannelCode: DEFAULT_PAY_CHANNEL_CODE,
+      amount,
+    });
+    return;
+  }
+  prepayForm.paymentDetailRows[0]!.amount = amount;
+}
+
+/** 新增一条支付渠道明细行。 */
+function addPaymentDetailRow() {
+  prepayForm.paymentDetailRows.push({
+    payChannelCode: DEFAULT_PAY_CHANNEL_CODE,
+    amount: 0,
+  });
+}
+
+/**
+ * 删除一条支付渠道明细行（至少保留一行）。
+ *
+ * @param index 行下标
+ */
+function removePaymentDetailRow(index: number) {
+  // 至少保留一行，避免提交时空明细
+  if (prepayForm.paymentDetailRows.length <= 1) {
+    return;
+  }
+  prepayForm.paymentDetailRows.splice(index, 1);
+}
+
+/**
+ * 组装提交用支付明细（金额 > 0 且渠道非空）。
+ *
+ * @returns 明细数组；无有效行时 undefined
+ */
+function buildCollectPaymentDetailsForSubmit() {
+  const rows = prepayForm.paymentDetailRows
+    .filter((row) => row && Number(row.amount) > 0 && String(row.payChannelCode || '').trim())
+    .map((row) => ({
+      payChannelCode: String(row.payChannelCode).trim(),
+      amount: Number(row.amount),
+    }));
+  if (rows.length === 0) {
+    return undefined;
+  }
+  return rows;
+}
+
+/**
+ * 重置办理区明细与备注（收取成功后）。
+ */
+function resetCollectForm() {
+  prepayForm.paymentDetailRows = [
+    { payChannelCode: DEFAULT_PAY_CHANNEL_CODE, amount: 0 },
+  ];
+  prepayForm.remark = '';
+  prepayForm.scanCode = '';
 }
 
 /** 打开退预交金弹窗 */
@@ -381,12 +502,28 @@ function canReprintPrepayReceipt(row: PrepayPaymentRecordDto): boolean {
   );
 }
 
-/** 当前患者是否有可打印的成功收取流水 */
+/** 成功收取或退费流水可补打退补单 */
+function canReprintPrepayChange(row: PrepayPaymentRecordDto): boolean {
+  return (
+    INPATIENT_PREPAY_CHANGE_SLIP_ENABLED &&
+    row.statusEnum === 'SUCCESS' &&
+    String(row.paymentId ?? '').trim() !== ''
+  );
+}
+
+/** 当前患者是否有可打印的成功收取流水（收据） */
 const canPrintLatestPrepayReceipt = computed(() =>
   prepayRecordData.value.some((row) => canReprintPrepayReceipt(row)),
 );
 
-/** 最近一笔成功收取流水（供工具栏打印） */
+/** 当前患者是否有可打印的成功流水（退补单，含退费） */
+const canPrintLatestPrepayChange = computed(
+  () =>
+    INPATIENT_PREPAY_CHANGE_SLIP_ENABLED &&
+    prepayRecordData.value.some((row) => canReprintPrepayChange(row)),
+);
+
+/** 最近一笔成功收取流水（供工具栏打印预交金收据） */
 function resolveLatestCollectRecord(
   records: PrepayPaymentRecordDto[],
 ): PrepayPaymentRecordDto | undefined {
@@ -398,6 +535,66 @@ function resolveLatestCollectRecord(
     String(b.tradeTime ?? '').localeCompare(String(a.tradeTime ?? '')),
   );
   return sorted[0];
+}
+
+/** 最近一笔可打退补单的流水（收取或退费） */
+function resolveLatestChangeRecord(
+  records: PrepayPaymentRecordDto[],
+): PrepayPaymentRecordDto | undefined {
+  const rows = records.filter((row) => canReprintPrepayChange(row));
+  if (rows.length === 0) {
+    return undefined;
+  }
+  const sorted = [...rows].sort((a, b) =>
+    String(b.tradeTime ?? '').localeCompare(String(a.tradeTime ?? '')),
+  );
+  return sorted[0];
+}
+
+/**
+ * 交易成功后异步打印：收据与退补单排队依次打，避免并发抢打印机把第二张吞掉。
+ * 退费不打收据，只打退补单。
+ */
+function schedulePrepaySlipAfterTrade(params: {
+  changeKind: 'collect' | 'refund';
+  amount: number | string;
+  payChannelCode: string;
+  scanPayType?: string;
+  encounterId?: null | string;
+  paymentId?: null | string;
+}) {
+  scheduleBackgroundPrint(async () => {
+    if (params.changeKind === 'collect') {
+      await printInpatientPrepayReceipt({
+        source: buildPrepayReceiptSourceFromCollect({
+          patient: currentPatient.value,
+          amount: params.amount,
+          payChannelCode: params.payChannelCode,
+          scanPayType: params.scanPayType,
+        }),
+        encounterId: params.encounterId,
+        paymentId: params.paymentId,
+        jobName: '住院预交金收据',
+        background: true,
+      });
+    }
+    if (!INPATIENT_PREPAY_CHANGE_SLIP_ENABLED) {
+      return;
+    }
+    await printInpatientPrepayChange({
+      source: buildPrepayChangeSourceFromCollect({
+        patient: currentPatient.value,
+        amount: params.amount,
+        payChannelCode: params.payChannelCode,
+        scanPayType: params.scanPayType,
+        changeKind: params.changeKind,
+      }),
+      encounterId: params.encounterId,
+      paymentId: params.paymentId,
+      jobName: '住院预交金退补单',
+      background: true,
+    });
+  });
 }
 
 /**
@@ -451,16 +648,13 @@ async function handleCompleteDraftSettlement(row: PrepayPaymentRecordDto) {
     await refreshQueueAfterBalanceChange();
     await queryPrepayRecords();
     ElMessage.success('补结算成功');
-    schedulePrintInpatientPrepayReceipt({
-      source: buildPrepayReceiptSourceFromCollect({
-        patient: currentPatient.value,
-        amount: amountNum,
-        payChannelCode: 'SCAN_PAY',
-        scanPayType: clientScanResult.payType,
-      }),
+    schedulePrepaySlipAfterTrade({
+      changeKind: 'collect',
+      amount: amountNum,
+      payChannelCode: 'SCAN_PAY',
+      scanPayType: clientScanResult.payType,
       encounterId,
       paymentId: collectResult?.paymentId ?? paymentDraftId,
-      jobName: '住院预交金收据',
     });
   } finally {
     draftSettlePaymentId.value = '';
@@ -493,7 +687,33 @@ async function handleReprintPrepayReceipt(row: PrepayPaymentRecordDto) {
   }
 }
 
-/** 工具栏打印：打印当前患者最近一笔成功收取收据 */
+/** 补打退补单（收取为补，退费为退） */
+async function handleReprintPrepayChange(row: PrepayPaymentRecordDto) {
+  if (!canReprintPrepayChange(row)) {
+    return;
+  }
+  if (!currentPatient.value) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+  const paymentId = String(row.paymentId ?? '').trim();
+  reprintChangePaymentId.value = paymentId;
+  try {
+    await printInpatientPrepayChange({
+      source: buildPrepayChangeSourceFromRecord({
+        patient: currentPatient.value,
+        record: row,
+      }),
+      encounterId: selectedEncounterId.value,
+      paymentId,
+      jobName: '住院预交金退补单（补打）',
+    });
+  } finally {
+    reprintChangePaymentId.value = '';
+  }
+}
+
+/** 工具栏：打印最近一笔预交金收据 */
 async function handlePrintLatestPrepayReceipt() {
   if (!currentPatient.value) {
     ElMessage.warning('请先选择患者');
@@ -501,7 +721,7 @@ async function handlePrintLatestPrepayReceipt() {
   }
   const record = resolveLatestCollectRecord(prepayRecordData.value);
   if (!record) {
-    ElMessage.warning('暂无成功收取流水，无法打印');
+    ElMessage.warning('暂无成功收取流水，无法打印收据');
     return;
   }
   printLatestLoading.value = true;
@@ -520,12 +740,42 @@ async function handlePrintLatestPrepayReceipt() {
   }
 }
 
-/** 提交收取预交金并刷新余额与流水 */
+/** 工具栏：打印最近一笔退补单 */
+async function handlePrintLatestPrepayChange() {
+  if (!INPATIENT_PREPAY_CHANGE_SLIP_ENABLED) {
+    return;
+  }
+  if (!currentPatient.value) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+  const record = resolveLatestChangeRecord(prepayRecordData.value);
+  if (!record) {
+    ElMessage.warning('暂无成功流水，无法打印退补单');
+    return;
+  }
+  printLatestChangeLoading.value = true;
+  try {
+    await printInpatientPrepayChange({
+      source: buildPrepayChangeSourceFromRecord({
+        patient: currentPatient.value,
+        record,
+      }),
+      encounterId: selectedEncounterId.value,
+      paymentId: record.paymentId,
+      jobName: '住院预交金退补单',
+    });
+  } finally {
+    printLatestChangeLoading.value = false;
+  }
+}
+
+/** 提交收取预交金并刷新余额与流水（支持组合收款，一渠道一流水）。 */
 async function handleCollectPrepay() {
-  const amount = parsePositiveAmount(prepayForm.amount);
+  const paymentDetails = buildCollectPaymentDetailsForSubmit();
+  const amount = paymentDetails ? Number(prepayCollectTotalAmount.value) : null;
   const encounterId = preserveApiIdForRequest(selectedEncounterId.value);
   const patientId = preserveApiIdForRequest(currentPatient.value?.patientId);
-  const payChannelCode = prepayForm.payChannelCode;
   if (!encounterId || !patientId) {
     ElMessage.warning('请先选择患者');
     return;
@@ -534,11 +784,18 @@ async function handleCollectPrepay() {
     ElMessage.warning('当前就诊状态不可收取预交金');
     return;
   }
-  if (amount === null) {
-    ElMessage.warning('请输入正确的收费金额');
+  if (!paymentDetails || amount === null || !(amount > 0)) {
+    ElMessage.warning('请填写至少一条支付明细金额');
     return;
   }
-  if (isScanPayChannel(payChannelCode) && !prepayForm.scanCode.trim()) {
+  const scanRows = paymentDetails.filter((row) => isScanPayChannel(row.payChannelCode));
+  // 扫码渠道至多一条，与后端门禁一致
+  if (scanRows.length > 1) {
+    ElMessage.warning('扫码支付每次仅支持一条明细');
+    return;
+  }
+  const scanRow = scanRows[0];
+  if (scanRow && !prepayForm.scanCode.trim()) {
     ElMessage.warning('请输入付款码');
     return;
   }
@@ -547,19 +804,20 @@ async function handleCollectPrepay() {
   try {
     let paymentDraftId: string | undefined;
     let clientScanResult;
-    if (isScanPayChannel(payChannelCode)) {
+    // 组合收款中仅扫码行走银联预下单；金额用该行而非合计
+    if (scanRow) {
       await refreshUnionPayCapabilities();
       if (!scanPayEnabled.value) {
-        ElMessage.error('请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
+        ElMessage.error('请启动本地客户端（Zxplat.Win）并确认银联组件已安装');
         return;
       }
       scanStatusText.value = '等待支付结果…';
       const scanOutcome = await submitPrepayScanPayment({
         encounterId,
         patientId,
-        amount,
+        amount: scanRow.amount,
         scanCode: prepayForm.scanCode,
-        payChannelCode,
+        payChannelCode: scanRow.payChannelCode,
         operatorId: resolveLoginPractitionerIdForRequest(userStore.userInfo),
         remark: prepayForm.remark.trim() || undefined,
       });
@@ -571,12 +829,7 @@ async function handleCollectPrepay() {
       encounterId,
       patientId,
       amount,
-      paymentDetails: [
-        {
-          payChannelCode,
-          amount,
-        },
-      ],
+      paymentDetails,
       ...(paymentDraftId ? { paymentDraftId } : {}),
       operatorId: resolveLoginPractitionerIdForRequest(userStore.userInfo),
       remark: prepayForm.remark.trim() || undefined,
@@ -589,28 +842,28 @@ async function handleCollectPrepay() {
         () => httpCollectPrepayAdvanceDeposit({ ...collectBody, clientScanResult }),
         {
           paymentDraftId,
-          refundAmountYuan: amount,
+          // 银联原路退按扫码行金额，非组合合计
+          refundAmountYuan: scanRow?.amount ?? amount,
         },
       );
     } else {
       collectResult = await httpCollectPrepayAdvanceDeposit(collectBody);
     }
     await refreshQueueAfterBalanceChange();
-    prepayForm.amount = '';
-    prepayForm.remark = '';
-    prepayForm.scanCode = '';
+    resetCollectForm();
     await queryPrepayRecords();
     ElMessage.success('预交金收取成功');
-    schedulePrintInpatientPrepayReceipt({
-      source: buildPrepayReceiptSourceFromCollect({
-        patient: currentPatient.value,
-        amount,
-        payChannelCode,
-        scanPayType: clientScanResult?.payType,
-      }),
+    // 打印取最后一笔（扫码行或末条渠道）；组合收款多票可后续补打
+    const printChannel =
+      scanRow?.payChannelCode ?? paymentDetails[paymentDetails.length - 1]?.payChannelCode ?? '';
+    const printAmount = scanRow?.amount ?? paymentDetails[paymentDetails.length - 1]?.amount ?? amount;
+    schedulePrepaySlipAfterTrade({
+      changeKind: 'collect',
+      amount: printAmount,
+      payChannelCode: printChannel,
+      scanPayType: clientScanResult?.payType,
       encounterId,
       paymentId: collectResult?.paymentId,
-      jobName: '住院预交金收据',
     });
   } finally {
     collectSubmitting.value = false;
@@ -653,7 +906,7 @@ async function handleConfirmRefund() {
       }
     }
 
-    await httpRefundPrepayAdvanceDeposit({
+    const refundResult = await httpRefundPrepayAdvanceDeposit({
       encounterId,
       patientId,
       refundAmount,
@@ -674,6 +927,13 @@ async function handleConfirmRefund() {
     refundDialogVisible.value = false;
     await queryPrepayRecords();
     ElMessage.success('预交金退费成功');
+    schedulePrepaySlipAfterTrade({
+      changeKind: 'refund',
+      amount: refundAmount,
+      payChannelCode: refundForm.payChannelCode,
+      encounterId,
+      paymentId: refundResult?.paymentId,
+    });
   } finally {
     refundSubmitting.value = false;
   }
@@ -839,46 +1099,93 @@ onMounted(async () => {
                   :loading="printLatestLoading"
                   @click="handlePrintLatestPrepayReceipt"
                 >
-                  打印
+                  收据
+                </ElButton>
+                <ElButton
+                  v-if="INPATIENT_PREPAY_CHANGE_SLIP_ENABLED"
+                  plain
+                  :disabled="!canPrintLatestPrepayChange"
+                  :loading="printLatestChangeLoading"
+                  @click="handlePrintLatestPrepayChange"
+                >
+                  退补单
                 </ElButton>
               </div>
             </div>
 
-            <ElForm :model="prepayForm" inline class="prepay-form">
-              <ElFormItem label="收费金额" required>
-                <ElInput
-                  v-model="prepayForm.amount"
-                  placeholder="请输入金额"
-                  class="w-52"
-                  clearable
-                  :disabled="!canOperatePrepay"
-                />
-              </ElFormItem>
-              <ElFormItem label="支付方式" required>
-                <ElRadioGroup v-model="prepayForm.payChannelCode" :disabled="!canOperatePrepay">
-                  <ElRadio
-                    v-for="item in effectivePayChannelOptions"
-                    :key="item.value"
-                    :label="item.value"
+            <ElForm :model="prepayForm" class="prepay-form">
+              <ElFormItem label="支付明细" required>
+                <div class="prepay-pay-rows">
+                  <div
+                    v-for="(row, index) in prepayForm.paymentDetailRows"
+                    :key="`prepay-pay-row-${index}`"
+                    class="prepay-pay-row"
                   >
-                    {{ item.label }}
-                  </ElRadio>
-                </ElRadioGroup>
+                    <ElSelect
+                      v-model="row.payChannelCode"
+                      class="prepay-pay-row__channel"
+                      filterable
+                      :disabled="!canOperatePrepay"
+                    >
+                      <ElOption
+                        v-for="item in effectivePayChannelOptions"
+                        :key="item.value"
+                        :label="item.label"
+                        :value="item.value"
+                      />
+                    </ElSelect>
+                    <ElInputNumber
+                      v-model="row.amount"
+                      :precision="2"
+                      :step="100"
+                      :min="0"
+                      controls-position="right"
+                      :disabled="!canOperatePrepay"
+                    />
+                    <ElButton
+                      link
+                      type="danger"
+                      :disabled="!canOperatePrepay || prepayForm.paymentDetailRows.length <= 1"
+                      @click="removePaymentDetailRow(index)"
+                    >
+                      删除
+                    </ElButton>
+                  </div>
+                  <div class="prepay-pay-rows__footer">
+                    <ElButton
+                      link
+                      type="primary"
+                      :disabled="!canOperatePrepay"
+                      @click="addPaymentDetailRow"
+                    >
+                      添加支付方式
+                    </ElButton>
+                    <span class="prepay-pay-rows__total">
+                      合计 {{ formatMoneyDisplay(prepayCollectTotalAmount) }} 元
+                    </span>
+                  </div>
+                </div>
               </ElFormItem>
               <ElFormItem
-                v-if="hasScanPayChannel && prepayForm.payChannelCode === 'SCAN_PAY'"
+                v-if="hasScanPayChannel && hasScanPayInCollectRows"
                 label="付款码"
                 required
               >
                 <ElInput
                   v-model="prepayForm.scanCode"
-                  placeholder="请扫码或输入付款码"
+                  placeholder="请扫码或输入付款码（仅扫码行金额）"
                   class="w-80"
                   clearable
                   :disabled="!canOperatePrepay"
                 />
                 <p v-if="scanStatusText" class="mt-1 text-[13px] text-blue-600">
                   {{ scanStatusText }}
+                </p>
+                <p
+                  v-if="exclusiveScanPayRowAmount == null && hasScanPayInCollectRows"
+                  class="mt-1 text-[12px] text-[var(--el-color-warning)]"
+                >
+                  扫码支付每次仅支持一条明细，且金额须大于 0
                 </p>
               </ElFormItem>
               <ElFormItem label="备注">
@@ -933,10 +1240,23 @@ onMounted(async () => {
                       :loading="reprintPaymentId === String(row.paymentId)"
                       @click="handleReprintPrepayReceipt(row)"
                     >
-                      补打
+                      收据
+                    </ElButton>
+                    <ElButton
+                      v-if="canReprintPrepayChange(row)"
+                      type="primary"
+                      link
+                      :loading="reprintChangePaymentId === String(row.paymentId)"
+                      @click="handleReprintPrepayChange(row)"
+                    >
+                      退补单
                     </ElButton>
                     <span
-                      v-if="!canCompleteDraftSettlement(row) && !canReprintPrepayReceipt(row)"
+                      v-if="
+                        !canCompleteDraftSettlement(row) &&
+                        !canReprintPrepayReceipt(row) &&
+                        !canReprintPrepayChange(row)
+                      "
                       class="text-[var(--el-text-color-placeholder)]"
                     >
                       —

@@ -13,7 +13,7 @@ import {
   getInpatientStatusTagStyles,
   getOutpatientStatusTagStyles,
   getPaymentTypeTagStyles,
-} from '@vben/utils';
+} from '@zxplat/utils';
 
 import { encounterQueueStatusDisplayText } from '#/utils/outpatient/encounter-queue-status-text';
 import { formatInsutype, formatInsutypeShort } from '#/chs/constants/reconciliation';
@@ -50,6 +50,33 @@ function formatOutpatientVisitTime(o: OutpatientPatientCardPayload): string {
   if (o.receptionTime) return o.receptionTime;
   if (o.startTime) return o.startTime;
   return '-';
+}
+
+/**
+ * 住院医技队列时间展示：入院/出院分列（有 admissionTime 即走此模式）。
+ */
+function showInpatientAdmissionDischarge(o: OutpatientPatientCardPayload | null): boolean {
+  if (!o) {
+    return false;
+  }
+  return Boolean(String(o.admissionTime ?? '').trim());
+}
+
+/**
+ * 格式化入院/出院时刻；空值显示 —。
+ *
+ * @param raw 原始时间串
+ */
+function formatCardDateTime(raw: null | string | undefined): string {
+  const text = String(raw ?? '').trim();
+  if (!text) {
+    return '—';
+  }
+  const formatted = formatDateTime(text);
+  if (formatted && formatted !== '-') {
+    return formatted;
+  }
+  return text;
 }
 
 function ageLineOutpatient(ageText: null | string | undefined): string {
@@ -199,6 +226,9 @@ const showPendingSupplyHint = computed(() => {
   return outpatient.value?.hasPendingSupply === true;
 });
 
+/** 住院今日入院：翡翠绿左边条 + 浅绿底（与护士站同口径） */
+const isTodayAdmissionCard = computed(() => inpatient.value?.admittedToday === true);
+
 /** 卡片描边：待发耗材始终红框，选中时叠浅底以区分当前患者 */
 const cardFrameClass = computed(() => {
   // 待发提醒优先于选中蓝框，避免选中后红框消失
@@ -207,6 +237,12 @@ const cardFrameClass = computed(() => {
       return 'border-[var(--el-color-danger)] bg-primary/5 shadow-sm';
     }
     return 'border-[var(--el-color-danger)] bg-[var(--el-color-danger-light-9)] hover:border-[var(--el-color-danger)]';
+  }
+  if (isTodayAdmissionCard.value) {
+    if (props.selected) {
+      return 'patient-card--today-admission patient-card--selected border-primary shadow-sm';
+    }
+    return 'patient-card--today-admission border-[#a7f3d0] hover:border-[#6ee7b7]';
   }
   if (props.selected) {
     return 'border-primary bg-primary/5 shadow-sm';
@@ -231,8 +267,8 @@ const handleSelect = () => {
 
 <template>
   <div
-    class="group relative cursor-pointer overflow-hidden rounded-xl border bg-white transition-all duration-200"
-    :class="cardFrameClass"
+    class="group relative cursor-pointer overflow-hidden rounded-xl border transition-all duration-200"
+    :class="[isTodayAdmissionCard ? '' : 'bg-white', cardFrameClass]"
     @click="handleSelect"
   >
     <div class="relative p-3">
@@ -241,10 +277,19 @@ const handleSelect = () => {
         <template
           v-if="inpatient && (variantResolved === 'doctor' || variantResolved === 'dispense')"
         >
-          <span class="shrink-0 text-base font-medium text-gray-800">
-            {{
-              inpatient.isRegistered && (inpatient.name ?? '').trim() ? inpatient.name : '无档登记'
-            }}
+          <span class="flex min-w-0 items-center gap-1.5">
+            <span class="shrink-0 text-base font-medium text-gray-800">
+              {{
+                inpatient.isRegistered && (inpatient.name ?? '').trim() ? inpatient.name : '无档登记'
+              }}
+            </span>
+            <span
+              v-if="inpatient.admittedToday"
+              class="patient-card__today-badge"
+              title="今日入院"
+            >
+              今日
+            </span>
           </span>
         </template>
         <template v-else-if="inpatient">
@@ -325,7 +370,22 @@ const handleSelect = () => {
           </div>
         </template>
         <template v-else-if="outpatient">
-          <div class="flex items-center" :class="outpatientVisitTimeClass">
+          <!-- 住院医技队列：入院/出院时间（区别门诊就诊时间） -->
+          <template v-if="showInpatientAdmissionDischarge(outpatient)">
+            <div class="flex items-center">
+              <span class="text-[var(--el-text-color-regular)]">入院时间:</span>
+              <span class="ml-1.5 font-medium text-[var(--el-text-color-primary)]">{{
+                formatCardDateTime(outpatient.admissionTime)
+              }}</span>
+            </div>
+            <div class="flex items-center">
+              <span class="text-[var(--el-text-color-regular)]">出院时间:</span>
+              <span class="ml-1.5 font-medium text-[var(--el-text-color-primary)]">{{
+                formatCardDateTime(outpatient.dischargeTime)
+              }}</span>
+            </div>
+          </template>
+          <div v-else class="flex items-center" :class="outpatientVisitTimeClass">
             <span class="text-[var(--el-text-color-regular)]">就诊时间:</span>
             <span class="ml-1.5 font-medium text-[var(--el-text-color-primary)]">{{
               formatOutpatientVisitTime(outpatient)
@@ -435,3 +495,34 @@ const handleSelect = () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.patient-card__today-badge {
+  background: #d1fae5;
+  border-radius: 4px;
+  color: #047857;
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  padding: 2px 5px;
+}
+
+.patient-card--today-admission {
+  background: linear-gradient(90deg, #ecfdf5 0%, #fff 32%);
+  box-shadow: inset 3px 0 0 #10b981;
+}
+
+.patient-card--today-admission:hover {
+  background: linear-gradient(90deg, #ecfdf5 0%, rgb(249 250 251 / 80%) 40%);
+  box-shadow: inset 3px 0 0 #10b981;
+}
+
+.patient-card--today-admission.patient-card--selected {
+  background: linear-gradient(90deg, #ecfdf5 0%, rgb(59 130 246 / 6%) 40%);
+  box-shadow:
+    inset 3px 0 0 #10b981,
+    0 1px 2px rgb(15 23 42 / 8%);
+}
+</style>

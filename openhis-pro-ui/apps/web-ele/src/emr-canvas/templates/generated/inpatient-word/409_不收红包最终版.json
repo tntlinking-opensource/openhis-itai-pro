@@ -1,0 +1,467 @@
+{
+  "code": "IP_WORD_409",
+  "name": "不收红包最终版",
+  "category": "知情告知书",
+  "sourceTemplateId": "409",
+  "typeCode": "INPATIENT_知情告知书",
+  "summary": "Word原样迁移v1 · 段2/表1 · 元1/日0/勾0/单0 · 约1页",
+  "estimatedPages": 1,
+  "structure": {
+    "paraCount": 2,
+    "tableCount": 1,
+    "meta": 1,
+    "date": 0,
+    "plainFill": 0,
+    "fill": 1,
+    "checkbox": 0,
+    "radio": 0
+  },
+  "data": {
+    "header": [
+      {
+        "id": "emrHospitalTitle",
+        "value": "医院名称",
+        "font": "SimHei",
+        "size": 29,
+        "bold": true,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center",
+        "rowMargin": 1
+      },
+      {
+        "id": "emrDocumentTitle",
+        "value": "不收红包最终版",
+        "font": "SimSun",
+        "size": 21,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "type": "separator",
+        "value": "",
+        "lineWidth": 1.15
+      }
+    ],
+    "main": [
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "医患双方不收和不送“红包”协议书",
+        "rowFlex": "center"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center"
+      },
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_001",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 349
+          },
+          {
+            "width": 349
+          }
+        ],
+        "tableToolDisabled": true,
+        "rowFlex": "left",
+        "borderType": "empty",
+        "trList": [
+          {
+            "height": 28,
+            "minHeight": 28,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "姓名：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "患者姓名",
+                      "conceptId": "patientName",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "住院号：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "就诊号",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_002",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 349
+          },
+          {
+            "width": 349
+          }
+        ],
+        "tableToolDisabled": true,
+        "rowFlex": "left",
+        "trList": [
+          {
+            "height": 504,
+            "minHeight": 504,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "尊敬的患者及家属：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　衷心感谢你们的信任，选择到南关国基医院就医。在接下来的一段时间里，我们将共同面对疾病的挑战。在此，我们郑重承诺:",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　一、秉持平等、仁爱、诚信的职业精神，以患者为中心，尽心尽责为患者治疗疾病。",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　二、充分履行告知义务，尊重患者知情同意权、隐私权等各项权利。",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　三、廉洁行医，不接受患者及其家属的“红包”。如果您强行送,我们将上缴国库,并将您送“红包”相关信息张榜公布。",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "center"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　衷心祝您早日康复!",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "center"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "主管医师：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "南关国基医院：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "我们收到贵单位的承诺书，认真阅读并理解了相关内容，在此，我们也郑重承诺:",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　一、积极配合诊疗活动，如实提供病史等信息，尊重科学，对疾病诊断治疗中客观存在的危险做出慎重理智的决定。",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　二、尊重医务人员、爱护公共设施，服从管理和安排。患者本人或患者方代表要有效沟通协调本方人员，共同履行好本承诺书。",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "1. 不向医务人员送“红包”，共同廉洁和谐的医疗环境，如果我们强行送“红包”，愿接受院方的相应处置。",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "患者或患方代表：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "footer": []
+  }
+}

@@ -13,7 +13,7 @@ import type {
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import dayjs from 'dayjs';
 import {
@@ -107,6 +107,13 @@ import {
   type InpatientSettleFooterActionCode,
   type InpatientSettleToolbarActionCode,
 } from './settle-toolbar-action';
+import {
+  INPATIENT_SETTLE_INSURANCE_SHEET_HOSPITAL_CODE,
+  INPATIENT_SETTLE_INSURANCE_SHEET_HOSPITAL_LEVEL,
+  INPATIENT_SETTLE_INSURANCE_SHEET_PRINT_ENABLED,
+} from '#/views/inpatient/charge/settle/inpatient-settle-print.config';
+import { printInpatientInsuranceSettlement } from '#/utils/print/print-inpatient-insurance-settlement';
+import { NATY_OPTIONS } from '#/views/mrms/mrms.constants';
 import DetailAuditRemindDialog from '#/chs/components/detail-audit-remind-dialog.vue';
 import InsuranceProgressDialog from '#/chs/components/insurance-progress-dialog.vue';
 import {
@@ -1397,7 +1404,117 @@ async function handleToolbarAction(actionCode: InpatientSettleToolbarActionCode)
     await handleAlignPlatformVisit();
     return;
   }
+  if (actionCode === INPATIENT_SETTLE_TOOLBAR_ACTION.PRINT_INSURANCE_SETTLEMENT) {
+    await handlePrintInsuranceSettlement();
+    return;
+  }
   ElMessage.success(`${INPATIENT_SETTLE_TOOLBAR_ACTION_LABEL[actionCode] ?? actionCode}已触发`);
+}
+
+/** 民族编码 → 票面文案（病案 NATY + 常见国标码兜底） */
+function resolveNationText(nationalityCode: null | string | undefined): string {
+  const code = String(nationalityCode ?? '').trim();
+  if (!code) {
+    return '';
+  }
+  const fromOptions = NATY_OPTIONS.find((opt) => String(opt.value) === code)?.label?.trim();
+  if (fromOptions) {
+    return fromOptions;
+  }
+  const fallback: Record<string, string> = {
+    '01': '汉族',
+    '02': '蒙古族',
+    '03': '回族',
+    '04': '藏族',
+    '05': '维吾尔族',
+    '06': '苗族',
+    '07': '彝族',
+    '08': '壮族',
+    '09': '布依族',
+    '10': '朝鲜族',
+    '11': '满族',
+    '99': '其他',
+  };
+  return fallback[code] || code;
+}
+
+/** 已结算医保单：打印医保结算单（版式走库模板） */
+async function handlePrintInsuranceSettlement() {
+  if (!INPATIENT_SETTLE_INSURANCE_SHEET_PRINT_ENABLED) {
+    return;
+  }
+  if (!isSettledQueueTab.value) {
+    ElMessage.warning('请切换到已结算页签后再打印医保结算单');
+    return;
+  }
+  // Pre：再拉一次已结算查阅，带上票面基础信息（身份证/诊断/出院等）
+  try {
+    await reloadWorkspace();
+  } catch {
+    // 刷新失败仍尝试用当前缓存打印
+  }
+  const brief = resolveActiveSettledPaymentBrief(settledPaymentView.value);
+  if (!brief?.insuranceSettled) {
+    ElMessage.warning('当前结算单未关联医保回执，无法打印医保结算单');
+    return;
+  }
+  const display = currentPatientDisplay.value;
+  const view = settledPaymentView.value;
+  const admissionDateText =
+    view?.admissionDate || (display.admissionDate === '—' ? '' : display.admissionDate);
+  await printInpatientInsuranceSettlement({
+    encounterId: display.encounterId,
+    paymentId: brief.paymentId,
+    source: {
+      patientName: display.name === '—' ? '' : display.name,
+      genderText: display.gender === '—' ? '' : display.gender,
+      ageText: display.age === '—' ? '' : display.age,
+      nationText: resolveNationText(view?.nationalityCode),
+      idCardNo: view?.idCardNo ?? '',
+      inpatientNo: display.inpatientNo === '—' ? '' : display.inpatientNo,
+      admissionDateText: admissionDateText || '',
+      dischargeDateText: view?.dischargeDate ?? '',
+      dischargeDeptText: display.department === '—' ? '' : display.department,
+      doctorName: display.doctorName === '—' ? '' : display.doctorName,
+      doctorCode: view?.doctorCode ?? '',
+      stayDaysText: view?.stayDaysText ?? '',
+      visitCountText: view?.visitCountText ?? '',
+      admissionDiagnosisText: view?.admissionDiagnosisText ?? '',
+      dischargeDiagnosisText: view?.dischargeDiagnosisText ?? '',
+      employerName: view?.employerName ?? '',
+      hospitalLevelText: INPATIENT_SETTLE_INSURANCE_SHEET_HOSPITAL_LEVEL,
+      hospitalCode: INPATIENT_SETTLE_INSURANCE_SHEET_HOSPITAL_CODE,
+      operatorName: view?.operatorName ?? '',
+      settleDateText: brief.ybSetlTime || brief.settleTime || '',
+      processDateText: brief.ybSetlTime || brief.settleTime || '',
+      psnNo: brief.ybPsnNo ?? '',
+      medType: brief.ybMedType ?? undefined,
+      insutype: brief.ybInsutype ?? undefined,
+      psnType: brief.ybPsnType ?? undefined,
+      insuplcAdmdvs: brief.ybClrOptins ?? '',
+      medfeeSumamt: brief.ybMedfeeSumamt,
+      inscpScpAmt: brief.ybInscpScpAmt,
+      actPayDedc: brief.ybActPayDedc,
+      preselfpayAmt: brief.ybPreselfpayAmt,
+      fulamtOwnpayAmt: brief.ybFulamtOwnpayAmt,
+      overlmtSelfpay: brief.ybOverlmtSelfpay,
+      poolPropSelfpay: brief.ybPoolPropSelfpay,
+      hifpPay: brief.ybHifpPay,
+      mafPay: brief.ybMafPay,
+      hifobPay: brief.ybHifobPay,
+      hifesPay: brief.ybHifesPay,
+      hifmiPay: brief.ybHifmiPay,
+      acctPay: brief.ybAcctPay,
+      cvlservPay: brief.ybCvlservPay,
+      psnCashPay: brief.ybPsnCashPay,
+      psnPartAmt: brief.ybPsnPartAmt,
+      fundPaySumamt: brief.ybFundPaySumamt,
+      othPay: brief.ybOthPay,
+      acctMulaidPay: brief.ybAcctMulaidPay,
+      balc: brief.ybBalc,
+      patientSignText: '',
+    },
+  });
 }
 
 /** 平台在院对齐：先诊断，必要时一键修复 */
@@ -2028,7 +2145,7 @@ async function handleConfirmSettleFromDialog() {
       if (isScanPayChannel(settlePayChannelCode.value) && payAmount > 0) {
         await refreshUnionPayCapabilities();
         if (!scanPayEnabled.value) {
-          ElMessage.error('请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
+          ElMessage.error('请启动本地客户端（Zxplat.Win）并确认银联组件已安装');
           return;
         }
         settleScanStatusText.value = '等待支付结果…';
@@ -2322,6 +2439,14 @@ watch(settleQueueTab, () => {
               @click="handleToolbarAction(INPATIENT_SETTLE_TOOLBAR_ACTION.ALIGN_PLATFORM_VISIT)"
             >
               {{ INPATIENT_SETTLE_TOOLBAR_ACTION_LABEL.ALIGN_PLATFORM_VISIT }}
+            </ElButton>
+            <ElButton
+              v-if="INPATIENT_SETTLE_INSURANCE_SHEET_PRINT_ENABLED"
+              type="success"
+              plain
+              @click="handleToolbarAction(INPATIENT_SETTLE_TOOLBAR_ACTION.PRINT_INSURANCE_SETTLEMENT)"
+            >
+              {{ INPATIENT_SETTLE_TOOLBAR_ACTION_LABEL.PRINT_INSURANCE_SETTLEMENT }}
             </ElButton>
           </div>
         </div>

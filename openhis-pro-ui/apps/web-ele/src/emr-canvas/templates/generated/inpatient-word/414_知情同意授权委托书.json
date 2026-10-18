@@ -1,0 +1,594 @@
+{
+  "code": "IP_WORD_414",
+  "name": "知情同意授权委托书",
+  "category": "知情告知书",
+  "sourceTemplateId": "414",
+  "typeCode": "INPATIENT_知情告知书",
+  "summary": "Word原样迁移v1 · 段24/表0 · 元6/日0/勾0/单0 · 约2页",
+  "estimatedPages": 2,
+  "structure": {
+    "paraCount": 24,
+    "tableCount": 0,
+    "meta": 6,
+    "date": 0,
+    "plainFill": 0,
+    "fill": 6,
+    "checkbox": 0,
+    "radio": 0
+  },
+  "data": {
+    "header": [
+      {
+        "id": "emrHospitalTitle",
+        "value": "医院名称",
+        "font": "SimHei",
+        "size": 29,
+        "bold": true,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center",
+        "rowMargin": 1
+      },
+      {
+        "id": "emrDocumentTitle",
+        "value": "知情同意授权委托书",
+        "font": "SimSun",
+        "size": 21,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "type": "separator",
+        "value": "",
+        "lineWidth": 1.15
+      }
+    ],
+    "main": [
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "南关国基医院",
+        "rowFlex": "center"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "授权委托书",
+        "bold": true,
+        "rowFlex": "center"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　　　　　",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_001",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 232
+          },
+          {
+            "width": 232
+          },
+          {
+            "width": 234
+          }
+        ],
+        "tableToolDisabled": true,
+        "rowFlex": "left",
+        "borderType": "empty",
+        "trList": [
+          {
+            "height": 28,
+            "minHeight": 28,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "姓名：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "患者姓名",
+                      "conceptId": "patientName",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "性别：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "性别",
+                      "conceptId": "gender",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "年龄：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "年龄",
+                      "conceptId": "age",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "诊断：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　为方便对我的治疗，特委托（姓名）",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　　　　　　　　　",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "为我的经治医生联络和沟通对我的相关治疗问题。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "受委托人性别：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "工作单位：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "与患者关系：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "住址：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "住址",
+          "conceptId": "address",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false,
+          "disabled": true
+        },
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_002",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 349
+          },
+          {
+            "width": 349
+          }
+        ],
+        "tableToolDisabled": true,
+        "rowFlex": "left",
+        "borderType": "empty",
+        "trList": [
+          {
+            "height": 28,
+            "minHeight": 28,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "联系电话：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "联系电话",
+                      "conceptId": "phone",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "身份证号：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "身份证号",
+                      "conceptId": "idCard",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "委托内容及委托权限：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "1. 代理我本人和我的经治医生就本人病情及诊断、治疗方案进行沟通或交换意见，并可代理本人进行决定：",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "2. 代理我本人办理在贵院的入院及出院手续；",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "3. 代理我本人办理与贵院结算医疗费用；",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "4. 代理我本人办理与贵院签订特殊检查、特殊治疗及特殊用药的知情同意书；",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "5. 代理我本人办理与贵院签订手术知情同意书及麻醉知情同意书；",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "6. 代理我本人办理与贵院签订其他医疗档案、文书。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "其他授权：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　我在贵院治疗期间（住院或门诊治疗），该受委托人在贵院相关文件上人签字（盖章）视为我本",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "人的签字（盖章），由我本人承担一切后果和责任。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "患者意见：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "患者签名：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "受委托人意见：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "受委托人签名（与患者关系）：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "记录时间：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": " 2023-04-19 ",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "13：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "56",
+        "rowFlex": "left"
+      }
+    ],
+    "footer": []
+  }
+}

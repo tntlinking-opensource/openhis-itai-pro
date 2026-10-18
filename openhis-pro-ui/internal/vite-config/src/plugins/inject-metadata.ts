@@ -2,7 +2,7 @@ import type { PluginOption } from 'vite';
 
 import { join } from 'node:path';
 
-import { dateUtil, findMonorepoRoot, fs, getPackages, readPackageJSON } from '@vben/node-utils';
+import { dateUtil, findMonorepoRoot, fs, getPackages, readPackageJSON } from '@zxplat/node-utils';
 
 import { readWorkspaceManifest } from '@pnpm/workspace.read-manifest';
 

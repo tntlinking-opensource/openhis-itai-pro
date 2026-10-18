@@ -187,7 +187,7 @@ async function loadPrinters(): Promise<void> {
     printers.value = [];
     selectedPrinter.value = '';
     printersError.value =
-      error instanceof Error ? error.message : '无法连接打印客户端，请确认 OpenHIS.Win 已启动';
+      error instanceof Error ? error.message : '无法连接打印客户端，请确认 Zxplat.Win 已启动';
   } finally {
     printersLoading.value = false;
   }

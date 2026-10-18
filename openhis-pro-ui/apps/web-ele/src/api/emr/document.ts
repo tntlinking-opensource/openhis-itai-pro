@@ -1,5 +1,5 @@
 /**
- * 文书 API（whale-emr DocumentAppService）
+ * 文书 API（zxplat-emr DocumentAppService）
  */
 
 import type { PageApiResponse, PageParams } from '#/types/api-response';
@@ -104,6 +104,30 @@ export async function saveDocumentApi(params: SaveDocumentParams) {
     documentId: params.documentId,
     content: serializeEmrDocumentContent(params.content),
     saveVersion: params.saveVersion,
+  });
+}
+
+/** 修改已写文书显示标题（侧栏/Tab；不改正文） */
+export interface UpdateDocumentTitleParams {
+  /** 雪花 ID 须用字符串传参 */
+  documentId: string;
+  /** 新标题（去空白后非空） */
+  title: string;
+}
+
+/** 改文书标题 → POST /document/updateTitle */
+export async function updateDocumentTitleApi(params: UpdateDocumentTitleParams) {
+  return publicRequestClient.post<DocumentSummaryDto>('/document/updateTitle', {
+    documentId: preserveApiIdForRequest(params.documentId),
+    title: (params.title ?? '').trim(),
+  });
+}
+
+/** 已归档病历提交修改：快照当前正文后进入同一归档审批队列 */
+export async function submitRevisedArchiveApi(params: SaveDocumentParams) {
+  return publicRequestClient.post<void>('/document/submitRevisedArchive', {
+    documentId: preserveApiIdForRequest(params.documentId),
+    content: serializeEmrDocumentContent(params.content),
   });
 }
 
@@ -219,5 +243,40 @@ export async function generateDocumentPdfApi(params: GenerateDocumentPdfParams) 
     documentTypeName: params.documentTypeName,
     metadata: params.metadata,
     printConfig: params.printConfig,
+  });
+}
+
+/** 文书版本摘要 */
+export interface DocumentVersionDto {
+  id?: number | string;
+  documentId?: number | string;
+  versionNumber?: number;
+  createdAt?: string;
+  createdBy?: number | string;
+}
+
+export interface GetDocumentVersionListParams {
+  documentId: string;
+}
+
+export interface GetDocumentVersionContentParams {
+  documentId: string;
+  versionId?: string;
+  versionNumber?: number;
+}
+
+/** 文书版本列表 → POST /document/getVersionList */
+export async function getDocumentVersionListApi(params: GetDocumentVersionListParams) {
+  return publicRequestClient.post<DocumentVersionDto[]>('/document/getVersionList', {
+    documentId: preserveApiIdForRequest(params.documentId),
+  });
+}
+
+/** 历史版本正文 → POST /document/getVersionContent */
+export async function getDocumentVersionContentApi(params: GetDocumentVersionContentParams) {
+  return publicRequestClient.post<DocumentContentDto>('/document/getVersionContent', {
+    documentId: preserveApiIdForRequest(params.documentId),
+    versionId: params.versionId ? preserveApiIdForRequest(params.versionId) : undefined,
+    versionNumber: params.versionNumber,
   });
 }

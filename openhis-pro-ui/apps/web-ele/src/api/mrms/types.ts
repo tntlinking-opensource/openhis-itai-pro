@@ -1,5 +1,5 @@
 /**
- * MRMS 病案管理 API 类型（与 whale-mrms application DTO 对齐）
+ * MRMS 病案管理 API 类型（与 zxplat-mrms application DTO 对齐）
  */
 
 import type { PageParams } from '#/types/api-response';
@@ -270,6 +270,10 @@ export interface HomepageDto {
   fees?: Record<string, number>;
   diagnoses?: DiagnosisLineDto[];
   procedures?: ProcedureLineDto[];
+  /** 重症监护行（对齐老 IN_HOS_ICUINFO） */
+  icus?: IcuLineDto[];
+  /** 输血行（对齐老 IN_HOS_BLDINFO） */
+  blds?: BldLineDto[];
 }
 
 /** 首页编辑页 loadPage 出参（HomepagePageDto） */
@@ -303,6 +307,40 @@ export interface DiagnosisLineDto {
   confirmDrName?: string;
   /** 是否上传医保（1是 0否） */
   needYbUp?: string;
+}
+
+/** 首页重症监护行（终改真源 mrms_homepage_icu） */
+export interface IcuLineDto {
+  /** 行主键（出站 ToString） */
+  id?: string;
+  /** 同页排序号 */
+  sortNo?: number;
+  /** 重症监护病房类型（ICU_TYPE） */
+  scsCutdWardType?: string;
+  /** 进入重症监护时间 */
+  scsCutdInpoolTime?: string;
+  /** 退出重症监护时间 */
+  scsCutdExitTime?: string;
+  /** 合计时长 天/时/分 */
+  scsCutdSumDura?: string;
+  /** 有效标志 */
+  valiFlag?: string;
+}
+
+/** 首页输血行（终改真源 mrms_homepage_bld） */
+export interface BldLineDto {
+  /** 行主键（出站 ToString） */
+  id?: string;
+  /** 同页排序号 */
+  sortNo?: number;
+  /** 输血品种（bld_cat_code） */
+  bldCat?: string;
+  /** 输血量 */
+  bldAmt?: string;
+  /** 输血计量单位 */
+  bldUnt?: string;
+  /** 有效标志 */
+  valiFlag?: string;
 }
 
 export interface ProcedureLineDto {
@@ -487,6 +525,8 @@ export interface SaveHomepageParams {
   rinp31Purpose?: string;
   diagnoses?: DiagnosisLineDto[];
   procedures?: ProcedureLineDto[];
+  icus?: IcuLineDto[];
+  blds?: BldLineDto[];
 }
 
 export type RefreshSectionCode =
@@ -507,6 +547,10 @@ export interface RefreshAutoFillParams {
 export interface SearchIcdParams {
   keyword?: string;
   limit?: number;
+  /** 页码（从 1 起；手术选码分页） */
+  pageNo?: number;
+  /** 每页条数 */
+  pageSize?: number;
 }
 
 export interface IcdItemDto {
@@ -517,6 +561,12 @@ export interface IcdItemDto {
   pyStr?: string;
   /** 医保对照码；手术选码可空表示未对码 */
   ybNo?: string;
+}
+
+/** 手术 ICD 选码分页（searchIcd9Cm3） */
+export interface SearchIcdPageResult {
+  items?: IcdItemDto[];
+  totalCount?: number;
 }
 
 export interface ReturnHomepageParams {
@@ -888,4 +938,77 @@ export interface QueryInpatientEmrParams extends PageParams {
   dscgTo?: string;
   /** 是否出院 1/0 */
   dischargedCode?: string;
+}
+
+/** 归档审批业务类别（AS-MRMS-APR-001 bizCategory） */
+export type ArchiveApprovalBizCategory = 'case_homepage' | 'ip_document' | 'op_document';
+
+/** 待归档审批列表行 */
+export interface PendingArchiveListItemDto {
+  bizCategory?: ArchiveApprovalBizCategory | string;
+  /** 文书 id 或 caseRecordId（string，防雪花精度丢失） */
+  bizId?: string;
+  title?: string;
+  patientName?: string;
+  /** 提交人姓名 */
+  submitterName?: string;
+  encounterId?: string;
+  statusCode?: CaseRecordStatusCode | string;
+  submittedAt?: string;
+  organizationId?: string;
+  versionNo?: number;
+}
+
+/** 待归档审批分页参数 */
+export interface PagePendingArchiveParams extends PageParams {
+  /** op_document / ip_document / case_homepage */
+  bizCategory: ArchiveApprovalBizCategory | string;
+  keyword?: string;
+}
+
+/** 待审详情 */
+export interface PendingArchiveDetailDto {
+  bizCategory?: ArchiveApprovalBizCategory | string;
+  bizId?: string;
+  title?: string;
+  statusCode?: CaseRecordStatusCode | string;
+  versionNo?: number;
+  /** 文书正文 JSON */
+  documentContent?: string;
+  /** 首页 JSON 预览（本次提交） */
+  homepagePreviewJson?: string;
+  /** 最近一次已通过编辑申请里的首页 JSON；没有则为空 */
+  homepageBaselineJson?: string;
+  rejectReason?: string;
+}
+
+export interface GetPendingArchiveDetailParams {
+  bizCategory: ArchiveApprovalBizCategory | string;
+  bizId: string;
+}
+
+export interface ApproveArchiveParams {
+  bizCategory: ArchiveApprovalBizCategory | string;
+  bizId: string;
+  /** 可选质量等级（首页） */
+  qualityGradeCode?: string;
+}
+
+export interface RejectArchiveParams {
+  bizCategory: ArchiveApprovalBizCategory | string;
+  bizId: string;
+  /** 驳回原因（必填） */
+  rejectReason: string;
+}
+
+export interface ApproveArchiveBatchParams {
+  bizCategory: ArchiveApprovalBizCategory | string;
+  bizIds: string[];
+  qualityGradeCode?: string;
+}
+
+export interface RejectArchiveBatchParams {
+  bizCategory: ArchiveApprovalBizCategory | string;
+  bizIds: string[];
+  rejectReason: string;
 }

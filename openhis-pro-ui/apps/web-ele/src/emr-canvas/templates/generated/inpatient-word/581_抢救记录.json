@@ -1,0 +1,152 @@
+{
+  "code": "IP_WORD_581",
+  "name": "抢救记录",
+  "category": "病程记录",
+  "sourceTemplateId": "581",
+  "typeCode": "INPATIENT_病程记录",
+  "summary": "Word原样迁移v1 · 段7/表0 · 元0/日1/勾0/单0 · 约1页",
+  "estimatedPages": 1,
+  "structure": {
+    "paraCount": 7,
+    "tableCount": 0,
+    "meta": 0,
+    "date": 1,
+    "plainFill": 0,
+    "fill": 1,
+    "checkbox": 0,
+    "radio": 0
+  },
+  "data": {
+    "header": [
+      {
+        "id": "emrHospitalTitle",
+        "value": "医院名称",
+        "font": "SimHei",
+        "size": 29,
+        "bold": true,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center",
+        "rowMargin": 1
+      },
+      {
+        "id": "emrDocumentTitle",
+        "value": "抢救记录",
+        "font": "SimSun",
+        "size": 21,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "type": "separator",
+        "value": "",
+        "lineWidth": 1.15
+      }
+    ],
+    "main": [
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "抢救记录",
+        "rowFlex": "center"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "时间：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "date",
+          "value": null,
+          "placeholder": "时间",
+          "conceptId": "date_001",
+          "dateFormat": "yyyy-MM-dd HH:mm",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false
+        },
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "2024年x月X日（提示：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "抢救结束6小时内完成）",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "抢救时间：xxxx年X月X日 XX时XX分 ——XXXX年XX月XX日 XX时XX分",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "参加抢救人员：人员、职称；人员、职称；人员、职称；人员、职称；",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "抢救经过：（患者姓名，性别，年龄。病情变化、抢救措施及结果。记录内容包括病情变化、抢救时间及措施、结果。抢救时间应当具体到分。）",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "记录着签名：",
+        "bold": true,
+        "rowFlex": "center"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "审核者签名：",
+        "bold": true,
+        "rowFlex": "center"
+      }
+    ],
+    "footer": []
+  }
+}

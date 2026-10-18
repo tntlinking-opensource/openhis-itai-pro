@@ -14,7 +14,7 @@ import type {
   PreferencesButtonPositionType,
   TabsStyleType,
   ThemeModeType,
-} from '@vben-core/typings';
+} from '@zxplat-core/typings';
 
 type SupportedLanguagesType = 'en-US' | 'zh-CN';
 

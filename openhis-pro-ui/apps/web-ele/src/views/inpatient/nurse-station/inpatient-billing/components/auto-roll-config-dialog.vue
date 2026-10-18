@@ -15,7 +15,7 @@ import { ElMessage } from 'element-plus';
 import { httpPageNurseStationPricingCatalog } from '#/api/inpatient/nurse-station/inpatient-nurse-station-inpatient-billing.http';
 import AppDialog from '#/components/app-dialog.vue';
 import { useRequest } from '#/hooks/use-request';
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 import { useAuthStore } from '#/store';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';

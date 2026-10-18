@@ -1,4 +1,4 @@
-declare module '@vben-core/table-layout-ui' {
+declare module '@zxplat-core/table-layout-ui' {
   export interface FormItemConfig {
     [key: string]: any;
   }

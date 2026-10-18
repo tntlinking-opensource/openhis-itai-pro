@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import type { BasicOption } from '@vben/types';
+import type { BasicOption } from '@zxplat/types';
 
 import type { VbenFormSchema } from '#/adapter/form';
 import type { Organization } from '#/api';
 
 import { computed, onMounted, ref } from 'vue';
 
-import { ProfileBaseSetting } from '@vben/common-ui';
+import { ProfileBaseSetting } from '@zxplat/common-ui';
 
 import { ElMessage } from 'element-plus';
 

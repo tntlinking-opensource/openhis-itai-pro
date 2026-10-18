@@ -3,12 +3,11 @@
  *
  * <p>产品口径（签发时带出）：暂存（IF-DOR-14）只落主医嘱；点签发前对本次待签草稿
  * 统一解析绑定、弹窗确认（可改量/删行，诊疗与耗材同权）、落派生后再扩 signTargets 签发。
- * 去重规则不变：同批合管同设备一份、同组同用法同目标一份、已存在 based_on 派生不重复带。</p>
+ * 去重：合管耗材同批同设备同组一份；采血费同批跨设备/跨组只一份且独立 ServiceRequest（不挂 based_on）；
+ * 用法绑定诊疗（如输液费）同用法同目标跨组只带一份；用法绑定耗材按药嘱组各带一份
+ * （同组内同目标去重；弹窗数量=模板量×组数，落库时按组拆成多行）；已存在 based_on 派生不重复带。</p>
  */
-import type {
-  AdviceDraftBindDialogRow,
-  AdviceDraftBindDialogSourceGroup,
-} from './advice-draft-bind.types';
+import type { AdviceDraftBindDialogRow } from './advice-draft-bind.types';
 import type { AdviceRowItem } from './advice.types';
 
 import type {
@@ -19,6 +18,7 @@ import type {
   SaveDoctorStationAdviceDraftBatchResponse,
 } from '#/api/doctor-station/advice.types';
 
+import { BUILT_IN_ACTIVITY_NAME_BLOOD_COLLECTION } from '#/constants/domain/built-in-activity-definition';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
@@ -28,9 +28,6 @@ import {
 } from './advice-draft-bind-http-adapter';
 
 import {
-  addAdviceBindSkipSources,
-  isAdviceBindSourceSkipped,
-  resolveAdviceBindSkipCacheUserId,
   resolveBindSourceCacheKey,
   resolveBindSourceKindLabel,
   USAGE_BIND_TYPE,
@@ -44,6 +41,7 @@ import {
   SERVICE_REQUEST_TABLE,
 } from './advice-tab.constants';
 import { resourceKeyFromRow, rowLooksDraftForSign } from './advice-row';
+import { isOrderTemplateOriginRequestId } from './order-template-origin-cache.service';
 
 export interface SaveAdviceDraftBatchWithBindOptions {
   encounterId: string;
@@ -156,27 +154,53 @@ function isMedicationAdviceRow(row: AdviceRowLike): boolean {
   return rt === 'MEDICATION';
 }
 
-/** USAGE 组级上下文：同组同用法 */
-function resolveUsageGroupBindContext(
+/** USAGE 用法级上下文 */
+function resolveUsageMethodBindContext(
   item: DoctorStationAdviceDraftBindItemDto,
   lines: DoctorStationAdviceDraftLineRequest[],
-): undefined | { groupId: string; methodCode: string } {
+): undefined | { methodCode: string } {
   if (String(item.bindType ?? '').trim() !== USAGE_BIND_TYPE) {
     return undefined;
   }
-  const groupId = resolveMedicationLineGroupId(item.triggerLineIndex, lines);
   const methodCode =
     resolveMedicationLineMethodCode(item.triggerLineIndex, lines) ||
     String(item.sourceItemId ?? '').trim();
-  if (!groupId || !methodCode) {
+  if (!methodCode) {
     return undefined;
   }
-  return { groupId, methodCode };
+  return { methodCode };
 }
 
-/** 待签发池内：同组同用法药品 MR id（列表 + 当前变更行） */
-function collectDraftMedicationRequestIdsForUsageGroup(
-  groupId: string,
+/**
+ * 用法绑定目标是否「跨组只带一份」。
+ * 诊疗（输液费等 activity）跨组一份；耗材按药嘱组各一份。
+ */
+function isUsageBindCrossGroupOnceTarget(
+  item: Pick<DoctorStationAdviceDraftBindItemDto, 'targetProductTableName'>,
+): boolean {
+  return String(item.targetProductTableName ?? '').trim() === ACTIVITY_DEFINITION_TABLE;
+}
+
+/**
+ * 用法绑定触发行的成组键：有 groupId 用组号；否则 `line:下标`（未成组行各自一组）。
+ */
+function resolveUsageBindGroupKey(
+  item: DoctorStationAdviceDraftBindItemDto,
+  lines: DoctorStationAdviceDraftLineRequest[],
+): string | undefined {
+  const lineIndex = item.triggerLineIndex;
+  if (lineIndex === undefined || lineIndex === null) {
+    return undefined;
+  }
+  const groupId = resolveMedicationLineGroupId(lineIndex, lines);
+  if (groupId) {
+    return groupId;
+  }
+  return `line:${lineIndex}`;
+}
+
+/** 待签发池内：同用法药品 MR id（跨组；列表 + 当前变更行） */
+function collectDraftMedicationRequestIdsForUsageMethod(
   methodCode: string,
   existingRows: AdviceRowLike[],
   lines: DoctorStationAdviceDraftLineRequest[],
@@ -184,9 +208,6 @@ function collectDraftMedicationRequestIdsForUsageGroup(
   const ids = new Set<string>();
   for (const row of existingRows) {
     if (!rowEligibleForBindExistenceDedupe(row) || !isMedicationAdviceRow(row)) {
-      continue;
-    }
-    if (String(row.groupId ?? '').trim() !== groupId) {
       continue;
     }
     if (String(row.methodCode ?? '').trim() !== methodCode) {
@@ -205,10 +226,6 @@ function collectDraftMedicationRequestIdsForUsageGroup(
     if (pt !== MEDICATION_DEFINITION_TABLE) {
       continue;
     }
-    const gid = String(line.medicationPayload?.groupId ?? '').trim();
-    if (gid !== groupId) {
-      continue;
-    }
     const mc = String(line.medicationPayload?.methodCode ?? '').trim();
     if (mc !== methodCode) {
       continue;
@@ -218,6 +235,61 @@ function collectDraftMedicationRequestIdsForUsageGroup(
       ids.add(rid);
     }
   }
+  return ids;
+}
+
+/**
+ * 待签发池内：同用法且同药嘱组的药品 MR id（耗材按组判重）。
+ * {@code groupKey} 为真实 groupId，或未成组时的 {@code line:下标}。
+ */
+function collectDraftMedicationRequestIdsForUsageMethodGroup(
+  methodCode: string,
+  groupKey: string,
+  existingRows: AdviceRowLike[],
+  lines: DoctorStationAdviceDraftLineRequest[],
+): Set<string> {
+  const ids = new Set<string>();
+  const isLineKeyed = groupKey.startsWith('line:');
+  if (!isLineKeyed) {
+    for (const row of existingRows) {
+      if (!rowEligibleForBindExistenceDedupe(row) || !isMedicationAdviceRow(row)) {
+        continue;
+      }
+      if (String(row.methodCode ?? '').trim() !== methodCode) {
+        continue;
+      }
+      const rowGroupId = String(row.groupId ?? row.packageId ?? '').trim();
+      if (rowGroupId !== groupKey) {
+        continue;
+      }
+      const rid = preserveApiIdForRequest(row.requestId);
+      if (rid) {
+        ids.add(rid);
+      }
+    }
+  }
+  lines.forEach((line, index) => {
+    if (line.lineOp === 'DELETE') {
+      return;
+    }
+    const pt = String(line.productTableName ?? '').trim();
+    if (pt !== MEDICATION_DEFINITION_TABLE) {
+      return;
+    }
+    const mc = String(line.medicationPayload?.methodCode ?? '').trim();
+    if (mc !== methodCode) {
+      return;
+    }
+    const gid = String(line.medicationPayload?.groupId ?? '').trim();
+    const lineGroupKey = gid || `line:${index}`;
+    if (lineGroupKey !== groupKey) {
+      return;
+    }
+    const rid = preserveApiIdForRequest(line.requestId);
+    if (rid) {
+      ids.add(rid);
+    }
+  });
   return ids;
 }
 
@@ -232,7 +304,35 @@ function listRowMatchesBindTarget(
   return defId === targetId && pt === targetTable;
 }
 
-/** 生成绑定去重键：仅同组药品同用法合并；其余必须目标+锚点完全一致才去重 */
+/** 合管采血费绑定项（名称精确匹配内置「采血费」；落库为独立 SR） */
+export function isBloodCollectionFeeBindItem(
+  item: Pick<
+    DoctorStationAdviceDraftBindItemDto,
+    'targetItemName' | 'targetProductTableName'
+  >,
+): boolean {
+  const targetTable = String(item.targetProductTableName ?? '').trim();
+  if (targetTable !== ACTIVITY_DEFINITION_TABLE) {
+    return false;
+  }
+  return String(item.targetItemName ?? '').trim() === BUILT_IN_ACTIVITY_NAME_BLOOD_COLLECTION;
+}
+
+/** 医嘱列表行是否为采血费（按展示名精确匹配） */
+export function isBloodCollectionFeeAdviceRow(row: AdviceRowLike): boolean {
+  if (!isServiceAdviceRow(row)) {
+    return false;
+  }
+  const name = String(
+    ('content' in row ? row.content : undefined) ??
+      ('contentSummary' in row ? row.contentSummary : undefined) ??
+      ('adviceDisplayName' in row ? row.adviceDisplayName : undefined) ??
+      '',
+  ).trim();
+  return name === BUILT_IN_ACTIVITY_NAME_BLOOD_COLLECTION;
+}
+
+/** 生成绑定去重键：采血费全批一份；合管耗材按设备+组；用法诊疗跨组一份；用法耗材按组；其余目标+锚点 */
 function buildBindDedupeKey(
   item: DoctorStationAdviceDraftBindItemDto,
   lines?: DoctorStationAdviceDraftLineRequest[],
@@ -245,18 +345,28 @@ function buildBindDedupeKey(
     preserveApiIdForRequest(item.triggerRequestId) ??
     `line:${item.triggerLineIndex ?? -1}`;
 
-  const mergeDeviceId = preserveApiIdForRequest(item.specimenTubeMergeDeviceId);
-  if (mergeDeviceId) {
-    return `merge:${mergeDeviceId}|${targetTable}|${targetId}`;
+  // 采血费：跨设备/跨组全局去重（不按合管组键）
+  if (isBloodCollectionFeeBindItem(item)) {
+    return `merge:blood-fee|${targetTable}|${targetId}`;
   }
 
+  const mergeDeviceId = preserveApiIdForRequest(item.specimenTubeMergeDeviceId);
+  if (mergeDeviceId) {
+    const groupNo = String(item.specimenTubeMergeGroupNo ?? '').trim() || '1';
+    return `merge:${mergeDeviceId}:${groupNo}|${targetTable}|${targetId}`;
+  }
+
+  // 用法绑定：诊疗跨组只保留一份；耗材按药嘱组各保留一份
   if (lines && String(item.bindType ?? '').trim() === USAGE_BIND_TYPE) {
-    const groupId = resolveMedicationLineGroupId(item.triggerLineIndex, lines);
     const methodCode =
       resolveMedicationLineMethodCode(item.triggerLineIndex, lines) ||
       String(item.sourceItemId ?? '').trim();
-    if (groupId && methodCode) {
-      return `${targetTable}|${targetId}|group:${groupId}|usage:${methodCode}`;
+    if (methodCode) {
+      if (isUsageBindCrossGroupOnceTarget(item)) {
+        return `${targetTable}|${targetId}|usage:${methodCode}`;
+      }
+      const groupKey = resolveUsageBindGroupKey(item, lines) ?? basedOnId;
+      return `${targetTable}|${targetId}|usage:${methodCode}|group:${groupKey}`;
     }
   }
 
@@ -302,7 +412,7 @@ function isBindItemTriggeredByEligibleCreate(
   return isMedicationCreateDraftLine(triggerLine) || isServiceCreateDraftLine(triggerLine);
 }
 
-/** 服务端不去重，前端仅合并：① 同组药品同用法同目标；② 目标+锚点完全相同的重复项 */
+/** 服务端不去重，前端仅合并：① 用法诊疗跨组一份 / 用法耗材按组一份；② 目标+锚点完全相同的重复项 */
 function dedupeAdviceDraftBindItems(
   bindItems: DoctorStationAdviceDraftBindItemDto[],
   lines: DoctorStationAdviceDraftLineRequest[] = [],
@@ -360,8 +470,41 @@ function toAdviceDraftBindDialogRows(
   });
 }
 
+/** 去掉来源名上的「（N 组）」后缀，避免多次合并叠写 */
+function stripUsageGroupCountSuffix(sourceItemName: string): string {
+  return String(sourceItemName ?? '')
+    .trim()
+    .replace(/（\d+\s*组）$/u, '')
+    .trim();
+}
+
+/** 统计变更行中同用法的药嘱组数（用于来源「N 组」展示；与落库份数无关） */
+function countMedicationGroupsForMethodCode(
+  methodCode: string,
+  lines: DoctorStationAdviceDraftLineRequest[],
+): number {
+  const groups = new Set<string>();
+  lines.forEach((line, index) => {
+    if (line.lineOp === 'DELETE') {
+      return;
+    }
+    if (String(line.productTableName ?? '').trim() !== MEDICATION_DEFINITION_TABLE) {
+      return;
+    }
+    const mc = String(line.medicationPayload?.methodCode ?? '').trim();
+    if (mc !== methodCode) {
+      return;
+    }
+    const gid = String(line.medicationPayload?.groupId ?? '').trim();
+    groups.add(gid || `line:${index}`);
+  });
+  return groups.size;
+}
+
 /**
- * 弹窗展示：USAGE 同目标同用法跨组合并为一行；确认后按 fanOutBindItems 按组展开落库。
+ * 弹窗展示：USAGE 同目标同用法跨组合并为一行。
+ * 诊疗（输液费）：确认后只落一份，数量=模板量。
+ * 耗材：fanOut 各组各落一份；弹窗数量=模板量×组数（两组合计显示 2）。
  */
 function mergeUsageDialogRowsAcrossGroups(
   rows: AdviceDraftBindDialogRow[],
@@ -387,14 +530,23 @@ function mergeUsageDialogRowsAcrossGroups(
       continue;
     }
 
-    // 跨组展示键：不含 groupId
+    const crossGroupOnce = isUsageBindCrossGroupOnceTarget(row.bindItem);
+    const perGroupQty = resolveBindQuantity(row.bindItem);
+    // 展示键不含 groupId；诊疗与耗材均可合并展示，耗材落库时 fanOut 各组
     const mergeKey = `${targetTable}|${targetId}|usage:${methodCode}`;
+    const groupCount = countMedicationGroupsForMethodCode(methodCode, lines);
+    const baseSourceName = stripUsageGroupCountSuffix(row.sourceItemName);
+    const sourceItemName =
+      groupCount > 1 ? `${baseSourceName}（${groupCount} 组）` : baseSourceName;
+
     const existingIndex = usageMergeIndexByKey.get(mergeKey);
     if (existingIndex === undefined) {
       usageMergeIndexByKey.set(mergeKey, merged.length);
       merged.push({
         ...row,
         key: mergeKey,
+        sourceItemName,
+        quantity: perGroupQty,
         fanOutBindItems: [row.bindItem],
       });
       continue;
@@ -405,13 +557,21 @@ function mergeUsageDialogRowsAcrossGroups(
       merged.push(row);
       continue;
     }
-    const fanOut = [...(existing.fanOutBindItems ?? [existing.bindItem]), row.bindItem];
-    const groupCount = fanOut.length;
+    if (crossGroupOnce) {
+      // 诊疗：跨组只落首组一份，仅更新「N 组」展示
+      merged[existingIndex] = {
+        ...existing,
+        sourceItemName,
+      };
+      continue;
+    }
+    // 耗材：追加各组触发项；弹窗数量按组累加（模板量×组数）
+    const nextFanOut = [...(existing.fanOutBindItems ?? [existing.bindItem]), row.bindItem];
     merged[existingIndex] = {
       ...existing,
-      fanOutBindItems: fanOut,
-      sourceItemName:
-        groupCount > 1 ? `${existing.sourceItemName}（${groupCount} 组）` : existing.sourceItemName,
+      sourceItemName,
+      quantity: perGroupQty * nextFanOut.length,
+      fanOutBindItems: nextFanOut,
     };
   }
 
@@ -419,20 +579,44 @@ function mergeUsageDialogRowsAcrossGroups(
 }
 
 /**
- * 弹窗行展开为待落库绑定项：有 fanOut 则按组展开，否则仅 bindItem。
+ * 弹窗行 → 待落库绑定项。
+ * 诊疗跨组合并后只取首组；耗材 fanOut 各组各落一份。
  */
 function resolveDialogRowBindItemsForPersist(
   dialogRow: AdviceDraftBindDialogRow,
 ): DoctorStationAdviceDraftBindItemDto[] {
   if (dialogRow.fanOutBindItems && dialogRow.fanOutBindItems.length > 0) {
-    return dialogRow.fanOutBindItems;
+    if (isUsageBindCrossGroupOnceTarget(dialogRow.bindItem)) {
+      const first = dialogRow.fanOutBindItems[0];
+      return first ? [first] : [dialogRow.bindItem];
+    }
+    return [...dialogRow.fanOutBindItems];
   }
   return [dialogRow.bindItem];
 }
 
 /**
+ * 弹窗确认数量 → 落库单行数量。
+ * 耗材按组 fanOut 时，弹窗数量为合计，需均分到各组（至少 1）。
+ */
+function resolvePersistQuantityPerBindItem(
+  dialogRow: AdviceDraftBindDialogRow,
+  fanOutCount: number,
+): number {
+  const total = Number.isFinite(dialogRow.quantity) && dialogRow.quantity > 0 ? dialogRow.quantity : 1;
+  if (
+    fanOutCount > 1 &&
+    !isUsageBindCrossGroupOnceTarget(dialogRow.bindItem) &&
+    String(dialogRow.bindItem.bindType ?? '').trim() === USAGE_BIND_TYPE
+  ) {
+    return Math.max(1, Math.round(total / fanOutCount));
+  }
+  return total;
+}
+
+/**
  * 待签发列表中是否已有同规则派生行（手动开立同名项不算重复；已签发不参与）。
- * USAGE 同组同用法按组级语义；ACTIVITY 按 SR 锚点。
+ * 采血费按目标全局判重；USAGE 诊疗跨组一份、耗材按组一份；其余按 SR/MR 锚点。
  */
 function bindItemAlreadyExistsInAdviceList(
   item: DoctorStationAdviceDraftBindItemDto,
@@ -443,22 +627,45 @@ function bindItemAlreadyExistsInAdviceList(
   const targetId = String(item.targetItemId ?? '').trim();
   const targetTable = String(item.targetProductTableName ?? '').trim();
   const basedOnTable = String(item.basedOnTable ?? '').trim();
-  if (!targetId || !targetTable || !basedOnTable) {
+  if (!targetId || !targetTable) {
     return false;
   }
 
-  const usageGroup = resolveUsageGroupBindContext(item, lines);
-  if (usageGroup && basedOnTable === MEDICATION_REQUEST_TABLE) {
-    const groupMrIds = collectDraftMedicationRequestIdsForUsageGroup(
-      usageGroup.groupId,
-      usageGroup.methodCode,
-      existingRows,
-      lines,
-    );
+  // 采血费独立 SR：待签发池内同目标只保留一份
+  if (isBloodCollectionFeeBindItem(item)) {
+    return existingRows.some((row) => {
+      if (!rowEligibleForBindExistenceDedupe(row)) {
+        return false;
+      }
+      return (
+        listRowMatchesBindTarget(row, targetId, targetTable) || isBloodCollectionFeeAdviceRow(row)
+      );
+    });
+  }
+
+  if (!basedOnTable) {
+    return false;
+  }
+
+  const usageMethod = resolveUsageMethodBindContext(item, lines);
+  if (usageMethod && basedOnTable === MEDICATION_REQUEST_TABLE) {
+    // 诊疗：同用法跨组任一已有派生则不再带；耗材：仅同组内已有则不再带
+    const methodMrIds = isUsageBindCrossGroupOnceTarget(item)
+      ? collectDraftMedicationRequestIdsForUsageMethod(
+          usageMethod.methodCode,
+          existingRows,
+          lines,
+        )
+      : collectDraftMedicationRequestIdsForUsageMethodGroup(
+          usageMethod.methodCode,
+          resolveUsageBindGroupKey(item, lines) ?? `line:${item.triggerLineIndex ?? -1}`,
+          existingRows,
+          lines,
+        );
     if (basedOnRequestId) {
-      groupMrIds.add(basedOnRequestId);
+      methodMrIds.add(basedOnRequestId);
     }
-    if (groupMrIds.size === 0) {
+    if (methodMrIds.size === 0) {
       return false;
     }
     return existingRows.some((row) => {
@@ -472,7 +679,7 @@ function bindItemAlreadyExistsInAdviceList(
         return false;
       }
       const anchorId = preserveApiIdForRequest(row.basedOnMedicationRequestId);
-      return Boolean(anchorId && groupMrIds.has(anchorId));
+      return Boolean(anchorId && methodMrIds.has(anchorId));
     });
   }
 
@@ -500,7 +707,7 @@ function bindItemAlreadyExistsInAdviceList(
   });
 }
 
-/** 当前暂存批次内是否已有同规则派生行（USAGE 同组同用法组级；其余按锚点） */
+/** 当前暂存批次内是否已有同规则派生行（采血费按目标；USAGE 诊疗跨组 / 耗材按组；其余按锚点） */
 function bindItemAlreadyExistsInDraftLines(
   item: DoctorStationAdviceDraftBindItemDto,
   basedOnRequestId: string | undefined,
@@ -510,22 +717,46 @@ function bindItemAlreadyExistsInDraftLines(
   const targetId = String(item.targetItemId ?? '').trim();
   const targetTable = String(item.targetProductTableName ?? '').trim();
   const basedOnTable = String(item.basedOnTable ?? '').trim();
-  if (!targetId || !targetTable || !basedOnTable) {
+  if (!targetId || !targetTable) {
     return false;
   }
 
-  const usageGroup = resolveUsageGroupBindContext(item, lines);
-  if (usageGroup && basedOnTable === MEDICATION_REQUEST_TABLE) {
-    const groupMrIds = collectDraftMedicationRequestIdsForUsageGroup(
-      usageGroup.groupId,
-      usageGroup.methodCode,
-      existingRows,
-      lines,
-    );
+  // 采血费：本批变更行内同 activity 已有 CREATE 则不再带
+  if (isBloodCollectionFeeBindItem(item)) {
+    return lines.some((line) => {
+      if (line.lineOp === 'DELETE') {
+        return false;
+      }
+      const pt = String(line.productTableName ?? '').trim();
+      if (pt !== ACTIVITY_DEFINITION_TABLE) {
+        return false;
+      }
+      return String(line.servicePayload?.activityDefinitionId ?? '').trim() === targetId;
+    });
+  }
+
+  if (!basedOnTable) {
+    return false;
+  }
+
+  const usageMethod = resolveUsageMethodBindContext(item, lines);
+  if (usageMethod && basedOnTable === MEDICATION_REQUEST_TABLE) {
+    const methodMrIds = isUsageBindCrossGroupOnceTarget(item)
+      ? collectDraftMedicationRequestIdsForUsageMethod(
+          usageMethod.methodCode,
+          existingRows,
+          lines,
+        )
+      : collectDraftMedicationRequestIdsForUsageMethodGroup(
+          usageMethod.methodCode,
+          resolveUsageBindGroupKey(item, lines) ?? `line:${item.triggerLineIndex ?? -1}`,
+          existingRows,
+          lines,
+        );
     if (basedOnRequestId) {
-      groupMrIds.add(basedOnRequestId);
+      methodMrIds.add(basedOnRequestId);
     }
-    if (groupMrIds.size === 0) {
+    if (methodMrIds.size === 0) {
       return false;
     }
     return lines.some((line) => {
@@ -534,7 +765,7 @@ function bindItemAlreadyExistsInDraftLines(
       }
       const lineBasedOnTable = String(line.basedOnTable ?? '').trim();
       const lineBasedOnId = preserveApiIdForRequest(line.basedOnId);
-      if (lineBasedOnTable !== basedOnTable || !lineBasedOnId || !groupMrIds.has(lineBasedOnId)) {
+      if (lineBasedOnTable !== basedOnTable || !lineBasedOnId || !methodMrIds.has(lineBasedOnId)) {
         return false;
       }
       const pt = String(line.productTableName ?? '').trim();
@@ -595,45 +826,6 @@ function filterResolvableDialogRowCandidates(
     const basedOnRequestId = resolveTriggerRequestIdForBindItem(dialogRow.bindItem, immediateMap);
     return !bindItemAlreadyExists(dialogRow.bindItem, basedOnRequestId, existingAdviceRows, lines);
   });
-}
-
-/** 按来源缓存拆分：已缓存来源自动带出，未缓存来源进入弹窗 */
-function splitDialogRowsBySourceSkipCache(
-  dialogRows: AdviceDraftBindDialogRow[],
-  userId: string,
-): {
-  autoRows: AdviceDraftBindDialogRow[];
-  promptRows: AdviceDraftBindDialogRow[];
-  promptSourceGroups: AdviceDraftBindDialogSourceGroup[];
-} {
-  const autoRows: AdviceDraftBindDialogRow[] = [];
-  const promptRows: AdviceDraftBindDialogRow[] = [];
-  const groupMetaByKey = new Map<string, { sourceKindLabel: string; sourceLabel: string }>();
-
-  for (const row of dialogRows) {
-    const sourceCacheKey = String(row.sourceCacheKey ?? '').trim();
-    if (sourceCacheKey && isAdviceBindSourceSkipped(sourceCacheKey, userId)) {
-      autoRows.push(row);
-      continue;
-    }
-    promptRows.push(row);
-    if (sourceCacheKey && !groupMetaByKey.has(sourceCacheKey)) {
-      groupMetaByKey.set(sourceCacheKey, {
-        sourceLabel: row.sourceItemName,
-        sourceKindLabel: row.sourceKindLabel,
-      });
-    }
-  }
-
-  const promptSourceGroups: AdviceDraftBindDialogSourceGroup[] = [...groupMetaByKey.entries()].map(
-    ([sourceCacheKey, meta]) => ({
-      sourceCacheKey,
-      sourceLabel: meta.sourceLabel,
-      sourceKindLabel: meta.sourceKindLabel,
-    }),
-  );
-
-  return { autoRows, promptRows, promptSourceGroups };
 }
 
 /** 从已有行快照诊疗 requestId，供 CREATE 后 diff */
@@ -714,6 +906,10 @@ function bindItemNeedsDeferredSave(
   item: DoctorStationAdviceDraftBindItemDto,
   lines: DoctorStationAdviceDraftLineRequest[],
 ): boolean {
+  // 采血费独立 SR：不挂 based_on，无需等待触发检验落库
+  if (isBloodCollectionFeeBindItem(item) && !String(item.basedOnTable ?? '').trim()) {
+    return false;
+  }
   const lineIndex = item.triggerLineIndex;
   if (lineIndex === undefined || lineIndex === null) {
     return false;
@@ -728,15 +924,16 @@ function bindItemNeedsDeferredSave(
   );
 }
 
-/** 解析成组绑定耗材 packageId：与主药 groupId/packageId 同源；非成组返回 undefined */
+/** 解析成组绑定耗材 packageId：与锚定主药 groupId/packageId 同源；非成组返回 undefined */
 function resolveBindPackageId(
   item: DoctorStationAdviceDraftBindItemDto,
   lines: DoctorStationAdviceDraftLineRequest[],
   existingRows: AdviceRowLike[],
 ): string | undefined {
-  const usageGroup = resolveUsageGroupBindContext(item, lines);
-  if (usageGroup?.groupId) {
-    return usageGroup.groupId;
+  // 优先用触发行成组号（诊疗跨组一份时锚定首组；耗材各组各自锚定）
+  const lineGroupId = resolveMedicationLineGroupId(item.triggerLineIndex, lines);
+  if (lineGroupId) {
+    return lineGroupId;
   }
   const basedOnId =
     preserveApiIdForRequest(item.basedOnRequestId) ??
@@ -756,17 +953,49 @@ function resolveBindPackageId(
       }
     }
   }
-  const lineGroupId = resolveMedicationLineGroupId(item.triggerLineIndex, lines);
-  return lineGroupId || undefined;
+  return undefined;
 }
 
-/** 组装单条派生暂存行（诊疗 / 耗材）；sortNumber 继承锚定药品，与主医嘱聚邻展示 */
+/** 触发行上的就诊诊断 ids 串；没有则空 */
+function resolveServiceLineEncounterDiagnosisIds(
+  line: DoctorStationAdviceDraftLineRequest | undefined,
+): string | undefined {
+  const text = String(line?.servicePayload?.encounterDiagnosisIds ?? '').trim();
+  return text || undefined;
+}
+
+/**
+ * 采血费诊断：优先触发检验行，没有则取本批第一条已绑诊断的诊疗行。
+ * 同批采血费只落一份，诊断跟着带出它的那张检验。
+ */
+function resolveBloodFeeEncounterDiagnosisIds(
+  item: DoctorStationAdviceDraftBindItemDto,
+  lines: DoctorStationAdviceDraftLineRequest[],
+): string | undefined {
+  const lineIndex = item.triggerLineIndex;
+  const triggerLine =
+    lineIndex === undefined || lineIndex === null ? undefined : lines[lineIndex];
+  const fromTrigger = resolveServiceLineEncounterDiagnosisIds(triggerLine);
+  if (fromTrigger) {
+    return fromTrigger;
+  }
+  for (const line of lines) {
+    const ids = resolveServiceLineEncounterDiagnosisIds(line);
+    if (ids) {
+      return ids;
+    }
+  }
+  return undefined;
+}
+
+/** 组装单条派生暂存行（诊疗 / 耗材）；采血费不写 based_on，但带入触发检验的诊断 */
 function buildBindDerivedDraftLine(
   item: DoctorStationAdviceDraftBindItemDto,
-  basedOnRequestId: string,
+  basedOnRequestId: string | undefined,
   quantity: number,
   sortNumber?: number,
   packageId?: string,
+  encounterDiagnosisIds?: string,
 ): DoctorStationAdviceDraftLineRequest | undefined {
   const targetTable = String(item.targetProductTableName ?? '').trim();
   const targetId = String(item.targetItemId ?? '').trim();
@@ -777,6 +1006,25 @@ function buildBindDerivedDraftLine(
   const packageIdField = packageId ? { packageId } : {};
 
   if (targetTable === ACTIVITY_DEFINITION_TABLE) {
+    // 合管采血费：独立 ServiceRequest，不挂 based_on
+    if (isBloodCollectionFeeBindItem(item) && !basedOnTable) {
+      const diagnosisField = encounterDiagnosisIds ? { encounterDiagnosisIds } : {};
+      return {
+        lineOp: 'CREATE',
+        productTableName: ACTIVITY_DEFINITION_TABLE,
+        ...sortNumberField,
+        servicePayload: {
+          activityDefinitionId: targetId,
+          quantity: safeQty,
+          unitCode,
+          executionCount: 1,
+          ...diagnosisField,
+        },
+      };
+    }
+    if (!basedOnRequestId) {
+      return undefined;
+    }
     return {
       lineOp: 'CREATE',
       productTableName: ACTIVITY_DEFINITION_TABLE,
@@ -793,6 +1041,9 @@ function buildBindDerivedDraftLine(
   }
 
   if (targetTable === DEVICE_DEFINITION_TABLE) {
+    if (!basedOnRequestId) {
+      return undefined;
+    }
     return {
       lineOp: 'CREATE',
       productTableName: DEVICE_DEFINITION_TABLE,
@@ -842,13 +1093,17 @@ function buildBindDerivedDraftLinesFromDialogRows(
   const derived: DoctorStationAdviceDraftLineRequest[] = [];
 
   for (const dialogRow of dialogRows) {
-    // 合并行按组展开；未合并则仅一条
-    for (const item of resolveDialogRowBindItemsForPersist(dialogRow)) {
-      const basedOnRequestId = resolveTriggerRequestIdForBindItem(
-        item,
-        triggerRequestIdByLineIndex,
-      );
-      if (!basedOnRequestId) {
+    // 诊疗跨组一份；耗材 fanOut 各组各一份（弹窗数量为合计时均分）
+    const persistItems = resolveDialogRowBindItemsForPersist(dialogRow);
+    const perItemQty = resolvePersistQuantityPerBindItem(dialogRow, persistItems.length);
+    for (const item of persistItems) {
+      const independentBloodFee =
+        isBloodCollectionFeeBindItem(item) && !String(item.basedOnTable ?? '').trim();
+      const basedOnRequestId = independentBloodFee
+        ? undefined
+        : resolveTriggerRequestIdForBindItem(item, triggerRequestIdByLineIndex);
+      // 非独立采血费须有锚点 requestId；采血费可无 based_on 直接落库
+      if (!independentBloodFee && !basedOnRequestId) {
         continue;
       }
       if (bindItemAlreadyExists(item, basedOnRequestId, existingRows, lines)) {
@@ -856,12 +1111,16 @@ function buildBindDerivedDraftLinesFromDialogRows(
       }
       const sortNumber = resolveBindTriggerLineSortNumber(item, lines);
       const packageId = resolveBindPackageId(item, lines, existingRows);
+      const bloodFeeDiagnosis = independentBloodFee
+        ? resolveBloodFeeEncounterDiagnosisIds(item, lines)
+        : undefined;
       const line = buildBindDerivedDraftLine(
         item,
         basedOnRequestId,
-        dialogRow.quantity,
+        perItemQty,
         sortNumber,
         packageId,
+        bloodFeeDiagnosis,
       );
       if (line) {
         derived.push(line);
@@ -1137,7 +1396,7 @@ export async function saveAdviceDraftBatchWithBindResolution(
     return primaryLinesAlreadyPersisted ? skipPrimarySave() : apiAdapter.saveDraftBatch(batchBody);
   }
 
-  // 已存在 based_on 派生 / 同组同用法等同规则去重
+  // 已存在 based_on 派生 / 用法诊疗跨组一份 / 用法耗材按组一份等同规则去重
   const resolvableRows = filterResolvableDialogRowCandidates(
     dialogRowCandidates,
     lines,
@@ -1148,32 +1407,18 @@ export async function saveAdviceDraftBatchWithBindResolution(
     return primaryLinesAlreadyPersisted ? skipPrimarySave() : apiAdapter.saveDraftBatch(batchBody);
   }
 
-  // 同用法跨组合并为弹窗一行，确认后仍按组落派生行
+  // 同用法合并为弹窗一行：诊疗一份；耗材数量按组累加并 fanOut 落库
   const displayRows = mergeUsageDialogRowsAcrossGroups(resolvableRows, lines);
 
-  const cacheUserId = resolveAdviceBindSkipCacheUserId();
-  const { autoRows, promptRows, promptSourceGroups } = splitDialogRowsBySourceSkipCache(
-    displayRows,
-    cacheUserId,
-  );
-
-  let confirmedDialogRows = [...autoRows];
-
-  if (promptRows.length > 0) {
-    const dialogResult = await openAdviceDraftBindDialog(promptRows, promptSourceGroups);
-    if (!dialogResult) {
-      // 取消绑定确认：主医嘱已落库则不带出；未落库则仍只暂存主医嘱
-      return primaryLinesAlreadyPersisted
-        ? skipPrimarySave()
-        : apiAdapter.saveDraftBatch(batchBody);
-    }
-    if (dialogResult.skipSourceKeys.length > 0) {
-      addAdviceBindSkipSources(dialogResult.skipSourceKeys, cacheUserId);
-    }
-    confirmedDialogRows = [...autoRows, ...dialogResult.rows];
+  const dialogResult = await openAdviceDraftBindDialog(displayRows);
+  if (!dialogResult) {
+    // 取消绑定确认：不落派生，仍返回 success，由签发方继续签主医嘱（避免无法签发死锁）
+    return primaryLinesAlreadyPersisted
+      ? { success: true, message: 'BIND_DIALOG_CANCELLED' }
+      : apiAdapter.saveDraftBatch(batchBody);
   }
 
-  return saveAdviceDraftBatchWithConfirmedBindRows(options, confirmedDialogRows);
+  return saveAdviceDraftBatchWithConfirmedBindRows(options, dialogResult.rows);
 }
 
 /** 主医嘱已落库后解析并保存派生绑定（签发前统一带出） */
@@ -1244,6 +1489,10 @@ export function buildAdviceBindTriggerLinesFromDraftRows(
     if (isAdviceRowBindDerivedAnchor(row)) {
       continue;
     }
+    // 独立采血费不再作为合管/模板触发源
+    if (isBloodCollectionFeeAdviceRow(row)) {
+      continue;
+    }
     const requestId = preserveApiIdForRequest(row.requestId);
     if (!requestId) {
       continue;
@@ -1282,6 +1531,7 @@ export function buildAdviceBindTriggerLinesFromDraftRows(
       const qtyRaw = Number(row.listQuantity ?? 1);
       const quantity = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
       const unitCode = String(row.listUnitCode ?? '').trim() || 'U';
+      const encounterDiagnosisIds = String(row.encounterDiagnosisIds ?? '').trim();
       lines.push({
         lineOp: 'CREATE',
         productTableName: ACTIVITY_DEFINITION_TABLE,
@@ -1290,6 +1540,7 @@ export function buildAdviceBindTriggerLinesFromDraftRows(
           activityDefinitionId: definitionId,
           quantity,
           unitCode,
+          ...(encounterDiagnosisIds ? { encounterDiagnosisIds } : {}),
         },
       });
     }
@@ -1303,8 +1554,8 @@ function normalizeSignTargetRequestId(value: unknown): string {
 }
 
 /**
- * 签发目标扩绑定派生草稿：主目标 + based_on 落在主目标上的待签发派生行。
- * 保留合管同设备去重后的落库结果，不在此再滤采血费。
+ * 签发目标扩绑定派生草稿：主目标 + based_on 落在主目标上的待签发派生行
+ * + 本批含合管检验时一并签发的独立采血费草稿（不挂 based_on）。
  */
 export function expandAdviceSignTargetsWithBoundDrafts(
   primaryTargets: readonly DoctorStationAdviceResourceKeyDto[],
@@ -1325,7 +1576,22 @@ export function expandAdviceSignTargetsWithBoundDrafts(
   for (const target of primaryTargets) {
     addTarget(target);
   }
-  // 挂在本批主医嘱下的派生诊疗/耗材一并签发
+  // 本批是否签发检验类诊疗（采血费随检验一并签，不依赖 based_on）
+  let signingLabService = false;
+  for (const row of allRows) {
+    const rid = normalizeSignTargetRequestId(row.requestId);
+    if (!rid || !primaryIds.has(rid)) {
+      continue;
+    }
+    const cat = String(row.catalogCategoryCode ?? '')
+      .trim()
+      .toUpperCase();
+    if (cat === '22' || cat === 'PROOF') {
+      signingLabService = true;
+      break;
+    }
+  }
+  // 挂在本批主医嘱下的派生诊疗/耗材一并签发；独立采血费随检验签发扩入
   for (const row of allRows) {
     if (!rowLooksDraftForSign(row)) {
       continue;
@@ -1334,7 +1600,8 @@ export function expandAdviceSignTargetsWithBoundDrafts(
     const basedOnSr = normalizeSignTargetRequestId(row.basedOnServiceRequestId);
     const anchored =
       (basedOnMr && primaryIds.has(basedOnMr)) || (basedOnSr && primaryIds.has(basedOnSr));
-    if (!anchored) {
+    const independentBloodFee = signingLabService && isBloodCollectionFeeAdviceRow(row);
+    if (!anchored && !independentBloodFee) {
       continue;
     }
     const key = resourceKeyFromRow(row);
@@ -1348,7 +1615,10 @@ export function expandAdviceSignTargetsWithBoundDrafts(
 /**
  * 签发前：对本次待签草稿解析绑定 → 弹窗确认 → 落派生（去重规则复用既有实现）。
  *
- * @returns 无待带出或用户取消确认时仍返回 success（不阻断仅签主医嘱）；落库失败则 success=false
+ * <p>组套套用产物（通用/申请单）不参与绑定解析，避免二次带出耗材/合管项（BR-ORD-038）。</p>
+ *
+ * @returns 无待带出或用户取消确认时仍返回 success（取消不落派生、继续签主医嘱）；落库失败则 success=false。
+ * 取消时 {@code message=BIND_DIALOG_CANCELLED}，调用方可跳过为派生行刷新列表。
  */
 export async function resolveAndPersistAdviceDraftBindsAtSign(params: {
   encounterId: string;
@@ -1357,7 +1627,10 @@ export async function resolveAndPersistAdviceDraftBindsAtSign(params: {
   existingAdviceRows?: AdviceRowItem[] | DoctorStationAdviceRowDto[];
   apiAdapter?: AdviceDraftBindHttpAdapter;
 }): Promise<SaveDoctorStationAdviceDraftBatchResponse> {
-  const bindLines = buildAdviceBindTriggerLinesFromDraftRows(params.draftRows);
+  const bindLines = buildAdviceBindTriggerLinesFromDraftRows(params.draftRows).filter(
+    (line) => !isOrderTemplateOriginRequestId(params.encounterId, line.requestId),
+  );
+  // 本批待签均来自组套：不调 IF-DOR-23，仅签组套内已开内容
   if (bindLines.length === 0) {
     return { success: true, message: 'OK' };
   }

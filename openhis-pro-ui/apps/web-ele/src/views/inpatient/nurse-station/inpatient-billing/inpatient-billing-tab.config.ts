@@ -1,5 +1,9 @@
 /** 住院记账页签 code（逻辑判断用） */
-export type InpatientBillingTab = 'auto-roll' | 'order-billing' | 'pricing-confirmation';
+export type InpatientBillingTab =
+  | 'auto-roll'
+  | 'order-billing'
+  | 'pricing-confirmation'
+  | 'surgery-anesth-billing';
 
 export interface InpatientBillingTabItem {
   label: string;
@@ -10,6 +14,7 @@ export interface InpatientBillingTabItem {
 export const INPATIENT_BILLING_TABS: InpatientBillingTabItem[] = [
   { label: '医嘱计费', name: 'order-billing' },
   { label: '非医嘱计费', name: 'pricing-confirmation' },
+  { label: '手麻计费', name: 'surgery-anesth-billing' },
   { label: '自动计费', name: 'auto-roll' },
 ];
 

@@ -10,7 +10,7 @@ import type { ReportPrintColumnDef } from '#/utils/print/print-report-list';
 
 import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import { Printer, Refresh, Search } from '@element-plus/icons-vue';
 import { ElButton, ElDatePicker, ElFormItem, ElMessage, ElTableColumn } from 'element-plus';

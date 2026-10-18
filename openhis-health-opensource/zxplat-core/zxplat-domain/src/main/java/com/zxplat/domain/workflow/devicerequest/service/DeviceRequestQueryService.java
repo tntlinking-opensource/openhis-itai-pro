@@ -1,0 +1,638 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.zxplat.domain.workflow.devicerequest.service;
+
+import com.zxplat.domain.workflow.devicerequest.queries.model.*;
+import com.zxplat.domain.workflow.devicerequest.repository.DeviceRequestRepository;
+import com.zxplat.domain.share.constants.ErrorCodeConstants;
+import com.zxplat.domain.share.constants.FieldNameConstants;
+import com.zxplat.domain.share.enums.GenerateSource;
+import com.zxplat.domain.share.enums.RequestStatus;
+import com.zxplat.domain.share.utils.EncounterDiagnosisIdsPredicates;
+import com.zxplat.domain.share.utils.IdInQueryChunkSupport;
+import com.zxplat.domain.workflow.devicerequest.entity.DeviceRequest;
+import com.zxplat.framework.core.application.exception.BusinessException;
+import jakarta.persistence.criteria.Predicate;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import lombok.RequiredArgsConstructor;
+
+/**
+ * 耗材请求读侧查询服务。
+ *
+ * <p>约束：只读查询，不写库；默认过滤软删。</p>
+ * <p>聚合边界：仅本聚合 {@link DeviceRequestRepository}。</p>
+ */
+@Service
+@RequiredArgsConstructor
+public class DeviceRequestQueryService {
+
+    private final DeviceRequestRepository deviceRequestRepository;
+
+
+    /**
+     * 按主键批量加载耗材请求列表行（护士站已划价列表数量/单位回源）。
+     *
+     * @param deviceRequestIds 耗材请求主键集合
+     * @return 主键 → 列表行
+     */
+    public Map<Long, DeviceRequestListModel> mapListModelsByIds(Collection<Long> deviceRequestIds) {
+        if (deviceRequestIds == null || deviceRequestIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        LinkedHashSet<Long> distinctIds = new LinkedHashSet<>();
+        for (Long id : deviceRequestIds) {
+            if (id != null) {
+                distinctIds.add(id);
+            }
+        }
+        if (distinctIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<DeviceRequest> rows = deviceRequestRepository.findAllById(distinctIds);
+        Map<Long, DeviceRequestListModel> map = new HashMap<>();
+        for (DeviceRequest request : rows) {
+            if (request == null || request.getId() == null || Boolean.TRUE.equals(request.getIsDeleted())) {
+                continue;
+            }
+            map.put(request.getId(), this.toListModel(request));
+        }
+        return map;
+    }
+
+    /**
+     * 判断指定器材定义是否已被有效耗材申请引用（目录编辑门控）。
+     *
+     * @param deviceDefId 器材定义主键
+     * @return 存在引用时为 true
+     */
+    public boolean existsByDeviceDefId(Long deviceDefId) {
+        if (deviceDefId == null) {
+            return false;
+        }
+        return deviceRequestRepository.existsByDeviceDefIdAndIsDeletedFalse(deviceDefId);
+    }
+
+    /**
+     * 必取耗材请求。
+     */
+    public DeviceRequestQueryModel mustGetDeviceRequest(Long id) {
+        DeviceRequest request = deviceRequestRepository.findById(id).orElseThrow(
+            () -> new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_NOT_FOUND, "耗材请求不存在"));
+        DeviceRequestQueryModel model = new DeviceRequestQueryModel();
+        model.setId(request.getId());
+        model.setStatusEnum(request.getStatusEnum());
+        model.setQuantity(request.getQuantity());
+        model.setRefundDeviceId(request.getRefundDeviceId());
+        return model;
+    }
+
+    /**
+     * 加载门诊医生站耗材签发后 FIFO 发放编排所需的请求字段切片。
+     *
+     * @param deviceReqId 耗材请求主键
+     * @return 只读上下文
+     * @throws BusinessException 请求不存在时
+     */
+    public DeviceRequestFifoSignContext loadFifoSignContextOrThrow(Long deviceReqId) {
+        DeviceRequest request = deviceRequestRepository.findById(deviceReqId).orElseThrow(
+            () -> new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_NOT_FOUND, "耗材请求不存在"));
+        DeviceRequestFifoSignContext ctx = new DeviceRequestFifoSignContext();
+        ctx.setDeviceReqId(request.getId());
+        ctx.setDeviceDefId(request.getDeviceDefId());
+        ctx.setEncounterId(request.getEncounterId());
+        ctx.setPatientId(request.getPatientId());
+        ctx.setQuantity(request.getQuantity());
+        ctx.setUnitCode(request.getUnitCode());
+        // Asm：发材库位供签发 FIFO 按房扣库（空则应用层回落目录默认配置）
+        ctx.setLocationId(request.getLocationId());
+        ctx.setPerformLocationId(request.getPerformLocation());
+        return ctx;
+    }
+
+    /**
+     * 判断耗材是否存在非终态医嘱申请（含未签发 DRAFT 的复合口径）。
+     *
+     * <p>调价提交请改用 {@link #existsHardInTransitRequestByDeviceDefId}（硬在途）与
+     * {@link #listUnsignedDraftsByDeviceDefId}（未签发草稿，由应用层按 48h 窗口分流）。</p>
+     *
+     * @param deviceDefId 耗材定义主键 {@code adm_device_definition.id}
+     * @return 存在在途申请时为 true
+     */
+    public boolean existsInTransitRequestByDeviceDefId(Long deviceDefId) {
+        if (deviceDefId == null) {
+            return false;
+        }
+        // 非终态申请（待发、已签发、已校对、暂挂）视为在途医嘱
+        Specification<DeviceRequest> specification = (root, cq, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.DEVICE_DEF_ID), deviceDefId));
+            predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(this.inTransitRequestStatusCodes()));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        return deviceRequestRepository.count(specification) > 0;
+    }
+
+    /**
+     * 按耗材定义列出未签发草稿（调价保存/提交在途配套）。
+     *
+     * <p>口径：未软删、{@code DRAFT}、从未签发（{@code req_authored_time} 空）；
+     * 填充患者/开立人/有效开立时刻供 48h 新鲜窗口分流。</p>
+     *
+     * @param deviceDefId 耗材定义主键
+     * @return 未签发草稿读模型；无则空列表
+     */
+    public List<StaleUnsignedDeviceRequestDraftQueryModel> listUnsignedDraftsByDeviceDefId(Long deviceDefId) {
+        if (deviceDefId == null) {
+            return new ArrayList<>();
+        }
+        Specification<DeviceRequest> specification = (root, cq, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.DEVICE_DEF_ID), deviceDefId));
+            predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), RequestStatus.DRAFT.getCode()));
+            predicates.add(cb.isNull(root.get(FieldNameConstants.REQ_AUTHORED_TIME)));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        List<DeviceRequest> entities = deviceRequestRepository.findAll(specification);
+        List<StaleUnsignedDeviceRequestDraftQueryModel> rows = new ArrayList<>();
+        for (DeviceRequest entity : entities) {
+            if (entity == null || entity.getId() == null) {
+                continue;
+            }
+            StaleUnsignedDeviceRequestDraftQueryModel row = new StaleUnsignedDeviceRequestDraftQueryModel();
+            row.setId(entity.getId());
+            row.setEncounterId(entity.getEncounterId());
+            row.setPatientId(entity.getPatientId());
+            row.setRequesterId(entity.getRequesterId());
+            row.setDeviceDefId(entity.getDeviceDefId());
+            row.setUpdatedAt(entity.getUpdatedAt());
+            LocalDateTime openedAt = entity.getReqOpenedTime();
+            if (openedAt == null) {
+                openedAt = entity.getUpdatedAt();
+            }
+            row.setOpenedAt(openedAt);
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    /**
+     * 是否存在硬在途耗材申请（已签发/已校对/暂挂；不含 DRAFT）。
+     *
+     * @param deviceDefId 耗材定义主键
+     * @return 存在硬在途时 true
+     */
+    public boolean existsHardInTransitRequestByDeviceDefId(Long deviceDefId) {
+        if (deviceDefId == null) {
+            return false;
+        }
+        Specification<DeviceRequest> specification = (root, cq, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.DEVICE_DEF_ID), deviceDefId));
+            predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(this.hardInTransitRequestStatusCodes()));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        return deviceRequestRepository.count(specification) > 0;
+    }
+
+    /**
+     * 在途耗材申请状态码：待发、已签发、已校对、暂挂（非 COMPLETED/CANCELLED/STOPPED）。
+     *
+     * @return 状态 code 列表
+     */
+    private List<String> inTransitRequestStatusCodes() {
+        List<String> codes = new ArrayList<>();
+        codes.add(RequestStatus.DRAFT.getCode());
+        codes.add(RequestStatus.ACTIVE.getCode());
+        codes.add(RequestStatus.VERIFIED.getCode());
+        codes.add(RequestStatus.HOLD.getCode());
+        return codes;
+    }
+
+    /**
+     * 硬在途状态：已签发后链路（不含未签发草稿）。
+     *
+     * @return 状态 code 列表
+     */
+    private List<String> hardInTransitRequestStatusCodes() {
+        List<String> codes = new ArrayList<>();
+        codes.add(RequestStatus.ACTIVE.getCode());
+        codes.add(RequestStatus.VERIFIED.getCode());
+        codes.add(RequestStatus.HOLD.getCode());
+        return codes;
+    }
+
+    /**
+     * 按就诊查询耗材请求。
+     */
+    public List<DeviceRequestListModel> listDeviceRequestsByEncounter(Long encounterId) {
+        if (encounterId == null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "按就诊查询耗材请求时 encounterId 不能为空");
+        }
+        List<DeviceRequest> requests = deviceRequestRepository.findByEncounterId(encounterId);
+        List<DeviceRequestListModel> models = new ArrayList<>();
+        for (DeviceRequest request : requests) {
+            models.add(this.toListModel(request));
+        }
+        return models;
+    }
+
+    /**
+     * 按就诊主键集合批量加载耗材请求（仅本聚合 Repository；软删行剔除；IN 分批）。
+     *
+     * <p>返回该页就诊下全部未删请求；是否「已完成非退单」由护士站 AppService 按 BR-NUR-017 再筛。</p>
+     *
+     * @param encounterIds 本页就诊主键集合
+     * @return 列表模型；空入参返回空表
+     */
+    public List<DeviceRequestListModel> listDeviceRequestsByEncounterIds(Collection<Long> encounterIds) {
+        // Gate：无就诊主键则无需查耗材请求
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            return List.of();
+        }
+        List<DeviceRequest> rows = IdInQueryChunkSupport.loadByIdInChunks(
+            encounterIds,
+            chunkIds -> this.deviceRequestRepository.findByEncounterIdIn(chunkIds));
+        List<DeviceRequestListModel> models = new ArrayList<>();
+        // 软删行不进入护士站处置单，队列红点同样排除
+        for (DeviceRequest request : rows) {
+            if (request == null || Boolean.TRUE.equals(request.getIsDeleted())) {
+                continue;
+            }
+            models.add(this.toListModel(request));
+        }
+        return models;
+    }
+
+    /**
+     * 门诊医生站：按就诊与生成来源过滤耗材请求（与药品列表对称，AS-OP-DOR-003 BR-ORD-010）。
+     *
+     * @param encounterId 就诊标识
+     * @param generateSourceEnum 生成来源码
+     * @return 列表
+     */
+    public List<DeviceRequestListModel> listDeviceRequestsByEncounterForDoctorStation(Long encounterId, String generateSourceEnum) {
+        if (encounterId == null || generateSourceEnum == null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "按医生站来源过滤耗材请求时 encounterId 与 generateSourceEnum 不能为空");
+        }
+        List<DeviceRequest> requests = deviceRequestRepository.findByEncounterIdAndGenerateSourceEnum(encounterId, generateSourceEnum);
+        List<DeviceRequestListModel> models = new ArrayList<>();
+        for (DeviceRequest request : requests) {
+            models.add(this.toListModel(request));
+        }
+        return models;
+    }
+
+    /**
+     * 按来源锚点查询绑定耗材请求列表（取消执行 based_on 反查，DM-WKF-003 §6.2.10）。
+     *
+     * @param basedOnTable 来源表名
+     * @param basedOnId    来源主键
+     * @return 耗材请求列表
+     */
+    public List<DeviceRequestListModel> listDeviceRequestsByBasedOnAnchor(String basedOnTable, Long basedOnId) {
+        if (basedOnId == null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "按来源锚点查询耗材请求时 basedOnId 不能为空");
+        }
+        if (basedOnTable == null) {
+            basedOnTable = "";
+        }
+        List<DeviceRequest> requests = deviceRequestRepository.findByBasedOnTableAndBasedOnId(basedOnTable, basedOnId);
+        List<DeviceRequestListModel> models = new ArrayList<>();
+        for (DeviceRequest request : requests) {
+            models.add(this.toListModel(request));
+        }
+        return models;
+    }
+
+    /**
+     * 按来源表名与多条来源主键批量查询绑定耗材请求。
+     *
+     * @param basedOnTable 来源表名
+     * @param basedOnIds   来源主键集合
+     * @return 耗材请求列表
+     */
+    public List<DeviceRequestListModel> listDeviceRequestsByBasedOnAnchors(String basedOnTable, Collection<Long> basedOnIds) {
+        if (basedOnIds == null || basedOnIds.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "批量按来源锚点查询耗材请求时 basedOnIds 不能为空");
+        }
+        if (basedOnTable == null) {
+            basedOnTable = "";
+        }
+        LinkedHashSet<Long> distinctIds = new LinkedHashSet<>();
+        for (Long basedOnId : basedOnIds) {
+            if (basedOnId != null) {
+                distinctIds.add(basedOnId);
+            }
+        }
+        if (distinctIds.isEmpty()) {
+            return List.of();
+        }
+        List<DeviceRequest> requests = deviceRequestRepository.findByBasedOnTableAndBasedOnIdIn(basedOnTable, distinctIds);
+        List<DeviceRequestListModel> models = new ArrayList<>();
+        for (DeviceRequest request : requests) {
+            models.add(this.toListModel(request));
+        }
+        return models;
+    }
+
+    /**
+     * 列表行映射。
+     *
+     * @param request 实体
+     * @return 列表模型
+     */
+    private DeviceRequestListModel toListModel(DeviceRequest request) {
+        DeviceRequestListModel model = new DeviceRequestListModel();
+        model.setId(request.getId());
+        model.setDeviceDefId(request.getDeviceDefId());
+        model.setStatusEnum(request.getStatusEnum());
+        model.setRefundDeviceId(request.getRefundDeviceId());
+        model.setEncounterId(request.getEncounterId());
+        model.setPatientId(request.getPatientId());
+        model.setBusNo(request.getBusNo());
+        model.setGenerateSourceEnum(request.getGenerateSourceEnum());
+        model.setReqOpenedTime(request.getReqOpenedTime());
+        model.setReqAuthoredTime(request.getReqAuthoredTime());
+        model.setStopTime(request.getStopTime());
+        model.setStopperId(request.getStopperId());
+        model.setSortNumber(request.getSortNumber());
+        model.setRequesterId(request.getRequesterId());
+        model.setQuantity(request.getQuantity());
+        model.setUnitCode(request.getUnitCode());
+        model.setLotNumber(request.getLotNumber());
+        model.setRemark(request.getRemark());
+        model.setPerformLocation(request.getPerformLocation());
+        model.setLocationId(request.getLocationId());
+        model.setRateCode(request.getRateCode());
+        model.setDeviceSpecifications(request.getDeviceSpecifications());
+        model.setBasedOnTable(request.getBasedOnTable());
+        model.setBasedOnId(request.getBasedOnId());
+        // 组套标识：列表回显供绑定耗材与主药 package_id 对齐核对
+        model.setPackageId(request.getPackageId());
+        model.setEncounterDiagnosisIds(request.getEncounterDiagnosisIds());
+        // 费用性质：contract_code = 合同 bus_no，供医生站反查 contractId
+        model.setContractCode(request.getContractCode());
+        return model;
+    }
+
+    /**
+     * 医生站历史医嘱：在患者范围内收集存在医生开立耗材请求的就诊主键（排除当前就诊）。
+     *
+     * @param patientId          患者主键
+     * @param excludeEncounterId 当前就诊（排除锚点）
+     * @return 历史就诊主键（去重、无序）
+     */
+    public List<Long> listDistinctEncounterIdsByPatientForDoctorStation(Long patientId, Long excludeEncounterId) {
+        // 前置：门控主键缺失时无法收窄历史范围，直接返回空集。
+        if (patientId == null || excludeEncounterId == null) {
+            return Collections.emptyList();
+        }
+        String doctorSource = GenerateSource.DOCTOR_PRESCRIPTION.getCode();
+        Specification<DeviceRequest> specification = (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.PATIENT_ID), patientId));
+            predicates.add(cb.notEqual(root.get(FieldNameConstants.ENCOUNTER_ID), excludeEncounterId));
+            predicates.add(cb.equal(root.get(FieldNameConstants.GENERATE_SOURCE_ENUM), doctorSource));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        List<DeviceRequest> rows = deviceRequestRepository.findAll(specification);
+        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
+        // Loop：从医生开立耗材行提取就诊 id，LinkedHashSet 保序去重。
+        for (DeviceRequest row : rows) {
+            if (row != null && row.getEncounterId() != null) {
+                encounterIds.add(row.getEncounterId());
+            }
+        }
+        return new ArrayList<>(encounterIds);
+    }
+
+    /**
+     * 查询患者历史耗材请求（排除当前就诊）。
+     */
+    public List<DeviceRequestHistoryModel> listDeviceRequestHistoryByPatient(Long patientId, Long excludeEncounterId) {
+        if (patientId == null || excludeEncounterId == null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "查询患者历史耗材请求时 patientId/excludeEncounterId 不能为空");
+        }
+        List<DeviceRequest> requests = deviceRequestRepository.findByPatientIdAndEncounterIdNot(patientId, excludeEncounterId);
+        List<DeviceRequestHistoryModel> models = new ArrayList<>();
+        for (DeviceRequest request : requests) {
+            DeviceRequestHistoryModel model = new DeviceRequestHistoryModel();
+            model.setId(request.getId());
+            model.setPatientId(request.getPatientId());
+            model.setEncounterId(request.getEncounterId());
+            model.setStatusEnum(request.getStatusEnum());
+            models.add(model);
+        }
+        return models;
+    }
+
+    /**
+     * 断言可删除（门控）：仅草稿态（statusEnum=1）的耗材请求允许删除操作，结果供应用服务层读取后决策。
+     *
+     * @param id 耗材请求主键
+     * @return 可删除时返回 true
+     * @throws BusinessException 请求不存在
+     */
+    public Boolean assertDeviceRequestDeletable(Long id) {
+        DeviceRequest request = deviceRequestRepository.findById(id).orElseThrow(
+            () -> new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_NOT_FOUND, "耗材请求不存在"));
+        // 委托聚合根 isDraftEditable() 判断草稿状态，替代魔数直接比较（B.10.3）。
+        return request.isDraftEditable();
+    }
+
+    /**
+     * 断言可签退（门控）：仅已发送态（statusEnum=2）的耗材请求允许签退操作，结果供应用服务层读取后决策。
+     *
+     * @param id 耗材请求主键
+     * @return 可签退时返回 true
+     * @throws BusinessException 请求不存在
+     */
+    public Boolean assertDeviceRequestSignOffAllowed(Long id) {
+        DeviceRequest request = deviceRequestRepository.findById(id).orElseThrow(
+            () -> new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_NOT_FOUND, "耗材请求不存在"));
+        // 委托聚合根 isSignOffAllowed() 判断已发送状态，替代魔数直接比较（B.10.3）。
+        return request.isSignOffAllowed();
+    }
+
+    /**
+     * 冲销校验（offsetVerification）。
+     *
+     * <p>权威口径：已冲销数量 = refundDeviceId=原单 且 quantity&lt;0 的历史行 quantity 绝对值之和。</p>
+     */
+    public OffsetVerificationModel offsetVerification(Long sourceRequestId, BigDecimal preOffsetQuantity) {
+        if (sourceRequestId == null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "冲销校验时 sourceRequestId 不能为空");
+        }
+        // 未传本单拟冲数量时按 0 处理，仅与已登记负向行比对
+        if (preOffsetQuantity == null) {
+            preOffsetQuantity = BigDecimal.ZERO;
+        }
+
+        DeviceRequest source = deviceRequestRepository.findById(sourceRequestId).orElseThrow(
+            () -> new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_NOT_FOUND, "原耗材请求不存在"));
+
+        List<DeviceRequest> negativeRows = deviceRequestRepository.findByRefundDeviceIdAndQuantityLessThan(
+            sourceRequestId, BigDecimal.ZERO);
+        BigDecimal offsetQuantity = BigDecimal.ZERO;
+        for (DeviceRequest row : negativeRows) {
+            if (row.getQuantity() == null) {
+                continue;
+            }
+            offsetQuantity = offsetQuantity.add(row.getQuantity().abs());
+        }
+
+        BigDecimal remaining = source.getQuantity().subtract(offsetQuantity).subtract(preOffsetQuantity);
+
+        OffsetVerificationModel model = new OffsetVerificationModel();
+        model.setSourceRequestId(sourceRequestId);
+        model.setSourceQuantity(source.getQuantity());
+        model.setOffsetQuantity(offsetQuantity);
+        model.setRemainingQuantity(remaining);
+        return model;
+    }
+
+    /**
+     * 退费申请前可退断言（BR-DR-009 最小门控）。
+     *
+     * <p>当前仅校验耗材请求状态是否为已完成（statusEnum=3）；DM-WKF-003 §6.2.7 + BR-DR-009 原文
+     * 要求同时结合发放状态与费用状态等多维度校验，跨聚合部分需由应用服务层叠加完成。</p>
+     *
+     * <p>// DOC-CONFLICT: BR-DR-009 要求跨域校验（发放状态、费用状态），领域层无法访问其他聚合仓储；
+     * 应用服务层须在调用本方法后自行补充跨域校验，此处仅作最小状态门控占位。</p>
+     *
+     * @param id 耗材请求主键
+     * @return 状态满足退费前置条件时返回 true
+     * @throws BusinessException 请求不存在
+     */
+    public Boolean assertDeviceRefundableBeforePaymentRefundRequested(Long id) {
+        DeviceRequest request = deviceRequestRepository.findById(id).orElseThrow(
+            () -> new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_NOT_FOUND, "耗材请求不存在"));
+        // 委托聚合根 isCompleted() 判断已完成状态，替代魔数直接比较（B.10.3）。
+        return request.isCompleted();
+    }
+
+    /**
+     * 按原耗材请求主键批量查询关联退耗/负向请求（DM-WKF-003 §6.2.8；AS-OP-FIN-003 IF-REF-04）。
+     *
+     * @param refundDeviceIds 原耗材请求主键集合（{@code refund_device_id} 指向方）
+     * @return 命中关联字段的请求行；入参为空时返回空列表
+     */
+    public List<DeviceRequest> listByRefundDeviceIdIn(Collection<Long> refundDeviceIds) {
+        if (refundDeviceIds == null || refundDeviceIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        LinkedHashSet<Long> ids = new LinkedHashSet<>();
+        for (Long id : refundDeviceIds) {
+            if (id != null) {
+                ids.add(id);
+            }
+        }
+        if (ids.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return this.deviceRequestRepository.findByRefundDeviceIdIn(ids);
+    }
+
+    /**
+     * 住院护士站已划价耗材请求列表（替代 OrderInfo RM Q-IP-PRC-001 耗材子集）。
+     */
+    public List<DeviceRequestListModel> listInpatientNurseStationPricedOrders(
+        List<Long> encounterIds,
+        LocalDateTime pricedTimeFrom,
+        LocalDateTime pricedTimeTo,
+        Long parentBasedOnId) {
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            throw new BusinessException(
+                ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT,
+                "住院护士站已划价耗材列表查询时 encounterIds 不能为空");
+        }
+        Specification<DeviceRequest> specification = (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(root.get(FieldNameConstants.ENCOUNTER_ID).in(encounterIds));
+            predicates.add(cb.equal(
+                root.get(FieldNameConstants.GENERATE_SOURCE_ENUM),
+                GenerateSource.NURSE_PRICING.getCode()));
+            if (pricedTimeFrom != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get(FieldNameConstants.CREATED_AT), pricedTimeFrom));
+            }
+            if (pricedTimeTo != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get(FieldNameConstants.CREATED_AT), pricedTimeTo));
+            }
+            if (parentBasedOnId != null) {
+                predicates.add(cb.equal(root.get(FieldNameConstants.BASED_ON_ID), parentBasedOnId));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        Sort sort = Sort.by(Sort.Order.desc(FieldNameConstants.CREATED_AT));
+        List<DeviceRequest> rows = deviceRequestRepository.findAll(specification, sort);
+        List<DeviceRequestListModel> models = new ArrayList<>();
+        for (DeviceRequest request : rows) {
+            models.add(this.toListModel(request));
+        }
+        return models;
+    }
+
+    /**
+     * 按主键加载耗材请求列表行（供按表路由）。
+     */
+    public DeviceRequestListModel getListModelById(Long id) {
+        if (id == null) {
+            return null;
+        }
+        DeviceRequest request = deviceRequestRepository.findById(id).orElse(null);
+        if (request == null || Boolean.TRUE.equals(request.getIsDeleted())) {
+            return null;
+        }
+        return this.toListModel(request);
+    }
+
+    /**
+     * 按主键强制加载耗材请求列表行。
+     */
+    public DeviceRequestListModel mustGetListModelById(Long id) {
+        DeviceRequest request = deviceRequestRepository.findById(id).orElseThrow(
+            () -> new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_NOT_FOUND, "耗材请求不存在"));
+        return this.toListModel(request);
+    }
+
+    /**
+     * 统计未软删耗材请求中 {@code encounter_diagnosis_ids} 引用指定就诊诊断行的条数。
+     *
+     * @param encounterDiagnosisId 就诊诊断行主键
+     * @return 引用条数
+     */
+    public int countReferencingEncounterDiagnosisId(Long encounterDiagnosisId) {
+        if (encounterDiagnosisId == null) {
+            return 0;
+        }
+        Specification<DeviceRequest> specification = (root, query, cb) -> cb.and(
+            cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
+            EncounterDiagnosisIdsPredicates.containsEncounterDiagnosisId(
+                cb, root.get(FieldNameConstants.ENCOUNTER_DIAGNOSIS_IDS), encounterDiagnosisId)
+        );
+        long count = deviceRequestRepository.count(specification);
+        if (count > Integer.MAX_VALUE) {
+            return Integer.MAX_VALUE;
+        }
+        return (int) count;
+    }
+}

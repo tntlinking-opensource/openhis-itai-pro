@@ -6,7 +6,7 @@ import type { toggleVariants } from '../toggle';
 
 import { computed, provide } from 'vue';
 
-import { cn } from '@vben-core/shared/utils';
+import { cn } from '@zxplat-core/shared/utils';
 
 import { ToggleGroupRoot, useForwardPropsEmits } from 'reka-ui';
 

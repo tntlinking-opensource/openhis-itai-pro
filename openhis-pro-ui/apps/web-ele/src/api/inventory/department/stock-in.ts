@@ -1,5 +1,5 @@
 /**
- * 科室入库单（只读壳单台账）— 对接 Whale {@code POST /api/app/inventoryDepartmentStockIn/<method>}
+ * 科室入库单（只读壳单台账）— 对接 ZXPlat {@code POST /api/app/inventoryDepartmentStockIn/<method>}
  */
 import type { ApiResponse } from '#/types/api-response';
 
@@ -17,7 +17,7 @@ import {
 
 const BASE = '/inventoryDepartmentStockIn';
 
-/** {@link com.openhis.health.domain.share.enums.SupplyType#DEPT_STOCK_IN} */
+/** {@link com.zxplat.domain.share.enums.SupplyType#DEPT_STOCK_IN} */
 export const DEPT_STOCK_IN_TYPE_ENUM = 'DEPT_STOCK_IN';
 
 export interface StockInOptionDto {

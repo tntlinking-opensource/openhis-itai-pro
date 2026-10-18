@@ -3,16 +3,17 @@ import type { ComputedRef, InjectionKey, Ref } from 'vue';
 import type {
   PatientAdmissionFilter,
   PatientItem,
-  PatientStatusFilter,
+  PatientTaskFilter,
   RegionItem,
+  SelectionPolicy,
   WardItem,
 } from '../types';
 
-export type { PatientAdmissionFilter, PatientStatusFilter };
+export type { PatientAdmissionFilter, PatientTaskFilter };
 
 export interface StatusOptionItem {
   label: string;
-  value: PatientStatusFilter;
+  value: PatientTaskFilter;
 }
 
 export interface AdmissionOptionItem {
@@ -25,8 +26,11 @@ export interface NurseStationPatientListPanelContext {
   pendingAuditCount: ComputedRef<number>;
   pendingExecuteCount: ComputedRef<number>;
   keyword: Ref<string>;
-  statusFilter: Ref<PatientStatusFilter>;
+  /** 任务多选；空数组=全部任务 */
+  statusFilters: Ref<PatientTaskFilter[]>;
   admissionFilter: Ref<PatientAdmissionFilter>;
+  /** 仅看今日入院（与在科/任务筛选 AND；本地过滤不重拉队列） */
+  todayAdmissionOnly: Ref<boolean>;
   selectedRegionIds: Ref<string[]>;
   selectedWardIds: Ref<string[]>;
   filterPanelExpanded: Ref<boolean>;
@@ -40,8 +44,10 @@ export interface NurseStationPatientListPanelContext {
   regionNameByIdRecord: ComputedRef<Record<string, string>>;
   wardNameByIdRecord: ComputedRef<Record<string, string>>;
   changeKeyword: (value: string) => void;
-  changeStatusFilter: (value: PatientStatusFilter) => void;
+  changeStatusFilters: (value: PatientTaskFilter[]) => void;
   changeAdmissionFilter: (value: PatientAdmissionFilter) => void;
+  /** 切换「今日入院」本地筛选 */
+  changeTodayAdmissionOnly: (value: boolean) => void;
   changeRegionIds: (value: string[]) => void;
   changeWardIds: (value: string[]) => void;
   toggleFilterPanel: () => void;
@@ -52,6 +58,14 @@ export interface NurseStationPatientListPanelContext {
   /** 双击患者卡片打开患者体征卡 */
   onPatientCardDblClick: (patient: PatientItem) => void;
   togglePatientSelection: (id: string, value: boolean) => void;
+  /** 当前页签选择策略（多选时展示队列全选） */
+  selectionPolicy: Ref<SelectionPolicy>;
+  /** 当前筛选队列是否已全部勾选 */
+  allFilteredPatientsSelected: ComputedRef<boolean>;
+  /** 当前筛选队列是否部分勾选 */
+  filteredPatientsIndeterminate: ComputedRef<boolean>;
+  /** 全选/取消全选当前筛选队列 */
+  toggleSelectAllFilteredPatients: (value: boolean) => void;
   onPatientDragStart: (event: DragEvent, patient: PatientItem) => void;
   onPatientDragEnd: () => void;
   /** 展开患者一览大屏（铺满工作站） */

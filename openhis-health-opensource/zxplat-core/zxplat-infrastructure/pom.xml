@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.zxplat</groupId>
+        <artifactId>zxplat-core</artifactId>
+        <version>2.0.9</version>
+    </parent>
+
+    <artifactId>zxplat-infrastructure</artifactId>
+    <packaging>jar</packaging>
+
+    <name>ZXPlat Infrastructure</name>
+    <description>
+        领域基础设施：Flyway 装配、平台桥接、Integration Extension SPI / NoOp / 编排
+        （原 domain.infrastructure；包名仍为 com.zxplat.domain.infrastructure.*）。
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.zxplat</groupId>
+            <artifactId>zxplat-domain</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.zxplat</groupId>
+            <artifactId>zxplat-share</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.zxplat</groupId>
+            <artifactId>zxplat-framework</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.fastjson2</groupId>
+            <artifactId>fastjson2</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.swagger.core.v3</groupId>
+            <artifactId>swagger-annotations-jakarta</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+</project>

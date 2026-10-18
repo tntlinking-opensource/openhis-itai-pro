@@ -57,6 +57,9 @@ export function flattenEncounterBlocksToTableRows(
         patientName: '就诊小计',
         purchaseAmount: subtotal.purchaseAmountTotal,
         saleAmount: subtotal.saleAmountTotal,
+        // 就诊小计优惠/实收与行级同锚
+        discountAmount: subtotal.discountAmountTotal,
+        actualReceivedAmount: subtotal.actualReceivedAmountTotal,
       });
     }
   }

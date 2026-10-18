@@ -1,20 +1,23 @@
 {
   "folders": [
     {
-      "name": "zxplat-ui",
-      "path": "../../../../../zxplat-ui"
+      "path": "../../../..",
     },
     {
-      "name": "ZXPlat",
-      "path": "../../../../../ZXPlat"
+      "path": "../../../../../docs",
     },
     {
-      "name": "zxplat-clinic",
-      "path": "../../../../../zxplat-clinic"
+      "path": "../../../../../zxplat",
     },
     {
-      "path": "../../../.."
-    }
+      "path": "../../../../../zxplat",
+    },
+    {
+      "path": "../../../../../openhis-pro-win",
+    },
+    {
+      "path": "../../../../../openhis-sever",
+    },
   ],
   "settings": {},
 }

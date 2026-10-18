@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import type { SupportedLanguagesType } from '@vben/locales';
+import type { SupportedLanguagesType } from '@zxplat/locales';
 
-import { SUPPORT_LANGUAGES } from '@vben/constants';
-import { Languages } from '@vben/icons';
-import { loadLocaleMessages } from '@vben/locales';
-import { preferences, updatePreferences } from '@vben/preferences';
+import { SUPPORT_LANGUAGES } from '@zxplat/constants';
+import { Languages } from '@zxplat/icons';
+import { loadLocaleMessages } from '@zxplat/locales';
+import { preferences, updatePreferences } from '@zxplat/preferences';
 
-import { VbenDropdownRadioMenu, VbenIconButton } from '@vben-core/shadcn-ui';
+import { VbenDropdownRadioMenu, VbenIconButton } from '@zxplat-core/shadcn-ui';
 
 defineOptions({
   name: 'LanguageToggle',

@@ -13,6 +13,10 @@ export interface ExecuteLocationItem {
   activityDefinitionId?: string;
   activityDefinitionName?: string;
   activityCategoryCode?: string;
+  /** 业务类型码（术语 activity_type_code）；可空 */
+  activityTypeCode?: string;
+  /** 业务类型展示名 */
+  activityTypeCode_dictText?: string;
   /** 执行科室（行内选择） */
   executionOrgId?: string;
   executionOrgName?: string;
@@ -30,6 +34,8 @@ export interface ExecuteLocationInitResponse {
   executionOrgOptions?: ApiOptionItem[];
   executionLocationOptions?: ApiOptionItem[];
   activityCategoryOptions?: ApiOptionItem[];
+  /** 业务类型（术语 activity_type_code） */
+  activityTypeOptions?: ApiOptionItem[];
 }
 
 /** 按开立科室分页查规则 */
@@ -54,6 +60,8 @@ export interface ActivityDefinitionOption {
 export interface PageActivityDefinitionParams {
   organizationId: string;
   activityCategoryCode: string;
+  /** 业务类型，可选；有值时按 AD.type_enum 过滤 */
+  activityTypeCode?: string;
   pageNo?: number;
   pageSize?: number;
   keyword?: string;
@@ -68,6 +76,7 @@ export interface CreateExecuteLocationParams {
   organizationId: string;
   activityDefinitionId?: string;
   activityCategoryCode: string;
+  activityTypeCode?: string;
   executionOrgId: string;
   executionLocationId?: string;
   startTime: string;
@@ -85,6 +94,7 @@ export interface BatchCreateExecuteLocationParams {
   organizationId: string;
   executionOrgId: string;
   activityCategoryCode: string;
+  activityTypeCode?: string;
   executionLocationId?: string;
   activityDefinitionIds: string[];
   startTime: string;
@@ -137,5 +147,13 @@ export async function pageActivityDefinitionForExecuteLocationApi(
   return publicRequestClient.post<PageActivityDefinitionResponse>(
     '/executeLocation/pageActivityDefinitionsForExecution',
     params,
+  );
+}
+
+/** 按诊疗大类拉取业务类型（该大类目录实际用过的 type_enum，排除与大类同名） */
+export async function listActivityTypeOptionsByCategoryApi(activityCategoryCode: string) {
+  return publicRequestClient.post<ApiOptionItem[]>(
+    '/executeLocation/listActivityTypeOptionsByCategory',
+    { activityCategoryCode },
   );
 }

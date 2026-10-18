@@ -1,6 +1,6 @@
 /**
  * 1901 平台字典 type — 取自基线规范「字典表」章节括号内英文代码。
- * @see whale-doc/chs-jilin/参考/医疗保障信息平台定点基线版医药机构接口规范-AI.md#字典表
+ * @see docs/chs-jilin/参考/医疗保障信息平台定点基线版医药机构接口规范-AI.md#字典表
  */
 export const YB_PLATFORM_DICT_TYPE_MED_TYPE = 'med_type';
 

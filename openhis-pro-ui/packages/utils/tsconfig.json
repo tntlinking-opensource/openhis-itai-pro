@@ -1,8 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "extends": "@vben/tsconfig/library.json",
+  "extends": "@zxplat/tsconfig/library.json",
   "compilerOptions": {
-    "types": ["@vben-core/typings/vue-router", "@vben/types/global"]
+    "types": ["@zxplat-core/typings/vue-router", "@zxplat/types/global"]
   },
   "include": ["src"],
   "exclude": ["node_modules"]

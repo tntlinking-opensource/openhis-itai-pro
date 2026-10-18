@@ -85,6 +85,13 @@ export interface PatientItem {
   houseName?: string;
   /** 床位展示名（读模型 bedName）。 */
   bedNo: string;
+  /**
+   * 床号自然序预计算键（映射时写入；列表排序只比数字）。
+   * room → bed → extra（0 普通 / 1 加床）；未分床为极大值。
+   */
+  bedSortRoom: number;
+  bedSortBed: number;
+  bedSortExtra: number;
   /** 床位位置 id（写操作 bedLocationId）。 */
   bedLocationId: string;
   /** 就诊状态 code（REGISTERED / IN_PROGRESS 等）。 */
@@ -100,12 +107,18 @@ export interface PatientItem {
   selected: boolean;
 }
 
-export type PatientStatusFilter = 'all' | 'pending-audit' | 'pending-execute' | 'processed';
+/** 任务多选筛选项（不含「全部」；空数组表示全部任务） */
+export type PatientTaskFilter = 'pending-audit' | 'pending-execute' | 'processed';
+
+/** @deprecated 请用 PatientTaskFilter[]；保留兼容旧单选语义 */
+export type PatientStatusFilter = 'all' | PatientTaskFilter;
 
 /**
  * 入科状态筛选（切换会重拉队列；待入科请求避开 houseId，因未分床患者无占床）。
  * - in-ward：在科 — 未清床且非 REGISTERED（含 ON_HOLD/PENDING/COMPLETED）
  * - pending-admission：待入科 — REGISTERED
+ *
+ * 「今日入院」是独立 AND 筛选（见 todayAdmissionOnly），不并入本枚举。
  */
 export type PatientAdmissionFilter = 'in-ward' | 'pending-admission';
 

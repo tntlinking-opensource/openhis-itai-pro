@@ -1,14 +1,14 @@
 <script lang="ts" setup>
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { MedicationCatalogInitResponse, MedicationCatalogItem } from '#/api';
 
 import { computed, onActivated, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { ElButton, ElDialog, ElMessage, ElMessageBox, ElProgress, ElTag } from 'element-plus';
 
@@ -59,6 +59,10 @@ const queryParams = ref({
   medicinePropertyCode: '' as string,
   /** 启用状态；空字符串表示「全部」 */
   statusEnum: '' as string,
+  /** 医保对码；空字符串表示「全部」；'true'/'false' 传布尔 */
+  ybMatchFlag: '' as string,
+  /** 医保编码模糊；空表示不限 */
+  ybNo: '' as string,
 });
 
 const tableData = ref<MedicationCatalogItem[]>([]);
@@ -340,6 +344,26 @@ const formItems = computed<FormItemConfig[]>(() => [
       { label: '已停用', value: PublicationStatusCode.INACTIVE },
     ],
   },
+  {
+    type: 'select',
+    prop: 'ybMatchFlag',
+    label: '医保对码',
+    placeholder: '全部',
+    clearable: true,
+    multiple: false,
+    options: [
+      { label: '全部', value: '' },
+      { label: '已对码', value: 'true' },
+      { label: '未对码', value: 'false' },
+    ],
+  },
+  {
+    type: 'input',
+    prop: 'ybNo',
+    label: '医保编码',
+    placeholder: '请输入医保编码',
+    clearable: true,
+  },
 ]);
 
 /** 分类筛选归一：空/数组转可提交的 string（对齐耗材目录） */
@@ -380,6 +404,36 @@ function normalizeStatusEnumForApi(raw: unknown): string | undefined {
   return s === '' ? undefined : s;
 }
 
+/** 医保对码筛选归一：空/全部 → undefined；true/false 字符串 → boolean */
+function normalizeYbMatchFlagForApi(raw: unknown): boolean | undefined {
+  if (raw === undefined || raw === null) {
+    return undefined;
+  }
+  if (typeof raw === 'boolean') {
+    return raw;
+  }
+  const s = String(raw).trim().toLowerCase();
+  if (s === '' || s === '全部') {
+    return undefined;
+  }
+  if (s === 'true' || s === '1') {
+    return true;
+  }
+  if (s === 'false' || s === '0') {
+    return false;
+  }
+  return undefined;
+}
+
+/** 医保编码筛选归一：空 → undefined */
+function normalizeYbNoForApi(raw: unknown): string | undefined {
+  if (raw === undefined || raw === null) {
+    return undefined;
+  }
+  const s = String(raw).trim();
+  return s === '' ? undefined : s;
+}
+
 const handleQuery = async (params: Record<string, unknown>) => {
   queryParams.value = {
     ...queryParams.value,
@@ -395,6 +449,8 @@ const handleQuery = async (params: Record<string, unknown>) => {
       keyDrugType: normalizeKeyDrugTypeForApi(queryParams.value.keyDrugType),
       medicinePropertyCode: normalizeKeyDrugTypeForApi(queryParams.value.medicinePropertyCode),
       statusEnum: normalizeStatusEnumForApi(queryParams.value.statusEnum),
+      ybMatchFlag: normalizeYbMatchFlagForApi(queryParams.value.ybMatchFlag),
+      ybNo: normalizeYbNoForApi(queryParams.value.ybNo),
     });
 
     const parsed = parsePagedRowsFromApiData<MedicationCatalogItem>(response.data);
@@ -419,6 +475,8 @@ const handleReset = () => {
     keyDrugType: '',
     medicinePropertyCode: '',
     statusEnum: '',
+    ybMatchFlag: '',
+    ybNo: '',
   };
   handleQuery(queryParams.value);
 };
@@ -510,6 +568,8 @@ const handleExportCatalog = async () => {
       keyDrugType: normalizeKeyDrugTypeForApi(queryParams.value.keyDrugType),
       medicinePropertyCode: normalizeKeyDrugTypeForApi(queryParams.value.medicinePropertyCode),
       statusEnum: normalizeStatusEnumForApi(queryParams.value.statusEnum),
+      ybMatchFlag: normalizeYbMatchFlagForApi(queryParams.value.ybMatchFlag),
+      ybNo: normalizeYbNoForApi(queryParams.value.ybNo),
       exportColumns: MEDICATION_CATALOG_EXPORT_COLUMNS,
     });
     if (!result?.fileBytes?.trim()) {

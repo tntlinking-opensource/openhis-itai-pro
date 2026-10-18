@@ -1,0 +1,900 @@
+{
+  "code": "IP_WORD_436",
+  "name": "急诊（抢救）用血申请单",
+  "category": "住院手术记录",
+  "sourceTemplateId": "436",
+  "typeCode": "INPATIENT_住院手术记录",
+  "summary": "Word原样迁移v1 · 段1/表1 · 元5/日1/勾6/单0 · 约1页",
+  "estimatedPages": 1,
+  "structure": {
+    "paraCount": 1,
+    "tableCount": 1,
+    "meta": 5,
+    "date": 1,
+    "plainFill": 0,
+    "fill": 6,
+    "checkbox": 6,
+    "radio": 0
+  },
+  "data": {
+    "header": [
+      {
+        "id": "emrHospitalTitle",
+        "value": "医院名称",
+        "font": "SimHei",
+        "size": 29,
+        "bold": true,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center",
+        "rowMargin": 1
+      },
+      {
+        "id": "emrDocumentTitle",
+        "value": "急诊（抢救）用血申请单",
+        "font": "SimSun",
+        "size": 21,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "type": "separator",
+        "value": "",
+        "lineWidth": 1.15
+      }
+    ],
+    "main": [
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "医疗机构名称（章）：南关国基医院",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_007",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 139
+          },
+          {
+            "width": 139
+          },
+          {
+            "width": 139
+          },
+          {
+            "width": 139
+          },
+          {
+            "width": 142
+          }
+        ],
+        "tableToolDisabled": true,
+        "rowFlex": "left",
+        "trList": [
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "患者基本情况",
+                    "rowFlex": "center"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "姓名：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "患者姓名",
+                      "conceptId": "patientName",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "性别：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "性别",
+                      "conceptId": "gender",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "年龄：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "年龄",
+                      "conceptId": "age",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "病历号：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "病历号",
+                      "conceptId": "medicalRecordNo",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "科室：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "科室",
+                      "conceptId": "deptName",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "床号：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "床位",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 2,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "入院时间：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "date",
+                      "value": null,
+                      "placeholder": "入院时间",
+                      "conceptId": "admissionDateTime",
+                      "dateFormat": "yyyy-MM-dd HH:mm",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 48,
+            "minHeight": 48,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "临床诊断",
+                    "rowFlex": "center"
+                  }
+                ]
+              },
+              {
+                "colspan": 4,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　　",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 240,
+            "minHeight": 240,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "用血指征描述",
+                    "rowFlex": "center"
+                  }
+                ]
+              },
+              {
+                "colspan": 4,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　1.患者血红蛋白",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　　　　　　",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "g/L",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　红细胞计数　　　　　　　　　　/uL",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　血小板计数　　　　　　　　　　/L",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　预计出血量",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　　　　　　　　",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "ml",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　2.其他相关输血指征：",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　3.患者当前相关病情描述（手术科室需要写明手术名称）：",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 48,
+            "minHeight": 48,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "拟申请血型、血液品种和用途",
+                    "rowFlex": "center"
+                  }
+                ]
+              },
+              {
+                "colspan": 2,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　血型：",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "A",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_001",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "B",
+                          "code": "chk_001"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_002",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "O",
+                          "code": "chk_002"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_003",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "AB",
+                          "code": "chk_003"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_004",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "选项",
+                          "code": "chk_004"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 2,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　RH（D）：",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　　　　阳性",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_005",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "阴性",
+                          "code": "chk_005"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_006",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "选项",
+                          "code": "chk_006"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 72,
+            "minHeight": 72,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 2,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　血液品种：",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 2,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　用血量（单位）：",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 4,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "主治医生签（字）：　　　　　　　　　　　　年 月 日",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 48,
+            "minHeight": 48,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "输血科",
+                    "rowFlex": "center"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "审核意见",
+                    "rowFlex": "center"
+                  }
+                ]
+              },
+              {
+                "colspan": 4,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "年 月 日",
+                    "rowFlex": "center"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 48,
+            "minHeight": 48,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "医务处",
+                    "rowFlex": "center"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "审核意见",
+                    "rowFlex": "center"
+                  }
+                ]
+              },
+              {
+                "colspan": 4,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "right"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "年 月 日",
+                    "rowFlex": "right"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "footer": []
+  }
+}

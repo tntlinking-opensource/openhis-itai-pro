@@ -21,7 +21,10 @@ import {
 
 import { createDoctorStationDiagnosisHttpClient } from '#/api/doctor-station/diagnosis-api-client';
 import AppDialog from '#/components/app-dialog.vue';
-import { formatDiagnosisYbNoDisplay } from '#/components/doctor-station/diagnosis/services/tcm-diagnosis-display';
+import {
+  formatDiagnosisYbNoDisplay,
+  hasDiagnosisYbNo,
+} from '#/components/doctor-station/diagnosis/services/tcm-diagnosis-display';
 import { useRequest } from '#/hooks/use-request';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
@@ -309,7 +312,9 @@ watch(
           />
           <ElTableColumn label="医保码" width="160" align="center">
             <template #default="{ row }">
-              {{ formatDiagnosisYbNoDisplay(row.ybNo) }}
+              <span :class="{ 'text-red-500': !hasDiagnosisYbNo(row.ybNo) }">
+                {{ formatDiagnosisYbNoDisplay(row.ybNo) }}
+              </span>
             </template>
           </ElTableColumn>
           <ElTableColumn
@@ -379,7 +384,9 @@ watch(
             />
             <ElTableColumn label="医保码" width="140" align="center">
               <template #default="{ row }">
-                {{ formatDiagnosisYbNoDisplay(row.ybNo) }}
+                <span :class="{ 'text-red-500': !hasDiagnosisYbNo(row.ybNo) }">
+                  {{ formatDiagnosisYbNoDisplay(row.ybNo) }}
+                </span>
               </template>
             </ElTableColumn>
             <ElTableColumn label="操作" width="88" align="center" fixed="right">

@@ -52,6 +52,11 @@ export interface TableProps {
   stripe?: boolean;
   /** 表格列配置 */
   tableColumns?: TableColumn[];
+  /**
+   * 表格数据变化时是否自动清空勾选。
+   * 默认 true；收费等「加载后默认全选」页应设为 false，避免 clearSelection 冲掉程序勾选。
+   */
+  clearSelectionOnDataChange?: boolean;
   /** 表格数据 */
   tableData: Record<string, any>[];
   /** 表格高度 */

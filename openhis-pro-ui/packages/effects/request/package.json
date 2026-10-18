@@ -1,5 +1,5 @@
 {
-  "name": "@vben/request",
+  "name": "@zxplat/request",
   "version": "5.5.9",
   "homepage": "https://github.com/vbenjs/vue-vben-admin",
   "bugs": "https://github.com/vbenjs/vue-vben-admin/issues",
@@ -20,8 +20,8 @@
     }
   },
   "dependencies": {
-    "@vben/locales": "workspace:*",
-    "@vben/utils": "workspace:*",
+    "@zxplat/locales": "workspace:*",
+    "@zxplat/utils": "workspace:*",
     "axios": "catalog:",
     "qs": "catalog:"
   },

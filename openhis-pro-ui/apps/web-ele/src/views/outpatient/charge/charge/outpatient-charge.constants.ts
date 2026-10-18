@@ -41,6 +41,27 @@ export function resolveOutpatientChargeSwitchAccountMessage(messageCode?: null |
 /** 默认支付渠道（门诊收费结算弹窗）：有银联则扫码，否则现金 */
 export const DEFAULT_OUTPATIENT_CHARGE_PAY_CHANNEL_CODE = 'SCAN_PAY';
 
+/**
+ * 选中患者并加载待收明细后，是否默认勾选全部待收整单。
+ * 产品级行为（主线默认开启），不按院点 overlay 开关。
+ */
+export const OUTPATIENT_CHARGE_DEFAULT_SELECT_ALL_PENDING = true;
+
+/** 收银台快捷折扣（折）；null=不传款员折扣率 */
+export const OUTPATIENT_CHARGE_DISCOUNT_QUICK_OPTIONS: readonly {
+  key: string;
+  label: string;
+  zhe: null | number;
+}[] = [
+  { key: 'none', label: '不打折', zhe: null },
+  { key: '9.5', label: '9.5折', zhe: 9.5 },
+  { key: '9', label: '9折', zhe: 9 },
+  { key: '8.5', label: '8.5折', zhe: 8.5 },
+  { key: '8', label: '8折', zhe: 8 },
+  { key: '7', label: '7折', zhe: 7 },
+  { key: '6', label: '6折', zhe: 6 },
+];
+
 /** 结算弹窗可选渠道（API 不可用时的 fallback，不含 SCAN_PAY） */
 export const OUTPATIENT_CHARGE_PAY_CHANNEL_OPTIONS = [...FALLBACK_PAY_CHANNEL_OPTIONS];
 
@@ -50,6 +71,7 @@ export const OUTPATIENT_CHARGE_FEE_DETAIL_FIELD_DEFS: readonly { key: string; la
   { key: 'poolingPay', label: '基本医保统筹' },
   { key: 'otherPay', label: '其他支出' },
   { key: 'accountPay', label: '医保个人账户' },
+  { key: 'mulaidPay', label: '家庭共济' },
   { key: 'largeDiseasePay', label: '大病保险支付' },
   { key: 'deductibleLine', label: '起付线' },
   { key: 'cvlservPay', label: '公务员医疗补助' },

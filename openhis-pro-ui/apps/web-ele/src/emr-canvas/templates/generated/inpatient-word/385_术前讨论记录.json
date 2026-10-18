@@ -1,0 +1,626 @@
+{
+  "code": "IP_WORD_385",
+  "name": "术前讨论记录",
+  "category": "术前讨论",
+  "sourceTemplateId": "385",
+  "typeCode": "INPATIENT_术前讨论",
+  "summary": "Word原样迁移v1 · 段0/表1 · 元0/日1/勾0/单0 · 约2页",
+  "estimatedPages": 2,
+  "structure": {
+    "paraCount": 0,
+    "tableCount": 1,
+    "meta": 0,
+    "date": 1,
+    "plainFill": 0,
+    "fill": 1,
+    "checkbox": 0,
+    "radio": 0
+  },
+  "data": {
+    "header": [
+      {
+        "id": "emrHospitalTitle",
+        "value": "医院名称",
+        "font": "SimHei",
+        "size": 29,
+        "bold": true,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center",
+        "rowMargin": 1
+      },
+      {
+        "id": "emrDocumentTitle",
+        "value": "术前讨论记录",
+        "font": "SimSun",
+        "size": 21,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "type": "separator",
+        "value": "",
+        "lineWidth": 1.15
+      }
+    ],
+    "main": [
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_002",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 698
+          }
+        ],
+        "tableToolDisabled": true,
+        "rowFlex": "left",
+        "trList": [
+          {
+            "height": 1464,
+            "minHeight": 1464,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　　　　　　",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "时间：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "date",
+                      "value": null,
+                      "placeholder": "时间",
+                      "conceptId": "date_001",
+                      "dateFormat": "yyyy-MM-dd HH:mm",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "地点：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　　",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　参加人员:",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　主持人:",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　病历报告（ 　医师）{病历报告}",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "术前准备情况",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　手术指征",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　手术方案",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　可能出现的意外及防范措施",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　讨论意见：",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　总结意见：",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　　　　　　　　　　　　　　　　　　　　　　　　　　记录者：",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "footer": []
+  }
+}

@@ -1202,7 +1202,7 @@ const [Form, formApi] = useVbenForm(
       {
         component: 'Select',
         fieldName: 'packageUnitCode',
-        label: '包装单位',
+        label: '包装单位（定价基准单位）',
         rules: 'required',
         componentProps: {
           options: unitCodeOptions.value,

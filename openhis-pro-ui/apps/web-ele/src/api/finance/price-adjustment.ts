@@ -1,5 +1,5 @@
 /**
- * 价格调整 — 对接 Whale {@code POST /api/app/priceAdjustment/<methodName>}
+ * 价格调整 — 对接 ZXPlat {@code POST /api/app/priceAdjustment/<methodName>}
  * baseURL 含 /api/app 时使用短路径 /priceAdjustment/...
  */
 import type { ApiResponse } from '#/types/api-response';

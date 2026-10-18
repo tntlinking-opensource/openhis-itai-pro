@@ -1,3 +1,5 @@
+export * from './archive-approval';
+export * from './record-edit';
 export * from './case-record-borrow';
 export * from './case-record-coding';
 export * from './case-record-homepage';

@@ -19,15 +19,22 @@ const props = withDefaults(
     summary?: DailySettlementSummaryPanelSource | null;
     /** 为 true 时不展示医保上传差额（住院患者分项口径） */
     omitRetailUploadDiff?: boolean;
+    /** 已配置有效折扣时下半区展示折扣合计（BR-OP-DCL-031） */
+    discountFeatureEnabled?: boolean;
   }>(),
   {
     summary: null,
     omitRetailUploadDiff: false,
+    discountFeatureEnabled: false,
   },
 );
 
 export interface DailySettlementSummaryPanelSource {
   totalIncome?: string;
+  /** 药品合计金额（折后；西药/外购/中草药/中成药） */
+  medicationTotalAmount?: string;
+  /** 应收（折后总收入 + 折扣合计） */
+  receivableAmount?: string;
   wechatAmount?: string;
   alipayAmount?: string;
   onlineBankAmount?: string;
@@ -49,6 +56,8 @@ export interface DailySettlementSummaryPanelSource {
   workInjurySummary?: DailySettlementWorkInjurySummaryDto | null;
   /** 后端扁平行；字段缺省时回落取「医保上传差额」 */
   summaryRows?: DailySettlementSummaryRowDto[];
+  /** 折扣合计（Σ DISCOUNT 旁证） */
+  discountAmount?: string;
 }
 
 interface MetricItem {
@@ -102,6 +111,14 @@ function resolveRetailUploadDiffAmount(summary: DailySettlementSummaryPanelSourc
   return findSummaryRowValue(summary.summaryRows, 'chsRetailUploadDiffAmount') ?? '0.00';
 }
 
+/** 是否展示折扣合计：仅已配置有效折扣时展示。 */
+function shouldShowDiscountAmount(
+  _discountAmount: string | undefined,
+  discountFeatureEnabled: boolean,
+): boolean {
+  return discountFeatureEnabled;
+}
+
 /** 金额是否为 0（空、0、0.00、0 元） */
 function isZeroMoney(value: string | undefined): boolean {
   const raw = (value ?? '')
@@ -109,6 +126,7 @@ function isZeroMoney(value: string | undefined): boolean {
     .replace(/\s*元$/, '')
     .replace(/,/g, '');
   if (!raw) {
+    // 空串按 0 处理
     return true;
   }
   const num = Number(raw);
@@ -157,6 +175,16 @@ function chunkMetrics(items: MetricItem[]): MetricItem[][] {
   return rows;
 }
 
+/** 未分险种且现金/统筹/个账/总额全为 0 时隐藏；任一列非 0 必须展示 */
+function isAllZeroInsutypeRow(type: DailySettlementInsuranceTypeSummaryDto): boolean {
+  return (
+    isZeroMoney(type.cashAmount) &&
+    isZeroMoney(type.fundAmount) &&
+    isZeroMoney(type.accountAmount) &&
+    isZeroMoney(type.totalAmount)
+  );
+}
+
 /** 组装险种子行 */
 function mapInsutypeRows(
   natureKey: string,
@@ -168,7 +196,7 @@ function mapInsutypeRows(
       return;
     }
     const title = type.insutypeName?.trim() || UNKNOWN_INSUTYPE_NAME;
-    if (title === UNKNOWN_INSUTYPE_NAME) {
+    if (title === UNKNOWN_INSUTYPE_NAME && isAllZeroInsutypeRow(type)) {
       return;
     }
     const typeKey = `${natureKey}-insu-${type.insutype ?? typeIndex}`;
@@ -191,6 +219,10 @@ const channelMetrics = computed<MetricItem[]>(() => {
   if (!summary) {
     return [];
   }
+  const medicationTotal =
+    summary.medicationTotalAmount?.trim() ||
+    findSummaryRowValue(summary.summaryRows, 'medicationTotalAmount') ||
+    '0.00';
   const items = moneyMetrics([
     { key: 'totalIncome', label: '总收入', value: summary.totalIncome, emphasize: true },
     { key: 'wechatAmount', label: '微信', value: summary.wechatAmount },
@@ -203,18 +235,47 @@ const channelMetrics = computed<MetricItem[]>(() => {
       emphasize: true,
     },
     {
-      key: 'insuranceCompensationAmount',
-      label: '医保统筹',
-      value: summary.insuranceCompensationAmount,
-      emphasize: true,
-    },
-    {
-      key: 'insuranceAccountAmount',
-      label: '个人账户',
-      value: summary.insuranceAccountAmount,
+      key: 'medicationTotalAmount',
+      label: '药品合计金额',
+      value: medicationTotal,
       emphasize: true,
     },
   ]);
+  // 折扣合计插在应交现金后，避免挤到医保块末尾被忽略
+  if (shouldShowDiscountAmount(summary.discountAmount, props.discountFeatureEnabled)) {
+    items.push(
+      ...moneyMetrics([
+        {
+          key: 'discountAmount',
+          label: '折扣合计',
+          value: summary.discountAmount,
+          emphasize: true,
+        },
+        {
+          key: 'receivableAmount',
+          label: '应收',
+          value: summary.receivableAmount,
+          emphasize: true,
+        },
+      ]),
+    );
+  }
+  items.push(
+    ...moneyMetrics([
+      {
+        key: 'insuranceCompensationAmount',
+        label: '医保统筹',
+        value: summary.insuranceCompensationAmount,
+        emphasize: true,
+      },
+      {
+        key: 'insuranceAccountAmount',
+        label: '个人账户',
+        value: summary.insuranceAccountAmount,
+        emphasize: true,
+      },
+    ]),
+  );
   const retailDiff = resolveRetailUploadDiffAmount(summary);
   if (!props.omitRetailUploadDiff && !isZeroMoney(retailDiff)) {
     items.push(

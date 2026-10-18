@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.zxplat</groupId>
+        <artifactId>zxplat-plugin</artifactId>
+        <version>2.0.9</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>zxplat-module-emr</artifactId>
+    <packaging>pom</packaging>
+    <name>ZXPlat Module EMR</name>
+    <description>电子病历扩展 Module（domain→bridge→application→starter）</description>
+
+    <properties>
+        <mapstruct.version>1.5.5.Final</mapstruct.version>
+    </properties>
+
+    <modules>
+        <module>module-emr-domain</module>
+        <module>module-emr-bridge</module>
+        <module>module-emr-application</module>
+        <module>module-emr-starter</module>
+    </modules>
+</project>

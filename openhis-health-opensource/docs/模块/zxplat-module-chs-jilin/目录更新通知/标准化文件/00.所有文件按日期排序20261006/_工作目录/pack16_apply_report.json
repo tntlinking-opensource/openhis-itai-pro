@@ -1,0 +1,41 @@
+{
+  "stats": {
+    "stop": 318,
+    "insert_stop_hist": 317,
+    "stop_active_SERVICE_F": 1,
+    "add": 188,
+    "add_skip_exists": 188,
+    "modify": 7,
+    "mod_skip_stopped": 3,
+    "mod_active": 4
+  },
+  "catalog": {
+    "SERVICE:ACTIVE": 561,
+    "SERVICE_F:STOPPED": 4152,
+    "SERVICE_F:ACTIVE": 5356,
+    "SERVICE:STOPPED": 7
+  },
+  "total": 10076,
+  "probe_stop": {
+    "catalog_kind": "SERVICE_F",
+    "status": "STOPPED",
+    "project_code": "",
+    "hilist_code": "003314000060000-331400006",
+    "hilist_name": "各种死胎分解术",
+    "chrgitm_lv": "1",
+    "list_type": "201",
+    "begin_date": "2021-11-15",
+    "end_date": "2025-03-13",
+    "计价单位": "次",
+    "定价上限": "0",
+    "地方编码": "",
+    "限制使用标志": "0",
+    "限制使用范围": "",
+    "诊疗项目说明": "",
+    "诊疗除外内容": "",
+    "诊疗项目内涵": "包括穿颅术、断头术、锁骨切断术、碎胎术、内脏挖出术、头皮牵引术等",
+    "last_pack": "16",
+    "last_action": "STOP",
+    "last_notice_date": ""
+  }
+}

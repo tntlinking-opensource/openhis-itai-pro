@@ -3,7 +3,7 @@ import type { PrepareWorkInjuryInvokeResult } from './work-injury.types';
 
 import { ElMessage } from 'element-plus';
 
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-api-id';
 import { normalizeWorkInjuryWinOutput } from './probe-work-injury-filing';
@@ -79,7 +79,7 @@ async function invokeUntil2206(
       winRes = await invokeWorkInjuryPlugin(step);
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error ?? '工伤 Win 调用失败');
-      // 插件未识别时的兜底：2205 空撤仍交 Whale 幂等推进
+      // 插件未识别时的兜底：2205 空撤仍交 ZXPlat 幂等推进
       if (infno === '2205' && isWorkInjury2205EmptyRevoke(infno, errMsg)) {
         const sub = await httpWorkInjurySubmitInvokeResult({
           sessionId: step.sessionId!,
@@ -158,7 +158,7 @@ export async function runWorkInjuryChargePreSettleInvoke(
     return preSettle;
   }
   if (step.nextAction !== 'COMPLETED' && !(await isWorkInjuryPluginOnline())) {
-    throw new Error('请启动 OpenHIS.Win 并启用工伤模块（/api/work-injury/health）');
+    throw new Error('请启动 Zxplat.Win 并启用工伤模块（/api/work-injury/health）');
   }
 
   const sessionId = await invokeUntil2206(
@@ -201,7 +201,7 @@ export async function runWorkInjuryCharge2207Invoke(
   contractId?: string | number,
 ): Promise<void> {
   if (!(await isWorkInjuryPluginOnline())) {
-    throw new Error('请启动 OpenHIS.Win 并启用工伤模块');
+    throw new Error('请启动 Zxplat.Win 并启用工伤模块');
   }
   if (!preSettle.workInjurySessionId) {
     throw new Error('缺少工伤 invoke 会话，请重新预结算');
@@ -268,7 +268,7 @@ export async function runWorkInjuryRefundReverse(params: {
     return;
   }
   if (!(await isWorkInjuryPluginOnline())) {
-    throw new Error('请启动 OpenHIS.Win 并启用工伤模块');
+    throw new Error('请启动 Zxplat.Win 并启用工伤模块');
   }
   for (const record of pending) {
     if (!record.settlementRecordId) {

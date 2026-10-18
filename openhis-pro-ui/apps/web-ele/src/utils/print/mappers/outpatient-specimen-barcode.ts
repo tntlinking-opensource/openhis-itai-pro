@@ -1,3 +1,5 @@
+import { truncateSpecimenBarcodeItemName } from './inpatient-specimen-barcode';
+
 /** 门诊采血贴 PrintData（与 op-specimenBarcode-print 模板 field 一致；50×30mm） */
 export interface OutpatientSpecimenBarcodePrintData {
   patientName: string;
@@ -11,16 +13,16 @@ export interface OutpatientSpecimenBarcodePrintData {
 
 /**
  * 采血贴 mapper 入参
- * P：患者信息 + 检验项目名 + 申请主键（条码，禁止 Number）+ 优先级
+ * P：患者信息 + 检验项目名 + 条码（与 LIS applyNo=SR.busNo 一致，禁止 Number）+ 优先级
  */
 export interface OutpatientSpecimenBarcodePrintSource {
   patientName?: null | string;
   genderEnumText?: null | string;
   ageText?: null | string;
   itemName?: null | string;
-  /** 检验项目主键，直接作为条码内容 */
+  /** 检验申请主键；仅作条码回落，禁止 Number */
   serviceRequestId?: null | string;
-  /** 显式条码优先；未传时由 serviceRequestId 生成 */
+  /** 显式条码优先（LIS applyNo / SR.busNo）；未传时回落 serviceRequestId */
   barcode?: null | string;
   /** 医嘱优先级 code（EM=急）；也可直接传展示文案 urgencyText */
   priorityEnum?: null | string;
@@ -44,7 +46,7 @@ export function buildOutpatientSpecimenBarcodePrintData(
     patientName: str(source.patientName),
     genderEnumText: str(source.genderEnumText),
     ageText: str(source.ageText),
-    itemName: str(source.itemName),
+    itemName: truncateSpecimenBarcodeItemName(source.itemName),
     barcode: str(source.barcode) || str(source.serviceRequestId),
     urgencyText,
   };

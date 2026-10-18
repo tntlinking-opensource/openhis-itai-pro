@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { HomepageListQuery, HomepageListRow } from '../homepage/homepage-list.types';
 import type { HomepageRowActionCode, HomepageSelectOption } from '../homepage/homepage.constants';
@@ -7,11 +7,11 @@ import type { MrmsInpatientClinicalKind } from '../components/mrms-inpatient-cli
 
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 
-import { Page } from '@vben/common-ui';
-import { useUserStore } from '@vben/stores';
-import { formatDateTime } from '@vben/utils';
+import { Page } from '@zxplat/common-ui';
+import { useUserStore } from '@zxplat/stores';
+import { formatDateTime } from '@zxplat/utils';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { ElButton, ElMessage, ElMessageBox, ElTag } from 'element-plus';
 

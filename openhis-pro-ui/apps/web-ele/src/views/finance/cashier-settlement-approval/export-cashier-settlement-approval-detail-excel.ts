@@ -1,6 +1,6 @@
 /**
  * 交账审批详情导出：按收款日结 / 药房日结结构生成 Excel。
- * 无后端导出接口、无 xlsx 依赖时，用 Excel 可直接打开的 SpreadsheetML 工作簿（.xlsx）。
+ * 无后端导出接口、无 xlsx 依赖时，用 Excel 可直接打开的 SpreadsheetML 工作簿（`.xls`）。
  *
  * 数量/金额写 Number 类型，便于 Excel 框选求和（对齐 monetary-amount-contract §1.1）。
  */
@@ -173,18 +173,18 @@ function flattenNatureRows(
   return rows;
 }
 
-/** 默认导出文件名（.xlsx）。 */
+/** 默认导出文件名（SpreadsheetML → `.xls`）。 */
 function buildDefaultFileName(busNo?: string): string {
   const day = formatExportDayStamp();
   const no = busNo?.trim() || '交账详情';
-  return `交账详情_${no}_${day}.xlsx`;
+  return `交账详情_${no}_${day}.xls`;
 }
 
 /**
  * 下载交账审批详情 Excel（收款日结 / 药房日结）。
  *
  * @param detail 详情接口响应
- * @param fileName 可选文件名（建议 .xlsx）
+ * @param fileName 可选文件名（建议 `.xls`；误传 `.xlsx` 时公共下载器会改写）
  */
 export function downloadCashierSettlementApprovalDetailExcel(
   detail: LoadCashierSettlementApprovalDetailResponse,

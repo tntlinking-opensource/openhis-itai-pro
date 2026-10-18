@@ -1,4 +1,4 @@
-import type { FormItemOption } from '@vben-core/table-layout-ui';
+import type { FormItemOption } from '@zxplat-core/table-layout-ui';
 
 /** 质控缺陷严重级别 */
 export const QC_DEFECT_SEVERITY_OPTIONS: FormItemOption[] = [

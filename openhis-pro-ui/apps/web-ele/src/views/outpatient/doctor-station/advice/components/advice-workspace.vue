@@ -41,6 +41,11 @@ import {
   OrderTemplateApplyError,
   prepareOrderTemplateApplyConfirm,
 } from '../services/order-template-apply.service';
+import {
+  collectAdviceRequestIdsFromRows,
+  diffNewAdviceRequestIdsAfterTemplateApply,
+  rememberOrderTemplateOriginRequestIds,
+} from '../services/order-template-origin-cache.service';
 import AdviceDraftBindDialog from './advice-draft-bind-dialog.vue';
 import AdviceDiagnosisSummaryCell from './advice-diagnosis-summary-cell.vue';
 import AdviceEditCard from './advice-edit-card.vue';
@@ -186,6 +191,10 @@ async function handleOrderTemplateSelect(header: null | OrderTemplateHeaderItem)
       return;
     }
     orderTemplateApplyLoading.value = true;
+    // 套用前快照 requestId，刷新后差分标记组套产物（签发跳过绑定带出）
+    const beforeRequestIds = new Set(
+      collectAdviceRequestIdsFromRows(getTableRows().filter((row) => !row.isEditor)),
+    );
     await applyOrderTemplateToAdviceDraft({
       ...applyParams,
       preparedDraftLines: confirmPreview.draftLines,
@@ -195,6 +204,13 @@ async function handleOrderTemplateSelect(header: null | OrderTemplateHeaderItem)
     ElMessage.success(`已套用组套「${templateName}」（${appliedLineCount} 项）`);
     orderTemplateSidePanelRef.value?.clearSelection();
     await reload();
+    rememberOrderTemplateOriginRequestIds(
+      encounter,
+      diffNewAdviceRequestIdsAfterTemplateApply(
+        beforeRequestIds,
+        getTableRows().filter((row) => !row.isEditor),
+      ),
+    );
   } catch (error) {
     orderTemplateSidePanelRef.value?.clearSelection();
     if (error instanceof OrderTemplateApplyError) {
@@ -340,6 +356,7 @@ defineExpose({
       ref="orderTemplateSidePanelRef"
       v-loading="orderTemplateApplyLoading"
       class="advice-workspace-root__template-panel"
+      allow-advice-template-manage
       :encounter-id="encounterId"
       :patient-id="patientId"
       @select="handleOrderTemplateSelect"
@@ -480,6 +497,7 @@ defineExpose({
           <ElTableColumn
             prop="content"
             label="医嘱内容"
+            class-name="advice-content-col"
             :min-width="adviceTableColWidth.contentMin"
           >
             <template #default="{ row, $index }">
@@ -535,7 +553,7 @@ defineExpose({
           <ElTableColumn
             prop="diagnosisSummary"
             label="诊断"
-            :min-width="adviceTableColWidth.diagnosisMin"
+            :width="adviceTableColWidth.diagnosis"
             align="center"
             show-overflow-tooltip
           >
@@ -638,6 +656,12 @@ defineExpose({
 
 .advice-table :deep(.el-table__header-wrapper th.el-table__cell) {
   background: #eaf4ff !important;
+}
+
+/* 医嘱内容列：避免单元格 break-all 把名称【规格】从中间拆开 */
+.advice-table :deep(td.advice-content-col > .cell) {
+  word-break: normal;
+  overflow-wrap: normal;
 }
 
 .advice-table :deep(.advice-editor-cell .cell) {

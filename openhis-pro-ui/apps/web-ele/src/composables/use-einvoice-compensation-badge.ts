@@ -1,6 +1,6 @@
-import type { MenuRecordRaw } from '@vben/types';
+import type { MenuRecordRaw } from '@zxplat/types';
 
-import { useAccessStore } from '@vben/stores';
+import { useAccessStore } from '@zxplat/stores';
 
 import { isEinvoiceUiEnabled } from '#/utils/project-optional-modules';
 

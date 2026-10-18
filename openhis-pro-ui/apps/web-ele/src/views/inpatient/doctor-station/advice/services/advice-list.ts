@@ -12,7 +12,7 @@ import type {
 import type { InpatientDoctorStationAdviceRowDto } from '#/api/inpatient/doctor-station/inpatient-doctor-station-advice.types';
 import type { DrugGroupDisplayItem, DrugGroupKey } from '#/utils/doctor-station/drug-group-table';
 
-import { formatDateTime } from '@vben/utils';
+import { formatDateTime } from '@zxplat/utils';
 
 import {
   resolveAdviceStatusTagTypeFromCode,
@@ -96,8 +96,13 @@ function buildAdviceContentTitle(dto: DoctorStationAdviceRowDto): string {
   }
   const name = String(dto.adviceDisplayName ?? dto.contentSummary ?? '').trim();
   const spec = String(dto.specificationText ?? '').trim();
-  // 规格装量：【5mg1片x100】（禁止题名外再拼 1瓶=100片）
-  return buildMedicationContentTitleWithPackageSplit(name, spec, dto.packageSplitRatioText);
+  // 规格装量：【5mg1片x100】；输液仅规格【250ml: 50g】（禁止题名外再拼 1瓶=100片）
+  return buildMedicationContentTitleWithPackageSplit(
+    name,
+    spec,
+    dto.packageSplitRatioText,
+    dto.injectionFlag === true,
+  );
 }
 
 function buildAdviceDosageSummaryLine(dto: DoctorStationAdviceRowDto): string {
@@ -118,6 +123,8 @@ function buildAdviceDosageSummaryLine(dto: DoctorStationAdviceRowDto): string {
       splitDose: dto.splitDose,
       splitDoseUnitCode: dto.splitDoseUnitCode,
       splitDoseUnitName: dto.splitDoseUnitName,
+      // 输液本地重拼跟计量单位（与后端 injectFlag 口径；请求侧 injectionFlag 同源回填）
+      injectFlag: dto.injectionFlag === true,
       ...firstDoseParts,
     });
     if (longTermLine) return longTermLine;
@@ -130,6 +137,7 @@ function buildAdviceDosageSummaryLine(dto: DoctorStationAdviceRowDto): string {
     splitDose: dto.splitDose,
     splitDoseUnitCode: dto.splitDoseUnitCode,
     splitDoseUnitName: dto.splitDoseUnitName,
+    injectFlag: dto.injectionFlag === true,
     quantity: dto.quantity,
     unitCode: dto.unitCode,
     unitName: dto.unitName,
@@ -201,11 +209,23 @@ function buildAdviceListExtensionLine(dto: DoctorStationAdviceRowDto): string {
   // 护理级别无频次展示（BR-IP-ORD-026；列表仅展示级别名称）
   const usageLine = isNursingLevelAdviceDto(dto) ? '' : buildAdviceMethodRateDurationLine(dto);
   const oralLine = buildOralPackageRemainExtensionLine(dto);
+  const techLine = buildTechExecutionProgressText(dto);
   const extras: string[] = [];
   // 出院医嘱：扩展行展示出院方式/计划出院时间/原因（BR-IP-ORD-017；不写 contentSummary）
   const dischargeParts = buildDischargeAdviceExtensionParts(dto);
   for (const part of dischargeParts) {
     extras.push(part);
+  }
+  // 医技 TECH 诊疗：副行「医技已执行 / 医技待执行」（BR-IP-ORD-038；同出院蓝色扩展行）
+  if (techLine) {
+    extras.push(techLine);
+  }
+  // 诊疗行：扩展行展示执行科室名（与门诊同构；TECH 行与医技进度并列，如「医技已执行；检验科」）
+  if (inferAdviceRowResourceType(dto) === 'SERVICE') {
+    const dept = String(dto.performLocationName ?? '').trim();
+    if (dept) {
+      extras.push(dept);
+    }
   }
   if (usageLine) extras.push(usageLine);
   if (oralLine) extras.push(oralLine);
@@ -218,8 +238,11 @@ function buildAdviceListExtensionLine(dto: DoctorStationAdviceRowDto): string {
   );
 }
 
+/** 出院方式 code：死亡（与术语 out_way_code / 种子 5 对齐） */
+const OUT_WAY_CODE_DEATH = '5';
+
 /**
- * 出院医嘱列表扩展片段：出院方式、计划出院时间、原因（专用字段，禁止拼进 contentSummary）。
+ * 出院医嘱列表扩展片段：出院方式、计划出院时间/死亡时间、原因（专用字段，禁止拼进 contentSummary）。
  *
  * @param dto 医嘱列表行（住院含 plannedDischargeTime 等）
  * @returns 非空片段；非出院行返回空数组
@@ -238,7 +261,10 @@ function buildDischargeAdviceExtensionParts(dto: DoctorStationAdviceRowDto): str
   const plannedRaw = String(ip.plannedDischargeTime ?? '').trim();
   if (plannedRaw) {
     const plannedDisplay = formatAdviceListTimeMinute(plannedRaw) || plannedRaw;
-    parts.push(`出院时间：${plannedDisplay}`);
+    // 死亡出院：扩展行展示「死亡时间」，与患者表 deceased_date 开立同步口径一致
+    const timeLabel =
+      String(ip.outWayCode ?? '').trim() === OUT_WAY_CODE_DEATH ? '死亡时间' : '出院时间';
+    parts.push(`${timeLabel}：${plannedDisplay}`);
   }
   const reason = String(ip.reasonText ?? '').trim();
   if (reason) {
@@ -269,6 +295,38 @@ function buildOralPackageRemainExtensionLine(dto: DoctorStationAdviceRowDto): st
   }
   if (next) parts.push(`预计下次领盒 ${next}`);
   return parts.join('；');
+}
+
+/**
+ * 医技执行进度副文案（BR-IP-ORD-038）：挂医嘱内容扩展行，风格同出院「医嘱离院；出院时间」。
+ * 非 TECH 执行科诊疗（计数字段空）返回空串；执行科室名由扩展行另段拼接（performLocationName）。
+ *
+ * @param dto 列表行 DTO
+ * @returns `医技已执行` / `医技待执行`；无医技进度时为空串
+ */
+function buildTechExecutionProgressText(dto: DoctorStationAdviceRowDto): string {
+  const ip = dto as {
+    techPlannedExecutionCount?: number | null;
+    techCompletedCount?: number | null;
+    techCancelledCount?: number | null;
+  };
+  // 非 TECH 行后端不下发计划次数
+  if (ip.techPlannedExecutionCount === null || ip.techPlannedExecutionCount === undefined) {
+    return '';
+  }
+  const completed = Number(ip.techCompletedCount ?? 0);
+  const cancelled = Number(ip.techCancelledCount ?? 0);
+  let net = completed - cancelled;
+  // 业务：净已执行不为负
+  if (!Number.isFinite(net) || net < 0) {
+    net = 0;
+  }
+  const planned = Number(ip.techPlannedExecutionCount);
+  // 计划次数有效且净执行已满 → 已执行；否则待执行
+  if (Number.isFinite(planned) && planned > 0 && net >= planned) {
+    return '医技已执行';
+  }
+  return '医技待执行';
 }
 
 function formatAdviceRowTotalPrice(dto: DoctorStationAdviceRowDto): string {
@@ -503,10 +561,20 @@ export function mapCatalogRowToOption(row: DoctorStationAdviceCatalogRowDto): Ad
   const uCode = String(row.unitCode ?? '').trim() || undefined;
   const uName = String(row.unitName ?? '').trim() || undefined;
 
+  const sortOrderRaw = row.sortOrder;
+  let sortOrder: number | undefined;
+  if (sortOrderRaw !== null && sortOrderRaw !== undefined && String(sortOrderRaw).trim() !== '') {
+    const sn = Number(sortOrderRaw);
+    if (Number.isFinite(sn)) {
+      sortOrder = sn;
+    }
+  }
+
   return {
     id,
     code: row.busNo || '',
     name: row.name || '',
+    ...(sortOrder !== undefined ? { sortOrder } : {}),
     // 商品名始终回填，空值由选品表展示为「—」
     merchandiseName: String(row.merchandiseName ?? '').trim(),
     category: categoryLabel,
@@ -754,6 +822,7 @@ function doctorStationAdviceRowDtoToDrugGroupItem(
         splitDose: dto.splitDose,
         splitDoseUnitCode: dto.splitDoseUnitCode,
         splitDoseUnitName: dto.splitDoseUnitName,
+        injectFlag: dto.injectionFlag === true,
         firstDose: dto.firstDose,
         firstDoseUnitCode: dto.firstDoseUnitCode,
         firstDoseUnitName: dto.firstDoseUnitName,
@@ -762,10 +831,11 @@ function doctorStationAdviceRowDtoToDrugGroupItem(
   const dosageDisplay = longTermDoseLine || String(dto.dosageDisplay ?? '').trim() || undefined;
   return {
     selectedDrugName: String(dto.adviceDisplayName ?? dto.contentSummary ?? '').trim(),
-    // 成组括线：规格段为 5mg1片x100
+    // 成组括线：规格段为 5mg1片x100；输液仅规格
     selectedDrugSpec: mergePackageSplitIntoSpec(
       String(dto.specificationText ?? '').trim(),
       dto.packageSplitRatioText,
+      dto.injectionFlag === true,
     ),
     pharmacy: '',
     singleDose: longTermDoseLine || (dto.dose ?? ''),

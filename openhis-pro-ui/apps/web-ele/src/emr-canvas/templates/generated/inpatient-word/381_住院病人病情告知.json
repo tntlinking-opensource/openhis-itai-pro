@@ -1,0 +1,282 @@
+{
+  "code": "IP_WORD_381",
+  "name": "住院病人病情告知",
+  "category": "知情告知书",
+  "sourceTemplateId": "381",
+  "typeCode": "INPATIENT_知情告知书",
+  "summary": "Word原样迁移v1 · 段19/表0 · 元0/日0/勾0/单0 · 约1页",
+  "estimatedPages": 1,
+  "structure": {
+    "paraCount": 19,
+    "tableCount": 0,
+    "meta": 0,
+    "date": 0,
+    "plainFill": 0,
+    "fill": 0,
+    "checkbox": 0,
+    "radio": 0
+  },
+  "data": {
+    "header": [
+      {
+        "id": "emrHospitalTitle",
+        "value": "医院名称",
+        "font": "SimHei",
+        "size": 29,
+        "bold": true,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center",
+        "rowMargin": 1
+      },
+      {
+        "id": "emrDocumentTitle",
+        "value": "住院病人病情告知",
+        "font": "SimSun",
+        "size": 21,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "type": "separator",
+        "value": "",
+        "lineWidth": 1.15
+      }
+    ],
+    "main": [
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "尊敬的患者家属或患者的法定监护人、授权委托人：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "您好！您的家人：　　　　　　　　现在我院 科住院治疗。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "目前诊断：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "初步诊疗方案如下：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "现将患者关病情情况，现告知您如下",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "1 、　　　　　　　　　　　　发作突然，预见性差，危害重；",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "2 、病程中可能出现以下一种或几种危重情况：1.心绞痛、心律失常 、心力衰竭、急性",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "心肌梗死、心源性休克、心源性猝死；2.肺栓塞、肺性脑病、呼吸衰竭；3. 高血压危象、",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "高血压脑病、脑出血、脑梗塞；4.糖尿病酮症酸中毒、低血糖性昏迷、高渗性昏迷；5.感染",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "中毒性休克、过敏性休克；6.弥漫性血管内凝血（DIC）；7.上消化道出血合并出血性休克",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "8.多器官功能衰竭；9.其他，　　　　　　　　　　　　。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "上述情况一旦发生会严重威胁患者生命，医护人员将会全力抢救，其中包括电除颤、",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "心肺复苏、吸痰，药物治疗等措施。但限于目前我院医疗技术条件，尽管我院医护人员已经",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "尽全力救治患者，仍存在因疾病原因患者不幸死亡的可能。请患者家属予以理解。患者家属或患者的法定监护人、授权委托人意见：",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "关于患者目前的病情危重、可能出现的风险和后果以及医护人员对于患者病情危重时进行的抢治措施，医护人员已经向我详细告知。我完全理解患者病情危重，我（“同意”或“不同意”）医护人员根据救治工作的需要对患者采取抢救措施，使用应急救治所必需的仪器设备和治疗手段（包括有创救治措施）以及使用药物进行救治，对所发生的一切后果我们自行承担责任。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "患者亲属签名：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "与患者关系：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　　　　　日期 ： 年 月 日 时 分",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "医护人员陈述：我已经将患者目前的病情危重、可能出现的风险和后果以及医护人员对于患者病情危重时进行的救治措施向患者家属或患者的法定监护人、授权委托人祥细告知。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "医护人员签名：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　　　　　　　　　",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "日期：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": " 年 月 日 时 分",
+        "rowFlex": "left"
+      }
+    ],
+    "footer": []
+  }
+}

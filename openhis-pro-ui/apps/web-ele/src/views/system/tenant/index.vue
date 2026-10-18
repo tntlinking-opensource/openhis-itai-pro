@@ -1,12 +1,12 @@
 <script lang="ts" setup>
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { TenantInfo, TenantListParams } from '#/api/core/system/tenant';
 import type { UserInfo } from '#/api/user/user';
 
 import { computed, onMounted, ref } from 'vue';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { ElButton, ElMessage, ElMessageBox, ElTag } from 'element-plus';
 
@@ -431,7 +431,7 @@ onMounted(() => {
         </template>
 
         <template #isActive="{ row }">
-          <ElTag :type="row.isActive ? 'success' : 'info'">
+          <ElTag :type="row.isActive ? 'success' : 'warning'">
             {{ row.isActive ? '启用' : '禁用' }}
           </ElTag>
         </template>

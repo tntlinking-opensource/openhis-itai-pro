@@ -6,8 +6,8 @@ import type { DeptStocktakeLocationOption } from '#/api/inventory/department/sto
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
-import { useUserStore } from '@vben/stores';
-import { formatDateTime } from '@vben/utils';
+import { useUserStore } from '@zxplat/stores';
+import { formatDateTime } from '@zxplat/utils';
 
 import {
   INV_ALL_LOCATIONS_FILTER_ID,

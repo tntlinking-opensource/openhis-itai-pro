@@ -5,4 +5,4 @@ export {
   preferencesManager,
   resetPreferences,
   updatePreferences,
-} from '@vben-core/preferences/es/preferences-manager';
+} from '@zxplat-core/preferences/es/preferences-manager';

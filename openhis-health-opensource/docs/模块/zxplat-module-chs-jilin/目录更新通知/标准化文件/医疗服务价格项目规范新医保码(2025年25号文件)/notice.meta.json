@@ -1,0 +1,10 @@
+{
+  "doc_kind": "PAYMENT_MAP",
+  "category": "SERVICE",
+  "title": "医疗服务价格项目规范新医保码(2025年25号文件)",
+  "source_filename": "医疗服务价格项目规范新医保码(2025年25号文件).xlsx",
+  "notice_date": null,
+  "effective_date": null,
+  "wash_note": "引擎=openpyxl；支付对照洗数；跳过空编码与分组标题；甲乙丙→1/2/3",
+  "wash_tool": "cursor-ai"
+}

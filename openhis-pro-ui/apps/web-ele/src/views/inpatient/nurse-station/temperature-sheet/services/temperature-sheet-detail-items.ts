@@ -21,12 +21,16 @@ export const TERM_SPECIAL_EVENT_CODE = 'special_event_code';
 
 /** 生命体征 item_code */
 export const VITAL_ITEM_CODE = {
+  ALLERGY_DRUG: 'ALLERGY_DRUG',
   DBP: 'DBP',
+  DRAIN_VOL: 'DRAIN_VOL',
   HEIGHT: 'HEIGHT',
   HR: 'HR',
   INTAKE: 'INTAKE',
+  /** 主线/红旗底部「其他」；国基改用 REMARK */
   OTHER: 'OTHER',
   PULSE: 'PULSE',
+  REMARK: 'REMARK',
   RESP: 'RESP',
   SBP: 'SBP',
   STOOL: 'STOOL',
@@ -48,6 +52,8 @@ export const SPECIAL_EVENT_ITEM_CODE = {
   PHYSICAL_COOLING: 'PHYSICAL_COOLING',
   PULSE_DEFICIT: 'PULSE_DEFICIT',
   REFUSE_TEMP: 'REFUSE_TEMP',
+  /** 回室（术后回室，图表竖排在手术后） */
+  RETURN_ROOM: 'RETURN_ROOM',
   SURGERY: 'SURGERY',
   TEMP_EXTRA_MEASURE: 'TEMP_EXTRA_MEASURE',
   TEMP_NOT_RISING: 'TEMP_NOT_RISING',
@@ -58,6 +64,8 @@ export const SPECIAL_EVENT_ITEM_CODE = {
 export const SPECIAL_EVENT_TIME_REQUIRED_CODES = new Set<string>([
   SPECIAL_EVENT_ITEM_CODE.ADMISSION,
   SPECIAL_EVENT_ITEM_CODE.TRANSFER,
+  SPECIAL_EVENT_ITEM_CODE.SURGERY,
+  SPECIAL_EVENT_ITEM_CODE.RETURN_ROOM,
   SPECIAL_EVENT_ITEM_CODE.DEATH,
   SPECIAL_EVENT_ITEM_CODE.DISCHARGE,
   SPECIAL_EVENT_ITEM_CODE.DELIVERY,
@@ -68,6 +76,7 @@ export const SPECIAL_EVENT_CHART_MARKER_CODES = new Set<string>([
   SPECIAL_EVENT_ITEM_CODE.ADMISSION,
   SPECIAL_EVENT_ITEM_CODE.TRANSFER,
   SPECIAL_EVENT_ITEM_CODE.SURGERY,
+  SPECIAL_EVENT_ITEM_CODE.RETURN_ROOM,
   SPECIAL_EVENT_ITEM_CODE.DELIVERY,
   SPECIAL_EVENT_ITEM_CODE.DISCHARGE,
   SPECIAL_EVENT_ITEM_CODE.DEATH,
@@ -266,7 +275,30 @@ export function buildDetailItemsFromFillRow(
       VITAL_ITEM_CODE.URINE_FREQ,
       extraRecord.urineCount,
     );
-    pushDetailItemIfPresent(items, TERM_VITAL_SIGNS_CODE, VITAL_ITEM_CODE.OTHER, extraRecord.other);
+    pushDetailItemIfPresent(
+      items,
+      TERM_VITAL_SIGNS_CODE,
+      VITAL_ITEM_CODE.OTHER,
+      extraRecord.other,
+    );
+    pushDetailItemIfPresent(
+      items,
+      TERM_VITAL_SIGNS_CODE,
+      VITAL_ITEM_CODE.DRAIN_VOL,
+      extraRecord.drainage,
+    );
+    pushDetailItemIfPresent(
+      items,
+      TERM_VITAL_SIGNS_CODE,
+      VITAL_ITEM_CODE.ALLERGY_DRUG,
+      extraRecord.allergyDrug,
+    );
+    pushDetailItemIfPresent(
+      items,
+      TERM_VITAL_SIGNS_CODE,
+      VITAL_ITEM_CODE.REMARK,
+      extraRecord.remark,
+    );
   }
 
   return items;
@@ -384,6 +416,21 @@ export function applyDetailItemsToFillRow(
       detailItems,
       TERM_VITAL_SIGNS_CODE,
       VITAL_ITEM_CODE.OTHER,
+    );
+    extraRecord.drainage = readDetailItemValue(
+      detailItems,
+      TERM_VITAL_SIGNS_CODE,
+      VITAL_ITEM_CODE.DRAIN_VOL,
+    );
+    extraRecord.allergyDrug = readDetailItemValue(
+      detailItems,
+      TERM_VITAL_SIGNS_CODE,
+      VITAL_ITEM_CODE.ALLERGY_DRUG,
+    );
+    extraRecord.remark = readDetailItemValue(
+      detailItems,
+      TERM_VITAL_SIGNS_CODE,
+      VITAL_ITEM_CODE.REMARK,
     );
   }
 }

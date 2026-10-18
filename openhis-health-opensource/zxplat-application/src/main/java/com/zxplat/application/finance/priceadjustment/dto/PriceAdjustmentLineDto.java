@@ -1,0 +1,127 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.zxplat.application.finance.priceadjustment.dto;
+
+import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.zxplat.domain.share.constants.GeneralSharedConstants;
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.Data;
+import lombok.experimental.Accessors;
+
+import java.math.BigDecimal;
+import java.util.Date;
+import java.util.List;
+
+/**
+ * 调价项目行 DTO（对应主表一行 + 子表明细）。
+ */
+@Data
+@Accessors(chain = true)
+@Schema(description = "调价项目行")
+public class PriceAdjustmentLineDto {
+
+    /** 主行主键。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "主行主键")
+    private Long id;
+
+    /** 调价单号。 */
+    @Schema(description = "调价单号")
+    private String busNo;
+
+    /** 项目物理表。 */
+    @Schema(description = "项目物理表")
+    private String itemTable;
+
+    /** 项目物理表展示名。 */
+    @Schema(description = "项目物理表展示名")
+    private String itemTableText;
+
+    /** 项目定义主键。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "项目定义主键")
+    private Long itemId;
+
+    /** 项目名称。 */
+    @Schema(description = "项目名称")
+    private String itemName;
+
+    /** 院内项目编码。 */
+    @Schema(description = "院内项目编码")
+    private String itemCode;
+
+    /** 规格。 */
+    @Schema(description = "规格")
+    private String specification;
+
+    /** 厂家/产地。 */
+    @Schema(description = "厂家/产地")
+    private String manufacturer;
+
+    /**
+     * 项目种类展示名（目录 enrich，与选品 IF-PRC-04 同口径）。
+     */
+    @Schema(description = "项目种类展示名")
+    private String categoryCodeDictText;
+
+    /**
+     * 单位展示名（物流=包装单位；诊疗=开立单位回落包装；与选品同口径）。
+     */
+    @Schema(description = "单位展示名")
+    private String unitName;
+
+    /** 目标进价。 */
+    @Schema(description = "目标进价")
+    private BigDecimal newPurchaseAmount;
+
+    /** 目标售价。 */
+    @Schema(description = "目标售价")
+    private BigDecimal newSellingAmount;
+
+    /** 调价原因（自由文案）。 */
+    @Schema(description = "调价原因（自由文案）")
+    private String adjustmentReason;
+
+    /** 调价原因展示（同文案；历史 code 过渡映射）。 */
+    @Schema(description = "调价原因展示")
+    private String adjustmentReasonText;
+
+    /** 制单时间。 */
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    @Schema(description = "制单时间")
+    private Date adjustmentTime;
+
+    /** 行状态 code。 */
+    @Schema(description = "行状态 code")
+    private String statusEnum;
+
+    /** 行状态展示名。 */
+    @Schema(description = "行状态展示名")
+    private String statusEnumText;
+
+    /** 操作人主键。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "操作人主键")
+    private Long operatorId;
+
+    /** 机构主键。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "机构主键")
+    private Long orgId;
+
+    /** 调价展示口径。 */
+    @Schema(description = "调价展示口径")
+    private String adjustmentStyle;
+
+    /** 调价展示口径文案。 */
+    @Schema(description = "调价展示口径文案")
+    private String adjustmentStyleText;
+
+    /** 批号明细。 */
+    @Schema(description = "批号明细")
+    private List<PriceAdjustmentDetailDto> details;
+}

@@ -21,6 +21,6 @@ export async function showPersistentUserError(options: {
     dangerouslyUseHTMLString: true,
     closeOnClickModal: false,
     closeOnPressEscape: false,
-    customClass: 'whale-persistent-error-messagebox',
+    customClass: 'zxplat-persistent-error-messagebox',
   });
 }

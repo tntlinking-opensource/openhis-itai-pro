@@ -34,6 +34,14 @@ export interface MedicalTechFeeItemRowDto {
    * 划价时间（occurrence_time / 护士执行入账时刻）
    */
   pricedTime?: null | string;
+  /**
+   * 医技执行时间（诊疗 Procedure.recorded_time / 耗材 dispense_time）
+   */
+  medicalTechExecutedTime?: null | string;
+  /** 医技执行人主键 */
+  medicalTechPerformerId?: null | string;
+  /** 医技执行人展示名 */
+  medicalTechPerformerName?: null | string;
   quantity?: null | number | string;
   /** 开立科室展示 */
   relatedOrgDisplay?: null | string;

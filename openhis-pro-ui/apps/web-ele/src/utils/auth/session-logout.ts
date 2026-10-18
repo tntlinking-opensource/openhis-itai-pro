@@ -1,5 +1,5 @@
-import { LOGIN_PATH } from '@vben/constants';
-import { useTabbarStore } from '@vben/stores';
+import { LOGIN_PATH } from '@zxplat/constants';
+import { useTabbarStore } from '@zxplat/stores';
 
 const AUTH_LOCAL_KEYS = [
   'userInfo',

@@ -9,8 +9,8 @@ import type { FormInstance } from 'element-plus';
 
 import { computed, nextTick, ref, watch, onBeforeUnmount, onDeactivated } from 'vue';
 
-import { Trash2 } from '@vben/icons';
-import { formatDateTime } from '@vben/utils';
+import { Trash2 } from '@zxplat/icons';
+import { formatDateTime } from '@zxplat/utils';
 
 import InvDocActions from '@inventory/components/inv-doc-actions.vue';
 import InvDocDetailGridShell from '@inventory/components/inv-doc-detail-grid-shell.vue';
@@ -158,7 +158,7 @@ import {
   resolveInvPrintProductBusNo,
 } from '#/utils/print/print-inv-document';
 import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 defineOptions({ name: 'InventoryTransferMainPane' });
 

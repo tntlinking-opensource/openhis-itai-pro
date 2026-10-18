@@ -130,10 +130,69 @@ export async function saveAndSignNursingLevelAdvice(params: SaveAndSignNursingLe
   return signRes;
 }
 
-/** 患者队列护理级别是否仍为有效态（换级须先停嘱） */
-export function hasActiveNursingLevelOnPatient(statusEnum: string | undefined | null): boolean {
+/** 护理级别医嘱有效态（BR-IP-ORD-026：DRAFT/ACTIVE/VERIFIED；STOPPED 即退出） */
+export function isActiveNursingLevelStatus(statusEnum: string | undefined | null): boolean {
   const status = String(statusEnum ?? '')
     .trim()
     .toUpperCase();
   return status === 'DRAFT' || status === 'ACTIVE' || status === 'VERIFIED';
+}
+
+/** 医嘱行是否为护理级别（category 26） */
+export function isNursingLevelAdviceRow(
+  row: Pick<InpatientDoctorStationAdviceRowDto, 'serviceCategoryEnum' | 'catalogCategoryCode'>,
+): boolean {
+  const category = String(row.serviceCategoryEnum ?? row.catalogCategoryCode ?? '').trim();
+  return category === INPATIENT_NURSING_LEVEL_CATEGORY_CODE;
+}
+
+/** 当前有效护理级别快照（来自医嘱列表，非患者队列 enrich） */
+export interface ActiveNursingLevelAdviceSnapshot {
+  requestId: string;
+  activityDefinitionId: string;
+  displayName: string;
+  statusEnum: string;
+}
+
+/** 从医嘱行解析护理级别展示名 */
+function nursingLevelAdviceDisplayName(row: InpatientDoctorStationAdviceRowDto): string {
+  return String(row.adviceDisplayName ?? row.contentSummary ?? '').trim();
+}
+
+/**
+ * 在医嘱列表中定位仍有效的护理级别（换级门禁与「当前级别」同源）。
+ * 同就诊业务上至多一条有效；多条时取列表靠前一条。
+ */
+export function findActiveNursingLevelAdviceRow(
+  rows: InpatientDoctorStationAdviceRowDto[],
+): ActiveNursingLevelAdviceSnapshot | null {
+  for (const row of rows) {
+    if (!isNursingLevelAdviceRow(row)) continue;
+    if (!isActiveNursingLevelStatus(row.statusEnum)) continue;
+    const requestId = String(row.requestId ?? '').trim();
+    if (!requestId) continue;
+    return {
+      requestId,
+      activityDefinitionId: String(row.productDefinitionId ?? '').trim(),
+      displayName: nursingLevelAdviceDisplayName(row),
+      statusEnum: String(row.statusEnum ?? '')
+        .trim()
+        .toUpperCase(),
+    };
+  }
+  return null;
+}
+
+/** 拉取当前就诊医嘱并解析有效护理级别（IF-IP-DOR-10） */
+export async function loadActiveNursingLevelFromAdvice(params: {
+  encounterId: string;
+  patientId: string;
+}): Promise<ActiveNursingLevelAdviceSnapshot | null> {
+  const encounterId = params.encounterId.trim();
+  const patientId = params.patientId.trim();
+  if (!encounterId || !patientId) return null;
+  const listRes = await httpListInpatientDoctorStationAdvice({ encounterId, patientId });
+  const { content: listRows } =
+    parsePagedRowsFromApiData<InpatientDoctorStationAdviceRowDto>(listRes);
+  return findActiveNursingLevelAdviceRow(listRows);
 }

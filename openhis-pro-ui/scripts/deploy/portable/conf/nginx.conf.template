@@ -40,6 +40,12 @@ http {
             access_log off;
         }
 
+        # 打印客户端安装包：固定目录，不随 versions/版本号 变化
+        location /downloads/ {
+            alias C:/ZXPlat.Win/;
+            default_type application/octet-stream;
+        }
+
         location / {
             try_files $uri $uri/ /index.html;
             add_header Cache-Control "no-cache, no-store, must-revalidate" always;

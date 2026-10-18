@@ -1,6 +1,6 @@
 import type { AuthApi } from '#/api/core/auth';
 
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 import {
   getAvailableHospitalsApi,

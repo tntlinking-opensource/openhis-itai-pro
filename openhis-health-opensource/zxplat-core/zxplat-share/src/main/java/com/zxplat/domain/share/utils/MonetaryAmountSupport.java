@@ -1,0 +1,481 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.zxplat.domain.share.utils;
+
+import com.zxplat.domain.share.constants.ChargeItemAmountScaleConstants;
+import com.zxplat.domain.share.enums.PriceType;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.Collection;
+
+/**
+ * 全局金钱计算与舍入工具（**BR-MON-001**；契约见 monetary-amount-contract.md）。
+ *
+ * <p><strong>售价单价 / 售价行额 / 折后售价</strong>：必须落在
+ * {@link #scaleSaleUnitPrice(BigDecimal)} / {@link #scaleSettle(BigDecimal)}（2 位 HALF_UP）。
+ * 包装价÷拆零倍数派生的拆零售价展示、收费项 {@code unit_price}/{@code total_price}、打折结果均适用；
+ * 除不尽时在收费/结算侧 HALF_UP 到 2 位消化，<strong>禁止</strong>以 6 位长尾写入收费事实，
+ * 亦<strong>禁止</strong>因不能整除而拒绝维护或卡结算。</p>
+ * <p><strong>进价单价</strong>：西药/中成药/外购/耗材 → {@link #scaleSettle(BigDecimal)}（2 位）；
+ * 中药饮片进价 → {@link #scaleTcmUnitPriceDisplay(BigDecimal)}（3 位）。</p>
+ * <p><strong>行级中间量</strong>：{@link #scaleCalc(BigDecimal)} / {@link #lineTotal(BigDecimal, BigDecimal)} 仍可 6 位，
+ * 但一旦落「售价」语义（目录 SALE、批号售价、收费单价/行额、支付）须先 {@link #scaleSettle(BigDecimal)}。
+ * <strong>支付合计</strong>：{@link #sumThenSettle(java.util.Collection)}；
+ * <strong>药品进价合计</strong>：{@link #sumThenPurchaseSettle(java.util.Collection)}（3 位）。</p>
+ */
+public final class MonetaryAmountSupport {
+
+    /** 全系统金额舍入模式。 */
+    public static final RoundingMode MONETARY_ROUNDING = RoundingMode.HALF_UP;
+
+    private MonetaryAmountSupport() {
+    }
+
+    /**
+     * {@code null} 安全转零（不改变刻度）。
+     *
+     * @param value 金额
+     * @return 非 null 金额
+     */
+    public static BigDecimal nullToZero(BigDecimal value) {
+        if (value == null) {
+            return BigDecimal.ZERO;
+        }
+        return value;
+    }
+
+    /**
+     * 计算/行级/API 出参刻度：6 位 HALF_UP。
+     *
+     * @param value 原始金额
+     * @return 计算刻度金额
+     */
+    public static BigDecimal scaleCalc(BigDecimal value) {
+        return nullToZero(value).setScale(ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE, MONETARY_ROUNDING);
+    }
+
+    /**
+     * 售价/支付/发票总价刻度：2 位 HALF_UP。
+     *
+     * <p><strong>禁止</strong>用于药品进价合计；进价见 {@link #scalePurchaseSettle(BigDecimal)}。
+     * 售价<strong>单价</strong>请用 {@link #scaleSaleUnitPrice(BigDecimal)}（同刻度，语义更明确）。</p>
+     *
+     * @param value 加总后的金额
+     * @return 售价结算刻度金额
+     */
+    public static BigDecimal scaleSettle(BigDecimal value) {
+        return nullToZero(value).setScale(ChargeItemAmountScaleConstants.CHARGE_MONETARY_SETTLE_SCALE, MONETARY_ROUNDING);
+    }
+
+    /**
+     * 售价单价刻度：2 位 HALF_UP（目录 SALE、批号售价、收费 {@code unit_price}、拆零换算后的售价单价）。
+     *
+     * <p>与 {@link #scaleSettle(BigDecimal)} 同位数；命名强调「单价」禁止停留在 6 位计算刻度。</p>
+     *
+     * @param value 原始售价单价
+     * @return 2 位售价单价
+     */
+    public static BigDecimal scaleSaleUnitPrice(BigDecimal value) {
+        return scaleSettle(value);
+    }
+
+    /**
+     * 售价行额刻度：2 位 HALF_UP（收费 {@code total_price}/折后应收等售价语义行额）。
+     *
+     * @param value 原始售价行额
+     * @return 2 位售价行额
+     */
+    public static BigDecimal scaleSaleLineAmount(BigDecimal value) {
+        return scaleSettle(value);
+    }
+
+    /**
+     * 进价单价刻度：非中药 2 位；中药饮片 3 位。
+     *
+     * @param value     原始进价单价
+     * @param tcmHerbal 是否中药饮片（{@code medication_category_code=4}）
+     * @return 进价单价刻度金额
+     */
+    public static BigDecimal scalePurchaseUnitPrice(BigDecimal value, boolean tcmHerbal) {
+        if (tcmHerbal) {
+            return scaleTcmUnitPriceDisplay(value);
+        }
+        return scaleSettle(value);
+    }
+
+    /**
+     * 判断金额有效小数位是否不超过 {@code maxScale}（去尾零后比较）。
+     *
+     * @param value    金额；null 视为合规
+     * @param maxScale 允许最大小数位
+     * @return true 表示未超过
+     */
+    public static boolean isWithinScale(BigDecimal value, int maxScale) {
+        if (value == null) {
+            return true;
+        }
+        if (maxScale < 0) {
+            return false;
+        }
+        BigDecimal normalized = value.stripTrailingZeros();
+        return normalized.scale() <= maxScale;
+    }
+
+    /**
+     * 售价单价是否已是 2 位刻度内（维护闸：目录/批号售价录入位数）。
+     *
+     * @param value 售价单价
+     * @return true 表示合规
+     */
+    public static boolean isSaleUnitPriceScaleValid(BigDecimal value) {
+        return isWithinScale(value, ChargeItemAmountScaleConstants.CHARGE_MONETARY_SETTLE_SCALE);
+    }
+
+    /**
+     * 进价单价是否合规：非中药 ≤2 位；中药饮片 ≤3 位。
+     *
+     * @param value     进价单价
+     * @param tcmHerbal 是否中药饮片
+     * @return true 表示合规
+     */
+    public static boolean isPurchaseUnitPriceScaleValid(BigDecimal value, boolean tcmHerbal) {
+        if (tcmHerbal) {
+            return isWithinScale(
+                value, ChargeItemAmountScaleConstants.CHARGE_MONETARY_TCM_UNIT_PRICE_DISPLAY_SCALE);
+        }
+        return isWithinScale(value, ChargeItemAmountScaleConstants.CHARGE_MONETARY_SETTLE_SCALE);
+    }
+
+    /**
+     * 定价行落库归一：售价类（SALE/LIMIT/LOT_NUMBER_PRICE）须 ≤2 位并刻到 2 位；
+     * 进价类（PURCHASE/LOT_NUMBER_COST）须 ≤3 位（中药上限），已是 2 位则刻 2 位否则刻 3 位。
+     *
+     * @param priceTypeCode 价类 code
+     * @param priceValue    金额；null 非法
+     * @return 归一后金额
+     * @throws IllegalArgumentException 空金额或超位
+     */
+    public static BigDecimal normalizeDefinitionPriceValue(String priceTypeCode, BigDecimal priceValue) {
+        if (priceValue == null) {
+            throw new IllegalArgumentException("定价金额不能为空");
+        }
+        String code = "";
+        if (priceTypeCode != null) {
+            code = priceTypeCode.trim();
+        }
+        if (PriceType.SALE.getCode().equals(code)
+            || PriceType.LIMIT.getCode().equals(code)
+            || PriceType.LOT_NUMBER_PRICE.getCode().equals(code)) {
+            if (!isSaleUnitPriceScaleValid(priceValue)) {
+                throw new IllegalArgumentException(
+                    "售价最多 2 位小数，当前=" + priceValue.toPlainString() + "，priceType=" + code);
+            }
+            return scaleSaleUnitPrice(priceValue);
+        }
+        if (PriceType.PURCHASE.getCode().equals(code)
+            || PriceType.LOT_NUMBER_COST.getCode().equals(code)) {
+            if (!isWithinScale(
+                priceValue,
+                ChargeItemAmountScaleConstants.CHARGE_MONETARY_TCM_UNIT_PRICE_DISPLAY_SCALE)) {
+                throw new IllegalArgumentException(
+                    "进价最多 3 位小数，当前=" + priceValue.toPlainString() + "，priceType=" + code);
+            }
+            if (isWithinScale(priceValue, ChargeItemAmountScaleConstants.CHARGE_MONETARY_SETTLE_SCALE)) {
+                return scaleSettle(priceValue);
+            }
+            return scaleTcmUnitPriceDisplay(priceValue);
+        }
+        return scaleCalc(priceValue);
+    }
+
+    /**
+     * 药品进价合计权威刻度：3 位 HALF_UP（**BR-MON-001** 进价侧；无中药第三位为 0）。
+     *
+     * <p>与 {@link #scaleTcmUnitPriceDisplay(BigDecimal)} 同位数。耗材进价合计仍用 {@link #scaleSettle(BigDecimal)}。</p>
+     *
+     * @param value 加总后的进价金额
+     * @return 进价结算刻度金额
+     */
+    public static BigDecimal scalePurchaseSettle(BigDecimal value) {
+        return nullToZero(value).setScale(
+            ChargeItemAmountScaleConstants.CHARGE_MONETARY_PURCHASE_SETTLE_SCALE,
+            MONETARY_ROUNDING);
+    }
+
+    /**
+     * 前端展示刻度（与结算刻度同为 2 位；语义上仅用于 format，不替代 {@link #scaleSettle(BigDecimal)} 作支付闸门）。
+     *
+     * @param value 原始金额
+     * @return 展示刻度金额
+     */
+    public static BigDecimal scaleDisplay(BigDecimal value) {
+        if (value == null) {
+            return BigDecimal.ZERO.setScale(
+                ChargeItemAmountScaleConstants.CHARGE_MONETARY_DISPLAY_SCALE,
+                MONETARY_ROUNDING);
+        }
+        return value.setScale(ChargeItemAmountScaleConstants.CHARGE_MONETARY_DISPLAY_SCALE, MONETARY_ROUNDING);
+    }
+
+    /**
+     * 中药饮片/中草药<strong>进价</strong> UI 展示刻度：3 位 HALF_UP（非入账权威，不替代 {@link #scaleCalc(BigDecimal)}）。
+     *
+     * <p>适用：药品目录采购参考价、批号进价等回显；<strong>售价仍用 {@link #scaleDisplay(BigDecimal)}</strong>。
+     * Excel 进价列用 {@link #scaleTcmPurchaseExport(BigDecimal)}（3 位 DOWN）。
+     * 支付/发票总价仍用 {@link #scaleSettle(BigDecimal)}。</p>
+     *
+     * @param value 原始进价单价（可为 null）
+     * @return 3 位展示刻度金额；null 视为 0
+     */
+    public static BigDecimal scaleTcmUnitPriceDisplay(BigDecimal value) {
+        if (value == null) {
+            return BigDecimal.ZERO.setScale(
+                ChargeItemAmountScaleConstants.CHARGE_MONETARY_TCM_UNIT_PRICE_DISPLAY_SCALE,
+                MONETARY_ROUNDING);
+        }
+        return value.setScale(
+            ChargeItemAmountScaleConstants.CHARGE_MONETARY_TCM_UNIT_PRICE_DISPLAY_SCALE,
+            MONETARY_ROUNDING);
+    }
+
+    /**
+     * 中药进价/进总价 Excel 写出刻度：3 位 {@link RoundingMode#DOWN}（禁止压成 2 位 HALF_UP）。
+     *
+     * <p>null 保持 null（空单元格）；与 {@link #scaleTcmUnitPriceDisplay(BigDecimal)} 的 UI HALF_UP 区分。</p>
+     *
+     * @param value 进价单价或进价总额（可为 null）
+     * @return 3 位截断金额；null 仍为 null
+     */
+    public static BigDecimal scaleTcmPurchaseExport(BigDecimal value) {
+        if (value == null) {
+            return null;
+        }
+        return value.setScale(
+            ChargeItemAmountScaleConstants.CHARGE_MONETARY_TCM_UNIT_PRICE_DISPLAY_SCALE,
+            RoundingMode.DOWN);
+    }
+
+    /**
+     * 单价 × 数量 → 行金额（6 位 HALF_UP）。
+     *
+     * @param unitPrice 单价
+     * @param quantity  数量
+     * @return 行金额
+     */
+    public static BigDecimal lineTotal(BigDecimal unitPrice, BigDecimal quantity) {
+        BigDecimal price = scaleCalc(unitPrice);
+        BigDecimal qty = nullToZero(quantity);
+        return price.multiply(qty).setScale(ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE, MONETARY_ROUNDING);
+    }
+
+    /**
+     * 解析有效包装换算比；无效时回落 1（BR-INV-DTL-007）。
+     *
+     * @param packageUnitRatio 包装单位相对拆零倍数
+     * @return 正倍数，至少为 1
+     */
+    public static BigDecimal resolvePositivePackageUnitRatio(BigDecimal packageUnitRatio) {
+        if (packageUnitRatio != null && packageUnitRatio.compareTo(BigDecimal.ZERO) > 0) {
+            return packageUnitRatio;
+        }
+        return BigDecimal.ONE;
+    }
+
+    /**
+     * 行计价单位单价线性换算为每包装单位单价：{@code P_pkg = P_line × R_pkg / R_line}。
+     *
+     * @param priceOnLineUnit      行单价
+     * @param lineRatioToSplit     行单位相对拆零倍数
+     * @param packageRatioToSplit  包装单位相对拆零倍数
+     * @return 每包装单位单价（6 位）；参数缺失时按行单价刻度返回
+     */
+    public static BigDecimal convertLineUnitPriceToPackageUnitPrice(
+        BigDecimal priceOnLineUnit,
+        BigDecimal lineRatioToSplit,
+        BigDecimal packageRatioToSplit
+    ) {
+        if (priceOnLineUnit == null) {
+            return null;
+        }
+        BigDecimal scaledLinePrice = scaleCalc(priceOnLineUnit);
+        if (lineRatioToSplit == null || packageRatioToSplit == null) {
+            return scaledLinePrice;
+        }
+        if (lineRatioToSplit.compareTo(BigDecimal.ZERO) <= 0
+            || packageRatioToSplit.compareTo(BigDecimal.ZERO) <= 0) {
+            return scaledLinePrice;
+        }
+        if (lineRatioToSplit.compareTo(packageRatioToSplit) == 0) {
+            return scaledLinePrice;
+        }
+        BigDecimal converted = scaledLinePrice.multiply(packageRatioToSplit)
+            .divide(lineRatioToSplit, ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE, MONETARY_ROUNDING);
+        return scaleCalc(converted);
+    }
+
+    /**
+     * 拆零最小单位数量 + 每包装单位价 → 行总额（BR-INV-DTL-007 / BR-MON-PKG-001）。
+     *
+     * <p><strong>硬约束</strong>：金额锚点始终是<strong>包装价</strong>。
+     * 满包部分 = {@code 整包数 × 包装价}；零头部分 = {@code 包装价 × 余量 / ratio}（单步线性）。
+     * <strong>禁止</strong>先把包装价除成「拆零单价」再乘数量（含零头）——该路径会产生中间舍入尾差，库存估值严禁。</p>
+     *
+     * @param splitQuantity     拆零最小单位数量
+     * @param packageUnitRatio  包装单位相对拆零倍数（1 包装 = ratio 拆零）
+     * @param packageUnitPrice  每包装单位单价（非拆零单价）
+     * @return 行总额（6 位）；数量或单价缺失时 null
+     */
+    public static BigDecimal computeSplitQuantityLineTotal(
+        BigDecimal splitQuantity,
+        BigDecimal packageUnitRatio,
+        BigDecimal packageUnitPrice
+    ) {
+        if (splitQuantity == null || packageUnitPrice == null) {
+            return null;
+        }
+        BigDecimal ratio = resolvePositivePackageUnitRatio(packageUnitRatio);
+        // 换算比非法时无法按包装锚计价
+        if (ratio.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        BigDecimal[] parts = splitQuantity.divideAndRemainder(ratio);
+        BigDecimal wholePackages = parts[0];
+        BigDecimal remainderSplits = parts[1];
+        BigDecimal scaledPackagePrice = scaleCalc(packageUnitPrice);
+        // 满包：整包数 × 包装价（绝不经拆零单价）
+        BigDecimal wholePart = wholePackages.multiply(scaledPackagePrice);
+        BigDecimal remainderPart = BigDecimal.ZERO;
+        // 零头：包装价 × 余量 / ratio，单步线性，禁止先派生拆零单价再乘
+        if (remainderSplits.compareTo(BigDecimal.ZERO) != 0) {
+            remainderPart = scaledPackagePrice.multiply(remainderSplits)
+                .divide(
+                    ratio,
+                    ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE,
+                    MONETARY_ROUNDING
+                );
+        }
+        return scaleCalc(wholePart.add(remainderPart));
+    }
+
+    /**
+     * 多个行级金额代数加总（中间保持原精度），再加总结果 settle 到售价 2 位。
+     *
+     * <p><strong>禁止</strong>用于进价合计；进价见 {@link #sumThenPurchaseSettle(Collection)}。</p>
+     *
+     * @param amounts 行级金额集合；{@code null} 元素忽略
+     * @return 售价结算刻度合计
+     */
+    public static BigDecimal sumThenSettle(Collection<BigDecimal> amounts) {
+        BigDecimal sum = BigDecimal.ZERO;
+        if (amounts != null) {
+            for (BigDecimal amount : amounts) {
+                if (amount != null) {
+                    sum = sum.add(amount);
+                }
+            }
+        }
+        return scaleSettle(sum);
+    }
+
+    /**
+     * 多个行级药品进价金额代数加总，再 settle 到 3 位。
+     *
+     * <p>药房日结/发药报表/费用明细/医生工作量等进价合计；耗材仍用 {@link #sumThenSettle(Collection)}。</p>
+     *
+     * @param amounts 行级进价金额集合；{@code null} 元素忽略
+     * @return 进价结算刻度合计（3 位）
+     */
+    public static BigDecimal sumThenPurchaseSettle(Collection<BigDecimal> amounts) {
+        BigDecimal sum = BigDecimal.ZERO;
+        if (amounts != null) {
+            for (BigDecimal amount : amounts) {
+                if (amount != null) {
+                    sum = sum.add(amount);
+                }
+            }
+        }
+        return scalePurchaseSettle(sum);
+    }
+
+    /**
+     * 多个行级金额代数加总（中间保持原精度），结果保持 6 位（用于行块小计等非支付场景）。
+     *
+     * @param amounts 行级金额集合
+     * @return 计算刻度合计
+     */
+    public static BigDecimal sumThenCalc(Collection<BigDecimal> amounts) {
+        BigDecimal sum = BigDecimal.ZERO;
+        if (amounts != null) {
+            for (BigDecimal amount : amounts) {
+                if (amount != null) {
+                    sum = sum.add(amount);
+                }
+            }
+        }
+        return scaleCalc(sum);
+    }
+
+    /**
+     * 按比例分摊：{@code numerator × multiplier ÷ denominator}，商保留计算刻度 6 位（医保/实收占比等）。
+     *
+     * @param numerator   被分摊量（如行绝对金额）
+     * @param multiplier  分摊池（如医保合计或净实收）
+     * @param denominator 分母（如 payment 快照行金额合计）
+     * @return 分摊结果（6 位 HALF_UP）；分母为 0 时返回 {@link #scaleCalc(BigDecimal) scaleCalc(0)}
+     */
+    public static BigDecimal proportionAtCalcScale(
+        BigDecimal numerator,
+        BigDecimal multiplier,
+        BigDecimal denominator) {
+        BigDecimal den = nullToZero(denominator);
+        if (den.compareTo(BigDecimal.ZERO) <= 0) {
+            return scaleCalc(BigDecimal.ZERO);
+        }
+        return nullToZero(numerator)
+            .multiply(nullToZero(multiplier))
+            .divide(den, ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE, MONETARY_ROUNDING);
+    }
+
+    /**
+     * 在结算刻度（2 位）下比较两金额是否相等（支付明细合计校验等）。
+     *
+     * @param left  左操作数
+     * @param right 右操作数
+     * @return {@code true} 表示结算刻度相等
+     */
+    public static boolean equalsAtSettleScale(BigDecimal left, BigDecimal right) {
+        return scaleSettle(left).compareTo(scaleSettle(right)) == 0;
+    }
+
+    /**
+     * 行金额反推加权单价：{@code lineTotal ÷ quantity}，商保留计算刻度 6 位（发药/收费行合并场景）。
+     *
+     * @param lineTotal 行金额或合计金额
+     * @param quantity  数量
+     * @return 单价（6 位 HALF_UP）；数量为 0 时返回 {@link #scaleCalc(BigDecimal) scaleCalc(0)}
+     */
+    public static BigDecimal unitPriceFromLineTotal(BigDecimal lineTotal, BigDecimal quantity) {
+        BigDecimal qty = nullToZero(quantity);
+        if (qty.compareTo(BigDecimal.ZERO) <= 0) {
+            return scaleCalc(BigDecimal.ZERO);
+        }
+        return nullToZero(lineTotal)
+            .divide(qty, ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE, MONETARY_ROUNDING);
+    }
+
+    /**
+     * 带符号金额：先归一到计算刻度，再乘符号，结果仍为计算刻度（6 位）。
+     *
+     * @param absoluteValue  绝对值
+     * @param signMultiplier 1 或 -1
+     * @return 带符号行级金额
+     */
+    public static BigDecimal applySignAtCalcScale(BigDecimal absoluteValue, BigDecimal signMultiplier) {
+        BigDecimal scaled = scaleCalc(absoluteValue);
+        BigDecimal sign = nullToZero(signMultiplier);
+        return scaled.multiply(sign).setScale(ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE, MONETARY_ROUNDING);
+    }
+}

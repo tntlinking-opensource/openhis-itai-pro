@@ -16,6 +16,8 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 import { ElButton, ElDatePicker, ElMessage, ElRadio, ElRadioGroup } from 'element-plus';
 
+import { naturalTotalAmountUnitCode } from '#/utils/doctor-station/medication-order-total-calc';
+
 import { useAdviceDrugFormKeyboard } from '../composables/use-advice-drug-form-keyboard';
 import { calcAdviceTotalFee } from '../composables/use-advice-drug-list';
 import { useAdviceFrequencyTotal } from '../composables/use-advice-frequency-total';
@@ -342,9 +344,32 @@ watch(therapyType, (code) => {
     const kind = inferAdviceLineEditorKind(item);
     if (kind === 'MEDICATION' || kind === 'SERVICE') {
       const fillTemporaryRate = isTemporary && temporaryRate && !syncingFromLoadedTemporary;
+      // 切到临时、总量还没落数：单位跟拆分属性（拆零单次取整 → 支），避免停在包装单位
+      let totalAmountUnit = item.totalAmountUnit;
+      let selectedDrugPrice = item.selectedDrugPrice;
+      if (
+        isTemporary &&
+        kind === 'MEDICATION' &&
+        !item.totalAmountManualOverride &&
+        !(Number(item.totalAmount) > 0) &&
+        String(item.selectedId ?? '').trim()
+      ) {
+        const natural = naturalTotalAmountUnitCode(item.partAttributeEnum, item.unitBands);
+        if (natural) {
+          totalAmountUnit = natural;
+          const linePrice = resolveAdviceLineUnitPrice({
+            bands: item.unitBands,
+            catalogUnitPrice: item.catalogUnitPrice,
+            totalAmountUnit: natural,
+          });
+          if (linePrice !== undefined) selectedDrugPrice = linePrice;
+        }
+      }
       return {
         ...item,
         therapyEnum: code,
+        totalAmountUnit,
+        selectedDrugPrice,
         ...(longTerm && kind === 'MEDICATION' ? { medicationDays: undefined } : {}),
         ...(fillTemporaryRate ? { frequency: temporaryRate } : {}),
       };
@@ -434,15 +459,16 @@ function handleTotalAmountManualInput(index: number, value: unknown) {
 function handleTotalAmountUnitManualSelect(index: number, value: unknown) {
   const nu = String(value ?? '').trim();
   const item = drugItems.value[index];
-  if (!item || nu === String(item.totalAmountUnit ?? '').trim()) return;
+  if (!item || !nu || nu === String(item.totalAmountUnit ?? '').trim()) return;
 
+  // 自动算总量依赖频次执行次数；天数未齐时重算会直接返回，单位必须仍切过去（如盒 → 支）
   if (autoCalcTotalAmount.value && !item.totalAmountManualOverride) {
     recalcRowTotalAmountForTargetUnit(index, nu);
-    return;
+    if (String(drugItems.value[index]?.totalAmountUnit ?? '').trim() === nu) return;
+  } else {
+    markTotalAmountManualOverride(index);
   }
-
-  markTotalAmountManualOverride(index);
-  handleTotalAmountUnitSelect(index, value);
+  handleTotalAmountUnitSelect(index, nu);
 }
 
 const clearMedicationOnlyFields = (): Partial<AdviceDrugItem> => ({
@@ -550,9 +576,7 @@ const handleProductSelect = (index: number, row: AdviceProductOption) => {
     ElMessage.warning('住院医生站不支持开立耗材医嘱');
     return;
   } else {
-    const catalogPatch = buildWesternProductSelectPatch(prev, row, {
-      totalUnitDefaultKind: therapyType.value === 'TEMPORARY' ? undefined : 'SALES',
-    });
+    const catalogPatch = buildWesternProductSelectPatch(prev, row);
     // 已在成组：优先本行频次，否则取同组任一非空频次，禁止目录默认 ST 冲掉主药 QD（BR-IP-ORD-033）
     const gid = String(prev.groupId ?? '').trim();
     let groupFreq = String(prev.frequency ?? '').trim();

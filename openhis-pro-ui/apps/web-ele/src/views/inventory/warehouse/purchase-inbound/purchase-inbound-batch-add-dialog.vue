@@ -2,11 +2,11 @@
   药库进货单批量选品弹窗：TableLayout 展示选品列表，点击行加入已选区域。
 -->
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import { computed, ref, watch } from 'vue';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 import { ElButton, ElMessage } from 'element-plus';
 
 import { pageProductsForInboundReceiptApi } from '#/api/inventory/warehouse/inbound-receipt';

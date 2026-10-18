@@ -1,0 +1,10 @@
+{
+  "doc_kind": "CATALOG_DELTA",
+  "category": "HERBAL",
+  "title": "附件：中药饮片数据更新目录（2025.5.21）",
+  "source_filename": "附件：中药饮片数据更新目录（2025.5.21）.xlsx",
+  "notice_date": "2025-05-21",
+  "effective_date": null,
+  "wash_note": "CATALOG_DELTA/HERBAL；行数=2；actions=ADD:1,STOP:1；hilist_code←医疗目录编码",
+  "wash_tool": "cursor-ai"
+}

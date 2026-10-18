@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type {
   Department,
@@ -13,9 +13,9 @@ import type {
 
 import { computed, onActivated, onMounted, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { ElButton, ElMessage, ElMessageBox, ElTag } from 'element-plus';
 
@@ -32,6 +32,20 @@ import { BASIC_TABLE_MAX_HEIGHT } from '../basic-table-max-height';
 import EditDialog from './edit-dialog.vue';
 
 defineOptions({ name: 'BasicDepartment' });
+
+/** 与药品目录一致：启用绿、停用橙、作废红 */
+function departmentStatusTagType(statusEnum?: string): 'danger' | 'info' | 'success' | 'warning' {
+  if (statusEnum === PublicationStatusCode.ACTIVE) {
+    return 'success';
+  }
+  if (statusEnum === PublicationStatusCode.INACTIVE) {
+    return 'warning';
+  }
+  if (statusEnum === PublicationStatusCode.DISCARDED) {
+    return 'danger';
+  }
+  return 'info';
+}
 
 interface DepartmentApiResponse {
   data?: Department[];
@@ -550,7 +564,7 @@ onActivated(() => {
       </template>
 
       <template #statusEnum="{ row }">
-        <ElTag :type="row.statusEnum === PublicationStatusCode.ACTIVE ? 'success' : 'info'">
+        <ElTag :type="departmentStatusTagType(row.statusEnum)">
           {{ row.statusEnum_dictText || row.statusEnum }}
         </ElTag>
       </template>

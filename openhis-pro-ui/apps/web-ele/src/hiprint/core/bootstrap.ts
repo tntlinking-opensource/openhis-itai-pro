@@ -3,7 +3,7 @@ import { isHiprintEngineInited, markHiprintEngineInited } from './engine-state';
 
 import { defaultElementTypeProvider, disAutoConnect, hiprint } from 'vue-plugin-hiprint';
 
-import { applyOpenHisDesignConfig } from '../config/design-config';
+import { applyZxplatDesignConfig } from '../config/design-config';
 
 let designConfigApplied = false;
 
@@ -62,7 +62,7 @@ export function ensureHiprintReady(): typeof hiprint {
   ensureHiprintPrintEngine();
   if (!designConfigApplied) {
     patchDefaultTableElementTypes();
-    applyOpenHisDesignConfig();
+    applyZxplatDesignConfig();
     designConfigApplied = true;
   }
   return hiprint;

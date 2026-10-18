@@ -17,7 +17,7 @@ import type { ApiOptionItem } from '#/types/api-response';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import { dayjs, ElButton, ElMessage, ElMessageBox } from 'element-plus';
 

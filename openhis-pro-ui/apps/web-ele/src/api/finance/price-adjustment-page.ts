@@ -80,7 +80,7 @@ function sumDetailQuantities(details?: Array<{ quantity?: number }>): number | u
   return found ? total : undefined;
 }
 
-/** 已保存行：从子表快照还原展示用当前价与库存合计 */
+/** 已保存行：从子表快照还原展示用调前价（非目录即时价） */
 function resolveLineDisplayPrices(dto: PriceAdjustmentLineDto): {
   currentPurchasePrice?: number;
   currentSellingPrice?: number;
@@ -188,7 +188,7 @@ export function buildSaveDraftRequest(input: {
 }): SavePriceAdjustmentDraftRequest {
   const orgId = preserveApiIdForRequest(input.head.orgId);
   if (!input.head.adjustmentReason?.trim()) {
-    throw new Error('请选择调价原因');
+    throw new Error('请填写调价原因');
   }
   if (input.lines.length === 0) {
     throw new Error('请至少添加一条调价明细');

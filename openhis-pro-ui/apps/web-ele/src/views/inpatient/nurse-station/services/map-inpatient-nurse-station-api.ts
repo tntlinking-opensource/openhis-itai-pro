@@ -7,14 +7,53 @@ import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { resolveAdministrativeGenderLabel } from '#/utils/gender/resolve-administrative-gender-label';
 import { normalizeAdmCondTermCode } from '#/utils/terminology/resolve-adm-cond-code-label';
 
-import type { PatientItem, PatientStatusFilter, RegionItem, WardItem } from '../types';
+import type { PatientItem, PatientTaskFilter, RegionItem, WardItem } from '../types';
 
-/** 任务筛选：前端下拉值与后端 code 一致，空表示全部 */
-export function mapStatusFilterToTaskFilter(status: PatientStatusFilter): string | undefined {
-  if (status === 'all') {
+import { applyNurseStationBedSortKeys } from './compare-nurse-station-bed-no';
+
+/**
+ * 任务多选 → 后端单值筛选。
+ * 空=全部；仅勾 1 项时下传该 code；多选时不下传（由前端按校/执 OR 过滤）。
+ */
+export function mapTaskFiltersToApiFilter(filters: PatientTaskFilter[]): string | undefined {
+  if (filters.length !== 1) {
     return undefined;
   }
-  return status;
+  return filters[0];
+}
+
+/** 患者是否命中任务多选（OR：待校对 / 待执行 / 已处理） */
+export function matchPatientTaskFilters(
+  item: PatientItem,
+  filters: PatientTaskFilter[],
+): boolean {
+  if (filters.length === 0) {
+    return true;
+  }
+  for (const filter of filters) {
+    if (filter === 'pending-audit' && item.pendingAudit > 0) {
+      return true;
+    }
+    if (filter === 'pending-execute' && item.pendingExecute > 0) {
+      return true;
+    }
+    if (filter === 'processed' && item.pendingAudit <= 0 && item.pendingExecute <= 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** 多选含待执行/已处理，或勾了多项时，须算执计数 */
+export function shouldRequestPendingExecuteCount(filters: PatientTaskFilter[]): boolean {
+  if (filters.length === 0) {
+    return false;
+  }
+  if (filters.length > 1) {
+    return true;
+  }
+  const only = filters[0];
+  return only === 'pending-execute' || only === 'processed';
 }
 
 /** 病区树 → 左侧「病区」勾选项 */
@@ -92,6 +131,11 @@ export function resolveHouseLocationId(
   return '';
 }
 
+export {
+  isPatientAdmittedToday,
+  resolvePatientAdmissionTime,
+} from '#/utils/inpatient/is-patient-admitted-today';
+
 /** 就诊状态 code → 患者列表展示文案（优先读模型 statusEnumText） */
 export function encounterStatusToNurseStationLabel(code?: string, statusEnumText?: string): string {
   const text = (statusEnumText ?? '').trim();
@@ -118,7 +162,7 @@ export function mapQueueItemToPatientItem(
   const pendingAudit = dto.pendingAuditCount ?? 0;
   const pendingExecute = dto.pendingExecuteCount ?? 0;
   const lowBalanceWarning = dto.lowBalanceWarning === true;
-  return {
+  const item: PatientItem = {
     id: String(dto.encounterId),
     patientId: preserveApiIdForRequest(dto.patientId),
     encounterBusNo: (dto.encounterBusNo ?? '').trim() || undefined,
@@ -163,6 +207,9 @@ export function mapQueueItemToPatientItem(
     wardId: houseLocationId,
     houseName: (dto.houseName ?? '').trim() || undefined,
     bedNo: (dto.bedName ?? '').trim(),
+    bedSortRoom: 0,
+    bedSortBed: 0,
+    bedSortExtra: 0,
     bedLocationId: String(dto.bedId ?? '').trim(),
     statusEnum: (dto.statusEnum ?? '').trim(),
     statusEnumText: (dto.statusEnumText ?? '').trim() || undefined,
@@ -173,4 +220,6 @@ export function mapQueueItemToPatientItem(
     riskText: lowBalanceWarning ? '低余额' : '',
     selected: false,
   };
+  applyNurseStationBedSortKeys(item);
+  return item;
 }

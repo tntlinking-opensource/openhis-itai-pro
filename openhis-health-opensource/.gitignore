@@ -1,395 +1,85 @@
 # ===================================
-# Java 相关
+# Java / Maven
 # ===================================
 *.class
 *.jar
 *.war
 *.ear
-*.zip
-*.tar.gz
-*.rar
-
-# 编译输出目录
+*.nar
 target/
 build/
 out/
-dist/
-
-# 本地私密目录（保留 local-secrets/README.md）
-local-secrets/**
-!local-secrets/README.md
-
-# 本机覆盖配置（数据库/JWT 等，勿提交）
-**/application-local.yml
-**/application-local.properties
-**/application-local.yaml
-
-# 日志文件
-*.log
-*.log.*
-*.gz
-logs/
-log/
-
-# ===================================
-# Maven 相关
-# ===================================
+!.mvn/wrapper/maven-wrapper.jar
 pom.xml.tag
 pom.xml.releaseBackup
 pom.xml.versionsBackup
 pom.xml.next
 release.properties
 dependency-reduced-pom.xml
-buildNumber.properties
 .mvn/timing.properties
-.mvn/wrapper/maven-wrapper.jar
-# 院点本地 Maven Profile 覆盖（见 .mvn/maven.config.local.example）
 .mvn/maven.config.local
 
 # ===================================
-# IntelliJ IDEA 相关
+# Node / 前端
+# ===================================
+node_modules/
+.turbo/
+dist/
+*.tsbuildinfo
+.pnpm-store/
+
+# ===================================
+# 日志 / 运行时
+# ===================================
+*.log
+*.log.*
+logs/
+log/
+
+# ===================================
+# IDE / OS
 # ===================================
 .idea/
-!.idea/compiler.xml
-!.idea/misc.xml
-!.idea/encodings.xml
 *.iml
 *.iws
 *.ipr
-.idea_modules/
-atlassian-ide-plugin.xml
-
-# CMake
-cmake-build-*/
-
-# ===================================
-# Eclipse 相关
-# ===================================
-.classpath
-.project
-.settings/
-*.launch
-.metadata
-.recommenders
-.apt_generated/
-.factorypath
-.buildpath
-.target
-.springBeans
-.sts4-cache/
-
-# ===================================
-# NetBeans 相关
-# ===================================
-nbproject/private/
-nbbuild/
-nbdist/
-.nb-gradle/
-
-# ===================================
-# .NET / C# / Visual Studio 相关
-# ===================================
-
-# Visual Studio 用户特定文件
-*.rsuser
-*.suo
-*.user
-*.userosscache
-*.sln.docstates
-
-# Visual Studio 缓存/选项目录
-.vs/
-*.vsidx
-*.vspscc
-*.vsp
-*.vspx
-*.vsscc
-
-# Visual Studio 代码覆盖率结果
-*.coverage
-*.coveragexml
-
-# NuGet 包
-*.nupkg
-*.snupkg
-**/packages/*
-!**/packages/build/
-*.nuget.props
-*.nuget.targets
-project.lock.json
-project.fragment.lock.json
-artifacts/
-
-# .NET Core / .NET 5+ 编译输出
-bin/
-obj/
-[Dd]ebug/
-[Dd]ebugPublic/
-[Rr]elease/
-[Rr]eleases/
-x64/
-x86/
-[Ww][Ii][Nn]32/
-[Aa][Rr][Mm]/
-[Aa][Rr][Mm]64/
-bld/
-[Ll]og/
-[Ll]ogs/
-
-# .NET 编译生成文件
-*.dll
-*.exe
-*.pdb
-*.cache
-*.ilk
-*.meta
-*.obj
-*.iobj
-*.pch
-*.ipdb
-*.pgc
-*.pgd
-*.rsp
-*.sbr
-*.tlb
-*.tli
-*.tlh
-*.tmp
-*.tmp_proj
-*.vspscc
-*.vsscc
-.builds
-*.pidb
-*.svclog
-*.scc
-
-# Visual Studio 生成的文件
-*_i.c
-*_p.c
-*_h.h
-*_wpftmp.csproj
-
-# WPF 临时文件
-*.g.cs
-*.g.i.cs
-*.g.resources
-*.Designer.cs
-
-# MSTest 测试结果
-[Tt]est[Rr]esult*/
-[Bb]uild[Ll]og.*
-
-# ASP.NET Scaffolding
-ScaffoldingReadMe.txt
-
-# StyleCop
-StyleCopReport.xml
-
-# Visual C++ 缓存文件
-ipch/
-*.aps
-*.ncb
-*.opendb
-*.opensdf
-*.sdf
-*.cachefile
-*.VC.db
-*.VC.VC.opendb
-
-# Visual Studio 分析器
-*.psess
-*.vsp
-*.vspx
-*.sap
-
-# Visual Studio 跟踪文件
-*.e2e
-
-# TFS 2012 本地工作区
-$tf/
-
-# ReSharper
-_ReSharper*/
-*.[Rr]e[Ss]harper
-*.DotSettings.user
-
-# JetBrains Rider
-*.sln.iml
-
-# CodeRush
-.cr/
-
-# Mono Auto Generated Files
-mono_crash.*
-
-# ===================================
-# VS Code 相关
-# ===================================
 .vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
 !.vscode/extensions.json
-*.code-workspace
-.history/
-
-# ===================================
-# 操作系统相关
-# ===================================
-
-# Windows
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-$RECYCLE.BIN/
-*.cab
-*.msi
-*.msix
-*.msm
-*.msp
-*.lnk
-
-# MacOS
+!.vscode/settings.json.example
 .DS_Store
-.AppleDouble
-.LSOverride
-._*
-.DocumentRevisions-V100
-.fseventsd
-.Spotlight-V100
-.TemporaryItems
-.Trashes
-.VolumeIcon.icns
-.com.apple.timemachine.donotpresent
-.AppleDB
-.AppleDesktop
-Network Trash Folder
-Temporary Items
-.apdisk
-
-# Linux
+Thumbs.db
+*.swp
 *~
-.fuse_hidden*
-.directory
-.Trash-*
-.nfs*
+# Excel / Office 打开工作簿时的锁文件（~$原文件名.xlsx）；被占用时 git add 会 Permission denied
+~$*
 
 # ===================================
-# 开发工具和其他
+# 本地密钥与覆盖配置（勿提交）
 # ===================================
+local-secrets/**
+!local-secrets/README.md
+**/application-local.yml
+**/application-local.yaml
+**/application-local.properties
+.env
+.env.*
+!.env.example
+!**/.env.example
 
-# Package Files
-*.jar
-!.mvn/wrapper/maven-wrapper.jar
-!**/src/main/**/target/
-!**/src/test/**/target/
-
-# JDK 相关
+# ===================================
+# 其它
+# ===================================
+plans/
+*.zip
+*.tar.gz
+*.rar
 hs_err_pid*
 replay_pid*
 
-# 测试覆盖率
-.coverage
-coverage/
-*.cover
-.hypothesis/
-.pytest_cache/
-htmlcov/
+# 前端独立仓：本地可 clone 到此目录，不纳入主仓
+zxplat-ui/
 
-# 临时文件
-*.tmp
-*.temp
-*.swp
-*.swo
-*~.nib
-*.bak
-*.orig
+# MigrateReview 逐文件确认标记（工具写在目标旁，不入库）
+**/*.migrate-ok
 
-# 数据库
-*.db
-*.sqlite
-*.sqlite3
-
-# 环境变量配置（如果包含敏感信息）
-.env
-.env.local
-.env.*.local
-
-# Node.js (如果前端使用)
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-package-lock.json
-yarn.lock
-
-# Spring Boot
-spring-boot-starter-parent/
-.spring-boot-devtools.properties
-
-# Gradle (如果项目使用)
-.gradle
-gradle-app.setting
-!gradle-wrapper.jar
-
-# STS (Spring Tool Suite)
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
-
-# Docker
-docker-compose.override.yml
-.dockerignore
-
-# 备份文件
-*.backup
-*-backup
-*.old
-
-# 编辑器临时文件
-.*.swp
-.*.swo
-
-# 应用程序日志
-application.log
-application-*.log
-
-# 勿将含真实密码的 profile 提交（dev 若仅 localhost 占位可酌情提交）
-# **/application-prod.yml
-
-# 生成的文档
-site/
-docs/_build/
-
-# Python (如果有Python脚本)
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-venv/
-ENV/
-env/
-
-# JRebel
-rebel.xml
-rebel-remote.xml
-
-# 性能测试结果
-*.jmx
-*.jtl
-
-# 其他
-*.pid
-*.seed
-*.pid.lock
-.sass-cache/
-.npm
-.eslintcache
-.node_repl_history
-*.tsbuildinfo
-.yarn-integrity
+/plans

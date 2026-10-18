@@ -35,6 +35,9 @@ interface Props {
   patient: InpatientDoctorStationPatient | null;
 }
 
+/** 出院方式 code：死亡（与术语 out_way_code / 种子 5 对齐） */
+const OUT_WAY_CODE_DEATH = '5';
+
 const props = withDefaults(defineProps<Props>(), {
   patient: null,
 });
@@ -52,11 +55,9 @@ const form = reactive({
   plannedDischargeTime: '',
   outWayCode: '',
   reasonText: '',
+  deceasedDate: '',
+  deceasedReason: '',
 });
-
-const rules: FormRules = {
-  outWayCode: [{ required: true, message: '请选择出院方式', trigger: 'change' }],
-};
 
 const optionsRequest = useRequest(loadOutWayCodeOptions, { manual: true });
 const submitRequest = useRequest(createInpatientDischargeAdvice, {
@@ -65,6 +66,22 @@ const submitRequest = useRequest(createInpatientDischargeAdvice, {
 });
 
 const dialogLoading = computed(() => optionsRequest.loading.value || submitRequest.loading.value);
+
+/** 当前是否选择死亡出院（按 code，禁止用 label 驱动） */
+const isDeathOutWay = computed(() => form.outWayCode.trim() === OUT_WAY_CODE_DEATH);
+
+const rules = computed<FormRules>(() => {
+  const base: FormRules = {
+    outWayCode: [{ required: true, message: '请选择出院方式', trigger: 'change' }],
+  };
+  // 死亡出院：死亡时间必填（回写患者表）
+  if (isDeathOutWay.value) {
+    base.deceasedDate = [
+      { required: true, message: '请选择死亡时间', trigger: 'change' },
+    ];
+  }
+  return base;
+});
 
 /** 原科室展示文案 */
 const sourceOrgDisplay = computed(() => (props.patient?.organizationName ?? '').trim() || '—');
@@ -85,10 +102,26 @@ watch(visible, (open) => {
   form.plannedDischargeTime = dayjs().format('YYYY-MM-DD HH:mm:ss');
   form.outWayCode = '';
   form.reasonText = '';
+  form.deceasedDate = '';
+  form.deceasedReason = '';
   formRef.value?.clearValidate();
   void optionsRequest.run().then((rows) => {
     outWayOptions.value = rows ?? [];
   });
+});
+
+/** 切到死亡出院时默认死亡时间；切走时清空死亡字段 */
+watch(isDeathOutWay, (death) => {
+  if (death) {
+    if (!form.deceasedDate.trim()) {
+      form.deceasedDate =
+        form.plannedDischargeTime.trim() || dayjs().format('YYYY-MM-DD HH:mm:ss');
+    }
+    return;
+  }
+  form.deceasedDate = '';
+  form.deceasedReason = '';
+  formRef.value?.clearValidate(['deceasedDate']);
 });
 
 /** 解析原位置 id：优先床位，否则病区 */
@@ -118,12 +151,22 @@ async function handleSubmit() {
     return;
   }
   try {
+    const death = isDeathOutWay.value;
+    // 死亡出院：计划出院时间与死亡时间对齐，供医嘱列表扩展行「死亡时间」回显
+    const deathTime = form.deceasedDate.trim();
+    const plannedTime = death
+      ? deathTime || form.plannedDischargeTime.trim()
+      : form.plannedDischargeTime.trim();
     const res = await submitRequest.run({
       encounterId,
       patientId,
       outWayCode: form.outWayCode.trim(),
-      plannedDischargeTime: form.plannedDischargeTime.trim() || undefined,
-      reasonText: form.reasonText.trim() || undefined,
+      plannedDischargeTime: plannedTime || undefined,
+      reasonText: death
+        ? form.deceasedReason.trim() || undefined
+        : form.reasonText.trim() || undefined,
+      deceasedDate: death ? deathTime || undefined : undefined,
+      deceasedReason: death ? form.deceasedReason.trim() || undefined : undefined,
       sourceOrgId: preserveApiIdForRequest(patient.organizationId),
       sourceLocationId: resolveSourceLocationId(),
     });
@@ -199,7 +242,31 @@ function handleCancel() {
       <ElFormItem label="原病区/床位">
         <span class="ip-discharge-advice-form__readonly">{{ sourceLocationDisplay }}</span>
       </ElFormItem>
-      <ElFormItem label="出院原因">
+      <template v-if="isDeathOutWay">
+        <ElFormItem label="死亡时间" prop="deceasedDate">
+          <ElDatePicker
+            v-model="form.deceasedDate"
+            type="datetime"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            format="YYYY-MM-DD HH:mm"
+            placeholder="请选择死亡时间"
+            class="w-full"
+            :disabled="dialogLoading"
+          />
+        </ElFormItem>
+        <ElFormItem label="死亡原因" prop="deceasedReason">
+          <ElInput
+            v-model="form.deceasedReason"
+            type="textarea"
+            :rows="3"
+            maxlength="200"
+            show-word-limit
+            placeholder="选填"
+            :disabled="dialogLoading"
+          />
+        </ElFormItem>
+      </template>
+      <ElFormItem v-else label="出院原因">
         <ElInput
           v-model="form.reasonText"
           type="textarea"

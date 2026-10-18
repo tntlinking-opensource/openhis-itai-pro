@@ -1,0 +1,6 @@
+{
+  "moduleId": "wi",
+  "enabledProperty": "zxplat.modules.work-injury.enabled",
+  "locations": "classpath:db/migration/wi",
+  "historyTable": "flyway_schema_history_wi"
+}

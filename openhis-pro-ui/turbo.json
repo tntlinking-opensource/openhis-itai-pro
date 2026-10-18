@@ -26,7 +26,7 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
     },
-    "@vben/backend-mock#build": {
+    "@zxplat/backend-mock#build": {
       "dependsOn": ["^build"],
       "outputs": [".nitro/**", ".output/**"]
     },

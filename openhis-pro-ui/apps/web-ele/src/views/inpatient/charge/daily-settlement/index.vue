@@ -11,8 +11,8 @@ import type { ApiOptionItem } from '#/types/api-response';
 
 import { computed, onMounted, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
-import { formatDateTime } from '@vben/utils';
+import { Page } from '@zxplat/common-ui';
+import { formatDateTime } from '@zxplat/utils';
 
 import dayjs from 'dayjs';
 import {
@@ -36,6 +36,7 @@ import {
 } from 'element-plus';
 
 import {
+  exportInpatientDailySettlementPatientSummariesApi,
   loadInpatientCashierSettlementVoucherApi,
   loadInpatientDailySettlementPageInitApi,
   normalizePreviewInpatientDailySettlementResponse,
@@ -50,6 +51,7 @@ import DailySettlementSummaryPanel from '#/components/charge/daily-settlement-su
 import { usePrintClientWarmup } from '#/composables/use-print-client-warmup';
 import { useRequest } from '#/hooks/use-request';
 import { useAuthStore } from '#/store/auth';
+import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
 import { buildDefaultDateTimeRangeShortcuts } from '#/utils/format/date-picker-shortcuts';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { printDailySettlement } from '#/utils/print/print-daily-settlement';
@@ -666,6 +668,7 @@ async function reprintHistoryVoucher(
           summary: mountedVoucher?.summary as InpatientDailySettlementSummaryDto | undefined,
           patientSummaries: patients,
           printMode: 'patient',
+          discountFeatureEnabled: Boolean(pageInit.value?.discountFeatureEnabled),
         },
       });
       return;
@@ -688,12 +691,39 @@ async function reprintHistoryVoucher(
         rows: mountedVoucher.rows as InpatientDailySettlementChannelRowDto[] | undefined,
         summary: mountedVoucher.summary as InpatientDailySettlementSummaryDto,
         printMode: 'summary',
+        discountFeatureEnabled: Boolean(pageInit.value?.discountFeatureEnabled),
       },
     });
   } catch {
     ElMessage.info('加载凭证失败，明细需按当时挂载 payment 流水现算');
   } finally {
     historyReprintLoadingId.value = '';
+  }
+}
+
+/**
+ * 导出患者分项 Excel（后端 POI 真 xlsx；与门诊费用明细同栈；不影响交账）。
+ */
+async function handleExportPatientSummaries() {
+  if (!hasQueried.value) {
+    ElMessage.warning('请先查询日结汇总后再导出');
+    return;
+  }
+  if (!patientSummaries.value.length) {
+    ElMessage.warning('暂无患者分项可导出');
+    return;
+  }
+  const body = buildPreviewRequest();
+  if (!body.orgId) {
+    ElMessage.warning('请先选择交账科室');
+    return;
+  }
+  try {
+    const data = await exportInpatientDailySettlementPatientSummariesApi(body);
+    downloadBinaryExportFile(data, '住院日结患者分项.xlsx');
+    ElMessage.success(`导出成功，共 ${data.rowCount ?? 0} 行`);
+  } catch {
+    ElMessage.error('导出失败，请稍后重试');
   }
 }
 
@@ -728,6 +758,7 @@ async function handlePrintSettlement() {
         rows: previewResult.value.rows,
         summary: previewResult.value.summary,
         printMode: 'summary',
+        discountFeatureEnabled: Boolean(pageInit.value?.discountFeatureEnabled),
       },
     });
   } finally {
@@ -763,6 +794,7 @@ async function handlePrintPatientSettlement() {
         summary: previewResult.value?.summary,
         patientSummaries: patientSummaries.value,
         printMode: 'patient',
+        discountFeatureEnabled: Boolean(pageInit.value?.discountFeatureEnabled),
       },
     });
   } finally {
@@ -860,6 +892,9 @@ onMounted(async () => {
               >
                 {{ resultTab === 'patient' ? '打印患者分项' : '打印日结单' }}
               </ElButton>
+              <ElButton plain :disabled="!hasPatientSummaryDisplay" @click="handleExportPatientSummaries">
+                导出患者分项
+              </ElButton>
               <ElButton
                 type="primary"
                 plain
@@ -948,7 +983,10 @@ onMounted(async () => {
                   </template>
 
                   <template v-if="hasSummaryDisplay">
-                    <DailySettlementSummaryPanel :summary="resolvedSummary" />
+                    <DailySettlementSummaryPanel
+                      :summary="resolvedSummary"
+                      :discount-feature-enabled="Boolean(pageInit?.discountFeatureEnabled)"
+                    />
                   </template>
 
                   <ElEmpty
@@ -975,6 +1013,7 @@ onMounted(async () => {
                         <DailySettlementSummaryPanel
                           :summary="block.summary"
                           omit-retail-upload-diff
+                          :discount-feature-enabled="Boolean(pageInit?.discountFeatureEnabled)"
                         />
                       </div>
                     </div>

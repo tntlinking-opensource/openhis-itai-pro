@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import type { LabelProps } from 'reka-ui';
 
-import { cn } from '@vben-core/shared/utils';
+import { cn } from '@zxplat-core/shared/utils';
 
 import { Label } from '../label';
 import { useFormField } from './useFormField';

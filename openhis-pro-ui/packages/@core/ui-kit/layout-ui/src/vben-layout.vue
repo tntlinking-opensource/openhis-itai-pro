@@ -9,10 +9,10 @@ import {
   SCROLL_FIXED_CLASS,
   useLayoutFooterStyle,
   useLayoutHeaderStyle,
-} from '@vben-core/composables';
-import { IconifyIcon } from '@vben-core/icons';
-import { VbenIconButton } from '@vben-core/shadcn-ui';
-import { ELEMENT_ID_MAIN_CONTENT } from '@vben-core/shared/constants';
+} from '@zxplat-core/composables';
+import { IconifyIcon } from '@zxplat-core/icons';
+import { VbenIconButton } from '@zxplat-core/shadcn-ui';
+import { ELEMENT_ID_MAIN_CONTENT } from '@zxplat-core/shared/constants';
 
 import { useMouse, useScroll, useThrottleFn } from '@vueuse/core';
 

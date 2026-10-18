@@ -1,0 +1,39 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.zxplat.application.mrms.outpatientemr.request;
+
+import com.zxplat.domain.share.query.AbstractPageQuery;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.time.LocalDate;
+
+/**
+ * 门诊病历查询分页请求（病案管理菜单）。
+ */
+@Getter
+@Setter
+public class QueryOutpatientEmrListRequest extends AbstractPageQuery {
+
+    /** 序列化版本号。 */
+    private static final long serialVersionUID = 1L;
+
+    /** 文书状态 code（如 DRAFT/PENDING_ARCHIVE/ARCHIVED）；空则不过滤。 */
+    private String statusCode;
+
+    /** 就诊科室主键；空则不过滤。 */
+    private Long organizationId;
+
+    /**
+     * 接诊医生医务人员主键（活动 ADMITTER）；空则不过滤。
+     */
+    private Long admitterPractitionerId;
+
+    /** 就诊日期起（{@code yyyy-MM-dd}，闭区间日初）。 */
+    private LocalDate encounterDateFrom;
+
+    /** 就诊日期止（{@code yyyy-MM-dd}，闭区间日末）。 */
+    private LocalDate encounterDateTo;
+}

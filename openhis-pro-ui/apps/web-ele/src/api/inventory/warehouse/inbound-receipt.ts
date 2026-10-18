@@ -1,5 +1,5 @@
 /**
- * 药库进货单 — 对接 Whale {@code POST /api/app/inventoryWarehouseInboundReceipt/<method>}
+ * 药库进货单 — 对接 ZXPlat {@code POST /api/app/inventoryWarehouseInboundReceipt/<method>}
  * 契约见 {@code AS-INV-WHS-002-药库进货单-SDD} IF-WHS-IN-01～12。
  * baseURL 含 /api/app 时使用短路径 /inventoryWarehouseInboundReceipt/...
  */

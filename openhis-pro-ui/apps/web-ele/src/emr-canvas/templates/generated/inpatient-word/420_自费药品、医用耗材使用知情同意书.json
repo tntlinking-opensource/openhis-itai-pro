@@ -1,0 +1,223 @@
+{
+  "code": "IP_WORD_420",
+  "name": "自费药品、医用耗材使用知情同意书",
+  "category": "知情告知书",
+  "sourceTemplateId": "420",
+  "typeCode": "INPATIENT_知情告知书",
+  "summary": "Word原样迁移v1 · 段8/表0 · 元2/日1/勾0/单0 · 约1页",
+  "estimatedPages": 1,
+  "structure": {
+    "paraCount": 8,
+    "tableCount": 0,
+    "meta": 2,
+    "date": 1,
+    "plainFill": 0,
+    "fill": 3,
+    "checkbox": 0,
+    "radio": 0
+  },
+  "data": {
+    "header": [
+      {
+        "id": "emrHospitalTitle",
+        "value": "医院名称",
+        "font": "SimHei",
+        "size": 29,
+        "bold": true,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center",
+        "rowMargin": 1
+      },
+      {
+        "id": "emrDocumentTitle",
+        "value": "自费药品、医用耗材使用知情同意书",
+        "font": "SimSun",
+        "size": 21,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "type": "separator",
+        "value": "",
+        "lineWidth": 1.15
+      }
+    ],
+    "main": [
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "尊敬的患者或授权（法定）代理人：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "您好！首先欢迎您入住我院，感谢您对我院的信任和支持。我院是全国异地就医、长春市城镇职工（城乡居民）医保、工伤、意外伤害、职工生育保险、门诊特殊病、门诊慢性病定点医疗机构，为了使您能够早日恢复健康，根据您的病情需要，在治疗过程中需要使用以下自费药品或医用耗材，希望能够得到您和家人的配合。",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "1、中性电极 （）2一次性取石网篮（）3超声切割止血刀头（）4、一次性使用内科镜标本取物袋（）5、一次性使用无菌腔镜保护套，（）6、一次性使用套管穿刺器（）7、石膏绷带（）8、扎丝卷（）9、电极内窥镜，（环装或产状）10、医用手术薄膜（）11、灭菌凡士林纱布（）12、一次性使用输液器带针（）13、复合微孔多聚糖止血粉（）14、可吸收止血纱布（）15、明胶海绵（）16、一次性切口保护套（）17、荷包缝合针（）18、同种骨植入材料（）19、骨蜡（）20、生物液体止血膜（）21、医用几丁糖（）22、一次性使用喉镜内窥镜（）患者签字：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　　　　　　　　　",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "。",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "若您同意使用，请签名，谢谢合作！",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "我已知晓并同意上述的全部内容，患者或授权（法定）代理人签字：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "与患者关系：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "联系电话：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "联系电话",
+          "conceptId": "phone",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false,
+          "disabled": true
+        },
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "医生：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "医生",
+          "conceptId": "doctorName",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false,
+          "disabled": false
+        },
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "日期：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "date",
+          "value": null,
+          "placeholder": "日期",
+          "conceptId": "date_001",
+          "dateFormat": "yyyy-MM-dd HH:mm",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false
+        },
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "备注：每一种药品、医用耗材后均需签字确认。",
+        "bold": true,
+        "rowFlex": "left"
+      }
+    ],
+    "footer": []
+  }
+}

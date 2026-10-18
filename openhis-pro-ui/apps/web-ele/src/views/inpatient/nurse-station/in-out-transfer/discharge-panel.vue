@@ -13,12 +13,14 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { httpSkipNurseStationOrderSlots } from '#/api/inpatient/nurse-station/inpatient-nurse-station-order-execute.http';
 import { useRequest } from '#/hooks/use-request';
 
+import { submitCancelInpatientNurseDischarge } from '../services/cancel-inpatient-nurse-discharge';
 import { submitClearDischargedBed } from '../services/clear-discharged-bed';
 import { submitInpatientDischarge } from '../services/execute-inpatient-discharge';
 import {
   listDischargePendingExecutions,
   listDischargePendingMedications,
 } from '../services/list-discharge-pending';
+import { CLEAR_BED_MISSING_TRACE_TIP } from '#/views/inpatient/nurse-station/in-out-transfer/clear-bed-missing-trace-tip.config';
 import {
   buildClearBedConfirmMessage,
   loadMissingDispenseTraceTips,
@@ -80,6 +82,10 @@ const dischargeRequest = useRequest(submitInpatientDischarge, {
   manual: true,
   showErrorMessage: false,
 });
+const cancelDischargeRequest = useRequest(submitCancelInpatientNurseDischarge, {
+  manual: true,
+  showErrorMessage: false,
+});
 const clearBedRequest = useRequest(submitClearDischargedBed, {
   manual: true,
   showErrorMessage: false,
@@ -96,6 +102,7 @@ const listLoading = computed(
 const actionLoading = computed(
   () =>
     dischargeRequest.loading.value ||
+    cancelDischargeRequest.loading.value ||
     clearBedRequest.loading.value ||
     skipPendingRequest.loading.value,
 );
@@ -115,10 +122,16 @@ const patientSummary = computed(() => {
   return `${props.patient.name} · ${bed} · ${status}`;
 });
 
-/** 待出院 / 待结算时可办理出院 */
+/** 待出院时可办理出院 */
 const dischargeEnabled = computed(() => {
   const status = (props.patient?.statusEnum ?? '').trim();
   return status === ENCOUNTER_STATUS_ON_HOLD;
+});
+
+/** 待结算时可取消办理出院 */
+const cancelDischargeEnabled = computed(() => {
+  const status = (props.patient?.statusEnum ?? '').trim();
+  return status === ENCOUNTER_STATUS_PENDING;
 });
 
 /** 已结算待清床时可清床离院 */
@@ -214,15 +227,60 @@ async function handleDischarge() {
   }
 }
 
-/** 清床离院（先 tip 软提示，用户确认后仍可清） */
-async function handleClearBed() {
-  if (!encounterId.value || !clearBedEnabled.value) return;
-  // Pre：拉取缺追溯码 tip；接口失败不挡清床，回落基础确认文案
-  let tipsResponse: Awaited<ReturnType<typeof loadMissingDispenseTraceTips>> | null = null;
+/**
+ * 取消办理出院：待结算回待出院；出院嘱已撤尽则回已入科。
+ */
+async function handleCancelDischarge() {
+  if (!encounterId.value || !cancelDischargeEnabled.value) return;
   try {
-    tipsResponse = await loadMissingDispenseTraceTips(encounterId.value);
+    await ElMessageBox.confirm(
+      '确认取消办理出院？取消后可继续整理费用与医嘱；已结算请走收银台反结。',
+      '取消办理出院',
+      {
+        type: 'warning',
+        confirmButtonText: '取消办理出院',
+        cancelButtonText: '返回',
+      },
+    );
   } catch {
-    tipsResponse = null;
+    return;
+  }
+  try {
+    const res = await cancelDischargeRequest.run(encounterId.value);
+    if (res?.succeeded === false) {
+      ElMessage.error('取消办理出院失败，请刷新后重试');
+      return;
+    }
+    const restored = String(res?.restoredStatusEnum ?? '').trim();
+    if (restored === ENCOUNTER_STATUS_ON_HOLD) {
+      ElMessage.success('已取消办理出院，患者回到待出院');
+    } else if (restored === 'IN_PROGRESS') {
+      ElMessage.success('已取消办理出院，患者回到已入科（请重新开立出院医嘱）');
+    } else {
+      ElMessage.success('已取消办理出院');
+    }
+    await props.onRefresh?.();
+    await loadDischargePending();
+  } catch {
+    // 业务错误文案由全局 HTTP 拦截器统一弹出
+  }
+}
+
+/**
+ * 清床离院确认。
+ * 主线可按配置拉缺追溯码 tip；国基等院点 `CLEAR_BED_MISSING_TRACE_TIP.enabled=false` 时仅基础确认，缺码不拦。
+ */
+async function handleClearBed() {
+  // Gate：无就诊或清床不可用则不弹窗
+  if (!encounterId.value || !clearBedEnabled.value) return;
+  // Pre：院点配置开启时才拉缺追溯码 tip；接口失败回落空 tip，不挡清床
+  let tipsResponse: Awaited<ReturnType<typeof loadMissingDispenseTraceTips>> | null = null;
+  if (CLEAR_BED_MISSING_TRACE_TIP.enabled) {
+    try {
+      tipsResponse = await loadMissingDispenseTraceTips(encounterId.value);
+    } catch {
+      tipsResponse = null;
+    }
   }
   try {
     await ElMessageBox.confirm(buildClearBedConfirmMessage(tipsResponse), '清床离院', {
@@ -231,6 +289,7 @@ async function handleClearBed() {
       cancelButtonText: '取消',
     });
   } catch {
+    // 用户取消确认：中止清床
     return;
   }
   try {
@@ -337,6 +396,13 @@ watch(
           </ElButton>
           <ElButton type="success" :disabled="!dischargeEnabled" @click="handleDischarge">
             办理出院
+          </ElButton>
+          <ElButton
+            type="warning"
+            :disabled="!cancelDischargeEnabled"
+            @click="handleCancelDischarge"
+          >
+            取消办理出院
           </ElButton>
           <ElButton type="primary" :disabled="!clearBedEnabled" @click="handleClearBed">
             清床离院

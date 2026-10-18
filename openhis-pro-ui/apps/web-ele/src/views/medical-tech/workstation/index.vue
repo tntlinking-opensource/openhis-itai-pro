@@ -8,7 +8,7 @@ import type { MedicalTechTab } from './workbench-tab.config';
 
 import { computed, onMounted, provide, ref, watch } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import { ElTabPane, ElTabs } from 'element-plus';
 
@@ -41,11 +41,22 @@ const selectedEncounterId = ref('');
 /** 当前选中队列行摘要（执行/费用清单/计费信息条共用） */
 const selectedPatientSummary = ref<MedicalTechPatientQueueItemDto | null>(null);
 const activeTab = ref<MedicalTechTab>(MEDICAL_TECH_TAB.EXECUTION);
+/**
+ * 右侧内容强制重载令牌：再点同一患者或点「刷新」时递增，
+ * 避免 encounterId 不变导致执行单/费用清单/计费不重拉。
+ */
+const contentReloadToken = ref(0);
+
+/** 递增右侧重载令牌（门诊/住院队列点选与刷新共用） */
+function bumpContentReload() {
+  contentReloadToken.value += 1;
+}
 
 const {
   queueKeyword,
   queueDateRange,
   pendingDeviceOnly,
+  executionQueueFilter,
   inpatientStayFilter,
   queueRows,
   queueLoading,
@@ -54,12 +65,14 @@ const {
   handleQueueKeywordSearch,
   handleQueueDateRangeChange,
   handlePendingDeviceOnlyChange,
+  handleExecutionQueueFilterChange,
   handleInpatientStayFilterChange,
   handleQueueRefresh,
 } = useMedicalTechQueue({
   encounterScope,
   selectedEncounterId,
   selectedPatientSummary,
+  bumpContentReload,
 });
 
 provide(medicalTechWorkstationContextKey, {
@@ -67,10 +80,12 @@ provide(medicalTechWorkstationContextKey, {
   selectedEncounterId,
   selectedPatientSummary,
   reloadPatientQueue: loadPatientQueue,
+  contentReloadToken,
 });
 
 const {
   serviceLines,
+  sharedExecutingOrgFilterOptions,
   selectedDeviceKeys,
   supplyItems,
   sheetLoading,
@@ -90,9 +105,11 @@ const {
   handleCancelSupply,
 } = useMedicalTechExecutionSheet({
   encounterScope,
+  executionQueueFilter,
   selectedEncounterId,
   selectedPatientSummary,
   reloadPatientQueue: loadPatientQueue,
+  contentReloadToken,
 });
 
 /** 页签上方信息条：门诊挂号时间，住院入院时间 */
@@ -156,11 +173,13 @@ onMounted(() => {
           v-model:queue-date-range="queueDateRange"
           v-model:pending-device-only="pendingDeviceOnly"
           :encounter-scope="encounterScope"
+          :execution-queue-filter="executionQueueFilter"
           :inpatient-stay-filter="inpatientStayFilter"
           :patients="queueRows"
           :queue-loading="queueLoading"
           :selected-patient-id="selectedEncounterId"
           @encounter-scope-change="handleEncounterScopeChange"
+          @execution-queue-filter-change="handleExecutionQueueFilterChange"
           @inpatient-stay-filter-change="handleInpatientStayFilterChange"
           @pending-device-only-change="handlePendingDeviceOnlyChange"
           @queue-date-range-change="handleQueueDateRangeChange"
@@ -197,6 +216,7 @@ onMounted(() => {
               v-show="activeTab === MEDICAL_TECH_TAB.EXECUTION"
               class="absolute inset-0 flex min-h-0 min-w-0 flex-col"
               :service-lines="serviceLines"
+              :shared-executing-org-filter-options="sharedExecutingOrgFilterOptions"
               :sheet-loading="sheetLoading"
               :supply-items="supplyItems"
               :selected-supply-ids="selectedDeviceKeys"

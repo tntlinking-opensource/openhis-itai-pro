@@ -3,7 +3,7 @@ import type { TooltipContentProps } from 'reka-ui';
 
 import type { StyleValue } from 'vue';
 
-import type { ClassType } from '@vben-core/typings';
+import type { ClassType } from '@zxplat-core/typings';
 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../ui';
 

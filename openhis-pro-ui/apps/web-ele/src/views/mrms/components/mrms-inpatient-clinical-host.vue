@@ -504,6 +504,7 @@ defineExpose({ open, close });
         :patient-info="emrPatientInfo"
         encounter-scoped
         :force-read-only="effectiveReadonly"
+        :archive-enabled="true"
       />
       <div v-else-if="kind === 'order'" class="mrms-clinical-host__order-wrap">
         <div class="mrms-clinical-host__order-toolbar">

@@ -129,12 +129,16 @@ export interface ProductQueryParams {
   productTableNames?: string[];
   /** 仅看库存>0；后端分页过滤，禁止前端筛当前页 */
   positiveQuantityOnly?: boolean;
+  /** 诊疗目录类目（如麻醉 25、手术 24）；空=不限 */
+  categoryEnum?: string;
 }
 
 export interface AdviceProductOption {
   id: string;
   code: string;
   name: string;
+  /** 目录展示排序号（诊疗 AD；可空，麻醉选品可按此优先排） */
+  sortOrder?: number;
   /** 商品名称（药品）；空时列表展示「—」 */
   merchandiseName?: string;
   category: string;

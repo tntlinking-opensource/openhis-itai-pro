@@ -4,7 +4,7 @@ import type {
   NurseStationOrderAuditWriteItemDto,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-order-audit.types';
 
-import { formatDateTime } from '@vben/utils';
+import { formatDateTime } from '@zxplat/utils';
 
 import {
   mergeConsecutiveRowsByDrugGroup,
@@ -78,12 +78,19 @@ function resolveAuditOrderType(orderTypeRaw: string): NurseStationOrderAuditOrde
   return null;
 }
 
-/** 类型列：优先读后端 orderKindDisplay，回落本地推导（药品细化为西药/中药） */
+/**
+ * 类型列：优先读后端 orderKindDisplay，回落目录类目（检验/检查/治疗/手术/麻醉…）。
+ *
+ * @param dto 校对行 DTO
+ * @returns 类型列文案
+ */
 export function resolveAuditOrderKindLabel(dto: NurseStationOrderAuditRowDto): string {
   const fromApi = String(dto.orderKindDisplay ?? '').trim();
+  // 药品再按中西药细化
   if (fromApi === '药品') {
     return dto.tcmFlag === true ? '中药' : '西药';
   }
+  // 后端已给具体类目文案则直接用
   if (fromApi) return fromApi;
   const category = String(dto.categoryEnum ?? '').trim();
   if (category === '34') return '出院';
@@ -91,10 +98,17 @@ export function resolveAuditOrderKindLabel(dto: NurseStationOrderAuditRowDto): s
   if (category === '26') return '护理';
   // 嘱托类目 52：禁止回落「诊疗」（BR-IP-ORD-028）
   if (category === '52') return '嘱托';
+  if (category === '22') return '检验';
+  if (category === '23') return '检查';
+  if (category === '21') return '治疗';
+  // 手术/术式类目 24（术式特殊识别由后端 orderKindDisplay 按 PD 兜底）
+  if (category === '24') return '手术';
+  if (category === '25') return '麻醉';
   const orderType = resolveAuditOrderType(String(dto.orderType ?? ''));
   if (orderType === 'MED_REQUEST') {
     return dto.tcmFlag === true ? '中药' : '西药';
   }
+  // 未识别诊疗类目仍回落「诊疗」
   if (orderType === 'SERVICE_REQUEST') return '诊疗';
   return '—';
 }
@@ -483,7 +497,8 @@ export function indexAuditGroupsByEncounterId(
 
 /**
  * 校对「项目类型」多选（code 驱动，禁止用展示文案）。
- * 检验=22、检查=23、治疗=21、嘱托=52、护理=26、转科=32、出院=34。
+ * 检验=22、检查=23、治疗=21、手术=24、嘱托=52、护理=26、转科=32、出院=34。
+ * 麻醉申请（AA 前缀）不走本多选，见页面「麻醉申请」开关。
  * 特殊诊疗须可校对（BR-IP-AUD-006/011；护理级别 BR-IP-EXE-027 仅禁执行不禁校对）。
  */
 export type NurseStationOrderAuditProjectType =
@@ -492,18 +507,20 @@ export type NurseStationOrderAuditProjectType =
   | 'exam'
   | 'lab'
   | 'nursing'
+  | 'surgery'
   | 'tcm'
   | 'transfer'
   | 'treatment'
   | 'west';
 
-/** 项目类型全量（空选时按全选处理） */
+/** 项目类型全量（空选时按全选处理；麻醉申请走独立开关，不在此列） */
 export const NURSE_STATION_ORDER_AUDIT_PROJECT_TYPES: NurseStationOrderAuditProjectType[] = [
   'west',
   'tcm',
   'lab',
   'exam',
   'treatment',
+  'surgery',
   'entrust',
   'nursing',
   'transfer',
@@ -529,6 +546,13 @@ export function resolveAuditRowProjectType(
   }
   if (category === '21') {
     return 'treatment';
+  }
+  if (category === '24') {
+    return 'surgery';
+  }
+  // AA 前缀由后端 anesthesiaApplyOnly 收窄，前端项目类型不再挂「麻醉」
+  if (category === '25') {
+    return null;
   }
   if (category === '52') {
     return 'entrust';

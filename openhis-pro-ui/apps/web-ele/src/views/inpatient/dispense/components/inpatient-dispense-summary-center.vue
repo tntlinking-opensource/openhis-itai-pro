@@ -8,7 +8,15 @@ import type {
 
 import { computed, ref, watch } from 'vue';
 
-import { ElButton, ElEmpty, ElOption, ElSelect, ElTable, ElTableColumn } from 'element-plus';
+import {
+  ElButton,
+  ElEmpty,
+  ElOption,
+  ElSelect,
+  ElSwitch,
+  ElTable,
+  ElTableColumn,
+} from 'element-plus';
 
 import SectionTitle from '#/components/layouts/section-title.vue';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
@@ -46,6 +54,8 @@ const emit = defineEmits<{
   batchDispense: [];
   batchReject: [];
   batchTraceScan: [];
+  /** 打印当前汇总领药单（待核发 / 已发药均可） */
+  printSummary: [];
 }>();
 
 const selectedDispenserId = defineModel<string | undefined>('selectedDispenserId', {
@@ -53,6 +63,10 @@ const selectedDispenserId = defineModel<string | undefined>('selectedDispenserId
 });
 const selectedReceiverId = defineModel<string | undefined>('selectedReceiverId', {
   required: true,
+});
+/** 核对发药成功后是否自动打印汇总单（与父级双向绑定）。 */
+const autoPrintEnabled = defineModel<boolean>('autoPrintEnabled', {
+  default: false,
 });
 /** 当前向上展开的患者 key */
 const expandedPatientKey = ref<null | string>(null);
@@ -112,6 +126,7 @@ const headerSummaryText = computed(() => {
   if (!h) return '';
   const parts = [
     h.busNo ? `单号 ${h.busNo}` : '',
+    h.applicantDepartmentName ? `申领科室 ${h.applicantDepartmentName}` : '',
     h.applicantName ? `申请人 ${h.applicantName}` : '',
     h.applyTime ? formatSummaryApplyTime(h.applyTime) : '',
     h.purposeLocationName ? h.purposeLocationName : '',
@@ -153,6 +168,14 @@ const headerSummaryText = computed(() => {
           >
             扫追溯码
           </ElButton>
+          <ElButton
+            type="primary"
+            plain
+            :disabled="!props.selectedSummaryNo || props.batchSubmitting"
+            @click="emit('printSummary')"
+          >
+            打印汇总单
+          </ElButton>
         </div>
         <div class="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
           <span class="text-xs text-[var(--el-text-color-secondary)]">调配药师</span>
@@ -187,6 +210,13 @@ const headerSummaryText = computed(() => {
               :value="opt.value"
             />
           </ElSelect>
+        </div>
+        <div
+          class="flex shrink-0 items-center gap-1.5 whitespace-nowrap"
+          title="开启后，核对发药成功会自动打印当前汇总单"
+        >
+          <span class="text-xs text-[var(--el-text-color-regular)]">发药后自动打印汇总单</span>
+          <ElSwitch v-model="autoPrintEnabled" inline-prompt active-text="开" inactive-text="关" />
         </div>
       </div>
       <p
@@ -252,7 +282,16 @@ const headerSummaryText = computed(() => {
                 {{ row.lotNumberText?.trim() || '—' }}
               </template>
             </ElTableColumn>
-            <ElTableColumn label="金额" min-width="88" align="center" header-align="center">
+            <ElTableColumn label="单价" min-width="88" align="center" header-align="center">
+              <template #default="{ row }">
+                {{
+                  row.unitPrice != null && row.unitPrice !== ''
+                    ? formatMoneyDisplay(row.unitPrice)
+                    : '—'
+                }}
+              </template>
+            </ElTableColumn>
+            <ElTableColumn label="总价" min-width="88" align="center" header-align="center">
               <template #default="{ row }">
                 {{
                   row.totalPrice != null && row.totalPrice !== ''

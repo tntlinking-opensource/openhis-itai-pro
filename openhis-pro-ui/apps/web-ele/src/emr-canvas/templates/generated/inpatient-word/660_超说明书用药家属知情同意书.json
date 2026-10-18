@@ -1,0 +1,797 @@
+{
+  "code": "IP_WORD_660",
+  "name": "超说明书用药家属知情同意书",
+  "category": "知情告知书",
+  "sourceTemplateId": "660",
+  "typeCode": "INPATIENT_知情告知书",
+  "summary": "Word原样迁移v1 · 段29/表1 · 元2/日0/勾6/单0 · 约3页",
+  "estimatedPages": 3,
+  "structure": {
+    "paraCount": 29,
+    "tableCount": 1,
+    "meta": 2,
+    "date": 0,
+    "plainFill": 0,
+    "fill": 2,
+    "checkbox": 6,
+    "radio": 0
+  },
+  "data": {
+    "header": [
+      {
+        "id": "emrHospitalTitle",
+        "value": "医院名称",
+        "font": "SimHei",
+        "size": 29,
+        "bold": true,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center",
+        "rowMargin": 1
+      },
+      {
+        "id": "emrDocumentTitle",
+        "value": "超说明书用药家属知情同意书",
+        "font": "SimSun",
+        "size": 21,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "type": "separator",
+        "value": "",
+        "lineWidth": 1.15
+      }
+    ],
+    "main": [
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "超说明书用药知情同意书",
+        "rowFlex": "center"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "姓名：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "患者姓名",
+          "conceptId": "patientName",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false,
+          "disabled": true
+        },
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "科室：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "科室",
+          "conceptId": "deptName",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false,
+          "disabled": true
+        },
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "ID号：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　　　　　　　　住院号",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "疾病介绍和治疗建议",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　医生已告知我患有　　　　　　　　　　　　，需要接受超说明书用药。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "药品名称：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　　　　　　　　　",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "剂型：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "规格：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　　　　　　　　　",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "厂家：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　需要超说明书用药的项目：",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_007",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 349
+          },
+          {
+            "width": 349
+          }
+        ],
+        "tableToolDisabled": true,
+        "rowFlex": "left",
+        "trList": [
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_001",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "说明书之外的适应证",
+                          "code": "chk_001"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_002",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "说明书之外的适应年龄组",
+                          "code": "chk_002"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_003",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "说明书之外的用药途径",
+                          "code": "chk_003"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_004",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "说明书之外的用法",
+                          "code": "chk_004"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_005",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "说明书之外的剂量",
+                          "code": "chk_005"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_006",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "说明书之内的禁忌症",
+                          "code": "chk_006"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　根据本人目前的病情，临床考虑无适宜药品应用，依据治疗指南、诊疗规范及国内外专家共识，医生本着救人为本的原则，充分权衡此药品可能带来的利弊，现接受使用超说明书用药是目前最佳治疗方案。且该药品超说明书使用不是用于临床试验、科学研究或者其他非治病救人目的。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "潜在风险和对策",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　医生告知我超说明书用药可能发生的一些风险， 有些不常见的风险可能没有在此列出，具体的医疗方案根据不同病人的情况有所不同， 医生告诉我可与我的医生讨论有关我医疗方案的具体内容，如果我有特殊的问题可与我的医生讨论。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　1.我理解任何药物都可能产生副作用，包括轻度的恶心、 皮疹等症状，到严重的过敏性休克，甚至危及生命。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　2. 我理解如果患者患有肝功能不全、肾功能不全、合并多种慢性病、有吸烟史，或者属于妊娠期、哺乳期、儿童、老年等特殊人群，以上这些风险可能会加大，或者在药物治疗中或治疗后会出现相关的病情加重，甚至死亡。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　3. 如果患者不遵医嘱，可能影响药物治疗效果。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　我理解根据我个人的病情，可能出现上述所交待并发症以外的风险：",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "_________________________________________________________________________________",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "_________________________________________________________________________________",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "_________________________________________________________________________________",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "一旦发生上述风险和意外，医生会采取积极应对措施。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "患者知情选择",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "1. 　　我已经阅读并了解说明书的具体内容。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "2. 　　我的医生已经告知我将要进行的药物治疗为超说明书用药，并且解答了我关于此次药物治疗方案的相关问题；同时，我理解并接受用药后可能发生的并发症和风险、可能存在的其它治疗方法。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "3. 　　同意在药物治疗过程中医生可以根据我的病情对预定的药物方案做出调整。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "4. 　　我并未得到治疗百分之百成功的许诺。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "患者签名",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "____________________",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": " 签名日期",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "__________",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "年 ",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "________",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "月 ",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "__________",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "日",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "如果患者无法签署知情同意书，请其授权的亲属在此签名：",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "患者授权亲属签名",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "__________",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "与患者关系",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "________",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "签名日期",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "______",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "年",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "______",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "月",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "______",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "日",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "医生陈述",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　我已经告知患者将要进行的药物治疗为超说明书用药，用药后可能发生的并发症和风险、可能存在的其它治疗方法并且解答了关于此次药物治疗方案的相关问题。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "医生签名",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "_________________________",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": " 签名日期",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "__________",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "年 ",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "_________",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "月 ",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "________",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "日",
+        "rowFlex": "left"
+      }
+    ],
+    "footer": []
+  }
+}

@@ -1,5 +1,7 @@
 import type { PrepickedProductKeyDto } from '#/api/doctor-station/advice.types';
 
+import { preferredTotalUnitBandKindFromOrderCalcRule } from '#/utils/doctor-station/medication-order-total-calc';
+
 import type { AdviceDrugItem, AdviceProductOption, AdviceRowItem } from './advice.types';
 import type { WesternProductSelectPatchOptions } from './advice-edit';
 import { buildWesternProductSelectPatch, pickCatalogChrgitmLvPatch } from './advice-edit';
@@ -206,12 +208,9 @@ export function mergeCatalogIntoAdviceDrugItemForEdit(
     };
   }
 
-  const therapy =
-    String(opts?.therapyTypeCode ?? seed.therapyEnum ?? '')
-      .trim()
-      .toUpperCase() || undefined;
   const totalUnitDefaultKind =
-    opts?.totalUnitDefaultKind ?? (therapy === 'TEMPORARY' ? 'PACKAGE' : 'SALES');
+    opts?.totalUnitDefaultKind ??
+    preferredTotalUnitBandKindFromOrderCalcRule(catalog.partAttributeEnum);
   const catalogPatch = buildWesternProductSelectPatch(
     { ...(seed as AdviceDrugItem), ...preserved } as AdviceDrugItem,
     catalog,
@@ -226,7 +225,14 @@ export function mergeCatalogIntoAdviceDrugItemForEdit(
     unitBands,
   });
 
-  const totalUnit = String(seed.totalAmountUnit ?? '').trim() || catalogPatch.totalAmountUnit;
+  // 总量单位须在本药 unitBands；成组/历史脏值回落目录默认
+  const seedTotalUnit = String(seed.totalAmountUnit ?? '').trim();
+  const totalUnitInBands =
+    seedTotalUnit &&
+    (unitBands ?? []).some((b) => String(b.unitCode ?? '').trim() === seedTotalUnit);
+  const totalUnit = totalUnitInBands
+    ? seedTotalUnit
+    : String(catalogPatch.totalAmountUnit ?? '').trim() || seedTotalUnit;
   let selectedDrugPrice = catalogPatch.selectedDrugPrice ?? catalog.price ?? seed.selectedDrugPrice;
   if (totalUnit) {
     const linePrice = resolveAdviceLineUnitPrice({

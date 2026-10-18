@@ -1,8 +1,10 @@
 import type {
+  BldLineDto,
   CaseRecordDetailDto,
   CaseRecordListItemDto,
   DiagnosisLineDto,
   HomepageDto,
+  IcuLineDto,
   ProcedureLineDto,
   RefreshSectionCode,
   SaveHomepageParams,
@@ -18,6 +20,20 @@ import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import { HOMEPAGE_FEE_AMOUNT_KEYS } from './homepage-form.types';
 import { HOMEPAGE_EMPTY_DISPLAY } from './homepage.constants';
+
+/**
+ * 医保 patn_rlts 码规范化：单位数码补零（1→01），已是两位及以上保持原样。
+ */
+function normalizePatnRltsCode(code?: null | string): string {
+  const raw = code?.trim() ?? '';
+  if (!raw) {
+    return '';
+  }
+  if (/^\d$/.test(raw)) {
+    return `0${raw}`;
+  }
+  return raw;
+}
 
 /** province-city-china level 节点 */
 interface RegionLevelItem {
@@ -132,6 +148,8 @@ export function createEmptyHomepageForm(
     rinp31Purpose: '',
     diagnoses: [],
     procedures: [],
+    icus: [],
+    blds: [],
   };
 }
 
@@ -379,6 +397,22 @@ function cloneProcedures(rows?: ProcedureLineDto[]): ProcedureLineDto[] {
   return rows.map((r) => ({ ...r }));
 }
 
+/** 深拷贝重症监护行（避免编辑态污染源数据） */
+function cloneIcus(rows?: IcuLineDto[]): IcuLineDto[] {
+  if (!rows?.length) {
+    return [];
+  }
+  return rows.map((r) => ({ ...r }));
+}
+
+/** 深拷贝输血行（避免编辑态污染源数据） */
+function cloneBlds(rows?: BldLineDto[]): BldLineDto[] {
+  if (!rows?.length) {
+    return [];
+  }
+  return rows.map((r) => ({ ...r }));
+}
+
 /**
  * 回填入院途径：仅保留 4401 合法码 1/2/3/9；
  * 丢弃误写入的入院类型码（如登记默认 6=常规）。
@@ -418,7 +452,8 @@ export function homepageToFormModel(
     psnTel: homepage.psnTel,
     conerName: homepage.conerName,
     conerTel: homepage.conerTel,
-    conerRltsCode: homepage.conerRltsCode,
+    // 医保 patn_rlts：01/02；兼容主档 Integer 回填的单位数码
+    conerRltsCode: normalizePatnRltsCode(homepage.conerRltsCode),
     conerAddr: homepage.conerAddr,
     trtTypeCode: homepage.trtTypeCode,
     // 中医信息：只认正式列
@@ -456,6 +491,8 @@ export function homepageToFormModel(
     respNursName: homepage.respNursName,
     diagnoses: cloneDiagnoses(homepage.diagnoses),
     procedures: cloneProcedures(homepage.procedures),
+    icus: cloneIcus(homepage.icus),
+    blds: cloneBlds(homepage.blds),
     ...pickPromotedScalarFields(homepage),
     ...pickLiveFeeFields(homepage.fees),
   };
@@ -513,6 +550,25 @@ export function newProcedureRow(sortNo: number): ProcedureLineDto {
     anstDrName: '',
     specimen: '',
     note: '',
+  };
+}
+
+/** 新建重症监护行（默认 CCU + 时长 01/00/00，对齐老页） */
+export function newIcuRow(sortNo: number): IcuLineDto {
+  return {
+    sortNo,
+    scsCutdWardType: '1',
+    scsCutdSumDura: '01/00/00',
+  };
+}
+
+/** 新建输血行 */
+export function newBldRow(sortNo: number): BldLineDto {
+  return {
+    sortNo,
+    bldCat: '',
+    bldAmt: '',
+    bldUnt: 'ml',
   };
 }
 
@@ -591,6 +647,8 @@ export function cloneHomepageForm(form: HomepageFormModel): HomepageFormModel {
     resdAddrCodes: [...(form.resdAddrCodes ?? [])],
     diagnoses: cloneDiagnoses(form.diagnoses),
     procedures: cloneProcedures(form.procedures),
+    icus: cloneIcus(form.icus),
+    blds: cloneBlds(form.blds),
   };
 }
 
@@ -698,6 +756,8 @@ export function toSaveHomepageParams(form: HomepageFormModel): SaveHomepageParam
     rinp31Purpose: form.rinp31Purpose,
     diagnoses: form.diagnoses,
     procedures: form.procedures,
+    icus: form.icus,
+    blds: form.blds,
   };
 }
 

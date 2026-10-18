@@ -1,0 +1,461 @@
+{
+  "code": "IP_WORD_401",
+  "name": "神经内科 诊疗知情同意书",
+  "category": "知情告知书",
+  "sourceTemplateId": "401",
+  "typeCode": "INPATIENT_知情告知书",
+  "summary": "Word原样迁移v1 · 段3/表1 · 元3/日1/勾0/单0 · 约1页",
+  "estimatedPages": 1,
+  "structure": {
+    "paraCount": 3,
+    "tableCount": 1,
+    "meta": 3,
+    "date": 1,
+    "plainFill": 0,
+    "fill": 4,
+    "checkbox": 0,
+    "radio": 0
+  },
+  "data": {
+    "header": [
+      {
+        "id": "emrHospitalTitle",
+        "value": "医院名称",
+        "font": "SimHei",
+        "size": 29,
+        "bold": true,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center",
+        "rowMargin": 1
+      },
+      {
+        "id": "emrDocumentTitle",
+        "value": "神经内科 诊疗知情同意书",
+        "font": "SimSun",
+        "size": 21,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "type": "separator",
+        "value": "",
+        "lineWidth": 1.15
+      }
+    ],
+    "main": [
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "南关国基医院",
+        "bold": true,
+        "rowFlex": "center"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "医患沟通记录",
+        "bold": true,
+        "rowFlex": "center"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center"
+      },
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_001",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 349
+          },
+          {
+            "width": 349
+          }
+        ],
+        "tableToolDisabled": true,
+        "rowFlex": "left",
+        "borderType": "empty",
+        "trList": [
+          {
+            "height": 28,
+            "minHeight": 28,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "科室：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "内科",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "住院号：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "就诊号",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_003",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 698
+          }
+        ],
+        "tableToolDisabled": true,
+        "rowFlex": "left",
+        "trList": [
+          {
+            "height": 480,
+            "minHeight": 480,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "姓名：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "患者姓名",
+                      "conceptId": "patientName",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "性别：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "性别",
+                      "conceptId": "gender",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "年龄：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "年龄",
+                      "conceptId": "age",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "床号：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "床位",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "入院诊断：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "医患沟通时间：住院前",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "医患沟通地点：医生办公室",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "参加人员：主治医生患者及其家属",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "沟通内容：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　对疾病做出的诊断、疾病对身体所产生的影响、主要治疗措施、下一步治疗方案、病情变化、医保患者使用医保目录以外诊疗项目及药品、出院后的注意事项等。",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "沟通记录：结合患者病史及现有检查结果，",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "现初步诊断为：XXX,给予XXXX治疗，对病情的确切评估还需进一步检查，向患者及家属交待，入院用药后可能会出现肝肾功能损害，且患者病情尚不稳定，随时有进展加重或出现肢体瘫痪、意识障碍、言语不清的可能，嘱密切观察病情变化，随时与医生沟通，同时患者在院期间需家属全程陪护，不得私自离院。",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "沟通结果：患者对以上情况知情理解，同意目前检查及治疗",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "记录人签名：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　　　　　　　　　　",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "沟通医生签名：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　　",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "患者或委托人签名：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　　　　　　　　　　",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "与患者关系：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　　",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "签字时间：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "date",
+                      "value": null,
+                      "placeholder": "签字时间",
+                      "conceptId": "date_002",
+                      "dateFormat": "yyyy-MM-dd HH:mm",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "footer": []
+  }
+}

@@ -1,6 +1,0 @@
-{
-  "moduleId": "miniapp",
-  "enabledProperty": "openhis.modules.miniapp.enabled",
-  "locations": "classpath:db/migration/miniapp",
-  "historyTable": "flyway_schema_history_miniapp"
-}

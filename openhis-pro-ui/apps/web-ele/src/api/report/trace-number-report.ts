@@ -9,7 +9,7 @@ import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 const BASE = '/traceNumberReport';
 
-/** 菜单路由 path（与 whale_menus.path 对齐）。 */
+/** 菜单路由 path（与 zxplat_menus.path 对齐）。 */
 export const TRACE_NUMBER_REPORT_ROUTE_PATH = '/report/trace-number';
 
 export const TRACE_QUERY_SCOPE_HOSPITAL = 'HOSPITAL' as const;

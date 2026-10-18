@@ -1,6 +1,6 @@
 import { createApp, watchEffect } from 'vue';
 
-import { unmountGlobalLoading } from '@vben/utils/es/helpers/unmount-global-loading';
+import { unmountGlobalLoading } from '@zxplat/utils/es/helpers/unmount-global-loading';
 
 import { useTitle } from '@vueuse/core';
 import ElementPlus from 'element-plus';
@@ -11,9 +11,9 @@ import App from './app.vue';
 import './hiprint/core/jquery';
 
 // 全局主题样式必须在 mount 前同步加载；异步 import 会导致生产环境 CSS chunk 晚于首屏，样式爆炸
-import '@vben/styles';
+import '@zxplat/styles';
 import 'element-plus/dist/index.css';
-import '@vben/styles/ele';
+import '@zxplat/styles/ele';
 import './styles/layout-viewport-compact.css';
 import './styles/doctor-station-viewport-compact.css';
 import './styles/inventory-viewport-compact.css';
@@ -94,7 +94,7 @@ async function bootstrap(namespace: string) {
 
   // 配置 pinia-tore
   const [{ initStores }, { router }] = await Promise.all([
-    import('@vben/stores'),
+    import('@zxplat/stores'),
     import('./router'),
   ]);
   await initStores(app, { namespace });
@@ -123,20 +123,20 @@ async function bootstrap(namespace: string) {
 
     try {
       await Promise.all([
-        import('@vben/common-ui/es/tippy').then(({ initTippy }) => {
+        import('@zxplat/common-ui/es/tippy').then(({ initTippy }) => {
           initTippy(app);
         }),
-        import('@vben/access/es/directive').then(({ registerAccessDirective }) => {
+        import('@zxplat/access/es/directive').then(({ registerAccessDirective }) => {
           registerAccessDirective(app);
         }),
-        import('@vben/common-ui/es/loading').then(({ registerLoadingDirective }) => {
+        import('@zxplat/common-ui/es/loading').then(({ registerLoadingDirective }) => {
           registerLoadingDirective(app, { loading: false, spinning: 'spinning' });
         }),
-        import('@vben/plugins/motion').then(({ MotionPlugin }) => {
+        import('@zxplat/plugins/motion').then(({ MotionPlugin }) => {
           app.use(MotionPlugin);
         }),
       ]);
-      const { preferences } = await import('@vben/preferences/es/preferences-manager');
+      const { preferences } = await import('@zxplat/preferences/es/preferences-manager');
       watchEffect(() => {
         if (preferences.app.dynamicTitle) {
           const routeTitle = router.currentRoute.value.meta?.title;

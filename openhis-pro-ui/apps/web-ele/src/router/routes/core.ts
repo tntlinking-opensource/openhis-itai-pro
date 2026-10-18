@@ -1,6 +1,6 @@
 import type { RouteRecordRaw } from 'vue-router';
 
-import { LOGIN_PATH } from '@vben/constants';
+import { LOGIN_PATH } from '@zxplat/constants';
 
 const BasicLayout = () => import('#/layouts/basic.vue');
 const AuthPageLayout = () => import('#/layouts/auth.vue');
@@ -108,6 +108,16 @@ const coreRoutes: RouteRecordRaw[] = [
           title: '借阅复印',
         },
       },
+      /** 归档审批（菜单 path=/mrms/archive-approval；侧栏靠 V10 种子 Navigation.MrmsArchiveApproval） */
+      {
+        name: 'MrmsArchiveApproval',
+        path: '/mrms/archive-approval',
+        component: () => import('#/views/mrms/archive-approval/index.vue'),
+        meta: {
+          hideInMenu: true,
+          title: '归档审批',
+        },
+      },
       /** 门诊病历查询（菜单 path=/mrms/outpatient-emr） */
       {
         name: 'MrmsOutpatientEmrQuery',
@@ -132,7 +142,7 @@ const coreRoutes: RouteRecordRaw[] = [
   },
   /** 新版病历编辑器（仅前端 Tiptap Simple Editor，与 /emr 旧页隔离） */
   // {
-  // EMR（Tiptap + whale-emr）— P0 工作台与编辑
+  // EMR（Tiptap + zxplat-emr）— P0 工作台与编辑
   // {
   //   component: BasicLayout,
   //   meta: {

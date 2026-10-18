@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { cn } from '@vben-core/shared/utils';
+import { cn } from '@zxplat-core/shared/utils';
 
 import { MoreHorizontal } from 'lucide-vue-next';
 

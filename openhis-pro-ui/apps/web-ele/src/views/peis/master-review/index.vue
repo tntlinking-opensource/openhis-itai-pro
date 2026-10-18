@@ -4,7 +4,7 @@ import type { DeptSummarySectionDto, MasterPendingRowDto } from '#/api/peis/mast
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { RotateCw } from '@vben/icons';
+import { RotateCw } from '@zxplat/icons';
 
 import { useDebounceFn } from '@vueuse/core';
 import {

@@ -4,14 +4,16 @@ import type {
   DailySettlementSummaryDto,
   LoadOutpatientDailySettlementPageInitResponse,
   OutpatientCashierSettlementHistoryItemDto,
+  OutpatientDailySettlementPatientSummaryDto,
   PreviewOutpatientDailySettlementResponse,
 } from '#/api/outpatient/daily-settlement';
 import type { ApiOptionItem } from '#/types/api-response';
 
 import { computed, onActivated, onMounted, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
-import { formatDateTime } from '@vben/utils';
+import { Page } from '@zxplat/common-ui';
+import { useUserStore } from '@zxplat/stores';
+import { formatDateTime } from '@zxplat/utils';
 
 import dayjs from 'dayjs';
 import {
@@ -27,12 +29,15 @@ import {
   ElMessageBox,
   ElOption,
   ElSelect,
+  ElTabPane,
   ElTable,
   ElTableColumn,
+  ElTabs,
   ElTooltip,
 } from 'element-plus';
 
 import {
+  exportOutpatientDailySettlementPatientSummariesApi,
   loadOutpatientCashierSettlementVoucherApi,
   loadOutpatientDailySettlementPageInitApi,
   normalizePreviewOutpatientDailySettlementResponse,
@@ -46,9 +51,17 @@ import DailySettlementSummaryPanel from '#/components/charge/daily-settlement-su
 import { usePrintClientWarmup } from '#/composables/use-print-client-warmup';
 import { useRequest } from '#/hooks/use-request';
 import { useAuthStore } from '#/store/auth';
-import { buildDefaultDateTimeRangeShortcuts } from '#/utils/format/date-picker-shortcuts';
-import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
+import {
+  buildDefaultDateTimeRangeShortcuts,
+  type DatePickerShortcutItem,
+} from '#/utils/format/date-picker-shortcuts';
+import {
+  preserveApiIdForRequest,
+  resolveLoginPractitionerIdForRequest,
+} from '#/utils/format/preserve-api-id';
 import { printDailySettlement } from '#/utils/print/print-daily-settlement';
+import { OP_DAILY_SETTLEMENT_SITE_LAYOUT } from '#/views/outpatient/charge/daily-settlement/daily-settlement-page.config';
 
 defineOptions({
   name: 'ChargeOpDailySettlement',
@@ -74,6 +87,7 @@ interface QueryFormState {
 }
 
 const authStore = useAuthStore();
+const userStore = useUserStore();
 
 /** 当天 00:00:00（每次调用现算，避免跨日后仍用首次进入的起点） */
 const resolveTodayStart = () => dayjs().startOf('day').format('YYYY-MM-DD HH:mm:ss');
@@ -98,6 +112,8 @@ const pageInit = ref<LoadOutpatientDailySettlementPageInitResponse | null>(null)
 const previewResult = ref<null | PreviewOutpatientDailySettlementResponse>(null);
 const hasQueried = ref(false);
 const printSubmitting = ref(false);
+/** 结果区 Tab：日结合计 / 患者分项（只读统计，不影响交账） */
+const resultTab = ref<'summary' | 'patient'>('summary');
 const handoverDialogVisible = ref(false);
 const historyDialogVisible = ref(false);
 const historyItems = ref<OutpatientCashierSettlementHistoryItemDto[]>([]);
@@ -185,11 +201,53 @@ const canSubmitSettlement = computed(() => {
   return hasQueried.value && count > 0 && !queryLoading.value && !submitLoading.value;
 });
 
-const canPrintSettlement = computed(
-  () => hasSummaryDisplay.value && !queryLoading.value && !printSubmitting.value,
+/** 患者分项块（与合计同源；只读；不含预交金） */
+const patientSummaries = computed<OutpatientDailySettlementPatientSummaryDto[]>(
+  () => previewResult.value?.patientSummaries ?? [],
 );
 
-// 将渠道行与汇总字段拆成多列网格，便于日结单式展示（非表格）。
+const hasPatientSummaryDisplay = computed(
+  () => hasQueried.value && patientSummaries.value.length > 0,
+);
+
+/** 当前 Tab 可打印：合计看 summary，患者分项看 patientSummaries */
+const canPrintSettlement = computed(() => {
+  if (queryLoading.value || printSubmitting.value) {
+    return false;
+  }
+  if (resultTab.value === 'patient') {
+    return hasPatientSummaryDisplay.value;
+  }
+  return hasSummaryDisplay.value;
+});
+
+/**
+ * 组装患者分项块标题：姓名 + 门诊号 + 收费日期 + 是否住院（不带患者序号）。
+ *
+ * @param block 患者分项块
+ */
+function formatPatientBlockTitle(block: OutpatientDailySettlementPatientSummaryDto): string {
+  const name = block.patientName?.trim() || '未知患者';
+  const busNo = block.encounterBusNo?.trim() || '—';
+  const chargeDate = block.chargeDate?.trim() || '—';
+  let hospitalized = block.hospitalizedText?.trim() || '';
+  // 后端文案缺失时按布尔回落，保证标题始终可读
+  if (!hospitalized) {
+    if (block.hospitalized) {
+      hospitalized = '是';
+    } else {
+      hospitalized = '否';
+    }
+  }
+  return `${name}　门诊号：${busNo}　收费日期：${chargeDate}　是否住院：${hospitalized}`;
+}
+
+/**
+ * 将渠道行与汇总字段拆成多列网格，便于日结单式展示（非表格）。
+ *
+ * @param items 待分列项
+ * @param size 每列容量
+ */
 function chunkItems<T>(items: T[], size: number): T[][] {
   const rows: T[][] = [];
   for (let i = 0; i < items.length; i += size) {
@@ -332,9 +390,39 @@ async function loadPageInit() {
   queryForm.dateRange = [normalizeDateTimeBound(data.defaultDateFrom, 'start'), nowEnd()];
   dateRangeManuallyEdited.value = false;
   queryForm.expenseProperty = FILTER_ALL_VALUE;
-  // 款员岗池先入下拉；查询后再并入本窗有流水的人
+  // 款员岗池先入下拉。国基默认当前登录人；其它院点保持空选，查询后再带出本窗收费人
   cashierOptions.value = normalizeCashierOptions(data.cashierOptions);
-  queryForm.cashierIds = [];
+  if (OP_DAILY_SETTLEMENT_SITE_LAYOUT) {
+    applyDefaultCashierSelection();
+  } else {
+    queryForm.cashierIds = [];
+  }
+}
+
+/** 当前登录人：页初始化经办人优先，否则取登录医务人员。 */
+function resolveLoggedInCashierId(): string | undefined {
+  const fromPage = preserveApiIdForRequest(pageInit.value?.currentCashierId);
+  if (fromPage) {
+    return fromPage;
+  }
+  return resolveLoginPractitionerIdForRequest(
+    userStore.userInfo as null | Record<string, unknown> | undefined,
+  );
+}
+
+/**
+ * 国基默认款员：下拉含当前登录人时只选本人，否则选中全部选项。
+ * 不因此再触发一次查询。
+ */
+function applyDefaultCashierSelection() {
+  const optionIds = listCashierOptionIds();
+  const currentId = resolveLoggedInCashierId();
+  const nextIds = currentId && optionIds.includes(currentId) ? [currentId] : [...optionIds];
+  if (nextIds.join('|') === queryForm.cashierIds.join('|')) {
+    return;
+  }
+  skipCashierChangeSearch.value = true;
+  queryForm.cashierIds = nextIds;
 }
 
 /** 收款人变更触发查询时，跳过程序化回填引起的二次查询 */
@@ -384,12 +472,94 @@ function normalizeCashierOptions(source: ApiOptionItem[] | undefined): ApiOption
   return options;
 }
 
-/** 改日期：标记为人工区间，清空已选收款人后再查，便于空选路径自动带出本窗收费人 */
+/** 同一时间窗重复触发时跳过，避免国基面板快捷项和 change 各查一次 */
+let lastTimeSearchKey = '';
+
+/**
+ * 改日期后查询。
+ * 产品：清空已选收款人再查，便于空选路径自动带出本窗收费人。
+ * 国基：保留已选款员，按当前人查询。
+ */
 function handleDateRangeChange() {
   dateRangeManuallyEdited.value = true;
-  queryForm.cashierIds = [];
+  if (!OP_DAILY_SETTLEMENT_SITE_LAYOUT) {
+    queryForm.cashierIds = [];
+    void handleSearch();
+    return;
+  }
+  const [from, to] = queryForm.dateRange;
+  const key = `${from ?? ''}|${to ?? ''}`;
+  if (key === lastTimeSearchKey) {
+    return;
+  }
+  lastTimeSearchKey = key;
   void handleSearch();
 }
+
+/** 开始时间（与结束时间分框，互不改对方的值） */
+const queryDateFrom = computed({
+  get() {
+    return queryForm.dateRange[0] ?? '';
+  },
+  set(value: string) {
+    queryForm.dateRange = [value, queryForm.dateRange[1] ?? ''];
+  },
+});
+
+/** 结束时间 */
+const queryDateTo = computed({
+  get() {
+    return queryForm.dateRange[1] ?? '';
+  },
+  set(value: string) {
+    queryForm.dateRange = [queryForm.dateRange[0] ?? '', value];
+  },
+});
+
+/** 前一天 / 后一天：开始、结束一起平移一天，时分秒不变，并查询。 */
+function shiftSettlementDay(dayOffset: number) {
+  const from = dayjs(queryForm.dateRange[0]);
+  const to = dayjs(queryForm.dateRange[1]);
+  if (!from.isValid() || !to.isValid()) {
+    ElMessage.warning('请选择日结时间');
+    return;
+  }
+  queryForm.dateRange = [
+    from.add(dayOffset, 'day').format('YYYY-MM-DD HH:mm:ss'),
+    to.add(dayOffset, 'day').format('YYYY-MM-DD HH:mm:ss'),
+  ];
+  handleDateRangeChange();
+}
+
+/**
+ * 国基面板快捷项：今天 / 昨天 / 本周等同时写入开始和结束。
+ * 当前打开的那一框再提交一次以便关面板。
+ */
+function buildSettlementPanelShortcuts(bound: 'end' | 'start'): DatePickerShortcutItem[] {
+  return buildDefaultDateTimeRangeShortcuts().map((item) => ({
+    text: item.text,
+    onClick: (ctx: { emit: (event: 'pick', value: dayjs.Dayjs, visible?: boolean) => void }) => {
+      const raw = typeof item.value === 'function' ? item.value() : item.value;
+      if (!Array.isArray(raw) || !raw[0] || !raw[1]) {
+        return;
+      }
+      const from = dayjs(raw[0]);
+      const to = dayjs(raw[1]);
+      if (!from.isValid() || !to.isValid()) {
+        return;
+      }
+      queryForm.dateRange = [
+        from.format('YYYY-MM-DD HH:mm:ss'),
+        to.format('YYYY-MM-DD HH:mm:ss'),
+      ];
+      handleDateRangeChange();
+      ctx.emit('pick', bound === 'start' ? from : to, false);
+    },
+  }));
+}
+
+const startTimeShortcuts = buildSettlementPanelShortcuts('start');
+const endTimeShortcuts = buildSettlementPanelShortcuts('end');
 
 /** 收款人下拉变更：空选亦可查；程序化带出时不重查 */
 function handleCashierIdsChange() {
@@ -625,7 +795,39 @@ async function handleReprintHistory(row: OutpatientCashierSettlementHistoryItemD
   }
 }
 
+/**
+ * 导出患者分项 Excel（后端 POI 真 xlsx；与门诊费用明细同栈；不影响交账）。
+ */
+async function handleExportPatientSummaries() {
+  // 未查询或无分项则拒导
+  if (!hasQueried.value) {
+    ElMessage.warning('请先查询日结汇总后再导出');
+    return;
+  }
+  if (!patientSummaries.value.length) {
+    ElMessage.warning('暂无患者分项可导出');
+    return;
+  }
+  const body = buildPreviewRequest();
+  if (!body.orgId) {
+    ElMessage.warning('请先选择交账科室');
+    return;
+  }
+  try {
+    const data = await exportOutpatientDailySettlementPatientSummariesApi(body);
+    downloadBinaryExportFile(data, '门诊日结患者分项.xlsx');
+    ElMessage.success(`导出成功，共 ${data.rowCount ?? 0} 行`);
+  } catch {
+    ElMessage.error('导出失败，请稍后重试');
+  }
+}
+
+/** 打印当前 Tab：合计单或患者分项单（互不影响交账）。 */
 async function handlePrintSettlement() {
+  if (resultTab.value === 'patient') {
+    await handlePrintPatientSettlement();
+    return;
+  }
   if (!previewResult.value?.summary) {
     ElMessage.warning('请先查询日结汇总后再打印');
     return;
@@ -634,6 +836,7 @@ async function handlePrintSettlement() {
   try {
     const [dateFrom, dateTo] = queryForm.dateRange;
     await printDailySettlement({
+      jobName: '门诊收费日结单',
       bizRef: {
         orgId: resolveOrgIdForRequest() ?? '',
         dateFrom: dateFrom ?? '',
@@ -649,6 +852,44 @@ async function handlePrintSettlement() {
         settlementPeriodText: headerDateRangeText.value === '—' ? '' : headerDateRangeText.value,
         rows: previewResult.value.rows,
         summary: resolvedSummary.value,
+        printMode: 'summary',
+        discountFeatureEnabled: Boolean(pageInit.value?.discountFeatureEnabled),
+      },
+    });
+  } finally {
+    printSubmitting.value = false;
+  }
+}
+
+/** 打印患者分项日结单（与合计同源、单独一单；不含预交金）。 */
+async function handlePrintPatientSettlement() {
+  if (!patientSummaries.value.length) {
+    ElMessage.warning('暂无患者分项可打印');
+    return;
+  }
+  printSubmitting.value = true;
+  try {
+    const [dateFrom, dateTo] = queryForm.dateRange;
+    await printDailySettlement({
+      jobName: '门诊收费日结单（患者分项）',
+      bizRef: {
+        orgId: resolveOrgIdForRequest() ?? '',
+        dateFrom: dateFrom ?? '',
+        dateTo: dateTo ?? '',
+        cashierIds: queryForm.cashierIds
+          .map((id) => preserveApiIdForRequest(id))
+          .filter((id): id is string => Boolean(id)),
+        printMode: 'patient',
+      },
+      source: {
+        hospitalName: '',
+        documentTitle: '门诊收费日结单（患者分项）',
+        cashierName: selectedCashierLabel.value === '—' ? '' : selectedCashierLabel.value,
+        settlementPeriodText: headerDateRangeText.value === '—' ? '' : headerDateRangeText.value,
+        summary: previewResult.value?.summary,
+        patientSummaries: patientSummaries.value,
+        printMode: 'patient',
+        discountFeatureEnabled: Boolean(pageInit.value?.discountFeatureEnabled),
       },
     });
   } finally {
@@ -689,17 +930,27 @@ onActivated(() => {
     class="daily-settlement-page min-h-0 bg-[var(--el-fill-color-light)] p-2"
     content-class="!flex !h-full !min-h-0 !min-w-0 !flex-col !overflow-hidden !p-0"
   >
-    <!-- 整页内容约 70% 宽，右侧留白，版心更接近打印稿 -->
+    <!-- 产品约 70% 宽；国基铺开后右侧留一截空白 -->
     <div
-      class="daily-settlement-layout flex h-full min-h-0 w-[70%] min-w-0 max-w-[70%] shrink-0 flex-col gap-2 self-start overflow-hidden"
+      class="daily-settlement-layout flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
+      :class="
+        OP_DAILY_SETTLEMENT_SITE_LAYOUT
+          ? 'w-[94%] gap-3'
+          : 'w-[70%] max-w-[70%] shrink-0 gap-2 self-start'
+      "
     >
       <ElCard shadow="never" class="daily-settlement-query-card shrink-0">
         <ElForm
           :inline="true"
           :model="queryForm"
-          class="daily-settlement-query-form flex flex-nowrap items-center overflow-x-auto"
+          class="daily-settlement-query-form"
+          :class="
+            OP_DAILY_SETTLEMENT_SITE_LAYOUT
+              ? 'flex flex-wrap items-center gap-y-2'
+              : 'flex flex-nowrap items-center overflow-x-auto'
+          "
         >
-          <ElFormItem label="日结时间">
+          <ElFormItem v-if="!OP_DAILY_SETTLEMENT_SITE_LAYOUT" label="日结时间">
             <ElDatePicker
               v-model="queryForm.dateRange"
               type="datetimerange"
@@ -713,6 +964,38 @@ onActivated(() => {
               @change="handleDateRangeChange"
             />
           </ElFormItem>
+          <template v-else>
+            <ElFormItem label="开始时间">
+              <ElDatePicker
+                v-model="queryDateFrom"
+                type="datetime"
+                value-format="YYYY-MM-DD HH:mm:ss"
+                format="YYYY-MM-DD HH:mm:ss"
+                placeholder="开始时间"
+                :clearable="false"
+                class="!w-[210px]"
+                :shortcuts="startTimeShortcuts"
+                @change="handleDateRangeChange"
+              />
+            </ElFormItem>
+            <ElFormItem label="结束时间">
+              <ElDatePicker
+                v-model="queryDateTo"
+                type="datetime"
+                value-format="YYYY-MM-DD HH:mm:ss"
+                format="YYYY-MM-DD HH:mm:ss"
+                placeholder="结束时间"
+                :clearable="false"
+                class="!w-[210px]"
+                :shortcuts="endTimeShortcuts"
+                @change="handleDateRangeChange"
+              />
+            </ElFormItem>
+            <div class="mb-0 mr-3 flex shrink-0 items-center gap-2">
+              <ElButton plain @click="shiftSettlementDay(-1)">前一天</ElButton>
+              <ElButton plain @click="shiftSettlementDay(1)">后一天</ElButton>
+            </div>
+          </template>
           <ElFormItem label="费用性质">
             <ElSelect
               v-model="queryForm.expenseProperty"
@@ -729,13 +1012,19 @@ onActivated(() => {
               />
             </ElSelect>
           </ElFormItem>
-          <ElFormItem label="款员">
+          <ElFormItem
+            label="款员"
+            :class="OP_DAILY_SETTLEMENT_SITE_LAYOUT ? 'daily-settlement-cashier-item' : ''"
+          >
             <ElSelect
               v-model="queryForm.cashierIds"
               multiple
               clearable
               placeholder="不选=全部"
-              class="!w-auto !min-w-[220px]"
+              :collapse-tags="OP_DAILY_SETTLEMENT_SITE_LAYOUT"
+              :collapse-tags-tooltip="OP_DAILY_SETTLEMENT_SITE_LAYOUT"
+              :max-collapse-tags="OP_DAILY_SETTLEMENT_SITE_LAYOUT ? 2 : undefined"
+              :class="OP_DAILY_SETTLEMENT_SITE_LAYOUT ? '' : '!w-auto !min-w-[220px]'"
               filterable
               @change="handleCashierIdsChange"
             >
@@ -755,7 +1044,12 @@ onActivated(() => {
             >
               查询
             </ElButton>
-            <ElButton plain :loading="historyLoading" @click="openHistoryDialog">
+            <ElButton
+              v-if="!OP_DAILY_SETTLEMENT_SITE_LAYOUT"
+              plain
+              :loading="historyLoading"
+              @click="openHistoryDialog"
+            >
               交账历史
             </ElButton>
             <ElButton
@@ -764,9 +1058,13 @@ onActivated(() => {
               :disabled="!canPrintSettlement"
               @click="handlePrintSettlement"
             >
-              打印日结单
+              {{ resultTab === 'patient' ? '打印患者分项' : '打印日结单' }}
+            </ElButton>
+            <ElButton plain :disabled="!hasPatientSummaryDisplay" @click="handleExportPatientSummaries">
+              导出患者分项
             </ElButton>
             <ElButton
+              v-if="!OP_DAILY_SETTLEMENT_SITE_LAYOUT"
               type="primary"
               plain
               :loading="submitLoading"
@@ -788,7 +1086,7 @@ onActivated(() => {
           </h3>
 
           <ElAlert
-            v-if="hasQueried && hasGapHardBlock"
+            v-if="!OP_DAILY_SETTLEMENT_SITE_LAYOUT && hasQueried && hasGapHardBlock"
             type="error"
             :closable="false"
             show-icon
@@ -796,7 +1094,7 @@ onActivated(() => {
             :title="gapHardBlockMessage"
           />
           <ElAlert
-            v-if="hasQueried && gapSoftWarnCount > 0"
+            v-if="!OP_DAILY_SETTLEMENT_SITE_LAYOUT && hasQueried && gapSoftWarnCount > 0"
             type="warning"
             :closable="false"
             show-icon
@@ -811,7 +1109,7 @@ onActivated(() => {
               <span class="text-[var(--el-text-color-regular)]">款员：</span>
               {{ selectedCashierLabel }}
             </div>
-            <div>
+            <div v-if="!OP_DAILY_SETTLEMENT_SITE_LAYOUT">
               <ElTooltip
                 content="按 payment 流水条数计，含 0 元收费与一收一退抵净流水，须归档后才会从待交账列表消失"
                 placement="top"
@@ -828,32 +1126,77 @@ onActivated(() => {
             </div>
           </div>
 
-          <template v-if="hasFinTypeDisplay">
-            <div class="flex flex-col gap-1.5 border-b border-[var(--el-border-color)] pb-2.5">
-              <div
-                v-for="(row, rowIndex) in channelSummaryColumns"
-                :key="`fin-type-${rowIndex}`"
-                class="grid grid-cols-4 gap-x-5 gap-y-1 text-sm leading-snug"
-              >
-                <div
-                  v-for="item in row"
-                  :key="item.label"
-                  class="flex justify-between gap-2 text-[var(--el-text-color-primary)]"
-                >
-                  <span class="text-[var(--el-text-color-regular)]">{{ item.label }}：</span>
-                  <span class="font-medium">{{ item.value }}</span>
-                </div>
-              </div>
-            </div>
-          </template>
+          <template v-if="hasQueried">
+            <ElTabs v-model="resultTab" class="daily-settlement-result-tabs mt-1 shrink-0">
+              <ElTabPane label="日结合计" name="summary">
+                <template v-if="hasFinTypeDisplay">
+                  <div
+                    class="flex flex-col gap-1.5 border-b border-[var(--el-border-color)] pb-2.5"
+                  >
+                    <div
+                      v-for="(row, rowIndex) in channelSummaryColumns"
+                      :key="`fin-type-${rowIndex}`"
+                      class="grid grid-cols-4 gap-x-5 gap-y-1 text-sm leading-snug"
+                    >
+                      <div
+                        v-for="item in row"
+                        :key="item.label"
+                        class="flex justify-between gap-2 text-[var(--el-text-color-primary)]"
+                      >
+                        <span class="text-[var(--el-text-color-regular)]">{{ item.label }}：</span>
+                        <span class="font-medium">{{ item.value }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </template>
 
-          <template v-if="hasQueried && hasSummaryDisplay">
-            <DailySettlementSummaryPanel :summary="resolvedSummary" />
+                <template v-if="hasSummaryDisplay">
+                  <DailySettlementSummaryPanel
+                    :summary="resolvedSummary"
+                    :discount-feature-enabled="Boolean(pageInit?.discountFeatureEnabled)"
+                  />
+                </template>
+
+                <ElEmpty
+                  v-if="!queryLoading && !hasFinTypeDisplay && !hasSummaryDisplay"
+                  description="当前日结时间范围内暂无收费汇总"
+                  class="py-6"
+                />
+              </ElTabPane>
+
+              <ElTabPane label="患者分项" name="patient">
+                <div v-if="hasPatientSummaryDisplay" class="flex flex-col gap-3 pb-4 pr-1">
+                  <div
+                    v-for="block in patientSummaries"
+                    :key="`patient-${block.seqNo}-${block.encounterId ?? block.patientId ?? ''}`"
+                    class="overflow-hidden rounded-lg border border-solid border-[var(--el-border-color)] bg-[var(--el-bg-color)]"
+                  >
+                    <div
+                      class="border-b border-solid border-[var(--el-border-color-lighter)] bg-[var(--el-fill-color-light)] px-3 py-2 text-sm font-medium text-[var(--el-text-color-primary)]"
+                    >
+                      {{ formatPatientBlockTitle(block) }}
+                    </div>
+                    <div class="px-3 py-3">
+                      <DailySettlementSummaryPanel
+                        :summary="block.summary"
+                        omit-retail-upload-diff
+                        :discount-feature-enabled="Boolean(pageInit?.discountFeatureEnabled)"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <ElEmpty
+                  v-else-if="!queryLoading"
+                  description="当前日结时间范围内暂无患者分项"
+                  class="py-6"
+                />
+              </ElTabPane>
+            </ElTabs>
           </template>
 
           <ElEmpty
-            v-if="hasQueried && !queryLoading && !hasFinTypeDisplay && !hasSummaryDisplay"
-            description="当前日结时间范围内暂无收费汇总"
+            v-if="!hasQueried && !queryLoading"
+            description="请选择日结时间后查询"
             class="py-6"
           />
         </div>
@@ -974,6 +1317,14 @@ onActivated(() => {
 .daily-settlement-query-form :deep(.el-form-item) {
   margin-right: 12px;
   margin-bottom: 0;
+}
+
+.daily-settlement-cashier-item {
+  flex: none;
+}
+
+.daily-settlement-cashier-item :deep(.el-select) {
+  width: 240px;
 }
 
 .daily-settlement-alert {

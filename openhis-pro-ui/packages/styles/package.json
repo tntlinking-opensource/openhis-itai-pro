@@ -1,5 +1,5 @@
 {
-  "name": "@vben/styles",
+  "name": "@zxplat/styles",
   "version": "5.5.9",
   "homepage": "https://github.com/vbenjs/vue-vben-admin",
   "bugs": "https://github.com/vbenjs/vue-vben-admin/issues",
@@ -29,6 +29,6 @@
     }
   },
   "dependencies": {
-    "@vben-core/design": "workspace:*"
+    "@zxplat-core/design": "workspace:*"
   }
 }

@@ -180,7 +180,7 @@ const currentInsuplcAdmdvs = computed(
 
 /**
  * 跨省参保（前两位 ≠ 22）：强制挂号费自费，勾选灰掉。
- * @see whale-doc/whale-module-chs-jilin/30-跨省挂号费强制自费与失败改自费.md
+ * @see docs/zxplat-module-chs-jilin/30-跨省挂号费强制自费与失败改自费.md
  */
 const isCrossProvinceRegisterFee = computed(
   () => isInsuranceRegister.value && isCrossProvinceInsuplc(currentInsuplcAdmdvs.value),
@@ -281,15 +281,18 @@ async function syncBenefitPreview(options?: { autoApplyRecommend?: boolean }) {
       if (psnName) {
         const current = await area.getSubmitValues();
         if (!String(current.patientName ?? '').trim()) {
-          area.applyPatientRecord({
-            patientAge: String(current.medicalInsuranceNo ?? ''),
-            patientBirthday: String(current.patientBirthday ?? ''),
-            patientGender: String(current.patientGender ?? ''),
-            patientIdCard: String(current.patientIdCard ?? ''),
-            patientName: psnName,
-            patientPhone: String(current.patientPhone ?? ''),
-            // 不传 patientAddress：保留读卡已写入的地址默认值
-          });
+          area.applyPatientRecord(
+            {
+              patientAge: String(current.medicalInsuranceNo ?? ''),
+              patientBirthday: String(current.patientBirthday ?? ''),
+              patientGender: String(current.patientGender ?? ''),
+              patientIdCard: String(current.patientIdCard ?? ''),
+              patientName: psnName,
+              patientPhone: String(current.patientPhone ?? ''),
+              // 不传 patientAddress：保留读卡已写入的地址默认值
+            },
+            { rebind: false },
+          );
         }
       }
       if (options?.autoApplyRecommend) {
@@ -328,13 +331,13 @@ async function syncBenefitPreview(options?: { autoApplyRecommend?: boolean }) {
         }
         area.applyBenefitPreview({
           kind: 'WORK_INJURY',
-          eligibilityMessage: '请先启动 OpenHIS.Win 后再查询工伤备案',
+          eligibilityMessage: '请先启动 Zxplat.Win 后再查询工伤备案',
           workInjury: {
-            errorMessage: '请先启动 OpenHIS.Win 后再查询工伤备案',
+            errorMessage: '请先启动 Zxplat.Win 后再查询工伤备案',
             statusLabel: '查询失败',
           },
         });
-        ElMessage.warning('请先启动 OpenHIS.Win 后再查询工伤备案');
+        ElMessage.warning('请先启动 Zxplat.Win 后再查询工伤备案');
         return;
       }
       const result = await probeWorkInjuryFilingViaWin();
@@ -383,14 +386,17 @@ async function syncBenefitPreview(options?: { autoApplyRecommend?: boolean }) {
         const phone = result.phone || curPhone;
         const name = result.psnName || curName;
         if (result.psnNo || name || birthDate || genderCode || age || phone || certno) {
-          area.applyPatientRecord({
-            patientAge: age,
-            patientBirthday: birthDate,
-            patientGender: genderCode || curGender,
-            patientIdCard: certno || String(current.patientIdCard ?? ''),
-            patientName: name,
-            patientPhone: phone,
-          });
+          area.applyPatientRecord(
+            {
+              patientAge: age,
+              patientBirthday: birthDate,
+              patientGender: genderCode || curGender,
+              patientIdCard: certno || String(current.patientIdCard ?? ''),
+              patientName: name,
+              patientPhone: phone,
+            },
+            { rebind: false },
+          );
         }
       }
       if (!result.hasValidFiling && result.psnNo) {
@@ -500,6 +506,21 @@ const queryPatientOptions = async ({
     totalElements,
   };
 };
+
+/**
+ * 挂号员改了姓名/证件/性别/生日后不再提交上一次患者主键。
+ * 身份证变了同时丢掉读卡待遇，避免新人沿用失败那次的医保凭证。
+ */
+function handlePatientIdentityDetach(payload: { idCardChanged: boolean }) {
+  selectedPatientId.value = '';
+  selectedPatientLabel.value = '';
+  if (!payload.idCardChanged) {
+    return;
+  }
+  resetBenefitState();
+  clearWorkInjuryPreContext();
+  registerFormAreaRef.value?.clearBenefitPreview();
+}
 
 /** 处理患者下拉变更：清空选择时同步表单；选中时回填患者信息并清空搜索框 */
 const handlePatientSelect = async (
@@ -658,15 +679,32 @@ function onRegisterConfirmCancelled() {
   emit('registerCancelled');
 }
 
+/**
+ * 按当前介质重读就诊凭证并刷新挂号费医保预结算（01 展码 / 02 身份证 / 03 社保卡）。
+ *
+ * @param pre 当前预结算结果（须含 paymentDraftId）
+ * @returns 合并后的预结算；读卡失败或刷新失败时返回 null
+ */
 async function rescanEcAndRefreshPreSettlement(
   pre: PreRegisterSettlementResult,
 ): Promise<null | PreRegisterSettlementResult> {
   if (!pre.paymentDraftId) {
     return null;
   }
-  await readPatientIdentity('yb-ec');
+  // 按介质重读：卡密有短时效，禁止继续用旧 SignBuff 刷 2207
+  const medium = String(lastYbMediumType.value ?? '').trim();
+  let identitySource: 'id' | 'yb-card' | 'yb-ec' = 'yb-ec';
+  let failHint = '重新扫医保码未获取有效凭证，请重试';
+  if (medium === '02') {
+    identitySource = 'id';
+    failHint = '重新读身份证未获取有效卡密，请重试';
+  } else if (medium === '03') {
+    identitySource = 'yb-card';
+    failHint = '重新刷社保卡未获取有效凭证，请重试';
+  }
+  await readPatientIdentity(identitySource);
   if (!lastYbCardInfo.value || !lastYbPreview.value?.psnNo) {
-    ElMessage.warning('重新扫医保码未获取有效凭证，请重试');
+    ElMessage.warning(failHint);
     return null;
   }
   const refresh = await refreshRegisterFeeInsurancePreSettle({
@@ -699,6 +737,10 @@ const handleSubmit = async () => {
   }
 
   const values = await area.getSubmitValues();
+  const released = area.releaseBoundPatientIfIdentityChanged(values);
+  if (released) {
+    handlePatientIdentityDetach(released);
+  }
   await refreshContractCategoryFromForm();
 
   const deptLabel = area.getDepartmentLabel(values.departmentId) ?? '';
@@ -735,7 +777,7 @@ const handleSubmit = async () => {
       return;
     }
     if (!wiBenefit.psnNo?.trim()) {
-      ElMessage.warning('未识别到工伤人员信息，请确认 OpenHIS.Win 已启动并放置工伤卡后再查备案');
+      ElMessage.warning('未识别到工伤人员信息，请确认 Zxplat.Win 已启动并放置工伤卡后再查备案');
       return;
     }
   }
@@ -919,6 +961,7 @@ const handleSubmit = async () => {
     :work-injury-selected="isWorkInjuryRegister"
     :work-injury-pre-encounter-id="workInjuryPreEncounterId"
     :work-injury-pre-contract-id="workInjuryPreContractId"
+    @patient-identity-detach="handlePatientIdentityDetach"
     @contract-change="handleContractCategoryChange"
     @department-change="handleDepartmentChange"
     @doctor-change="handleDoctorChange"

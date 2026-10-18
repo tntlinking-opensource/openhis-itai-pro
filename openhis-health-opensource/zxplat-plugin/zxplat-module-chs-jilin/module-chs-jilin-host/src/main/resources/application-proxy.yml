@@ -1,0 +1,16 @@
+server:
+  port: 8092
+
+# CHS 独立 proxy 进程：与 ChsGatewayProxy* / ChsDeploymentProperties 键名对齐
+zxplat:
+  modules:
+    chs:
+      enabled: true
+  chs:
+    deployment:
+      mode: embedded
+      standalone: true
+    gateway:
+      proxy:
+        standalone: true
+        api-key: ${CHS_PROXY_API_KEY:}

@@ -1,0 +1,4 @@
+﻿zxplat:
+  modules:
+    unionpay-bpc:
+      enabled: false

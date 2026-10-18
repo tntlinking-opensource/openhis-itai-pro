@@ -1,7 +1,0 @@
-java: 程序包com.openhis.whale.core.config不存在
-java: 找不到符号
-  符号:   类 InitializationCompletedEvent
-  位置: 类 com.openhis.health.config.ApplicationInitializer
-java: 找不到符号
-  符号:   类 InitializationCompletedEvent
-  位置: 类 com.openhis.health.config.ApplicationInitializer

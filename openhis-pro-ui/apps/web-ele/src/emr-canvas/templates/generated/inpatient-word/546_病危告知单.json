@@ -1,0 +1,734 @@
+{
+  "code": "IP_WORD_546",
+  "name": "病危告知单",
+  "category": "入院记录",
+  "sourceTemplateId": "546",
+  "typeCode": "INPATIENT_入院记录",
+  "summary": "Word原样迁移v1 · 段1/表1 · 元0/日0/勾6/单0 · 约2页",
+  "estimatedPages": 2,
+  "structure": {
+    "paraCount": 1,
+    "tableCount": 1,
+    "meta": 0,
+    "date": 0,
+    "plainFill": 0,
+    "fill": 0,
+    "checkbox": 6,
+    "radio": 0
+  },
+  "data": {
+    "header": [
+      {
+        "id": "emrHospitalTitle",
+        "value": "医院名称",
+        "font": "SimHei",
+        "size": 29,
+        "bold": true,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center",
+        "rowMargin": 1
+      },
+      {
+        "id": "emrDocumentTitle",
+        "value": "病危告知单",
+        "font": "SimSun",
+        "size": 21,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "type": "separator",
+        "value": "",
+        "lineWidth": 1.15
+      }
+    ],
+    "main": [
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "病危病重通知书",
+        "bold": true,
+        "rowFlex": "center"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center"
+      },
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_007",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 174
+          },
+          {
+            "width": 174
+          },
+          {
+            "width": 174
+          },
+          {
+            "width": 176
+          }
+        ],
+        "tableToolDisabled": true,
+        "rowFlex": "left",
+        "trList": [
+          {
+            "height": 48,
+            "minHeight": 48,
+            "tdList": [
+              {
+                "colspan": 4,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "南关国基医院",
+                    "bold": true,
+                    "rowFlex": "center"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "病危病重通知书",
+                    "rowFlex": "center"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "患者姓名",
+                    "bold": true,
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "性别",
+                    "bold": true,
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "年龄",
+                    "bold": true,
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "病历号",
+                    "bold": true,
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 528,
+            "minHeight": 528,
+            "tdList": [
+              {
+                "colspan": 4,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "尊敬的患者家属或患者的法定监护人、授权委托人：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　您好！您的家人",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　　　　　　　",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "现在我院",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　　　　　　　　　",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "科住院治疗。",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　目前诊断为",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　　　　　　　　　　",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "。",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "虽经医护人员积极救治，但目前患者病情危重，并且病情有可能进一步恶化，随时会出现以下一种或多种危及患者生命的并发症：",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "1. 肺性脑病，严重心律失常、心功能衰竭、心肌梗死、高血压危象；",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "2. 上消化道出血导致出血性休克、脑出血、脑梗塞、脑疝；",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "3. 感染中毒性休克、过敏性休克、心源性休克；",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "4. 弥漫性血管内凝血（DIC）；",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "5. 多器官功能衰竭；",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "6. 糖尿病酮症、酸中毒、低血糖性昏迷、高渗性昏迷；",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "7. 其他。",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　上述情况一旦发生会严重威胁患者生命，医护人员将会全力抢救，其中包括气管切开、呼吸机辅助呼吸、电除颤、心脏按摩、安装临时起搏器等措施。",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　根据我国法律规定，为抢救患者，医生可以在不征得您同意的情况下依据救治工作的需要对患者先采取抢救措施，并使用应急救治所必需的仪器设备和治疗手段，然后履行告知义务，请您予以理解并积极配合医院的抢救治疗。",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　如您还有其他问题和要求，请在接到本通知后主动找医生了解咨询。请您留下准确的联系方式，以便医护人员随时与您沟通。",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　此外，限于目前医学科学技术条件，尽管我院医护人员已经尽全力救治患者，仍存在因疾病原因患者不幸死亡的可能。请患者家属予以理解。",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 360,
+            "minHeight": 360,
+            "tdList": [
+              {
+                "colspan": 4,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "患者家属或患者的法定监护人、授权委托人意见：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　关于患者目前的病情危重、可能出现的风险和后果以及医护人员对于患者病情危重时进行的救治措施，医护人员已经向我详细告知。我了解了患者病情危重，并 （“同意”）医护人员进行（同意划√，可多选）：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_001",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "气管切开",
+                          "code": "chk_001"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_002",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "呼吸机辅助呼吸",
+                          "code": "chk_002"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_003",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "电除颤",
+                          "code": "chk_003"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_004",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "心脏按压",
+                          "code": "chk_004"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_005",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "临时起搏器",
+                          "code": "chk_005"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_006",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "其他有创救治措施。",
+                          "code": "chk_006"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "患者授权亲属签名",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　　　　　　",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "与患者关系",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　　　　　　　　　　",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "签名日期 年 月 日",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　关于患者目前的病情危重、可能出现的风险和后果以及医护人员对于患者病情危重时进行的救治措施，医护人员已经向我详细告知。我了解了患者病情危重，我 （“不同意”）医护人员进行上述有创救治措施，我 （“同意”或“不同意”）使用药物进行救治，对所发生的一切后果我们自行承担责任。",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "患者授权亲属签名",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　　　　　　　",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "与患者关系",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　　　　　　　",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "签名日期 年 月",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 168,
+            "minHeight": 168,
+            "tdList": [
+              {
+                "colspan": 4,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "医护人员陈述：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　我已经将患者目前的病情危重、可能出现的风险和后果以及医护人员对于患者病情危重时进行的救治措施向患者家属或患者的法定监护人、授权委托人详细告知。",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "医护人员签名",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　　　　　　　　　　",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "签名日期 年 月 日",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "footer": []
+  }
+}

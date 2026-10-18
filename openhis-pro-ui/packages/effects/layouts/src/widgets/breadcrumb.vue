@@ -1,14 +1,14 @@
 <script lang="ts" setup>
-import type { BreadcrumbStyleType } from '@vben/types';
+import type { BreadcrumbStyleType } from '@zxplat/types';
 
-import type { IBreadcrumb } from '@vben-core/shadcn-ui';
+import type { IBreadcrumb } from '@zxplat-core/shadcn-ui';
 
 import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { $t } from '@vben/locales';
+import { $t } from '@zxplat/locales';
 
-import { VbenBreadcrumbView } from '@vben-core/shadcn-ui';
+import { VbenBreadcrumbView } from '@zxplat-core/shadcn-ui';
 
 interface Props {
   hideWhenOnlyOne?: boolean;

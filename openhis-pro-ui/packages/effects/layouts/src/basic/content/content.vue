@@ -8,8 +8,8 @@ import type {
 import { computed } from 'vue';
 import { RouterView, useRoute } from 'vue-router';
 
-import { preferences, usePreferences } from '@vben/preferences';
-import { getTabKey, storeToRefs, useTabbarStore } from '@vben/stores';
+import { preferences, usePreferences } from '@zxplat/preferences';
+import { getTabKey, storeToRefs, useTabbarStore } from '@zxplat/stores';
 
 import { IFrameRouterView } from '../../iframe';
 import { Breadcrumb } from '../../widgets';

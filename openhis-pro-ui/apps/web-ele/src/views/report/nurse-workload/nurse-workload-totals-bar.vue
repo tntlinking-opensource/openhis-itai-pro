@@ -1,27 +1,33 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-import { IconifyIcon } from '@vben/icons';
+import { IconifyIcon } from '@zxplat/icons';
 
 import { fmtReportNumber, fmtReportPurchaseMoney } from '#/views/report/shared/report-format';
 
 defineOptions({ name: 'NurseWorkloadTotalsBar' });
 
 interface Props {
+  consumableTotalDiscountAmount?: number | string;
   consumableTotalPurchaseAmount?: number | string | null;
   consumableTotalQuantity?: number | string;
   consumableTotalSaleAmount?: number | string;
+  discountFeatureEnabled?: boolean;
   executionTotalCount?: number;
+  executionTotalDiscountAmount?: number | string;
   executionTotalPurchaseAmount?: number | string | null;
   executionTotalSaleAmount?: number | string;
   nurseCount?: number;
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  consumableTotalDiscountAmount: 0,
   consumableTotalPurchaseAmount: null,
   consumableTotalQuantity: 0,
   consumableTotalSaleAmount: 0,
+  discountFeatureEnabled: false,
   executionTotalCount: 0,
+  executionTotalDiscountAmount: 0,
   executionTotalPurchaseAmount: null,
   executionTotalSaleAmount: 0,
   nurseCount: 0,
@@ -30,6 +36,15 @@ const props = withDefaults(defineProps<Props>(), {
 const saleTotal = computed(
   () => Number(props.executionTotalSaleAmount ?? 0) + Number(props.consumableTotalSaleAmount ?? 0),
 );
+
+const discountTotal = computed(
+  () =>
+    Number(props.executionTotalDiscountAmount ?? 0) +
+    Number(props.consumableTotalDiscountAmount ?? 0),
+);
+
+/** 已配置有效折扣时展示优惠/实收。 */
+const showDiscount = computed(() => Boolean(props.discountFeatureEnabled));
 
 const purchaseTotal = computed(() => {
   const executionPurchase = props.executionTotalPurchaseAmount;
@@ -110,6 +125,21 @@ const purchaseTotal = computed(() => {
           <span class="nurse-workload-stats__label">售价合计</span>
           <span class="nurse-workload-stats__value nurse-workload-stats__value--amount-total">
             {{ fmtReportNumber(saleTotal, 2) }}
+          </span>
+        </div>
+      </div>
+
+      <div
+        v-if="showDiscount"
+        class="nurse-workload-stats__card nurse-workload-stats__card--amount-total"
+      >
+        <span class="nurse-workload-stats__icon">
+          <IconifyIcon icon="lucide:percent" />
+        </span>
+        <div class="nurse-workload-stats__content">
+          <span class="nurse-workload-stats__label">优惠合计</span>
+          <span class="nurse-workload-stats__value nurse-workload-stats__value--amount-total">
+            {{ fmtReportNumber(discountTotal, 2) }}
           </span>
         </div>
       </div>

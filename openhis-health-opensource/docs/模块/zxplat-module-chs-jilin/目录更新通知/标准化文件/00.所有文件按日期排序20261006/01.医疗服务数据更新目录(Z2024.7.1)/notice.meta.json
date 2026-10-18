@@ -1,0 +1,10 @@
+{
+  "doc_kind": "CATALOG_DELTA",
+  "category": "SERVICE",
+  "title": "医疗服务数据更新目录(Z2024.7.1)",
+  "source_filename": "医疗服务数据更新目录(Z2024.7.1).xlsx",
+  "notice_date": "2024-07-01",
+  "effective_date": null,
+  "wash_note": "引擎=xlrd；目录更新洗数；服务ADD用project_code(01*)；STOP/MODIFY用hilist_code；限价等进ext_json；伪xlsx(OLE)经xlrd读取；Sheet无动作前缀，按本期变更→MODIFY；编码为01*同时保留project/hilist；1C返工：服务类行误填 hilist 的01*已迁入 project_code，hilist_code 置空。",
+  "wash_tool": "cursor-ai"
+}

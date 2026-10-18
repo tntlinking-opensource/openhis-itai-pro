@@ -1,0 +1,118 @@
+/**
+ * CanvasEmrEditor 布局与纸面样式。
+ * 不走 SFC scoped：院点 override 生产构建曾丢失 scoped CSS，导致纸面灰底/高度链失效。
+ */
+.canvas-emr-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.canvas-emr-shell__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.canvas-emr-editor {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  background: var(--el-fill-color-light);
+}
+
+.canvas-emr-editor [editor-component='main'] {
+  margin: 8px auto 12px;
+}
+
+.canvas-emr-editor .ce-page-container canvas {
+  box-shadow: 0 4px 18px rgba(15, 23, 42, 0.08);
+}
+
+/* 隐藏选表/加号蓝条；行列表头做成透明，保留拖行高/列宽锚点 */
+.canvas-emr-editor .ce-table-tool__quick__add,
+.canvas-emr-editor .ce-table-tool__select {
+  display: none !important;
+}
+
+.canvas-emr-editor .ce-table-tool__row,
+.canvas-emr-editor .ce-table-tool__col {
+  background: transparent !important;
+  overflow: visible !important;
+}
+
+.canvas-emr-editor .ce-table-tool__row__item,
+.canvas-emr-editor .ce-table-tool__col__item {
+  background: transparent !important;
+}
+
+.canvas-emr-editor .ce-table-tool__row__item::after,
+.canvas-emr-editor .ce-table-tool__col__item::after {
+  display: none !important;
+}
+
+/* 表内线框热区加宽，避免 4px 点不中 */
+.canvas-emr-editor .ce-table-tool__border__row {
+  height: 10px !important;
+  z-index: 2;
+}
+
+.canvas-emr-editor .ce-table-tool__border__col {
+  width: 10px !important;
+  z-index: 2;
+}
+
+.catalog-pane,
+.find-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 220px;
+  padding: 10px;
+  overflow: auto;
+  border-left: 1px solid #e4e7ed;
+  background: #fff;
+}
+
+.catalog-pane {
+  border-right: 1px solid #e4e7ed;
+  border-left: 0;
+}
+
+.catalog-pane__title,
+.find-pane__title {
+  font-weight: 600;
+}
+
+.catalog-tree {
+  margin: 0;
+  padding-left: 12px;
+}
+
+.catalog-tree__item {
+  padding: 4px 0;
+  color: #303133;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.find-pane__nav {
+  font-size: 12px;
+  color: #909399;
+}
+
+.canvas-emr-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  min-height: 32px;
+  padding: 2px 12px;
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+  border-top: 1px solid var(--el-border-color-lighter);
+  background: var(--el-bg-color);
+}

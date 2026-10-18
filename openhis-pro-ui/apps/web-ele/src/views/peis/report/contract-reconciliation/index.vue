@@ -4,7 +4,7 @@ import type { ContractReconciliationRowDto } from '#/api/peis/contract-reconcili
 
 import { computed, onMounted, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import { listContractReconciliationApi } from '#/api/peis/contract-reconciliation';
 import { listCompaniesApi, markContractPaidApi } from '#/api/peis/group-check';

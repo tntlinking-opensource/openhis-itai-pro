@@ -7,8 +7,8 @@ import type { MenuItemClicked, MenuItemRegistered, MenuProps, MenuProvider } fro
 
 import { computed, nextTick, reactive, ref, toRef, useSlots, watch, watchEffect } from 'vue';
 
-import { useNamespace } from '@vben-core/composables';
-import { Ellipsis } from '@vben-core/icons';
+import { useNamespace } from '@zxplat-core/composables';
+import { Ellipsis } from '@zxplat-core/icons';
 
 import { useResizeObserver } from '@vueuse/core';
 

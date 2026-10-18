@@ -6,6 +6,8 @@ export const PRINT_SCENARIO_LABELS: Record<PrintScenario, string> = {
   [PRINT_SCENARIO.outpatientRx]: '门诊处方',
   [PRINT_SCENARIO.outpatientTcmRx]: '门诊中药处方',
   [PRINT_SCENARIO.chargeReceipt]: '门诊收费小票',
+  [PRINT_SCENARIO.chargeInvoice]: '门诊收费发票',
+  [PRINT_SCENARIO.opFeeListPrint]: '门诊患者费用清单',
   [PRINT_SCENARIO.opRegPrint]: '门诊挂号小票',
   [PRINT_SCENARIO.opTreatmentPrint]: '门诊处置单',
   [PRINT_SCENARIO.opInfusionLabelPrint]: '输液瓶签',
@@ -15,7 +17,9 @@ export const PRINT_SCENARIO_LABELS: Record<PrintScenario, string> = {
   [PRINT_SCENARIO.ipDailySettlementPatientPrint]: '住院收费日结单（患者分项）',
   [PRINT_SCENARIO.pharmacyDailySettlementPrint]: '药房日结单',
   [PRINT_SCENARIO.examinationPrint]: '检查申请单',
+  [PRINT_SCENARIO.examinationPrintA5]: '检查申请单(A5)',
   [PRINT_SCENARIO.testPrint]: '检验申请单',
+  [PRINT_SCENARIO.testPrintA5]: '检验申请单(A5)',
   [PRINT_SCENARIO.ipNursingRecordPrint]: '护理记录单',
   [PRINT_SCENARIO.ipFeeListPrint]: '住院费用清单',
   [PRINT_SCENARIO.ipFeeDetailPrint]: '住院费用明细单',
@@ -29,6 +33,10 @@ export const PRINT_SCENARIO_LABELS: Record<PrintScenario, string> = {
   [PRINT_SCENARIO.ipWristbandPrint]: '住院腕带',
   [PRINT_SCENARIO.ipBedCardPrint]: '床头卡',
   [PRINT_SCENARIO.ipPrepayReceiptPrint]: '住院预交金收据',
+  [PRINT_SCENARIO.ipPrepayChangePrint]: '住院预交金找补收据',
+  [PRINT_SCENARIO.ipAdmissionCertificatePrint]: '住院证',
+  [PRINT_SCENARIO.ipInsuranceSettlementPrint]: '医保结算单',
+  [PRINT_SCENARIO.ipReturnMedicinePrint]: '住院退药单',
   [PRINT_SCENARIO.ipOralMedLabelPrint]: '住院口服药贴',
   [PRINT_SCENARIO.ipInfusionLabelPrint]: '住院瓶签',
   [PRINT_SCENARIO.ipExamApplyPrint]: '住院检查单',
@@ -56,6 +64,14 @@ export const PRINT_SCENARIO_ITEMS: Array<{ label: string; scenarioCode: PrintSce
   {
     scenarioCode: PRINT_SCENARIO.chargeReceipt,
     label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.chargeReceipt],
+  },
+  {
+    scenarioCode: PRINT_SCENARIO.chargeInvoice,
+    label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.chargeInvoice],
+  },
+  {
+    scenarioCode: PRINT_SCENARIO.opFeeListPrint,
+    label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.opFeeListPrint],
   },
   {
     scenarioCode: PRINT_SCENARIO.opRegPrint,
@@ -90,8 +106,16 @@ export const PRINT_SCENARIO_ITEMS: Array<{ label: string; scenarioCode: PrintSce
     label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.examinationPrint],
   },
   {
+    scenarioCode: PRINT_SCENARIO.examinationPrintA5,
+    label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.examinationPrintA5],
+  },
+  {
     scenarioCode: PRINT_SCENARIO.testPrint,
     label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.testPrint],
+  },
+  {
+    scenarioCode: PRINT_SCENARIO.testPrintA5,
+    label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.testPrintA5],
   },
   {
     scenarioCode: PRINT_SCENARIO.ipNursingRecordPrint,
@@ -144,6 +168,22 @@ export const PRINT_SCENARIO_ITEMS: Array<{ label: string; scenarioCode: PrintSce
   {
     scenarioCode: PRINT_SCENARIO.ipPrepayReceiptPrint,
     label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.ipPrepayReceiptPrint],
+  },
+  {
+    scenarioCode: PRINT_SCENARIO.ipPrepayChangePrint,
+    label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.ipPrepayChangePrint],
+  },
+  {
+    scenarioCode: PRINT_SCENARIO.ipAdmissionCertificatePrint,
+    label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.ipAdmissionCertificatePrint],
+  },
+  {
+    scenarioCode: PRINT_SCENARIO.ipInsuranceSettlementPrint,
+    label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.ipInsuranceSettlementPrint],
+  },
+  {
+    scenarioCode: PRINT_SCENARIO.ipReturnMedicinePrint,
+    label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.ipReturnMedicinePrint],
   },
   {
     scenarioCode: PRINT_SCENARIO.ipOralMedLabelPrint,

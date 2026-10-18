@@ -809,7 +809,7 @@ onMounted(async () => {
 
           <ElTableColumn align="center" label="状态" width="88">
             <template #default="{ row }">
-              <ElTag :type="row.activeFlag ? 'success' : 'info'" size="small">
+              <ElTag :type="row.activeFlag ? 'success' : 'warning'" size="small">
                 {{ row.activeFlag ? '启用' : '停用' }}
               </ElTag>
             </template>

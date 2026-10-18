@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import type { TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { Warehouse } from '#/api/basic/warehouse';
 
 import { onMounted, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { ElButton, ElMessage, ElMessageBox, ElTag } from 'element-plus';
 
@@ -249,7 +249,7 @@ onMounted(() => {
         <ElButton type="danger" link @click.stop="handleDelete(row)"> 删除 </ElButton>
       </template>
       <template #status="{ row }">
-        <ElTag :type="isWarehouseActive(row) ? 'success' : 'info'">
+        <ElTag :type="isWarehouseActive(row) ? 'success' : 'warning'">
           {{ row.statusEnumText }}
         </ElTag>
       </template>

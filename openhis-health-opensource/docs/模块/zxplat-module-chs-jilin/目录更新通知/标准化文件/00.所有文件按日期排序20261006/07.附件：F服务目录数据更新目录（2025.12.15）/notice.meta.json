@@ -1,0 +1,10 @@
+{
+  "doc_kind": "CATALOG_DELTA",
+  "category": "SERVICE_F",
+  "title": "附件：F服务目录数据更新目录（2025.12.15）",
+  "source_filename": "附件：F服务目录数据更新目录（2025.12.15）.xlsx",
+  "notice_date": "2025-12-15",
+  "effective_date": "2025-12-15",
+  "wash_note": "F服务局发目录更新；Sheet=['变更229']；服务ADD仅写project_code(01*)；价格/超限等进ext_json；；1C返工：服务类行误填 hilist 的01*已迁入 project_code，hilist_code 置空。",
+  "wash_tool": "cursor-ai"
+}

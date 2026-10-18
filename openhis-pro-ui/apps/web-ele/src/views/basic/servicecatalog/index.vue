@@ -1,14 +1,14 @@
 <script lang="ts" setup>
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { ServiceCatalogInitResponse, ServiceCatalogItem } from '#/api';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { ElButton, ElDialog, ElMessage, ElMessageBox, ElProgress, ElTag } from 'element-plus';
 
@@ -102,6 +102,14 @@ const tableColumns: TableColumn[] = [
     align: 'center',
     showOverflowTooltip: true,
   },
+  // 销售/计价单位展示名（列表 API `packageUnitCode_dictText` ↔ 主表 `package_unit_code`）
+  {
+    prop: 'packageUnitCode_dictText',
+    label: '单位',
+    width: 88,
+    align: 'center',
+    showOverflowTooltip: true,
+  },
   {
     prop: 'childrenFlag',
     label: '绑定子项',
@@ -139,10 +147,16 @@ function formatRetailPrice(price: unknown): string {
 
 /**
  * 列表/详情 `childrenFlag` 是否为「已绑定子项」
- *（列表 Boolean；详情 0/1，均按真值判定）。
+ *（列表 Boolean；详情 0/1；兼容字符串 true/1）。
  */
 function isChildrenBound(flag: unknown): boolean {
-  return flag === true || flag === 1 || flag === '1';
+  if (flag === true || flag === 1 || flag === '1') {
+    return true;
+  }
+  if (typeof flag === 'string' && flag.trim().toLowerCase() === 'true') {
+    return true;
+  }
+  return false;
 }
 
 /** 列表行是否为产品内置诊疗（禁止删/停用） */
@@ -359,7 +373,11 @@ const handleSelectionChange = (selection: ServiceCatalogItem[]) => {
 
 const handleSortChange = (_sortInfo: { column: unknown; order: string; prop: string }) => {};
 
-const handleAdd = () => {
+/**
+ * 打开新增：先重拉 init（含 activity_type_code），避免字典增码后仍用进页缓存。
+ */
+const handleAdd = async () => {
+  await loadInitOptions();
   editFormData.value = {};
   editDialogVisible.value = true;
 };
@@ -698,7 +716,13 @@ const handleRowDelete = async (row: ServiceCatalogItem) => {
   }
 };
 
-const handleEdit = (row: ServiceCatalogItem) => {
+/**
+ * 打开编辑：先重拉 init，保证业务类型下拉与术语字典一致。
+ *
+ * @param row 列表行
+ */
+const handleEdit = async (row: ServiceCatalogItem) => {
+  await loadInitOptions();
   editFormData.value = { ...row };
   editDialogVisible.value = true;
 };

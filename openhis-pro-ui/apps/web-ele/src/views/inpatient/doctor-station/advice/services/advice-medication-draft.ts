@@ -8,6 +8,8 @@ import {
   parseColonDefinitionId,
   parseProductTableNameFromSelectedId,
 } from './advice-row';
+import { resolvePersistMedicationQuantityUnit } from '#/utils/doctor-station/medication-unit-band-query';
+
 import {
   resolveFirstDosePersistPayload,
   resolveDoseQuantitySchedulePersistPayload,
@@ -90,6 +92,15 @@ function buildMedicationDraftLine(
     persistQty = schedulePersist.firstQuantity;
     persistUnitCode = schedulePersist.unitCode;
   }
+  // Gate：unitCode 须在目录 unitBands；非法时按剂量回落拆零（防成组带入溶媒单位）
+  ({ quantity: persistQty, unitCode: persistUnitCode } = resolvePersistMedicationQuantityUnit({
+    quantity: persistQty,
+    unitCode: persistUnitCode,
+    bands: item.unitBands,
+    dose: persistDose,
+    doseUnitCode: persistDoseUnitCode,
+    drugName: item.selectedDrugName,
+  }));
   const daysRaw = Number(item.medicationDays ?? Number.NaN);
   const dispensePerDuration =
     !longTerm && Number.isFinite(daysRaw) && daysRaw > 0 ? Math.trunc(daysRaw) : undefined;

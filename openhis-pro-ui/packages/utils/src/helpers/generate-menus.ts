@@ -1,8 +1,8 @@
 import type { Router, RouteRecordRaw } from 'vue-router';
 
-import type { ExRouteRecordRaw, MenuRecordRaw, RouteMeta } from '@vben-core/typings';
+import type { ExRouteRecordRaw, MenuRecordRaw, RouteMeta } from '@zxplat-core/typings';
 
-import { filterTree, mapTree, sortTree } from '@vben-core/shared/utils';
+import { filterTree, mapTree, sortTree } from '@zxplat-core/shared/utils';
 
 /**
  * 根据 routes 生成菜单列表

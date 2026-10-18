@@ -3,7 +3,7 @@ import type { DiagnosisCatalogInitResponse, DiagnosisCatalogItem } from '#/api';
 
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 
-import { useVbenModal } from '@vben/common-ui';
+import { useVbenModal } from '@zxplat/common-ui';
 
 import { ElButton, ElMessage } from 'element-plus';
 

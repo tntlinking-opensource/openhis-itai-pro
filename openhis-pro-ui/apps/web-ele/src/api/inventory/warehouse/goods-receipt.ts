@@ -1,5 +1,5 @@
 /**
- * 药库进货单 — 对接 Whale {@code POST /api/app/inventoryWarehouseGoodsReceipt/<method>}
+ * 药库进货单 — 对接 ZXPlat {@code POST /api/app/inventoryWarehouseGoodsReceipt/<method>}
  */
 import type { ApiResponse } from '#/types/api-response';
 

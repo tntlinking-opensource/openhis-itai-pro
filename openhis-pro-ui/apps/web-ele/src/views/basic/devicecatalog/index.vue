@@ -1,15 +1,15 @@
 <script lang="ts" setup>
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { DeviceCatalogInitResponse, DeviceCatalogItem } from '#/api';
 
 import { computed, nextTick, onActivated, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
-import { ElButton, ElDialog, ElMessage, ElMessageBox, ElProgress } from 'element-plus';
+import { ElButton, ElDialog, ElMessage, ElMessageBox, ElProgress, ElTag } from 'element-plus';
 
 import {
   batchStartDeviceCatalogApi,
@@ -25,7 +25,6 @@ import {
 } from '#/api';
 import type { DeviceCatalogImportProgressResult } from '#/api';
 import { PublicationStatusCode } from '#/constants/domain/publication-status';
-import StatusEnumTag from '#/components/status-enum-tag.vue';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { DEVICE_CATALOG_EXPORT_COLUMNS } from '#/utils/export/catalog-excel-export-columns';
 import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
@@ -725,6 +724,20 @@ onActivated(() => {
   }
 });
 
+/** 与药品目录列表一致：启用绿、停用橙、作废红描边 */
+const getStatusTagType = (statusEnum: unknown): 'danger' | 'info' | 'success' | 'warning' => {
+  if (statusEnum === PublicationStatusCode.ACTIVE) {
+    return 'success';
+  }
+  if (statusEnum === PublicationStatusCode.INACTIVE) {
+    return 'warning';
+  }
+  if (statusEnum === PublicationStatusCode.DISCARDED) {
+    return 'danger';
+  }
+  return 'info';
+};
+
 initPage();
 </script>
 
@@ -783,7 +796,12 @@ initPage();
       </template>
 
       <template #statusEnum="{ row }">
-        <StatusEnumTag :status-enum="row.statusEnum" :status-text="row.statusEnum_enumText" />
+        <ElTag
+          :type="getStatusTagType(row.statusEnum)"
+          :effect="row.statusEnum === PublicationStatusCode.DISCARDED ? 'plain' : 'dark'"
+        >
+          {{ row.statusEnum_enumText || '未知' }}
+        </ElTag>
       </template>
 
       <template #retailPrice="{ row }">

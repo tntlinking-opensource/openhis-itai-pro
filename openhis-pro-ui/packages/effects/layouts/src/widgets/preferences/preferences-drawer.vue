@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { SupportedLanguagesType } from '@vben/locales';
+import type { SupportedLanguagesType } from '@zxplat/locales';
 import type {
   BreadcrumbStyleType,
   BuiltinThemeType,
@@ -10,24 +10,24 @@ import type {
   NavigationStyleType,
   PreferencesButtonPositionType,
   ThemeModeType,
-} from '@vben/types';
+} from '@zxplat/types';
 
-import type { SegmentedItem } from '@vben-core/shadcn-ui';
+import type { SegmentedItem } from '@zxplat-core/shadcn-ui';
 
 import { computed, ref } from 'vue';
 
-import { Copy, Pin, PinOff, RotateCw } from '@vben/icons';
-import { $t, loadLocaleMessages } from '@vben/locales';
+import { Copy, Pin, PinOff, RotateCw } from '@zxplat/icons';
+import { $t, loadLocaleMessages } from '@zxplat/locales';
 import {
   clearPreferencesCache,
   preferences,
   resetPreferences,
   usePreferences,
-} from '@vben/preferences';
+} from '@zxplat/preferences';
 
-import { useVbenDrawer } from '@vben-core/popup-ui';
-import { VbenButton, VbenIconButton, VbenSegmented } from '@vben-core/shadcn-ui';
-import { globalShareState } from '@vben-core/shared/global-state';
+import { useVbenDrawer } from '@zxplat-core/popup-ui';
+import { VbenButton, VbenIconButton, VbenSegmented } from '@zxplat-core/shadcn-ui';
+import { globalShareState } from '@zxplat-core/shared/global-state';
 
 import { useClipboard } from '@vueuse/core';
 

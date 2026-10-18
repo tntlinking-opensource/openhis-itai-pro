@@ -11,7 +11,7 @@ function delay<T>(value: T): Promise<T> {
   });
 }
 
-/** 与订货等模块 mock 共用开关（进货单选品已走 Whale IF-WHS-IN-11，不依赖本开关） */
+/** 与订货等模块 mock 共用开关（进货单选品已走 ZXPlat IF-WHS-IN-11，不依赖本开关） */
 export function usePublicProductListMock(): boolean {
   return import.meta.env.VITE_USE_MOCK_PURCHASE_REQUEST === 'true';
 }

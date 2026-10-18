@@ -3,7 +3,7 @@ import type { SelectContentEmits, SelectContentProps } from 'reka-ui';
 
 import { computed } from 'vue';
 
-import { cn } from '@vben-core/shared/utils';
+import { cn } from '@zxplat-core/shared/utils';
 
 import { SelectContent, SelectPortal, SelectViewport, useForwardPropsEmits } from 'reka-ui';
 

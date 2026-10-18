@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import type { LayoutHeaderMenuAlignType, LayoutHeaderModeType, SelectOption } from '@vben/types';
+import type { LayoutHeaderMenuAlignType, LayoutHeaderModeType, SelectOption } from '@zxplat/types';
 
-import { $t } from '@vben/locales';
+import { $t } from '@zxplat/locales';
 
 import SelectItem from '../select-item.vue';
 import SwitchItem from '../switch-item.vue';

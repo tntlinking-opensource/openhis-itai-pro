@@ -1,5 +1,5 @@
 /**
- * 元数据字段定义 API（whale-emr MetadataFieldAppService）
+ * 元数据字段定义 API（zxplat-emr MetadataFieldAppService）
  */
 
 import type { PageApiResponse } from '#/types/api-response';

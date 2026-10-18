@@ -1,5 +1,5 @@
 {
-  "name": "@vben/turbo-run",
+  "name": "@zxplat/turbo-run",
   "version": "5.5.9",
   "private": true,
   "license": "LGPL-3.0",
@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "@clack/prompts": "catalog:",
-    "@vben/node-utils": "workspace:*",
+    "@zxplat/node-utils": "workspace:*",
     "cac": "catalog:"
   }
 }

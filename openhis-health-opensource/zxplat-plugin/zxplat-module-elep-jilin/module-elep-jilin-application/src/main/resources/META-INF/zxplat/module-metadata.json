@@ -1,0 +1,10 @@
+{
+  "moduleId": "elep",
+  "displayName": "电子处方（ELEP）",
+  "enabledProperty": "zxplat.modules.elep.enabled",
+  "autoConfigurationClass": "com.zxplat.plugin.elep.application.config.ElepAutoConfiguration",
+  "appServiceNames": [
+    "elepPrescription",
+    "elepCatalogSearch"
+  ]
+}

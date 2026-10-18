@@ -8,7 +8,7 @@ import type {
 
 import { computed, nextTick, ref, watch } from 'vue';
 
-import { ElButton, ElEmpty, ElTable, ElTableColumn, ElTag } from 'element-plus';
+import { ElButton, ElEmpty, ElSwitch, ElTable, ElTableColumn, ElTag } from 'element-plus';
 
 import SectionTitle from '#/components/layouts/section-title.vue';
 import TraceCodeTooltip from '#/components/trace/trace-code-tooltip.vue';
@@ -24,6 +24,7 @@ const props = withDefaults(
     actionDisabled?: boolean;
     detailLoading?: boolean;
     detailRows: InpatientReturnMedicineDetailRow[];
+    printLoading?: boolean;
     refundQueueStatus: string;
     selectedPatient: InpatientReturnMedicineQueuePatient | null;
     msfxHisScene?: string;
@@ -31,13 +32,20 @@ const props = withDefaults(
   {
     actionDisabled: false,
     detailLoading: false,
+    printLoading: false,
     msfxHisScene: MSFX_HIS_SCENE.IP_RETURN,
   },
 );
 
 const emit = defineEmits<{
   confirmReturn: [];
+  printReturn: [];
 }>();
+
+/** 确认退药成功后是否自动打印退药单（与父级双向绑定）。 */
+const autoPrintEnabled = defineModel<boolean>('autoPrintEnabled', {
+  default: false,
+});
 
 const detailTableRef = ref<null | TableInstance>(null);
 
@@ -60,6 +68,11 @@ const isPendingQueue = computed(() => props.refundQueueStatus === 'PENDING_REFUN
 
 const canOperate = computed(
   () => isPendingQueue.value && !props.actionDisabled && !!props.selectedPatient,
+);
+
+/** 已选出患者且有明细即可打；待退药打勾选行，已退药打当前列表 */
+const canPrint = computed(
+  () => !!props.selectedPatient && props.detailRows.length > 0 && !props.detailLoading,
 );
 
 const tableEmptyText = computed(() => {
@@ -147,6 +160,16 @@ defineExpose({
           <ElButton type="primary" :disabled="!canOperate" @click="emit('confirmReturn')">
             确认退药
           </ElButton>
+          <ElButton :disabled="!canPrint" :loading="printLoading" @click="emit('printReturn')">
+            退药打印
+          </ElButton>
+          <div
+            class="flex shrink-0 items-center gap-1.5 whitespace-nowrap"
+            title="开启后，确认退药成功会自动打印本次退药单"
+          >
+            <span class="text-xs text-[var(--el-text-color-regular)]">退药后自动打印退药单</span>
+            <ElSwitch v-model="autoPrintEnabled" inline-prompt active-text="开" inactive-text="关" />
+          </div>
           <MsfxUploadStatusBar
             :bus-no="msfxBusNo"
             :his-scene-enum="msfxHisScene"

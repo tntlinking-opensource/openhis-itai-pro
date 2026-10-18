@@ -11,8 +11,14 @@ export interface OrderTemplateApplyConfirmTemplateRow {
   lineKind: OrderTemplateApplyConfirmLineKind;
   itemName: string;
   kindLabel: string;
+  /**
+   * 可编辑数量。
+   * <p>诊疗（SERVICE）= 单次执行数量；确认落库时再 × `executionCount`（BR-ORD-036）。
+   * 药/材 = 开立总量。</p>
+   */
   quantity: number;
   unitName: string;
+  /** 诊疗行展示「单次数量 × 执行次数」摘要；药/材可选剂量文案 */
   dosageText?: string;
 }
 

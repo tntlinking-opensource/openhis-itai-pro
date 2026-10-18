@@ -74,9 +74,10 @@ export interface OutpatientDailySettlementPrintSource {
     depositAmount?: string;
     depositRefundAmount?: string;
     settleSupplementAmount?: string;
+    medicationTotalAmount?: string;
   };
   /**
-   * 住院患者分项打印源；有值且 {@link printMode}=`patient` 时按患者块拼装。
+   * 门/住院患者分项打印源；有值且 {@link printMode}=`patient` 时按患者块拼装。
    */
   patientSummaries?: Array<{
     seqNo?: number;
@@ -84,10 +85,15 @@ export interface OutpatientDailySettlementPrintSource {
     encounterBusNo?: string;
     wardName?: string;
     bedName?: string;
+    /** 门诊收费日期 yyyy-MM-dd */
+    chargeDate?: string;
+    hospitalizedText?: string;
     summary?: OutpatientDailySettlementPrintSource['summary'];
   }>;
   /** 合计打印（默认）或患者分项打印 */
-  printMode?: 'summary' | 'patient';
+  printMode?: 'patient' | 'summary';
+  /** 已配置有效折扣时渠道区打印折扣合计 */
+  discountFeatureEnabled?: boolean;
 }
 
 const UNKNOWN_CONTRACT_NAME = '未标注费用性质';
@@ -204,13 +210,26 @@ function mapFinTypeItems(
   });
 }
 
+/** 是否打印折扣合计：仅已配置有效折扣时打印。 */
+function shouldPrintDiscountAmount(
+  _discountAmount: string | undefined,
+  discountFeatureEnabled: boolean | undefined,
+): boolean {
+  return Boolean(discountFeatureEnabled);
+}
+
+/** 下半区渠道网格项。 */
 function mapChannelItems(
   summary: OutpatientDailySettlementPrintSource['summary'] | undefined,
-  options?: { omitRetailUploadDiff?: boolean },
+  options?: { discountFeatureEnabled?: boolean; omitRetailUploadDiff?: boolean },
 ): DailySettlementPrintMetric[] {
   if (!summary) {
     return [];
   }
+  const medicationTotal =
+    summary.medicationTotalAmount?.trim() ||
+    (summary.summaryRows ?? []).find((row) => row?.key === 'medicationTotalAmount')?.value ||
+    '0.00';
   const items: DailySettlementPrintMetric[] = [
     { labelText: '总收入', valueText: formatMoneyText(summary.totalIncome) },
     { labelText: '微信', valueText: formatMoneyText(summary.wechatAmount) },
@@ -221,6 +240,23 @@ function mapChannelItems(
       valueText: formatMoneyText(summary.cashDueAmount ?? summary.cashAmount),
     },
     {
+      labelText: '药品合计金额',
+      valueText: formatMoneyText(medicationTotal),
+    },
+  ];
+  if (shouldPrintDiscountAmount(summary.discountAmount, options?.discountFeatureEnabled)) {
+    // 与页面渠道区同序：应交现金后插入折扣合计；应收=折后总收入+折扣
+    items.push({
+      labelText: '折扣合计',
+      valueText: formatMoneyText(summary.discountAmount),
+    });
+    items.push({
+      labelText: '应收',
+      valueText: formatMoneyText(summary.receivableAmount),
+    });
+  }
+  items.push(
+    {
       labelText: '医保统筹',
       valueText: formatMoneyText(summary.insuranceCompensationAmount),
     },
@@ -228,7 +264,7 @@ function mapChannelItems(
       labelText: '个人账户',
       valueText: formatMoneyText(summary.insuranceAccountAmount),
     },
-  ];
+  );
   const retailDiffRaw =
     summary.chsRetailUploadDiffAmount?.trim() ||
     (summary.summaryRows ?? []).find((row) => row?.key === 'chsRetailUploadDiffAmount')?.value ||
@@ -276,10 +312,15 @@ function mapChannelItems(
   return items;
 }
 
-/** 组装患者分项身份标题文案：姓名 + 住院号 + 病房-病床（不带患者序号） */
+/**
+ * 组装患者分项身份标题。
+ * 住院：姓名 + 住院号 + 病房-病床；门诊：姓名 + 门诊号 + 收费日期 + 是否住院。
+ */
 function formatPatientBlockTitle(block: {
   bedName?: string;
+  chargeDate?: string;
   encounterBusNo?: string;
+  hospitalizedText?: string;
   patientName?: string;
   wardName?: string;
 }): string {
@@ -287,6 +328,12 @@ function formatPatientBlockTitle(block: {
   const busNo = str(block.encounterBusNo) || '—';
   const ward = str(block.wardName);
   const bed = str(block.bedName);
+  const chargeDate = str(block.chargeDate) || '—';
+  const hospitalizedText = str(block.hospitalizedText);
+  // 门诊特有：有「是否住院」文案时走门诊标题（不含预交金/病区）
+  if (hospitalizedText) {
+    return `${name} 门诊号:${busNo} 收费日期:${chargeDate} 是否住院:${hospitalizedText}`;
+  }
   let location = '';
   if (ward && bed) {
     location = `${ward}-${bed}`;
@@ -303,9 +350,13 @@ function formatPatientBlockTitle(block: {
 
 /**
  * 患者分项 → 渠道四列网格（每位患者先标题行，再跟合计同构金额行）。
+ *
+ * @param patients 患者分项块
+ * @param discountFeatureEnabled 已配置有效折扣时打印折扣合计
  */
 function mapPatientChannelRows(
   patients: OutpatientDailySettlementPrintSource['patientSummaries'],
+  discountFeatureEnabled?: boolean,
 ): OutpatientDailySettlementPrintGridRow[] {
   const rows: OutpatientDailySettlementPrintGridRow[] = [];
   for (const block of patients ?? []) {
@@ -324,7 +375,13 @@ function mapPatientChannelRows(
       amount4: '',
     });
     rows.push(
-      ...chunkToGridRows(mapChannelItems(block.summary, { omitRetailUploadDiff: true }), 4),
+      ...chunkToGridRows(
+        mapChannelItems(block.summary, {
+          omitRetailUploadDiff: true,
+          discountFeatureEnabled,
+        }),
+        4,
+      ),
     );
   }
   return rows;
@@ -388,6 +445,16 @@ function natureTableRow(
   };
 }
 
+/** 未分险种且现金/统筹/个账/总额全为 0 时不打印；任一列非 0 必须打出 */
+function isAllZeroInsutypeRow(type: DailySettlementInsuranceTypeSummaryDto): boolean {
+  return (
+    isZeroMoneyText(type.cashAmount) &&
+    isZeroMoneyText(type.fundAmount) &&
+    isZeroMoneyText(type.accountAmount) &&
+    isZeroMoneyText(type.totalAmount)
+  );
+}
+
 function mapInsutypeNatureRows(
   types: DailySettlementInsuranceTypeSummaryDto[] | undefined,
 ): OutpatientDailySettlementPrintNatureRow[] {
@@ -397,7 +464,7 @@ function mapInsutypeNatureRows(
       return;
     }
     const title = str(type.insutypeName) || UNKNOWN_INSUTYPE_NAME;
-    if (title === UNKNOWN_INSUTYPE_NAME) {
+    if (title === UNKNOWN_INSUTYPE_NAME && isAllZeroInsutypeRow(type)) {
       return;
     }
     rows.push(
@@ -506,7 +573,10 @@ export function buildOutpatientDailySettlementPrintData(
       cashierName: str(source.cashierName),
       settlementPeriodText: str(source.settlementPeriodText) || str(summary?.dateRange),
       finTypeRows: [],
-      channelRows: mapPatientChannelRows(source.patientSummaries),
+      channelRows: mapPatientChannelRows(
+        source.patientSummaries,
+        source.discountFeatureEnabled,
+      ),
       natureRows: mapPatientNatureRows(source.patientSummaries),
       workInjuryCategoryRows: [],
       workInjuryNatureRows: [],
@@ -518,7 +588,10 @@ export function buildOutpatientDailySettlementPrintData(
     cashierName: str(source.cashierName),
     settlementPeriodText: str(source.settlementPeriodText) || str(summary?.dateRange),
     finTypeRows: chunkToGridRows(mapFinTypeItems(source.rows)),
-    channelRows: chunkToGridRows(mapChannelItems(summary), 4),
+    channelRows: chunkToGridRows(
+      mapChannelItems(summary, { discountFeatureEnabled: source.discountFeatureEnabled }),
+      4,
+    ),
     natureRows: mapNatureRows(summary?.expenseNatureSummaries),
     // 工伤独立块：模板绑定 workInjury*；无工伤或院点关闭时为空数组
     workInjuryCategoryRows: mapWorkInjuryCategoryRows(workInjury),

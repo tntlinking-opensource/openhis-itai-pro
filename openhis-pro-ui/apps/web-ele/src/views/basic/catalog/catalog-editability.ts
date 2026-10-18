@@ -3,8 +3,8 @@
  * 编辑（药/材）：先 LOCK_CLINICAL（开过）再 LOCK_INVENTORY（入库）。
  * LOCK_INVENTORY：名称/分类/业务单位/拆零/价格等不可改；临床段仍可改。
  * LOCK_CLINICAL：在入库锁基础上另锁药品性质/剂型/剂量单位（不含剂量→拆零倍数、规格）。
- * 规格 totalVolume、拆分属性、医保等级、病案结算类型、药品 doseUnitRatio、追溯码单位/倍数
- * 两种锁定态均可改（含卖完/已开立）。
+ * 规格 totalVolume、拆分属性、医保等级、病案结算类型、药品 doseUnitRatio、追溯码单位/倍数、
+ * 诊疗业务类型 typeEnum 两种锁定态均可改（含卖完/已开立）。
  * 追溯码贴码单位与倍数游离于五类业务单位，与发布/业务引用锁定无关。
  * 删除：任一锁定码均整单禁删（与编辑优先级无关）。
  */
@@ -74,7 +74,6 @@ const SERVICE_STRUCTURE_LOCKED_FIELDS = new Set([
   'name',
   'busNo',
   'categoryCode',
-  'typeEnum',
   'packageUnitCode',
   'itemTypeCode',
   'ybType',

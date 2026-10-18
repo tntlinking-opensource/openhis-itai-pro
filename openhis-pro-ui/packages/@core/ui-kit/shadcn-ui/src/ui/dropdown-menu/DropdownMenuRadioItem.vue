@@ -3,7 +3,7 @@ import type { DropdownMenuRadioItemEmits, DropdownMenuRadioItemProps } from 'rek
 
 import { computed } from 'vue';
 
-import { cn } from '@vben-core/shared/utils';
+import { cn } from '@zxplat-core/shared/utils';
 
 import { Circle } from 'lucide-vue-next';
 import { DropdownMenuItemIndicator, DropdownMenuRadioItem, useForwardPropsEmits } from 'reka-ui';

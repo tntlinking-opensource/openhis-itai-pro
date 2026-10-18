@@ -1,4 +1,4 @@
-import type { BasicUserInfo } from '@vben/types';
+import type { BasicUserInfo } from '@zxplat/types';
 
 export interface ProfileUserInfo extends BasicUserInfo {
   name?: null | string;

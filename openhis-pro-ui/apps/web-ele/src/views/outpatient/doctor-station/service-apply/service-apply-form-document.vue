@@ -474,10 +474,11 @@ function handleCardClick() {
 .items-header,
 .items-row {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) minmax(64px, 0.6fr) 48px 48px 88px 80px;
-  gap: 8px;
+  /* 项目名称优先占宽，避免「(自费) + 长项目名」被截断 */
+  grid-template-columns: 36px minmax(200px, 2.6fr) minmax(52px, 0.45fr) 52px 44px 76px 72px;
+  gap: 6px;
   align-items: center;
-  padding: 8px 12px;
+  padding: 8px 10px;
 }
 
 .items-header {
@@ -513,9 +514,6 @@ function handleCardClick() {
 
 .items-row--bound .col-name {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .col-index,
@@ -526,9 +524,10 @@ function handleCardClick() {
 }
 
 .col-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  line-height: 1.35;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .col-detail {

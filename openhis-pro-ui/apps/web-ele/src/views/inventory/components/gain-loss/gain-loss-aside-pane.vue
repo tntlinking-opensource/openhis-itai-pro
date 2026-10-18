@@ -6,7 +6,7 @@ import type { ApiOptionItem } from '#/types/api-response';
 
 import { ref } from 'vue';
 
-import { RotateCw, Search } from '@vben/icons';
+import { RotateCw, Search } from '@zxplat/icons';
 
 import InvAsideShell from '@inventory/components/inv-aside-shell.vue';
 import InvPrimaryBtn from '@inventory/components/inv-primary-btn.vue';

@@ -1,0 +1,1128 @@
+[
+  {
+    "stem": "2024.10.25中药饮片（林下山参）",
+    "title": "2024.10.25中药饮片（林下山参）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "HERBAL",
+    "source_filename": "2024.10.25中药饮片（林下山参）.xlsx",
+    "csv_rows": 1,
+    "blank_action_skipped": 0,
+    "actions": {
+      "MODIFY": 1
+    },
+    "csv_bytes": 1330,
+    "source_file_hash": "6bed36f81e243e9809392151f4d5926a7702c299da505b101004cd1b7a796257"
+  },
+  {
+    "stem": "20260424-医疗服务价格项目规范",
+    "title": "20260424-医疗服务价格项目规范",
+    "doc_kind": "PAYMENT_MAP",
+    "category": "SERVICE",
+    "source_filename": "20260424-医疗服务价格项目规范.xlsx",
+    "csv_rows": 496,
+    "blank_action_skipped": 0,
+    "actions": {
+      "SET_PAY_CLASS": 496
+    },
+    "csv_bytes": 190326,
+    "source_file_hash": "34295e8388d477fbbe101d7eb59c7bf79e0001b7402b0aab5d74f16045510bf1"
+  },
+  {
+    "stem": "_附件：药品数据更新目录（2025.10.30、11.10、11.14）",
+    "title": "_附件：药品数据更新目录（2025.10.30、11.10、11.14）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "_附件：药品数据更新目录（2025.10.30、11.10、11.14）.xlsx",
+    "csv_rows": 1158,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 1087,
+      "STOP": 67,
+      "MODIFY": 4
+    },
+    "csv_bytes": 668869,
+    "source_file_hash": "0ac97e9641b927be393abaa64029be310e87e934e0ecea18732846724afc3f9b"
+  },
+  {
+    "stem": "中药配方颗粒更新目录（2024.8.23）",
+    "title": "中药配方颗粒更新目录（2024.8.23）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "FORMULA",
+    "source_filename": "中药配方颗粒更新目录（2024.8.23）.xlsx",
+    "csv_rows": 4078,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 4060,
+      "STOP": 18
+    },
+    "csv_bytes": 4824118,
+    "source_file_hash": "d53d9cf0b15293292051496dcebdf2f5d2229e7170a4f85c60c7af9f03dd02bb"
+  },
+  {
+    "stem": "中药配方颗粒（2024.11.15）",
+    "title": "中药配方颗粒（2024.11.15）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "FORMULA",
+    "source_filename": "中药配方颗粒（2024.11.15）.xlsx",
+    "csv_rows": 2995,
+    "blank_action_skipped": 0,
+    "actions": {
+      "STOP": 409,
+      "ADD": 2586
+    },
+    "csv_bytes": 4618573,
+    "source_file_hash": "830bfc06d9734aadd1faeed0fda8eca22b641eeee88f20426f178d37811f7d73"
+  },
+  {
+    "stem": "医疗服务价格项目规范新医保码(2025年25号文件)",
+    "title": "医疗服务价格项目规范新医保码(2025年25号文件)",
+    "doc_kind": "PAYMENT_MAP",
+    "category": "SERVICE",
+    "source_filename": "医疗服务价格项目规范新医保码(2025年25号文件).xlsx",
+    "csv_rows": 496,
+    "blank_action_skipped": 0,
+    "actions": {
+      "SET_PAY_CLASS": 496
+    },
+    "csv_bytes": 190326,
+    "source_file_hash": "3f0ab5b90fb27c12557eba460c874f25ed69bce31e04604102e65526fcb8bb7c"
+  },
+  {
+    "stem": "医疗服务数据更新目录(Z2024.7.1)",
+    "title": "医疗服务数据更新目录(Z2024.7.1)",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "SERVICE",
+    "source_filename": "医疗服务数据更新目录(Z2024.7.1).xlsx",
+    "csv_rows": 8,
+    "blank_action_skipped": 0,
+    "actions": {
+      "MODIFY": 8
+    },
+    "csv_bytes": 6415,
+    "source_file_hash": "884acedab7c982c5e8a55062034ade74904a01d363064738d30fb6b05a985ca2"
+  },
+  {
+    "stem": "耗材数据更新（H2024.7.1）",
+    "title": "耗材数据更新（H2024.7.1）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DEVICE",
+    "source_filename": "耗材数据更新（H2024.7.1）.xls",
+    "csv_rows": 119,
+    "blank_action_skipped": 0,
+    "actions": {
+      "STOP": 36,
+      "ADD": 83
+    },
+    "csv_bytes": 64143,
+    "source_file_hash": "b23c01953baa822eea6b1034b34bdcf741d90aa4b3b6aec1334b74e139b66d9d"
+  },
+  {
+    "stem": "药品数据更新目录（2024.8.23）",
+    "title": "药品数据更新目录（2024.8.23）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "药品数据更新目录（2024.8.23）.xlsx",
+    "csv_rows": 26493,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 1820,
+      "MODIFY": 24494,
+      "STOP": 162,
+      "PROVINCE_MODIFY": 17
+    },
+    "csv_bytes": 20756952,
+    "source_file_hash": "b66ea0707d4a51ae79811b3fc855175cdbb812ca041520a57760a04585de7ef6"
+  },
+  {
+    "stem": "诊疗目录新增(2024.7.8)",
+    "title": "诊疗目录新增(2024.7.8)",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "SERVICE",
+    "source_filename": "诊疗目录新增(2024.7.8).xls",
+    "csv_rows": 5,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 5
+    },
+    "csv_bytes": 2552,
+    "source_file_hash": "e14b18c33ae355b04c5cd10a61be78ae03990f3c62ff80b0b88ffa6e7fa55e09"
+  },
+  {
+    "stem": "附件1：F服务目录29-33号文数据更新目录",
+    "title": "附件1：F服务目录29-33号文数据更新目录",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "SERVICE_F",
+    "source_filename": "附件1：F服务目录29-33号文数据更新目录.xlsx",
+    "csv_rows": 513,
+    "blank_action_skipped": 0,
+    "actions": {
+      "STOP": 318,
+      "ADD": 188,
+      "MODIFY": 7
+    },
+    "csv_bytes": 301506,
+    "source_file_hash": "557b1514beb4d5670e1c239174d061d1fb334359aaa1ee54b34b49e193f3adf2"
+  },
+  {
+    "stem": "附件2对应的附件（血管介入支架等7类医用耗材医保通用名医保支付政策）",
+    "title": "附件2对应的附件（血管介入支架等7类医用耗材医保通用名医保支付政策）",
+    "doc_kind": "PAYMENT_MAP",
+    "category": "DEVICE",
+    "source_filename": "附件2对应的附件（血管介入支架等7类医用耗材医保通用名医保支付政策）.xlsx",
+    "csv_rows": 161,
+    "blank_action_skipped": 0,
+    "actions": {
+      "SET_PAY_CLASS": 161
+    },
+    "csv_bytes": 20731,
+    "source_file_hash": "cf0179e7b18759d8fbc50f6d45680ae423c76777a2cb21253207cc4c6f54b905"
+  },
+  {
+    "stem": "附件： 药品数据更新目录（2025.5.20）",
+    "title": "药品数据更新目录（2025.5.20）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件： 药品数据更新目录（2025.5.20）.xlsx",
+    "csv_rows": 351,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 341,
+      "STOP": 9,
+      "MODIFY": 1
+    },
+    "csv_bytes": 182235,
+    "source_file_hash": "8c8d5c2d8fb2881b5652a2e74cdd5a569f39c3f051053c50e77eaa201e5f5ec5"
+  },
+  {
+    "stem": "附件：1.F服务目录15号文本数据更新目录（2025.11.01）",
+    "title": "附件：1.F服务目录15号文本数据更新目录（2025.11.01）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "SERVICE_F",
+    "source_filename": "附件：1.F服务目录15号文本数据更新目录（2025.11.01）.xlsx",
+    "csv_rows": 533,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 175,
+      "STOP": 358
+    },
+    "csv_bytes": 343047,
+    "source_file_hash": "8a054272ea2370c5ca4f246806304721c5901b2369add0bb57f06a0511c7b440"
+  },
+  {
+    "stem": "附件：1.耗材目录更新目录（2025.10.13）",
+    "title": "附件：1.耗材目录更新目录（2025.10.13）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DEVICE",
+    "source_filename": "附件：1.耗材目录更新目录（2025.10.13）.xlsx",
+    "csv_rows": 311,
+    "blank_action_skipped": 0,
+    "actions": {
+      "MODIFY": 303,
+      "STOP": 8
+    },
+    "csv_bytes": 199852,
+    "source_file_hash": "4abf65f7d68f2547fc8408379fbbc896f2a9949ebdf409adf110ff89610fa21c"
+  },
+  {
+    "stem": "附件：1.药品数据更新目录（2026.1.9）",
+    "title": "药品数据更新目录（2026.1.9）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：1.药品数据更新目录（2026.1.9）.xlsx",
+    "csv_rows": 810,
+    "blank_action_skipped": 0,
+    "actions": {
+      "MODIFY": 810
+    },
+    "csv_bytes": 636336,
+    "source_file_hash": "c174c1b682c66138df2622cd011e6dfc2b4cd191e371f2621df6304d36790f05"
+  },
+  {
+    "stem": "附件：2.关于明确医疗服务价格项目规范医保支付对照的函附件中对照结果表",
+    "title": "2.关于明确医疗服务价格项目规范医保支付对照的函附件中对照结果表",
+    "doc_kind": "PAYMENT_MAP",
+    "category": "SERVICE",
+    "source_filename": "附件：2.关于明确医疗服务价格项目规范医保支付对照的函附件中对照结果表.xlsx",
+    "csv_rows": 177,
+    "blank_action_skipped": 0,
+    "actions": {
+      "SET_PAY_CLASS": 177
+    },
+    "csv_bytes": 26501,
+    "source_file_hash": "852af9f51991825363b908ef45993bf08fafeaf3494070bebfd62c5b79496f14"
+  },
+  {
+    "stem": "附件：F服务目录15号文数据更新目录（2025.09.01）",
+    "title": "附件：F服务目录15号文数据更新目录（2025.09.01）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "SERVICE_F",
+    "source_filename": "附件：F服务目录15号文数据更新目录（2025.09.01）.xlsx",
+    "csv_rows": 38,
+    "blank_action_skipped": 0,
+    "actions": {
+      "STOP": 15,
+      "ADD": 23
+    },
+    "csv_bytes": 27717,
+    "source_file_hash": "aee8f7881587169db28317a333d1a9161fc960b4b4fd5a35d2f28a7f4b547785"
+  },
+  {
+    "stem": "附件：F服务目录15号文数据更新目录（2025.11.17）",
+    "title": "附件：F服务目录15号文数据更新目录（2025.11.17）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "SERVICE_F",
+    "source_filename": "附件：F服务目录15号文数据更新目录（2025.11.17）.xlsx",
+    "csv_rows": 177,
+    "blank_action_skipped": 0,
+    "actions": {
+      "MODIFY": 177
+    },
+    "csv_bytes": 181724,
+    "source_file_hash": "caf17f73b2c7e5fb40e6da51658d6f610f728c2d13557b88c822e8a086cb4469"
+  },
+  {
+    "stem": "附件：F服务目录17号文数据更新目录（2026.2.4）",
+    "title": "附件：F服务目录17号文数据更新目录（2026.2.4）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "SERVICE_F",
+    "source_filename": "附件：F服务目录17号文数据更新目录（2026.2.4）_      .xlsx",
+    "csv_rows": 4,
+    "blank_action_skipped": 0,
+    "actions": {
+      "MODIFY": 3,
+      "STOP": 1
+    },
+    "csv_bytes": 2209,
+    "source_file_hash": "6310752171fc2cb3ee5549ca2e430c2a7d21f849616b7db6407ba4acf674ef8b"
+  },
+  {
+    "stem": "附件：F服务目录数据更新目录（2025.12.15）",
+    "title": "附件：F服务目录数据更新目录（2025.12.15）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "SERVICE_F",
+    "source_filename": "附件：F服务目录数据更新目录（2025.12.15）.xlsx",
+    "csv_rows": 229,
+    "blank_action_skipped": 0,
+    "actions": {
+      "MODIFY": 229
+    },
+    "csv_bytes": 405535,
+    "source_file_hash": "512d75e8fc2f425d0ac2a1641c17721cd0d2e7b45dc5b69111cc2c513a32ea7f"
+  },
+  {
+    "stem": "附件：F服务目录数据更新目录（2026.3.24）",
+    "title": "附件：F服务目录数据更新目录（2026.3.24）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "SERVICE_F",
+    "source_filename": "附件：F服务目录数据更新目录（2026.3.24）.xlsx",
+    "csv_rows": 7178,
+    "blank_action_skipped": 0,
+    "actions": {
+      "MODIFY": 7178
+    },
+    "csv_bytes": 3218096,
+    "source_file_hash": "abfb6aef3e09e797ae55afc72a527b8d43e91dcdcc3459b58baf2529f050a87f"
+  },
+  {
+    "stem": "附件：F服务目录数据更新目录（2026.3.24） (1)",
+    "title": "附件：F服务目录数据更新目录（2026.3.24） (1)",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "SERVICE_F",
+    "source_filename": "附件：F服务目录数据更新目录（2026.3.24） (1).xlsx",
+    "csv_rows": 7178,
+    "blank_action_skipped": 0,
+    "actions": {
+      "MODIFY": 7178
+    },
+    "csv_bytes": 3218096,
+    "source_file_hash": "f7465f5f2f093b6e8e50c6f2f746630b4392584bea0a609bb802394fa69fd3b4"
+  },
+  {
+    "stem": "附件：F服务目录数据更新目录（2026.4.30）",
+    "title": "附件：F服务目录数据更新目录（2026.4.30）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "SERVICE_F",
+    "source_filename": "附件：F服务目录数据更新目录（2026.4.30）.xlsx",
+    "csv_rows": 1343,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 495,
+      "STOP": 844,
+      "MODIFY": 4
+    },
+    "csv_bytes": 737101,
+    "source_file_hash": "65596700460959a11b1bd0bf5c908e0219d25ca4f3444091fd1eb5c030b38118"
+  },
+  {
+    "stem": "附件：Y2024.10.17",
+    "title": "2024.10.17",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：Y2024.10.17 .xlsx",
+    "csv_rows": 2690,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 2406,
+      "PROVINCE_MODIFY": 66,
+      "STOP": 218
+    },
+    "csv_bytes": 1777795,
+    "source_file_hash": "3bf8302b82f51c03c3b29c20afc2743e1e575e28e14365ca5c6560cf44aa74f4"
+  },
+  {
+    "stem": "附件：中药配方颗粒(2025.3.7)",
+    "title": "附件：中药配方颗粒(2025.3.7)",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "FORMULA",
+    "source_filename": "附件：中药配方颗粒(2025.3.7) .xlsx",
+    "csv_rows": 4440,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 3724,
+      "STOP": 716
+    },
+    "csv_bytes": 1350288,
+    "source_file_hash": "5ab556ca60226b754bdd3b39ae0d584294731bc5c4dbdcb9bff6170044cc898d"
+  },
+  {
+    "stem": "附件：中药配方颗粒（2025.08.11）",
+    "title": "附件：中药配方颗粒（2025.08.11）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "FORMULA",
+    "source_filename": "附件：中药配方颗粒（2025.08.11）.xlsx",
+    "csv_rows": 5971,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 4416,
+      "STOP": 1555
+    },
+    "csv_bytes": 2015463,
+    "source_file_hash": "7356cbbc45021d8963bd7b7adcf36326106d8d0ad396411c1ea88b7f4c4a9783"
+  },
+  {
+    "stem": "附件：中药饮片数据更新目录（2025.5.21）",
+    "title": "附件：中药饮片数据更新目录（2025.5.21）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "HERBAL",
+    "source_filename": "附件：中药饮片数据更新目录（2025.5.21）.xlsx",
+    "csv_rows": 2,
+    "blank_action_skipped": 0,
+    "actions": {
+      "STOP": 1,
+      "ADD": 1
+    },
+    "csv_bytes": 2199,
+    "source_file_hash": "9df11a591fd9683563cb0449f72f648fde4ce789189d1caaa3b710216681aaed"
+  },
+  {
+    "stem": "附件：服务目录数据更新目录（2026.4.7）",
+    "title": "服务目录数据更新目录（2026.4.7）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "SERVICE",
+    "source_filename": "附件：服务目录数据更新目录（2026.4.7）.xlsx",
+    "csv_rows": 21,
+    "blank_action_skipped": 0,
+    "actions": {
+      "MODIFY": 21
+    },
+    "csv_bytes": 10026,
+    "source_file_hash": "198c36576ee14507d1e8b66cda96d6fe71189f8818f6c317a5c3534970409f85"
+  },
+  {
+    "stem": "附件：服务目录数据更新目录（2026.4.7） (1)",
+    "title": "服务目录数据更新目录（2026.4.7） (1)",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "SERVICE",
+    "source_filename": "附件：服务目录数据更新目录（2026.4.7） (1).xlsx",
+    "csv_rows": 21,
+    "blank_action_skipped": 0,
+    "actions": {
+      "MODIFY": 21
+    },
+    "csv_bytes": 10026,
+    "source_file_hash": "d19ba1b55bb53470fe5d437877de7a06189900d58dce790b3f346709377a62ef"
+  },
+  {
+    "stem": "附件：服务目录数据更新目录（2026.5.19）",
+    "title": "服务目录数据更新目录（2026.5.19）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "SERVICE",
+    "source_filename": "附件：服务目录数据更新目录（2026.5.19）.xlsx",
+    "csv_rows": 1830,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 533,
+      "STOP": 1295,
+      "MODIFY": 2
+    },
+    "csv_bytes": 971217,
+    "source_file_hash": "810f7cb00b84052ede7c189f62143972ec24122496f12930544be3e05f2fae8d"
+  },
+  {
+    "stem": "附件：耗材数据更新目录（2025.4.24）",
+    "title": "附件：耗材数据更新目录（2025.4.24）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DEVICE",
+    "source_filename": "附件：耗材数据更新目录（2025.4.24）.xlsx",
+    "csv_rows": 101,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 73,
+      "STOP": 28
+    },
+    "csv_bytes": 54680,
+    "source_file_hash": "4772a2b6e5e6be132d97ac663f45458440dab9654f8505586f4151738702c139"
+  },
+  {
+    "stem": "附件：耗材数据更新目录（2025.6.28）",
+    "title": "附件：耗材数据更新目录（2025.6.28）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DEVICE",
+    "source_filename": "附件：耗材数据更新目录（2025.6.28）.xlsx",
+    "csv_rows": 713,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 298,
+      "STOP": 415
+    },
+    "csv_bytes": 383897,
+    "source_file_hash": "d521b44cd28b225f32f3c0047c523fb2e0c38442022eb4d066fd6a8cbae89722"
+  },
+  {
+    "stem": "附件：耗材数据更新目录（2025.9.13）",
+    "title": "附件：耗材数据更新目录（2025.9.13）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DEVICE",
+    "source_filename": "附件：耗材数据更新目录（2025.9.13）.xlsx",
+    "csv_rows": 48,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 42,
+      "STOP": 6
+    },
+    "csv_bytes": 25514,
+    "source_file_hash": "25ca2a8ccc3698988080cf933953ceb1857d5d741bfe2007e8255beda8ea2077"
+  },
+  {
+    "stem": "附件：耗材数据更新目录（2026.5.9）",
+    "title": "附件：耗材数据更新目录（2026.5.9）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DEVICE",
+    "source_filename": "附件：耗材数据更新目录（2026.5.9）.xlsx",
+    "csv_rows": 11,
+    "blank_action_skipped": 0,
+    "actions": {
+      "MODIFY": 11
+    },
+    "csv_bytes": 6322,
+    "source_file_hash": "37e251fe2b7adb7737055c76f6359e0a969373a2b8305984dcab28ec71ebae3c"
+  },
+  {
+    "stem": "附件：耗材数据更新目录（2026.5.9） (1)",
+    "title": "附件：耗材数据更新目录（2026.5.9） (1)",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DEVICE",
+    "source_filename": "附件：耗材数据更新目录（2026.5.9） (1).xlsx",
+    "csv_rows": 11,
+    "blank_action_skipped": 0,
+    "actions": {
+      "MODIFY": 11
+    },
+    "csv_bytes": 6322,
+    "source_file_hash": "a782e84c771bdd42b75fc08a8d299328e00db706880658ea3e657736bbff19b1"
+  },
+  {
+    "stem": "附件：耗材数据更新（2025.7.23、2025.8.7）",
+    "title": "附件：耗材数据更新（2025.7.23、2025.8.7）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DEVICE",
+    "source_filename": "附件：耗材数据更新（2025.7.23、2025.8.7）.xlsx",
+    "csv_rows": 24,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 23,
+      "STOP": 1
+    },
+    "csv_bytes": 12539,
+    "source_file_hash": "7bf6a29c68fb2f83c5cbab593f5cc3c263d7d2156f3b50085cf2d8b48124e539"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2024.12.17）",
+    "title": "附件：药品数据更新目录（2024.12.17）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2024.12.17）.xlsx",
+    "csv_rows": 6321,
+    "blank_action_skipped": 0,
+    "actions": {
+      "PROVINCE_MODIFY": 24,
+      "ADD": 2214,
+      "STOP": 4083
+    },
+    "csv_bytes": 5369276,
+    "source_file_hash": "a2de150817ffe2f71890e889eb169bac40fadc1b40a15df53bb3a9e143a0af19"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2024.12.30）",
+    "title": "附件：药品数据更新目录（2024.12.30）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2024.12.30）.xlsx",
+    "csv_rows": 1287,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 1133,
+      "PROVINCE_MODIFY": 104,
+      "STOP": 50
+    },
+    "csv_bytes": 739590,
+    "source_file_hash": "47c354258313b23d1dc631971d60aa64f8cbead84f53992c8397ff5e6b54377b"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.01.01）",
+    "title": "附件：药品数据更新目录（2025.01.01）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.01.01）.xlsx",
+    "csv_rows": 17572,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 3291,
+      "MODIFY": 13980,
+      "STOP": 301
+    },
+    "csv_bytes": 11676688,
+    "source_file_hash": "b3ef90afcc129f70b65674724d54504ab7485d657c60441ba72043a09c777e9f"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.1.13）",
+    "title": "附件：药品数据更新目录（2025.1.13）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.1.13）.xlsx",
+    "csv_rows": 2542,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 347,
+      "PROVINCE_MODIFY": 2040,
+      "STOP": 155
+    },
+    "csv_bytes": 1600619,
+    "source_file_hash": "d5e23bcd1bdfc750f63a533ebc7b3da8c6e66e424ad494b4b01f671b19428d26"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.1.22）",
+    "title": "药品数据更新目录（2025.1.22）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.1.22）.xlsx",
+    "csv_rows": 497,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 464,
+      "MODIFY": 15,
+      "STOP": 18
+    },
+    "csv_bytes": 269986,
+    "source_file_hash": "e68e0d1df24a79b49803e23251d56a1807230db8c738d468d5f208d038f994b2"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.1.26)",
+    "title": "附件：药品数据更新目录（2025.1.26)",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.1.26).xlsx",
+    "csv_rows": 1796,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 233,
+      "MODIFY": 1552,
+      "STOP": 11
+    },
+    "csv_bytes": 1313842,
+    "source_file_hash": "9b3c594f28657ad46e5538682a30c75d2d78a2a48b17fd0a0a9c321e10be1e1d"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.1.2）",
+    "title": "附件：药品数据更新目录（2025.1.2）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.1.2）.xlsx",
+    "csv_rows": 143,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 65,
+      "MODIFY": 78
+    },
+    "csv_bytes": 114762,
+    "source_file_hash": "077906811c708a5fba4c7e806015fe0f6d9e137512fdb71ba3da3a87c9168d8a"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.11.24、12.01、12.10、12.17、12.19）",
+    "title": "附件：药品数据更新目录（2025.11.24、12.01、12.10、12.17、12.19）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.11.24、12.01、12.10、12.17、12.19）.xlsx",
+    "csv_rows": 2732,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 2618,
+      "STOP": 114
+    },
+    "csv_bytes": 1643721,
+    "source_file_hash": "74904696ced853d4d9b1b5df242f50d8a23ab3c3154263d9d36026b24a00f505"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.2.13)",
+    "title": "药品数据更新目录（2025.2.13)",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.2.13).xlsx",
+    "csv_rows": 480,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 424,
+      "STOP": 56
+    },
+    "csv_bytes": 249315,
+    "source_file_hash": "4a56457f49734537a16945d18fe9f1bba3f9e13d09ad85639ffcd88b66b63740"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.3.21、4.2）",
+    "title": "药品数据更新目录（2025.3.21、4.2）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.3.21、4.2）.xlsx",
+    "csv_rows": 1089,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 950,
+      "STOP": 139
+    },
+    "csv_bytes": 592339,
+    "source_file_hash": "67b85e9bc61f330af30aabd761dbe449cbdf2218bec4e6e0d7e0f16cedeca6d6"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.3.7)",
+    "title": "附件：药品数据更新目录（2025.3.7)",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.3.7) .xlsx",
+    "csv_rows": 1717,
+    "blank_action_skipped": 0,
+    "actions": {
+      "MODIFY": 176,
+      "ADD": 841,
+      "STOP": 700
+    },
+    "csv_bytes": 1033576,
+    "source_file_hash": "a1219b3a09335c7cd3899b91d99f7936d18c9c5652f73b09bbda727b58659fc4"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.4.10）",
+    "title": "药品数据更新目录（2025.4.10）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.4.10）.xlsx",
+    "csv_rows": 516,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 443,
+      "MODIFY": 18,
+      "STOP": 55
+    },
+    "csv_bytes": 283090,
+    "source_file_hash": "51e2846d1d3bac8c3c7b9fd67ef04b5252e31ef75d543f964f7a9baceed1e98f"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.4.15）",
+    "title": "药品数据更新目录（2025.4.15）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.4.15）.xlsx",
+    "csv_rows": 553,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 427,
+      "STOP": 40,
+      "MODIFY": 86
+    },
+    "csv_bytes": 302540,
+    "source_file_hash": "098b2da0b5d991e9eed12001b9c57813b07986d997dc0fe6fb49d455c7fce032"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.4.21）",
+    "title": "药品数据更新目录（2025.4.21）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.4.21）.xlsx",
+    "csv_rows": 471,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 401,
+      "STOP": 29,
+      "MODIFY": 41
+    },
+    "csv_bytes": 254054,
+    "source_file_hash": "40dfe103de31074211b67db83deee02453cb772ac3e66e93ce1b7e3fabe2289d"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.5.16）",
+    "title": "药品数据更新目录（2025.5.16）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.5.16）.xlsx",
+    "csv_rows": 660,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 434,
+      "STOP": 16,
+      "MODIFY": 210
+    },
+    "csv_bytes": 359516,
+    "source_file_hash": "e221b710f9c3ce52dc766519be98b936575eb50681e1d89a8ae6daff8183fd7b"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.5.28）",
+    "title": "药品数据更新目录（2025.5.28）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.5.28）.xlsx",
+    "csv_rows": 518,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 470,
+      "STOP": 48
+    },
+    "csv_bytes": 270734,
+    "source_file_hash": "33f14f2d2290d74afa53adee6132f9b9065e56aa716096c20289de9807666692"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.5.30）",
+    "title": "药品数据更新目录（2025.5.30）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.5.30）.xlsx",
+    "csv_rows": 383,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 351,
+      "STOP": 32
+    },
+    "csv_bytes": 199197,
+    "source_file_hash": "f3f90ef5fe16c74d326168a74e2f026904997b40879ca1de55f938c97095eb7e"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.5.7）",
+    "title": "药品数据更新目录（2025.5.7）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.5.7）.xlsx",
+    "csv_rows": 465,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 418,
+      "MODIFY": 3,
+      "STOP": 44
+    },
+    "csv_bytes": 247493,
+    "source_file_hash": "52c35d076710ef3a7c69edbb636b66305e50e3ff4596051b754580f1cfb8d790"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.6.11）",
+    "title": "药品数据更新目录（2025.6.11）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.6.11）.xlsx",
+    "csv_rows": 471,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 444,
+      "STOP": 27
+    },
+    "csv_bytes": 245401,
+    "source_file_hash": "652565959a2982fc4e233e0e2eb5994441bbb51db07bdd850bd22e99f4982b66"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.6.17）",
+    "title": "药品数据更新目录（2025.6.17）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.6.17）.xlsx",
+    "csv_rows": 420,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 407,
+      "STOP": 12,
+      "MODIFY": 1
+    },
+    "csv_bytes": 215200,
+    "source_file_hash": "8b724c6ece9d6297efa6b14c91e45b66039607697227e9f67401ec4049c7a742"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.6.20）",
+    "title": "药品数据更新目录（2025.6.20）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.6.20）.xlsx",
+    "csv_rows": 642,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 618,
+      "STOP": 23,
+      "MODIFY": 1
+    },
+    "csv_bytes": 336921,
+    "source_file_hash": "10dbaf7735779b1cb0c314fdd9e8b1f548c0889663f3d047e86a7f5710ea372f"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.6.30）",
+    "title": "药品数据更新目录（2025.6.30）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.6.30）.xlsx",
+    "csv_rows": 582,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 550,
+      "STOP": 30,
+      "MODIFY": 2
+    },
+    "csv_bytes": 304132,
+    "source_file_hash": "44d64a809c6af2abf3d69e876e4f7030bde1d10e43077cf0ae8c59d12097efbd"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.7.16）",
+    "title": "药品数据更新目录（2025.7.16）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.7.16）.xlsx",
+    "csv_rows": 599,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 575,
+      "STOP": 23,
+      "MODIFY": 1
+    },
+    "csv_bytes": 311061,
+    "source_file_hash": "f154388d6e8ea809d17acb886c65666b3fe9b6ec2830c922d8b825fc018eebf1"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.7.24、7.30、8.4、8.8）",
+    "title": "附件：药品数据更新目录（2025.7.24、7.30、8.4、8.8）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.7.24、7.30、8.4、8.8）.xlsx",
+    "csv_rows": 2184,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 2074,
+      "STOP": 108,
+      "MODIFY": 2
+    },
+    "csv_bytes": 1274779,
+    "source_file_hash": "1981a669ca7aa0de66c5e4f0fd983bb092ab2fd7f7e1885b0c58fefc15175d47"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.7.7）",
+    "title": "药品数据更新目录（2025.7.7）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.7.7）.xlsx",
+    "csv_rows": 693,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 671,
+      "STOP": 21,
+      "MODIFY": 1
+    },
+    "csv_bytes": 363176,
+    "source_file_hash": "6469f3074c0ca78ca66bbeb1db90c8e57285bb32b0f65e3f638f95ef2b649299"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.8.20、8.28、9.02）",
+    "title": "附件：药品数据更新目录（2025.8.20、8.28、9.02）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.8.20、8.28、9.02）.xlsx",
+    "csv_rows": 1238,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 1102,
+      "STOP": 136
+    },
+    "csv_bytes": 716778,
+    "source_file_hash": "37792a6deab03aa640cd6b04026a6ba8041d6b80bc773d26702ec6331a15f9b1"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.9.26、9.30、10.14、10.21）",
+    "title": "附件：药品数据更新目录（2025.9.26、9.30、10.14、10.21）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.9.26、9.30、10.14、10.21）.xlsx",
+    "csv_rows": 1941,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 1868,
+      "STOP": 65,
+      "MODIFY": 8
+    },
+    "csv_bytes": 1115668,
+    "source_file_hash": "3ecaa8b9df860bc452745db98f3c6fa8101386ec0e6a52b66b346e644e64612a"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2025.9.5、9.19）",
+    "title": "附件：药品数据更新目录（2025.9.5、9.19）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2025.9.5、9.19）.xlsx",
+    "csv_rows": 1117,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 1048,
+      "STOP": 64,
+      "MODIFY": 5
+    },
+    "csv_bytes": 640429,
+    "source_file_hash": "7b6b8c9e80bfbff90c83490b98ee19e7c865d0b4703efaa710a21afe55373a80"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2026.1.26、2.4）",
+    "title": "附件：药品数据更新目录（2026.1.26、2.4）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2026.1.26、2.4）.xlsx",
+    "csv_rows": 1003,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 954,
+      "STOP": 47,
+      "MODIFY": 2
+    },
+    "csv_bytes": 584616,
+    "source_file_hash": "833fd28c777f3b1cc7a90c728cd4eb4f9b76bcf534b56ad2da0283da94e2d2a6"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2026.1.4、1.12、1.15）",
+    "title": "附件：药品数据更新目录（2026.1.4、1.12、1.15）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2026.1.4、1.12、1.15）.xlsx",
+    "csv_rows": 1474,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 1384,
+      "STOP": 71,
+      "MODIFY": 19
+    },
+    "csv_bytes": 911714,
+    "source_file_hash": "db38d958d79015361c6efa7665776bc8b377bb0c836700c2cdd8cd1dd0802b6d"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2026.2.10、2.12、2.28）",
+    "title": "附件：药品数据更新目录（2026.2.10、2.12、2.28）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2026.2.10、2.12、2.28）.xlsx",
+    "csv_rows": 1450,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 1366,
+      "MODIFY": 5,
+      "STOP": 79
+    },
+    "csv_bytes": 834918,
+    "source_file_hash": "83ac8b9d6ff57feda9405943e24f2cbf0c8cda7f833b5e1c2f5f7504c5a7da61"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2026.3.19、3.27、4.2、4.10）",
+    "title": "附件：药品数据更新目录（2026.3.19、3.27、4.2、4.10）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2026.3.19、3.27、4.2、4.10）.xlsx",
+    "csv_rows": 1275,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 1155,
+      "MODIFY": 9,
+      "STOP": 111
+    },
+    "csv_bytes": 738552,
+    "source_file_hash": "85946de73edaee8886ae0388ba21dbf737d7b57a85364f7c64e97b93a77eb75a"
+  },
+  {
+    "stem": "附件：药品数据更新目录（2026.3.6、3.16）",
+    "title": "药品数据更新目录（2026.3.6、3.16）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（2026.3.6、3.16）.xlsx",
+    "csv_rows": 420,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 379,
+      "STOP": 41
+    },
+    "csv_bytes": 219402,
+    "source_file_hash": "097dc5c3705cc7faad1000a8e6eb88825d9a02e5f8222c72e28b3b10df6cd39e"
+  },
+  {
+    "stem": "附件：药品数据更新目录（X001_20251224000000_A）",
+    "title": "附件：药品数据更新目录（X001_20251224000000_A）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（X001_20251224000000_A）.xlsx",
+    "csv_rows": 4746,
+    "blank_action_skipped": 0,
+    "actions": {
+      "MODIFY": 4275,
+      "ADD": 428,
+      "STOP": 43
+    },
+    "csv_bytes": 3698443,
+    "source_file_hash": "fd84ac66ac234da75949ffcd3b1c58e75a3759af4ff9572bcb9d3da9e73b7375"
+  },
+  {
+    "stem": "附件：药品数据更新目录（Y2025.5.13）",
+    "title": "附件：药品数据更新目录（Y2025.5.13）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "DRUG",
+    "source_filename": "附件：药品数据更新目录（Y2025.5.13）.xlsx",
+    "csv_rows": 2308,
+    "blank_action_skipped": 0,
+    "actions": {
+      "ADD": 1263,
+      "MODIFY": 1,
+      "STOP": 1044
+    },
+    "csv_bytes": 1463226,
+    "source_file_hash": "d0825737d4ec6db84cd96a30947442216a76c13f11e477c88ca4729cbd03a45c"
+  },
+  {
+    "stem": "附件：诊疗目录库服务数据更新信息（2024.12.20）",
+    "title": "诊疗目录库服务数据更新信息（2024.12.20）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "SERVICE",
+    "source_filename": "附件：诊疗目录库服务数据更新信息（2024.12.20）.xlsx",
+    "csv_rows": 1,
+    "blank_action_skipped": 0,
+    "actions": {
+      "MODIFY": 1
+    },
+    "csv_bytes": 851,
+    "source_file_hash": "7ad7c57022e307517de35ee5b8832e2a6b41a5208570974bcf2b4d152e7dabad"
+  },
+  {
+    "stem": "附件：院内制剂目录更新（2025.12.30）",
+    "title": "附件：院内制剂目录更新（2025.12.30）",
+    "doc_kind": "CATALOG_DELTA",
+    "category": "PREP",
+    "source_filename": "附件：院内制剂目录更新（2025.12.30）.xlsx",
+    "csv_rows": 342,
+    "blank_action_skipped": 0,
+    "actions": {
+      "MODIFY": 342
+    },
+    "csv_bytes": 500368,
+    "source_file_hash": "dda0c8b56711d7ca55c9598c1517049f339755928e130f0915a1d39591f6b63a"
+  }
+]

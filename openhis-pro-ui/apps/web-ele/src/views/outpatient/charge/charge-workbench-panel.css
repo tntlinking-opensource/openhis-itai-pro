@@ -32,6 +32,28 @@
   min-height: 200px;
 }
 
+/* 左栏窄：一行排开，总条数靠左、翻页靠右；不放每页条数，避免被裁切 */
+.charge-queue-pager {
+  min-width: 0;
+}
+
+.charge-queue-pager .el-pagination {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  white-space: nowrap;
+}
+
+.charge-queue-pager .el-pagination__total {
+  margin-right: auto;
+}
+
+.charge-queue-pager .el-pagination .btn-prev {
+  margin-left: 0;
+}
+
 .patient-info-bar {
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;

@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { Fallback } from '@vben/common-ui';
+import { Fallback } from '@zxplat/common-ui';
 </script>
 
 <template>

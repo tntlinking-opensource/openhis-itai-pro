@@ -41,6 +41,7 @@ const props = withDefaults(defineProps<TableLayoutProps>(), {
   treeNodeKey: 'id',
   sideQueryLoading: false,
   tableColumns: () => [],
+  clearSelectionOnDataChange: true,
   tree: false,
   treeConfig: () => ({
     children: 'children',
@@ -590,6 +591,7 @@ defineExpose({
           :span-method="spanMethod"
           :highlight-current-row="highlightCurrentRow"
           :table-columns="tableColumns"
+          :clear-selection-on-data-change="clearSelectionOnDataChange"
           :show-pagination="showPagination"
           :total="total"
           :page-no="props.queryParams.pageNo"

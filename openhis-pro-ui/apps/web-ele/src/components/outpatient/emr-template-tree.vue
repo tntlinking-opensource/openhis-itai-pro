@@ -11,7 +11,7 @@ import type { EmrTemplateStationKind } from '#/views/basic/emr-template/emr-temp
 
 import { nextTick, onMounted, ref, watch } from 'vue';
 
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 import { Document, EditPen, Folder, FolderOpened, Tickets } from '@element-plus/icons-vue';
 import {
@@ -42,6 +42,7 @@ import {
   buildEmrTemplateTree,
   formatDocumentTreeSaver,
   formatDocumentTreeTime,
+  type EmrDocumentSortMode,
   type EmrSidebarTreeMode,
 } from './build-emr-template-tree';
 
@@ -112,6 +113,8 @@ const emit = defineEmits<{
   selectDocument: [row: DocumentSummaryDto];
   openDocumentInNewTab: [row: DocumentSummaryDto];
   deleteDocument: [row: DocumentSummaryDto];
+  /** 已写文书：修改显示标题（非模板） */
+  renameDocument: [row: DocumentSummaryDto];
   /** 历史/关联文书：复制正文到本次就诊新建草稿 */
   reuseDocument: [row: DocumentSummaryDto];
   /** 重命名个人/科室模板 */
@@ -214,12 +217,13 @@ function restoreExpandedState() {
             node.expanded = true;
             continue;
           }
-          // 告知书/手术/其他/跨就诊历史默认收起；全院范围默认收起
+          // 告知书/手术/其他/跨就诊历史默认收起；文书类型文件夹默认收起；全院范围默认收起
           if (
             key === 'cat:NOTICE' ||
             key === 'cat:SURGERY' ||
             key === 'cat:OTHER' ||
             key === 'cat:HISTORY' ||
+            key.startsWith('type:') ||
             key.endsWith(`:${EMR_TEMPLATE_SCOPE_LEVEL.HOSPITAL}`)
           ) {
             node.expanded = false;
@@ -314,6 +318,12 @@ async function fetchTemplatesForTree(): Promise<TemplateDto[]> {
   }
 }
 
+function resolveDocumentSortMode(): EmrDocumentSortMode {
+  return props.stationKind === EMR_TEMPLATE_STATION_KIND.INPATIENT
+    ? 'createdAtAsc'
+    : 'updatedAtDesc';
+}
+
 function rebuildTree() {
   // 仅护士站「住院病历调阅」收窄目录；病案只读/医生站按就诊打开须展示本就诊全部文书
   const allowedCategories =
@@ -329,9 +339,11 @@ function rebuildTree() {
     {
       allowedCategories,
       currentEncounterId: props.currentEncounterId,
+      groupByDocumentType: props.stationKind === EMR_TEMPLATE_STATION_KIND.INPATIENT,
       historyRootLabel: props.historyRootLabel,
       sidebarMode,
       documentGroupBy: props.documentGroupBy,
+      documentSort: resolveDocumentSortMode(),
     },
   );
 }
@@ -479,6 +491,26 @@ function canDeleteDocument(node: EmrTemplateTreeNode): boolean {
   return isDocumentCreatedByCurrentUser(node.document);
 }
 
+/**
+ * 是否展示右键「重命名」：本次就诊、未归档/待归档；
+ * 住院站与保存正文同口径（可多人改），门诊仅创建者。
+ */
+function canRenameDocument(node: EmrTemplateTreeNode): boolean {
+  if (props.viewOnly) return false;
+  if (!node.isDocument || !node.document) return false;
+  if (isOtherEncounterDocument(node.document)) return false;
+  const current = preserveApiIdForRequest(props.currentEncounterId) ?? '';
+  const docEnc = preserveApiIdForRequest(node.document.encounterId) ?? '';
+  if (!current || !docEnc || docEnc !== current) return false;
+  const id = preserveApiIdForRequest(node.document.id) ?? '';
+  if (!id) return false;
+  const status = (node.document.status ?? '').trim();
+  // 待归档/已归档标题冻结，与后端 updateTitle 门禁一致
+  if (status === 'ARCHIVED' || status === 'PENDING_ARCHIVE') return false;
+  if (props.stationKind === EMR_TEMPLATE_STATION_KIND.INPATIENT) return true;
+  return isDocumentCreatedByCurrentUser(node.document);
+}
+
 /** 是否可「复用到本次就诊」：非本次就诊文书（非只读调阅） */
 function canReuseDocument(node: EmrTemplateTreeNode): boolean {
   if (props.viewOnly) return false;
@@ -560,22 +592,28 @@ function formatDocumentCardChiefComplaint(doc: DocumentSummaryDto): string {
   return (doc.chiefComplaint ?? '').trim();
 }
 
-/** 卡片第二行：门诊病历固定类型名；其余优先主诉，无主诉时回退文书标题 */
+/** 卡片第二行：门诊病历固定类型名；其余展示文书标题（右键可重命名） */
 function formatDocumentCardSubline(doc: DocumentSummaryDto): string {
   if (isOutpatientRecordDoc(doc)) return formatOutpatientRecordLabel(doc);
-  const complaint = formatDocumentCardChiefComplaint(doc);
-  if (complaint) return complaint;
   return formatDocumentCardPrimary(doc);
 }
 
-/** 卡片时间 */
+/** 卡片时间：住院按创建时间，门诊按更新时间 */
 function formatDocumentCardTime(doc: DocumentSummaryDto): string {
-  return formatDocumentTreeTime(doc) || '未保存';
+  return formatDocumentTreeTime(doc, resolveDocumentSortMode()) || '未保存';
 }
 
 /** 开立医生显示名 */
 function formatDocumentCardDoctor(doc: DocumentSummaryDto): string {
   return formatDocumentTreeSaver(doc);
+}
+
+/** 归档状态短标；草稿不占卡片 */
+function archiveStatusLabel(doc?: DocumentSummaryDto): string {
+  const code = (doc?.status ?? '').trim();
+  if (code === 'ARCHIVED') return '已归档';
+  if (code === 'PENDING_ARCHIVE') return '待归档';
+  return '';
 }
 
 /** 悬停完整信息 */
@@ -618,7 +656,7 @@ function handleNodeClick(
   }
 }
 
-/** 文书右键菜单：复用 / 新标签打开 / 删除（仅创建人） */
+/** 文书右键菜单：复用 / 新标签打开 / 重命名 / 删除（仅创建人） */
 async function handleDocumentCommand(
   command: string,
   doc: DocumentSummaryDto,
@@ -634,6 +672,14 @@ async function handleDocumentCommand(
   }
   if (command === 'openInNewTab') {
     emit('openDocumentInNewTab', doc);
+    return;
+  }
+  if (command === 'rename') {
+    if (node && !canRenameDocument(node)) {
+      ElMessage.warning('当前病历不可重命名');
+      return;
+    }
+    emit('renameDocument', doc);
     return;
   }
   if (command === 'delete') {
@@ -758,7 +804,7 @@ defineExpose({
       ref="treeRef"
       :data="treeData"
       :props="{ children: 'children', label: 'label' }"
-      :expand-on-click-node="false"
+      :expand-on-click-node="true"
       highlight-current
       node-key="nodeKey"
       :filter-node-method="filterNode"
@@ -798,6 +844,31 @@ defineExpose({
                 <ElIcon class="emr-template-tree__icon emr-template-tree__icon--doc">
                   <EditPen />
                 </ElIcon>
+                <span
+                  class="emr-template-tree__doc-title"
+                  :title="formatDocumentCardSubline(data.document)"
+                >
+                  {{ formatDocumentCardSubline(data.document) }}
+                </span>
+              </div>
+              <div class="emr-template-tree__doc-line2">
+                <span
+                  v-if="archiveStatusLabel(data.document)"
+                  class="emr-template-tree__doc-badge"
+                  :class="
+                    archiveStatusLabel(data.document) === '已归档'
+                      ? 'emr-template-tree__doc-badge--archived'
+                      : 'emr-template-tree__doc-badge--pending'
+                  "
+                >
+                  {{ archiveStatusLabel(data.document) }}
+                </span>
+                <span
+                  v-if="formatDocumentCardBadge(data.document) === 'history'"
+                  class="emr-template-tree__doc-badge emr-template-tree__doc-badge--history"
+                >
+                  历史
+                </span>
                 <span class="emr-template-tree__doc-time">
                   {{ formatDocumentCardTime(data.document) }}
                 </span>
@@ -809,26 +880,6 @@ defineExpose({
                   {{ formatDocumentCardDoctor(data.document) }}
                 </span>
               </div>
-              <div class="emr-template-tree__doc-line2">
-                <span
-                  v-if="formatDocumentCardBadge(data.document) === 'current'"
-                  class="emr-template-tree__doc-badge emr-template-tree__doc-badge--current"
-                >
-                  本次
-                </span>
-                <span
-                  v-else-if="formatDocumentCardBadge(data.document) === 'history'"
-                  class="emr-template-tree__doc-badge emr-template-tree__doc-badge--history"
-                >
-                  历史
-                </span>
-                <span
-                  class="emr-template-tree__doc-complaint"
-                  :title="formatDocumentCardSubline(data.document)"
-                >
-                  {{ formatDocumentCardSubline(data.document) }}
-                </span>
-              </div>
             </div>
             <template #dropdown>
               <ElDropdownMenu>
@@ -836,6 +887,9 @@ defineExpose({
                   复用到本次就诊
                 </ElDropdownItem>
                 <ElDropdownItem command="openInNewTab">在新标签打开</ElDropdownItem>
+                <ElDropdownItem v-if="canRenameDocument(data)" command="rename">
+                  重命名
+                </ElDropdownItem>
                 <ElDropdownItem v-if="canDeleteDocument(data)" command="delete" divided>
                   删除病历
                 </ElDropdownItem>
@@ -1015,22 +1069,11 @@ defineExpose({
   min-width: 0;
 }
 
-.emr-template-tree__doc-time {
-  flex-shrink: 0;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.35;
-  color: var(--el-text-color-primary);
-}
-
-.emr-template-tree__node--doc-active .emr-template-tree__doc-time {
-  color: var(--el-color-primary);
-}
-
-.emr-template-tree__doc-doctor {
+.emr-template-tree__doc-title {
   min-width: 0;
+  flex: 1;
   overflow: hidden;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.35;
   color: var(--el-text-color-primary);
@@ -1038,11 +1081,35 @@ defineExpose({
   white-space: nowrap;
 }
 
+.emr-template-tree__node--doc-active .emr-template-tree__doc-title {
+  color: var(--el-color-primary);
+}
+
 .emr-template-tree__doc-line2 {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
+  padding-left: 20px;
+}
+
+.emr-template-tree__doc-time {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--el-text-color-secondary);
+}
+
+.emr-template-tree__doc-doctor {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--el-text-color-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .emr-template-tree__doc-badge {
@@ -1066,14 +1133,16 @@ defineExpose({
   border: 1px solid var(--el-color-warning-light-5);
 }
 
-.emr-template-tree__doc-complaint {
-  min-width: 0;
-  overflow: hidden;
-  font-size: 11px;
-  line-height: 1.35;
-  color: var(--el-text-color-secondary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.emr-template-tree__doc-badge--archived {
+  color: var(--el-color-success);
+  background: var(--el-color-success-light-9);
+  border: 1px solid var(--el-color-success-light-5);
+}
+
+.emr-template-tree__doc-badge--pending {
+  color: var(--el-color-warning);
+  background: var(--el-color-warning-light-9);
+  border: 1px solid var(--el-color-warning-light-5);
 }
 
 .emr-template-tree__label {

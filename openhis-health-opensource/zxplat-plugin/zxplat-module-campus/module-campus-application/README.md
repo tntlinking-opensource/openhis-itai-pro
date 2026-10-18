@@ -1,0 +1,1 @@
+> 文档见 **[docs/模块/zxplat-module-campus/模块说明-代码结构.md](../../../docs/模块/zxplat-module-campus/模块说明-代码结构.md)** · 应用 [AppService/](../../../docs/模块/zxplat-module-campus/AppService/)。

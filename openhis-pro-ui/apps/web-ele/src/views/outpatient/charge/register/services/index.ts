@@ -27,6 +27,7 @@ export { loadTodayRegisterSummary } from './register-stats.service';
 
 export {
   cancelPlannedRegisterEncounter,
+  changeRegistrationDepartment,
   cancelRegisterEncounter,
   DEFAULT_REGISTER_PAY_CHANNEL_CODE,
   listBookableSlotHints,

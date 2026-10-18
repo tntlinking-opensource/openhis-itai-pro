@@ -6,13 +6,13 @@
 
 import type { Component, CSSProperties } from 'vue';
 
-import type { BaseFormComponentType } from '@vben/common-ui';
-import type { Recordable } from '@vben/types';
+import type { BaseFormComponentType } from '@zxplat/common-ui';
+import type { Recordable } from '@zxplat/types';
 
 import { defineComponent, h, nextTick, ref } from 'vue';
 
-import { ApiComponent, globalShareState, IconPicker } from '@vben/common-ui';
-import { $t } from '@vben/locales';
+import { ApiComponent, globalShareState, IconPicker } from '@zxplat/common-ui';
+import { $t } from '@zxplat/locales';
 
 import CheckboxInlineGroup from '#/components/checkbox-inline-group.vue';
 import SectionTitle from '#/components/layouts/section-title.vue';

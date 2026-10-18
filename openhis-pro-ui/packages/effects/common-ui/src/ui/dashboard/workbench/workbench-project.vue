@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { WorkbenchProjectItem } from '../typing';
 
-import { Card, CardContent, CardHeader, CardTitle, VbenIcon } from '@vben-core/shadcn-ui';
+import { Card, CardContent, CardHeader, CardTitle, VbenIcon } from '@zxplat-core/shadcn-ui';
 
 interface Props {
   items?: WorkbenchProjectItem[];

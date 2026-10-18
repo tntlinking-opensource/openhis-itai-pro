@@ -4,13 +4,20 @@ export interface InpatientNursingRecordRow {
   temperature: string;
   pulse: string;
   heartRate: string;
+  /** 红旗合列：脉搏或心率 */
+  pulseHeartRate: string;
   respiratory: string;
   bloodPressure: string;
+  systolic: string;
+  diastolic: string;
   consciousness: string;
   pupilLeft: string;
   pupilRight: string;
+  oxygenSaturation: string;
+  oxygenRate: string;
   intakeName: string;
   intakeAmount: string;
+  intakeRoute: string;
   outputName: string;
   outputAmount: string;
   outputColorCharacter: string;
@@ -55,19 +62,42 @@ function str(value: null | number | string | undefined): string {
   return String(value).trim();
 }
 
+function splitBloodPressure(bloodPressure?: string): { diastolic: string; systolic: string } {
+  const raw = str(bloodPressure);
+  if (!raw) {
+    return { diastolic: '', systolic: '' };
+  }
+  const slashIndex = raw.indexOf('/');
+  if (slashIndex < 0) {
+    return { diastolic: '', systolic: raw };
+  }
+  return {
+    systolic: raw.slice(0, slashIndex).trim(),
+    diastolic: raw.slice(slashIndex + 1).trim(),
+  };
+}
+
 function mapRecordRow(row: InpatientNursingRecordRow): InpatientNursingRecordRow {
+  const bloodPressure = str(row.bloodPressure);
+  const split = splitBloodPressure(bloodPressure);
   return {
     recordDatetime: str(row.recordDatetime),
     temperature: str(row.temperature),
     pulse: str(row.pulse),
     heartRate: str(row.heartRate),
+    pulseHeartRate: str(row.pulseHeartRate) || str(row.pulse) || str(row.heartRate),
     respiratory: str(row.respiratory),
-    bloodPressure: str(row.bloodPressure),
+    bloodPressure,
+    systolic: str(row.systolic) || split.systolic,
+    diastolic: str(row.diastolic) || split.diastolic,
     consciousness: str(row.consciousness),
     pupilLeft: str(row.pupilLeft),
     pupilRight: str(row.pupilRight),
+    oxygenSaturation: str(row.oxygenSaturation),
+    oxygenRate: str(row.oxygenRate),
     intakeName: str(row.intakeName),
     intakeAmount: str(row.intakeAmount),
+    intakeRoute: str(row.intakeRoute),
     outputName: str(row.outputName),
     outputAmount: str(row.outputAmount),
     outputColorCharacter: str(row.outputColorCharacter),

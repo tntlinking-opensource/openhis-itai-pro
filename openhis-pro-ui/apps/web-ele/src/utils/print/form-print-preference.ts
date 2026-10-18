@@ -60,7 +60,7 @@ export const INV_FORM_PAPER_KIND_LABELS: Record<InvFormPaperKind, string> = {
 
 export const DEFAULT_INV_FORM_PAPER_KIND: InvFormPaperKind = INV_FORM_PAPER_KIND.triple;
 
-const STORAGE_PREFIX = 'openhis:prt:form-print-prefs';
+const STORAGE_PREFIX = 'zxplat:prt:form-print-prefs';
 
 export interface FormPrintPreference {
   paperHeightMm: number;

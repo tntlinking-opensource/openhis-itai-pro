@@ -10,7 +10,7 @@ import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 const BASE = '/inventoryWarehouseInventoryDetail';
 
-/** whale-core OptionDto，与 IF-01 一致。 */
+/** zxplat-core OptionDto，与 IF-01 一致。 */
 export interface OptionDto {
   value?: string;
   label?: string;

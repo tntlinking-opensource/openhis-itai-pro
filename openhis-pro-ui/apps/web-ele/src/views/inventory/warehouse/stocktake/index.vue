@@ -6,7 +6,7 @@ import type { WarehouseStocktakeLocationOption } from '#/api/inventory/warehouse
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
-import { formatDateTime } from '@vben/utils';
+import { formatDateTime } from '@zxplat/utils';
 
 import {
   INV_ALL_LOCATIONS_FILTER_ID,

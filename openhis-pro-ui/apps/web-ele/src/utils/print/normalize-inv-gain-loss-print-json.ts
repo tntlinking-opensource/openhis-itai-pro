@@ -4,7 +4,12 @@
 
 interface PrintElementLike {
   options?: Record<string, unknown>;
-  printElementType?: { type?: string; title?: string };
+  printElementType?: {
+    type?: string;
+    title?: string;
+    columns?: unknown;
+    formatter?: unknown;
+  };
 }
 
 /** 损益明细列（无账面/实盘；field 仍对齐盘点 PrintData 的 diff*） */
@@ -65,6 +70,10 @@ const GAIN_LOSS_TABLE_COLUMNS = [
       width: 44,
       checked: true,
       columnId: 'unitPriceText',
+      // 覆盖库模板按 columnId 合并回来的 formatter（避免把金额×100 印进单价）
+      formatter: '',
+      formatter2: '',
+      renderFormatter: '',
     },
     {
       align: 'right',
@@ -73,6 +82,9 @@ const GAIN_LOSS_TABLE_COLUMNS = [
       width: 52,
       checked: true,
       columnId: 'diffAmountText',
+      formatter: '',
+      formatter2: '',
+      renderFormatter: '',
     },
     {
       align: 'left',
@@ -121,8 +133,12 @@ export function normalizeInvGainLossPrintJson(
 
     if (isTableElement(element)) {
       options.columns = structuredClone(GAIN_LOSS_TABLE_COLUMNS);
+      // hiprint 会按 columnId 把 printElementType.columns 合并进 options.columns，
+      // 旧列上的 formatter 会留下来，把单价印成金额的百分制。
       if (element.printElementType) {
         element.printElementType.title = '损益明细';
+        delete element.printElementType.columns;
+        delete element.printElementType.formatter;
       }
       continue;
     }

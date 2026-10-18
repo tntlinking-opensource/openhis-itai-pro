@@ -1,0 +1,8 @@
+/**
+ * CanvasStationEditor 高度链。
+ * 不走 SFC scoped：院点 override 生产构建曾丢失 scoped CSS。
+ */
+.canvas-station-editor {
+  height: 100%;
+  min-height: 0;
+}

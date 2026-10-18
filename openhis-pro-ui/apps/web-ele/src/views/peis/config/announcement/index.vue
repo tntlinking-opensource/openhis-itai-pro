@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import { getHomeNoticeApi, saveHomeNoticeApi } from '#/api/peis/announcement';
 import { useRequest } from '#/hooks/use-request';

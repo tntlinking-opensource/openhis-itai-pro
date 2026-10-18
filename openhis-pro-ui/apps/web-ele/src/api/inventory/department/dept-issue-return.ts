@@ -1,5 +1,5 @@
 /**
- * 科室退领单 — 对接 Whale {@code POST /api/app/inventoryDepartmentDeptIssueReturn/<method>}
+ * 科室退领单 — 对接 ZXPlat {@code POST /api/app/inventoryDepartmentDeptIssueReturn/<method>}
  */
 import type { ApiResponse } from '#/types/api-response';
 
@@ -15,7 +15,7 @@ import {
 
 const BASE = '/inventoryDepartmentDeptIssueReturn';
 
-/** {@link com.openhis.health.domain.share.enums.SupplyType#DEPT_ISSUE_RETURN} */
+/** {@link com.zxplat.domain.share.enums.SupplyType#DEPT_ISSUE_RETURN} */
 export const DEPT_ISSUE_RETURN_TYPE_ENUM = 'DEPT_ISSUE_RETURN';
 
 export interface DeptIssueReturnOptionDto {

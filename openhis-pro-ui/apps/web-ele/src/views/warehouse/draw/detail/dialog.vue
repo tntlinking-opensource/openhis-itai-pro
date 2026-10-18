@@ -3,7 +3,7 @@ import type { DrawDetailResponse } from '#/api/warehouse/draw';
 
 import { computed, reactive, ref } from 'vue';
 
-import { useVbenDrawer } from '@vben/common-ui';
+import { useVbenDrawer } from '@zxplat/common-ui';
 
 import { findRequisitionByBusNoApi } from '#/api/warehouse/draw';
 import { useRequest } from '#/hooks/use-request';

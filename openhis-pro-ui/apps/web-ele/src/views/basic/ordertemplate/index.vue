@@ -9,7 +9,7 @@ import type {
 
 import { computed, nextTick, onActivated, onMounted, ref, watch } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import {
   ElButton,
@@ -144,7 +144,7 @@ function statusTagType(statusEnum: string | undefined): 'info' | 'success' | 'wa
   if (statusEnum === 'ACTIVE') {
     return 'success';
   }
-  if (statusEnum === 'DRAFT') {
+  if (statusEnum === 'RETIRED') {
     return 'warning';
   }
   return 'info';

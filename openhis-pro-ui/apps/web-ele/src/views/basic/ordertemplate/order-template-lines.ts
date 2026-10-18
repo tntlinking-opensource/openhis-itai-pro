@@ -1,4 +1,4 @@
-import type { TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { MedicationLineDraftSlice } from './order-template-medication-units';
 
@@ -468,15 +468,16 @@ export function useOrderTemplateLines(options: {
     }
     if (isPricingKind.value) {
       return [
-        { type: 'index', label: '序号', width: '10%', align: 'center' },
+        { type: 'index', label: '序号', width: '8%', align: 'center' },
+        { prop: 'lineKindEnum', label: '项目类型', width: '14%', slot: 'lineKind' },
         {
           prop: 'productName',
           label: '项目名称',
-          width: '52%',
+          width: '42%',
           showOverflowTooltip: true,
           slot: 'product',
         },
-        { prop: 'defaultQuantity', label: '数量', width: '26%', slot: 'quantityWithUnit' },
+        { prop: 'defaultQuantity', label: '数量', width: '24%', slot: 'quantityWithUnit' },
         { label: '操作', width: '12%', slot: 'actions', align: 'center' },
       ];
     }
@@ -586,6 +587,10 @@ export function useOrderTemplateLines(options: {
       sortOrder: visibleLines.value.length + 1,
       defaultQuantity: 1,
     };
+    // 划价组套不展示执行次数，诊疗行落库时补 1，避免保存被次数校验拦住
+    if (isPricingKind.value) {
+      newLine.defaultDays = 1;
+    }
     if (lastLine && isMedicationLineRow(lastLine) && !isPricingKind.value) {
       const groupKey = getLineGroupKey(lastLine);
       if (groupKey) {
@@ -703,7 +708,10 @@ export function useOrderTemplateLines(options: {
         item.unitCode_dictText !== undefined && item.unitCode_dictText !== null
           ? String(item.unitCode_dictText)
           : undefined,
-      catalogUnitDisplay: resolvePricingCatalogUnitDisplayText(item) || undefined,
+      catalogUnitDisplay:
+        (isPricingKind.value
+          ? resolvePricingCatalogUnitDisplayText(item, { preferInhospital: true })
+          : resolvePricingCatalogUnitDisplayText(item)) || undefined,
     };
   }
 
@@ -791,7 +799,7 @@ export function useOrderTemplateLines(options: {
         line.deviceDefinitionId = id;
         if (catalogItem) {
           if (isPricingKind.value) {
-            applyPricingCatalogSelectionToLine(line, catalogItem);
+            applyPricingCatalogSelectionToLine(line, catalogItem, { preferInhospital: true });
           } else {
             applyDeviceCatalogSelectionToLine(line, catalogItem);
           }
@@ -819,7 +827,7 @@ export function useOrderTemplateLines(options: {
         line.activityDefinitionId = id;
         if (catalogItem) {
           if (isPricingKind.value) {
-            applyPricingCatalogSelectionToLine(line, catalogItem);
+            applyPricingCatalogSelectionToLine(line, catalogItem, { preferInhospital: true });
           } else {
             applyServiceCatalogSelectionToLine(line, catalogItem);
           }
@@ -916,8 +924,12 @@ export function useOrderTemplateLines(options: {
       }
       const execCount = Number(row.defaultDays);
       if (!Number.isFinite(execCount) || execCount <= 0) {
-        ElMessage.error(`${label}：诊疗执行次数须大于 0`);
-        return false;
+        if (isPricingKind.value) {
+          row.defaultDays = 1;
+        } else {
+          ElMessage.error(`${label}：诊疗执行次数须大于 0`);
+          return false;
+        }
       }
       return true;
     }

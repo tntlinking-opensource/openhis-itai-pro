@@ -1,0 +1,1893 @@
+{
+  "code": "IP_WORD_378",
+  "name": "入院记录通用",
+  "category": "入院记录",
+  "sourceTemplateId": "378",
+  "typeCode": "INPATIENT_入院记录",
+  "summary": "Word原样迁移v1 · 段70/表1 · 填27/勾4/单0 · 约5页",
+  "estimatedPages": 5,
+  "structure": {
+    "paraCount": 70,
+    "tableCount": 1,
+    "fill": 27,
+    "checkbox": 4,
+    "radio": 0
+  },
+  "data": {
+    "header": [
+      {
+        "id": "emrHospitalTitle",
+        "value": "医院名称",
+        "font": "SimHei",
+        "size": 29,
+        "bold": true,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center",
+        "rowMargin": 1
+      },
+      {
+        "id": "emrDocumentTitle",
+        "value": "入院记录通用",
+        "font": "SimSun",
+        "size": 21,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "type": "separator",
+        "value": "",
+        "lineWidth": 1.15
+      }
+    ],
+    "main": [
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "入院记录",
+        "bold": true,
+        "rowFlex": "center"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center"
+      },
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_001",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 349
+          },
+          {
+            "width": 349
+          }
+        ],
+        "tableToolDisabled": true,
+        "borderType": "empty",
+        "trList": [
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "姓名：",
+                    "bold": true
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "患者姓名",
+                      "conceptId": "patientName",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    }
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "性别：",
+                    "bold": true
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "性别",
+                      "conceptId": "gender",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_002",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 349
+          },
+          {
+            "width": 349
+          }
+        ],
+        "tableToolDisabled": true,
+        "borderType": "empty",
+        "trList": [
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "年龄：",
+                    "bold": true
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "年龄",
+                      "conceptId": "age",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    }
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "婚姻：",
+                    "bold": true
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "婚姻",
+                      "conceptId": "maritalStatus",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_003",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 349
+          },
+          {
+            "width": 349
+          }
+        ],
+        "tableToolDisabled": true,
+        "borderType": "empty",
+        "trList": [
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "民族：",
+                    "bold": true
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "汉族　　　　　　　　　　　　"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "职业：",
+                    "bold": true
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "离退休人员"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_006",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 349
+          },
+          {
+            "width": 349
+          }
+        ],
+        "tableToolDisabled": true,
+        "borderType": "empty",
+        "trList": [
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "籍贯：",
+                    "bold": true
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "籍贯",
+                      "conceptId": "fill_004",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false
+                    }
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "住址：",
+                    "bold": true
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "住址",
+                      "conceptId": "fill_005",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_008",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 349
+          },
+          {
+            "width": 349
+          }
+        ],
+        "tableToolDisabled": true,
+        "borderType": "empty",
+        "trList": [
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "病史叙述者：",
+                    "bold": true
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": " 本人　　　　　　　　　　　　"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "可靠程度：",
+                    "bold": true
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "可靠程度",
+                      "conceptId": "fill_007",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_009",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 349
+          },
+          {
+            "width": 349
+          }
+        ],
+        "tableToolDisabled": true,
+        "borderType": "empty",
+        "trList": [
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "入院日期：",
+                    "bold": true
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "date",
+                      "value": null,
+                      "placeholder": "入院时间",
+                      "conceptId": "admissionDateTime",
+                      "dateFormat": "yyyy-MM-dd HH:mm",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false
+                    }
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "记录日期：",
+                    "bold": true
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "date",
+                      "value": null,
+                      "placeholder": "记录时间",
+                      "conceptId": "recordTime",
+                      "dateFormat": "yyyy-MM-dd HH:mm",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "病 史",
+        "bold": true,
+        "rowFlex": "center"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "主 诉：",
+        "bold": true
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "主诉",
+          "conceptId": "fill_010",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false
+        }
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "现病史：",
+        "bold": true
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "现病史",
+          "conceptId": "fill_011",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false
+        }
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "既往史：",
+        "bold": true
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "既往史",
+          "conceptId": "fill_012",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false
+        }
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "个人史：",
+        "bold": true
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "出生地：",
+        "bold": true
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "出生地",
+          "conceptId": "fill_013",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false
+        }
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "到过疫区：",
+        "bold": true
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "否",
+        "bold": true
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　嗜烟： "
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_014",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "有",
+              "code": "chk_014"
+            }
+          ]
+        }
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "/"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_015",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "无",
+              "code": "chk_015"
+            }
+          ]
+        }
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "约 年，平均 支/日 戒烟：未 约 年"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　嗜酒： "
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_016",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "有",
+              "code": "chk_016"
+            }
+          ]
+        }
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "/"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_017",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "无",
+              "code": "chk_017"
+            }
+          ]
+        }
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "约 年，平均 两/日 其它："
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "月经史：",
+        "bold": true
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "初潮：",
+        "bold": true
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "初潮",
+          "conceptId": "fill_018",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false
+        }
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "周期：",
+        "bold": true
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": " 天 行经天数 天 末次月经 "
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "绝经年龄：",
+        "bold": true
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "绝经年龄",
+          "conceptId": "fill_019",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false
+        }
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "婚姻史：",
+        "bold": true
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "结婚年龄 适龄 "
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "配偶健康情况：",
+        "bold": true
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "健康"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "家族史：",
+        "bold": true
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "父亲：",
+        "bold": true
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　　　　　　　　　：",
+        "bold": true
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "母亲：　　　　　　　　　　　　："
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "子女：健康"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "否认家族传染、遗传性疾病史",
+        "bold": true
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "病史记",
+        "bold": true
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "录经陈述者确认无误并签字：",
+        "bold": true
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "录经陈述者确认无误并签字",
+          "conceptId": "fill_020",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false
+        }
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "与患者关系：",
+        "bold": true
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "与患者关系",
+          "conceptId": "fill_021",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false
+        }
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "签字日期：",
+        "bold": true
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "签字日期",
+          "conceptId": "fill_022",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false
+        }
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "体格检查",
+        "bold": true,
+        "rowFlex": "center"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "生命体征： 体温 ℃ 脉搏 次/分 呼吸 次/分 血压 mmHg",
+        "bold": true
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "一般状况： 发育正常，营养良好,正常面容，自如表情，自主体位，正常步态，神志清楚，查体合作。",
+        "bold": true
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "皮肤粘膜： 色泽正常，未见皮疹，未见黄染，未见出血点，未见脱屑，未见紫癜。毛发分布正常，皮肤温、湿度正常，弹性正常，未见水肿，未见肝掌，未见 蜘蛛痣。",
+        "bold": true
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "淋 巴 结： 全身浅表淋巴结未触及肿大。",
+        "bold": true
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "头 部： 头颅大小正常，无畸形，未及压痛，未及包块，未及凹陷。眼睑正常，结膜未见水肿，巩膜无黄染，眼球未见异常，角膜未见异常,瞳孔等大等圆，对光反射灵敏。耳廓正常，无耳前瘘管，无外耳道分泌物，无乳突压痛，听力粗测无异常。鼻外形正常，鼻腔未见异常分泌物，鼻旁窦区无压痛。口唇红润，粘膜正常，腮腺导管开口无红肿，溢浓，舌苔薄匀，无舌震颤，伸出居中，牙龈正常,牙列齐，双侧扁桃体无肿大，咽部无充血，声音正常。",
+        "bold": true
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "颈部：无抵抗感，颈动脉搏动正常，颈静脉无怒张，肝颈静脉回流征阴性，气管居中，双侧 甲状腺无肿大，无震颤，无血管杂音。",
+        "bold": true
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "胸部： 胸廓正常，胸骨无压痛，胸部局部无隆起或凹陷，乳房发育正常。",
+        "bold": true
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "肺脏：",
+        "bold": true
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "肺脏",
+          "conceptId": "fill_023",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false
+        }
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "视诊：",
+        "bold": true
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "呼吸运动对称，肋间隙正常",
+        "bold": true
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "触诊：语颤两侧对称，未见胸膜摩擦感，无皮下捻发感。",
+        "bold": true
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　叩诊：呈清音",
+        "bold": true
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　肺下界肩胛下角线：右 10 肋间，左 10 肋间"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　移动度： 右 8 cm， 左 8 cm"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　听诊：呼吸规整，正常呼吸音，无啰音，无呼气延"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　长，语音传导对称，无胸膜摩擦音。"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "心脏：",
+        "bold": true
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "心脏",
+          "conceptId": "fill_024",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false
+        }
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "视诊：",
+        "bold": true
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "心尖搏动未见异常。",
+        "bold": true
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　心前区隆起无。"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　其他部位无异常搏动。"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　触诊：心尖搏动未及异常。"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　在左第5肋间锁骨中线内 0.5 厘米。"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_026",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 174
+          },
+          {
+            "width": 174
+          },
+          {
+            "width": 174
+          },
+          {
+            "width": 176
+          }
+        ],
+        "tableToolDisabled": true,
+        "trList": [
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　未及震颤，未见胸膜摩擦感。"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "左(cm)"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "肋间",
+                    "rowFlex": "center"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "右(cm)",
+                    "rowFlex": "center"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "叩诊：",
+                    "bold": true
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "相对浊音界正常，"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "如右表：",
+                    "bold": true
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "如右表",
+                      "conceptId": "fill_025",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false
+                    }
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "2",
+                    "rowFlex": "center"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "Ⅱ",
+                    "rowFlex": "center"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "2",
+                    "rowFlex": "center"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　听诊：心率84次/min ，心律齐"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "3",
+                    "rowFlex": "center"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "Ⅲ",
+                    "rowFlex": "center"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "4",
+                    "rowFlex": "center"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　心音：S1 正常 S2 正常 A2＜P2"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "4",
+                    "rowFlex": "center"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "Ⅳ",
+                    "rowFlex": "center"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "6",
+                    "rowFlex": "center"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　　S3 无 S4 无"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": ""
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "Ⅴ",
+                    "rowFlex": "center"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "8",
+                    "rowFlex": "center"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　无 额外心音， 无奔马律， 无 开瓣音，"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　左锁骨中线距前正中线 9 cm 无 杂音， 无 心包摩擦音"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "周围血管征:未及异常，未及脉搏短绌，未及奇脉，未及水冲脉，未及交替脉，未及毛细血管搏动征，未及大血管枪击音。",
+        "bold": true
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "腹部：",
+        "bold": true
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "腹部",
+          "conceptId": "fill_027",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false
+        }
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "视诊：",
+        "bold": true
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "外形腹部平坦、对称，腹式呼吸正常，未见胃型，",
+        "bold": true
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　未见肠型，未见蠕动波，未见腹壁静脉曲张，"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　未见手术疤痕，脐正常，无疝。"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "触诊：未及腹肌紧张，未及压痛、未及反跳痛，未及液波震颤，",
+        "bold": true
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "未及振水声。未及腹部包块。"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　肝脏：肝脏未触及"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　胆囊：胆囊未触及，Murphy征（－）。"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　肾脏：肾脏未触及，输尿管压痛点（－）,肋脊点（－）,肋腰点(－）。"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　叩诊：肝浊音界存在，位于右锁骨中线第 V 肋间，肝区未及叩击痛，Traube区未"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "及异常，移动性浊音（－），双侧肾区未及叩痛。"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　听诊：肠鸣音正常，未闻及血管杂音。"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "生殖器： 未查",
+        "bold": true
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "肛门直肠： 未查",
+        "bold": true
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "脊柱及四肢:脊柱未见异常，棘突未及压痛，未及压痛，活动正常，四肢未见异常，关节",
+        "bold": true
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　无红肿，关节无强直，下静脉无曲张，未见杵状指趾，肌肉无压痛，无萎缩"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "神经系统： 痛／温觉未及异常，触觉未及异常，位置觉未及异常。",
+        "bold": true
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　肌张力正常，无肢体瘫痪，肌力 V 级。"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　腹壁反射正常 ，肱二头肌反射正常 ，肱三头肌反射正常，"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　膝腱反射正常，跟腱反射正常。"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　Hoffmann征（－），Babinski征（－），Kerning征（－）。"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　其他：无。"
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "专科情况：",
+        "bold": true
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "专科情况",
+          "conceptId": "fill_028",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false
+        }
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "辅助检查：",
+        "bold": true
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "辅助检查",
+          "conceptId": "fill_029",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false
+        }
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "填写",
+          "conceptId": "fill_030",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false
+        }
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "临床初步诊断：",
+        "bold": true
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "临床初步诊断",
+          "conceptId": "fill_031",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false
+        }
+      },
+      {
+        "value": "\n"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "住院医师签字：",
+        "bold": true,
+        "rowFlex": "center"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "住院医师签字",
+          "conceptId": "fill_032",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false
+        },
+        "rowFlex": "center"
+      }
+    ],
+    "footer": []
+  }
+}

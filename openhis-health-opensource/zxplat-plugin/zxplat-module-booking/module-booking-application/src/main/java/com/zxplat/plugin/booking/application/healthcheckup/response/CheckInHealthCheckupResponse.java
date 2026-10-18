@@ -1,0 +1,22 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.zxplat.plugin.booking.application.healthcheckup.response;
+
+import lombok.Getter;
+import lombok.Setter;
+
+/**
+ * 体检到检签到响应（9.9）。
+ */
+@Getter
+@Setter
+public class CheckInHealthCheckupResponse {
+
+    /** 预约主键。 */
+    private Long appointmentId;
+
+    /** 队列序号。 */
+    private Integer displayOrder;
+}

@@ -13,6 +13,7 @@ export {
 } from './mappers';
 export type { OutpatientPrescriptionPrintData } from './mappers';
 export { printChargeReceipt, schedulePrintChargeReceipt } from './print-charge-receipt';
+export { printChargeInvoice } from './print-charge-invoice';
 export {
   buildPrepayReceiptSourceFromCollect,
   buildPrepayReceiptSourceFromRecord,
@@ -21,8 +22,11 @@ export {
   schedulePrintInpatientPrepayReceipt,
 } from './print-inpatient-prepay-receipt';
 export {
+  hasPrintableNurseServiceApply,
+  listPrintableNurseServiceApplyLines,
   printServiceApplyForms,
   printServiceApplyFromAdviceRows,
+  printServiceApplyFromNurseTreatmentLines,
   type ServiceApplyPrintMeta,
 } from './print-service-apply';
 export { printDailySettlement } from './print-daily-settlement';
@@ -51,6 +55,13 @@ export {
   schedulePrintRegistrationReceipt,
   shouldSkipAutoPrintRegistrationReceipt,
 } from './print-registration-receipt';
+export {
+  formatAdmissionCertificatePrepayAmount,
+  printAdmissionCertificate,
+  resolveAdmissionCertificateDiagnosisText,
+  resolveAdmissionCertificateGenderText,
+  type AdmissionCertificatePrintSource,
+} from './print-admission-certificate';
 export { printPeisGuide } from './print-peis-guide';
 export {
   A4_PAPER_HEIGHT_MM,

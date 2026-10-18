@@ -1,0 +1,1269 @@
+{
+  "code": "IP_WORD_770",
+  "name": "临床输血申请单",
+  "category": "病程记录",
+  "sourceTemplateId": "770",
+  "typeCode": "INPATIENT_病程记录",
+  "summary": "Word原样迁移v1 · 段31/表0 · 元9/日0/勾26/单0 · 约3页",
+  "estimatedPages": 3,
+  "structure": {
+    "paraCount": 31,
+    "tableCount": 0,
+    "meta": 9,
+    "date": 0,
+    "plainFill": 0,
+    "fill": 9,
+    "checkbox": 26,
+    "radio": 0
+  },
+  "data": {
+    "header": [
+      {
+        "id": "emrHospitalTitle",
+        "value": "医院名称",
+        "font": "SimHei",
+        "size": 29,
+        "bold": true,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center",
+        "rowMargin": 1
+      },
+      {
+        "id": "emrDocumentTitle",
+        "value": "临床输血申请单",
+        "font": "SimSun",
+        "size": 21,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "type": "separator",
+        "value": "",
+        "lineWidth": 1.15
+      }
+    ],
+    "main": [
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "临床输血申请单",
+        "bold": true,
+        "rowFlex": "center"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "姓名：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "患者姓名",
+          "conceptId": "patientName",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false,
+          "disabled": true
+        },
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "性别：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "性别",
+          "conceptId": "gender",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false,
+          "disabled": true
+        },
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "年龄：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "年龄",
+          "conceptId": "age",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false,
+          "disabled": true
+        },
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "科别：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "科室",
+          "conceptId": "deptName",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false,
+          "disabled": true
+        },
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_001",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 349
+          },
+          {
+            "width": 349
+          }
+        ],
+        "tableToolDisabled": true,
+        "rowFlex": "left",
+        "borderType": "empty",
+        "trList": [
+          {
+            "height": 28,
+            "minHeight": 28,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "床号：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "床号",
+                      "conceptId": "bedNo",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "住院号：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "住院号",
+                      "conceptId": "inpatientNo",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "患者ABO血型：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "Rh（D）血型：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": " 输血知情同意书（已知情",
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_002",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "未知情",
+              "code": "chk_002"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_003",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "）",
+              "code": "chk_003"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "输血史（",
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_004",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "有",
+              "code": "chk_004"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_005",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "无",
+              "code": "chk_005"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "）",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　　　　　",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "孕产史（",
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_006",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "有",
+              "code": "chk_006"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_007",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "无",
+              "code": "chk_007"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "）：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "孕 ",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "产：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "临川诊断：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "输血前四项检测：HBsAg（ ）anti-HCV（ ）anti-HIV（ ）梅毒（ ）",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "【已送检待报告",
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_008",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "】",
+              "code": "chk_008"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "血常规：血红蛋白 g/L； 红细胞压积 %； 血小板 *109/L",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "【已送检待报告",
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_009",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "】",
+              "code": "chk_009"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "输血性质：常规治疗",
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_010",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "术前备血",
+              "code": "chk_010"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_011",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "紧急用血",
+              "code": "chk_011"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_012",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "选项",
+              "code": "chk_012"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　　　大量用血",
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_013",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "预约治疗",
+              "code": "chk_013"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_014",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "术中用血",
+              "code": "chk_014"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_015",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "选项",
+              "code": "chk_015"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "输血目的：纠正贫血",
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_016",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "补充血小板",
+              "code": "chk_016"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_017",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "补充凝血因子",
+              "code": "chk_017"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_018",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "选项",
+              "code": "chk_018"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "扩容",
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_019",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "其他",
+              "code": "chk_019"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "申请血液成分：全血",
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_020",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "去白细胞悬浮红细胞",
+              "code": "chk_020"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_021",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "洗涤红细胞",
+              "code": "chk_021"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_022",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "选项",
+              "code": "chk_022"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "血浆",
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_023",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "血小板",
+              "code": "chk_023"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_024",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "冷沉淀",
+              "code": "chk_024"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_025",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "选项",
+              "code": "chk_025"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　其他：",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "申请时间：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": " 年 月 日；",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "预定输血时间：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": " 年 月 日",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "申请用血量：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "申请医生签字：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": " ；",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "上级医师审核签字：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": " ；",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "科主任审核签字：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "------------------------------以下由执行护士填写-----------------------------",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "患者姓名：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "患者姓名",
+          "conceptId": "patientName",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false,
+          "disabled": true
+        },
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "床号：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "床号",
+          "conceptId": "bedNo",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false,
+          "disabled": true
+        },
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "住院号：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "text",
+          "value": null,
+          "placeholder": "住院号",
+          "conceptId": "inpatientNo",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false,
+          "disabled": true
+        },
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "标本号：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "标本采集者签字：　　　　　　　　　； 年 月 日 时 分",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "送检者签字：　　　　　　　　　　； 年 月 日 时 分",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "接收者签字：　　　　　　　　　　； 年 月 日 时 分",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "---------------------------以下由检验科（血库）填写-------------------------",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "以上内容已核对（",
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_026",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "是",
+              "code": "chk_026"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_027",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "否",
+              "code": "chk_027"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "）核对者签字：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "核对 ",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "（接收）时间：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": " 年 月 日 时 分",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "备注：1.因紧急输血，以上结果待检测时，检测结果收到后请及时跟检验科（血库）联系并补填。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "2.受血者拟输血时，以上检查因患者（或代理人）拒绝检测，无结果时，必须上报院医务主管部门并书面同意附病历存档。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "3.以上内容由相关人员逐项填写完全，否则检验科（血库）不予接收，并请于输血日前送达检验科（血库）。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "4.本输血申请单不归入病历之中，由输血科负责保存十年。",
+        "rowFlex": "left"
+      }
+    ],
+    "footer": []
+  }
+}

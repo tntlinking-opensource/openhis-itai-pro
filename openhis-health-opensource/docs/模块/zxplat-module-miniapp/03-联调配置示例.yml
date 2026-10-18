@@ -1,0 +1,16 @@
+# 小程序 BFF 联调（zxplat · with-miniapp）
+# 复制片段到 application-local.yml 或环境变量注入
+
+zxplat:
+  modules:
+    miniapp:
+      enabled: true
+  miniapp:
+    default-app-id: wx-dev-local
+    mock-login-enabled: true
+    session-ttl-hours: 72
+    # 写路径操作人 adm_practitioner.id
+    system-operator-practitioner-id: 308791351298756608
+    wechat-app-secret:
+    # 与 DMZ gateway api-key 一致；留空则内网不校验（仅联调直连）
+    gateway-api-key:

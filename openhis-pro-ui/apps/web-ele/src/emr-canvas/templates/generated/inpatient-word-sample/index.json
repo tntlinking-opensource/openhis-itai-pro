@@ -1,0 +1,14 @@
+[
+  {
+    "file": "378_入院记录通用.json",
+    "code": "IP_WORD_378",
+    "name": "入院记录通用",
+    "category": "入院记录",
+    "estimatedPages": 5,
+    "paraCount": 70,
+    "tableCount": 1,
+    "fill": 27,
+    "checkbox": 4,
+    "radio": 0
+  }
+]

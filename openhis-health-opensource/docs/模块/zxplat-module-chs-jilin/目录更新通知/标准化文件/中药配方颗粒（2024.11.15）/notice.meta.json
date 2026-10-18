@@ -1,0 +1,10 @@
+{
+  "doc_kind": "CATALOG_DELTA",
+  "category": "FORMULA",
+  "title": "中药配方颗粒（2024.11.15）",
+  "source_filename": "中药配方颗粒（2024.11.15）.xlsx",
+  "notice_date": "2024-11-15",
+  "effective_date": null,
+  "wash_note": "CATALOG_DELTA/FORMULA；行数=2995；actions=ADD:2586,STOP:409；hilist_code←中药配方颗粒代码",
+  "wash_tool": "cursor-ai"
+}

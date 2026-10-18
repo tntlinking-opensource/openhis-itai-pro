@@ -1,13 +1,13 @@
-import type { VxeTableGridOptions } from '@vben/plugins/vxe-table';
+import type { VxeTableGridOptions } from '@zxplat/plugins/vxe-table';
 
 import type { InventoryItemDetail } from '#/api/core/common';
 
 import { h } from 'vue';
 
-import { ActiveFlagTag } from '@vben/common-ui';
-import { setupVbenVxeTable, useVbenVxeGrid } from '@vben/plugins/vxe-table';
+import { ActiveFlagTag } from '@zxplat/common-ui';
+import { setupVbenVxeTable, useVbenVxeGrid } from '@zxplat/plugins/vxe-table';
 
-import { UnitQuantityInput } from '@vben-core/table-layout-ui';
+import { UnitQuantityInput } from '@zxplat-core/table-layout-ui';
 
 import {
   dayjs,
@@ -784,4 +784,4 @@ setupVbenVxeTable({
 
 export { useVbenVxeGrid };
 
-export type * from '@vben/plugins/vxe-table';
+export type * from '@zxplat/plugins/vxe-table';

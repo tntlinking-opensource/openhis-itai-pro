@@ -4,7 +4,7 @@ import type { BossIssueStatusDto } from '#/api/einvoice-boss/cashier';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { useAccess } from '@vben/access';
+import { useAccess } from '@zxplat/access';
 
 import { ElButton, ElMessage } from 'element-plus';
 

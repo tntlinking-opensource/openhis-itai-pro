@@ -45,6 +45,7 @@ const headerInfoItems = computed(() => {
   if (!header) return [];
   return [
     { label: '汇总药房', value: header.purposeLocationName?.trim() || '—' },
+    { label: '申领科室', value: header.applicantDepartmentName?.trim() || '—' },
     { label: '申请人', value: header.applicantName?.trim() || '—' },
     { label: '申请时间', value: formatSummarySlipDateTime(header.applyTime) },
     { label: '发药时间', value: formatSummarySlipDateTime(header.dispenseTime) },

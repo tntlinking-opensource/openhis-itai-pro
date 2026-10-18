@@ -1,0 +1,1159 @@
+# 执行动作命令
+
+## 使用方式
+
+```javascript
+import Editor from "@hufe921/canvas-editor"
+
+const instance = new Editor(container, <IElement[]>data, options)
+instance.command.commandName()
+```
+
+::: tip
+某些命令的执行，会使光标从文档中移出（比如：点击自定义工具栏-加粗文字）。此时可以设置一个标识(EDITOR_COMPONENT)给编辑器，让编辑器将其识别为内部组件。如：
+
+```js
+import { EDITOR_COMPONENT, EditorComponent } from '@hufe921/canvas-editor'
+
+<div class="menu" :[EDITOR_COMPONENT]="EditorComponent.MENU">
+  <button class="bold"></button>
+</div>
+```
+
+:::
+
+## executeMode
+
+功能：切换编辑器模式（编辑、清洁、只读、表单、打印、设计、涂鸦、留痕）
+
+用法：
+
+```javascript
+instance.command.executeMode(editorMode: EditorMode)
+```
+
+## executeToggleTrace
+
+功能：切换留痕记录开关。
+
+用法：
+
+```javascript
+instance.command.executeToggleTrace(payload?: boolean)
+```
+
+## executeCompare
+
+功能：对比两个版本的文档数据，并切换到留痕模式展示内容差异。
+
+用法：
+
+```javascript
+instance.command.executeCompare(payload: IComparePayload)
+```
+
+## executeToggleRuler
+
+功能：切换标尺显示。
+
+用法：
+
+```javascript
+instance.command.executeToggleRuler(payload?: boolean)
+```
+
+## executeCut
+
+功能：剪切
+
+用法：
+
+```javascript
+instance.command.executeCut()
+```
+
+## executeCopy
+
+功能：复制
+
+用法：
+
+```javascript
+instance.command.executeCopy(payload?: ICopyOption)
+```
+
+## executePaste
+
+功能：粘贴
+
+用法：
+
+```javascript
+instance.command.executePaste(payload?: IPasteOption)
+```
+
+## executeSelectAll
+
+功能：全选
+
+用法：
+
+```javascript
+instance.command.executeSelectAll()
+```
+
+## executeBackspace
+
+功能：向前删除
+
+用法：
+
+```javascript
+instance.command.executeBackspace()
+```
+
+## executeSetRange
+
+功能：设置选区
+
+用法：
+
+```javascript
+instance.command.executeSetRange(
+  startIndex: number,
+  endIndex: number,
+  tableId?: string,
+  startTdIndex?: number,
+  endTdIndex?: number,
+  startTrIndex?: number,
+  endTrIndex?: number
+)
+```
+
+## executeReplaceRange
+
+功能：替换选区
+
+用法：
+
+```javascript
+instance.command.executeReplaceRange(range: IRange)
+```
+
+## executeSetPositionContext
+
+功能：设置位置上下文
+
+用法：
+
+```javascript
+instance.command.executeSetPositionContext(range: IRange)
+```
+
+## executeForceUpdate
+
+功能：强制重新渲染文档
+
+用法：
+
+```javascript
+instance.command.executeForceUpdate(options?: IForceUpdateOption)
+```
+
+## executeBlur
+
+功能：设置编辑器失焦
+
+用法：
+
+```javascript
+instance.command.executeBlur()
+```
+
+## executeHideCursor
+
+功能：隐藏光标（保留选区）
+
+用法：
+
+```javascript
+instance.command.executeHideCursor()
+```
+
+## executeUndo
+
+功能：撤销
+
+用法：
+
+```javascript
+instance.command.executeUndo()
+```
+
+## executeRedo
+
+功能：重做
+
+用法：
+
+```javascript
+instance.command.executeRedo()
+```
+
+## executePainter
+
+功能：格式刷-复制样式
+
+用法：
+
+```javascript
+instance.command.executePainter()
+```
+
+## executeApplyPainterStyle
+
+功能：格式刷-应用样式
+
+用法：
+
+```javascript
+instance.command.executeApplyPainterStyle()
+```
+
+## executeFormat
+
+功能：清除样式
+
+用法：
+
+```javascript
+instance.command.executeFormat(options?: IRichtextOption)
+```
+
+## executeFont
+
+功能：设置字体
+
+用法：
+
+```javascript
+instance.command.executeFont(font: string, options?: IRichtextOption)
+```
+
+## executeSize
+
+功能：设置字号
+
+用法：
+
+```javascript
+instance.command.executeSize(size: number, options?: IRichtextOption)
+```
+
+## executeSizeAdd
+
+功能：增大字号
+
+用法：
+
+```javascript
+instance.command.executeSizeAdd(options?: IRichtextOption)
+```
+
+## executeSizeMinus
+
+功能：减小字号
+
+用法：
+
+```javascript
+instance.command.executeSizeMinus(options?: IRichtextOption)
+```
+
+## executeBold
+
+功能：字体加粗
+
+用法：
+
+```javascript
+instance.command.executeBold(options?: IRichtextOption)
+```
+
+## executeItalic
+
+功能：字体斜体
+
+用法：
+
+```javascript
+instance.command.executeItalic(options?: IRichtextOption)
+```
+
+## executeUnderline
+
+功能：下划线
+
+用法：
+
+```javascript
+instance.command.executeUnderline(textDecoration?: ITextDecoration, options?: IRichtextOption)
+```
+
+## executeStrikeout
+
+功能：删除线
+
+用法：
+
+```javascript
+instance.command.executeStrikeout(options?: IRichtextOption)
+```
+
+## executeSuperscript
+
+功能：上标
+
+用法：
+
+```javascript
+instance.command.executeSuperscript(options?: IRichtextOption)
+```
+
+## executeSubscript
+
+功能：上下标
+
+用法：
+
+```javascript
+instance.command.executeSubscript(options?: IRichtextOption)
+```
+
+## executeColor
+
+功能：字体颜色
+
+用法：
+
+```javascript
+instance.command.executeColor(color: string | null, options?: IRichtextOption)
+```
+
+## executeHighlight
+
+功能：高亮
+
+用法：
+
+```javascript
+instance.command.executeHighlight(color: string | null, options?: IRichtextOption)
+```
+
+## executeTitle
+
+功能：标题设置
+
+用法：
+
+```javascript
+instance.command.executeTitle(TitleLevel | null)
+```
+
+## executeList
+
+功能：列表设置
+
+用法：
+
+```javascript
+instance.command.executeList(listType: ListType | null, listStyle?: ListStyle)
+```
+
+## executeRowFlex
+
+功能：段落对齐
+
+用法：
+
+```javascript
+instance.command.executeRowFlex(rowFlex: RowFlex)
+```
+
+## executeRowMargin
+
+功能：段落行间距
+
+用法：
+
+```javascript
+instance.command.executeRowMargin(rowMargin: number)
+```
+
+## executeSpacingBefore
+
+功能：段落段前间距
+
+用法：
+
+```javascript
+instance.command.executeSpacingBefore(spacingBefore: number)
+```
+
+## executeSpacingAfter
+
+功能：段落段后间距
+
+用法：
+
+```javascript
+instance.command.executeSpacingAfter(spacingAfter: number)
+```
+
+## executeInsertTable
+
+功能：插入表格
+
+用法：
+
+```javascript
+instance.command.executeInsertTable(row: number, col: number)
+```
+
+## executeInsertTableTopRow
+
+功能：向上插入一行
+
+用法：
+
+```javascript
+instance.command.executeInsertTableTopRow()
+```
+
+## executeInsertTableBottomRow
+
+功能：向下插入一行
+
+用法：
+
+```javascript
+instance.command.executeInsertTableBottomRow()
+```
+
+## executeInsertTableLeftCol
+
+功能：向左插入一列
+
+用法：
+
+```javascript
+instance.command.executeInsertTableLeftCol()
+```
+
+## executeInsertTableRightCol
+
+功能：向右插入一列
+
+用法：
+
+```javascript
+instance.command.executeInsertTableRightCol()
+```
+
+## executeDeleteTableRow
+
+功能：删除当前行
+
+用法：
+
+```javascript
+instance.command.executeDeleteTableRow()
+```
+
+## executeDeleteTableCol
+
+功能：删除当前列
+
+用法：
+
+```javascript
+instance.command.executeDeleteTableCol()
+```
+
+## executeDeleteTable
+
+功能：删除表格
+
+用法：
+
+```javascript
+instance.command.executeDeleteTable()
+```
+
+## executeMergeTableCell
+
+功能：合并表格
+
+用法：
+
+```javascript
+instance.command.executeMergeTableCell()
+```
+
+## executeCancelMergeTableCell
+
+功能：取消合并表格
+
+用法：
+
+```javascript
+instance.command.executeCancelMergeTableCell()
+```
+
+## executeSplitVerticalTableCell
+
+功能：分隔当前单元格（垂直方向）
+
+用法：
+
+```javascript
+instance.command.executeSplitVerticalTableCell()
+```
+
+## executeSplitHorizontalTableCell
+
+功能：分隔当前单元格（水平方向）
+
+用法：
+
+```javascript
+instance.command.executeSplitHorizontalTableCell()
+```
+
+## executeTableTdVerticalAlign
+
+功能：表格单元格垂直对齐方式
+
+用法：
+
+```javascript
+instance.command.executeTableTdVerticalAlign(payload: VerticalAlign)
+```
+
+## executeTableBorderType
+
+功能：表格边框类型
+
+用法：
+
+```javascript
+instance.command.executeTableBorderType(payload: TableBorder)
+```
+
+## executeTableBorderColor
+
+功能：表格边框颜色
+
+用法：
+
+```javascript
+instance.command.executeTableBorderColor(payload: string)
+```
+
+## executeTableTdBorderType
+
+功能：表格单元格边框类型
+
+用法：
+
+```javascript
+instance.command.executeTableTdBorderType(payload: TdBorder)
+```
+
+## executeTableTdSlashType
+
+功能：表格单元格内斜线
+
+用法：
+
+```javascript
+instance.command.executeTableTdSlashType(payload: TdSlash)
+```
+
+## executeTableTdBackgroundColor
+
+功能：表格单元格背景色
+
+用法：
+
+```javascript
+instance.command.executeTableTdBackgroundColor(payload: string)
+```
+
+## executeTableSelectAll
+
+功能：选中整个表格
+
+用法：
+
+```javascript
+instance.command.executeTableSelectAll()
+```
+
+## executeTableAutoFitToContent
+
+功能：根据内容自动调整表格（每列宽度按该列单元格内容实测最大宽度调整，列宽不低于 defaultColMinWidth；overflow 为 false 时结果会等比例压缩至页面内容区内）
+
+用法：
+
+```javascript
+instance.command.executeTableAutoFitToContent()
+```
+
+## executeTableAutoFitToPage
+
+功能：根据窗口自动调整表格（表格总宽等比缩放至页面内容区宽度）
+
+用法：
+
+```javascript
+instance.command.executeTableAutoFitToPage()
+```
+
+## executeImage
+
+功能：插入图片
+
+用法：
+
+```javascript
+instance.command.executeImage({
+  id?: string;
+  width: number;
+  height: number;
+  value: string;
+  imgDisplay?: ImageDisplay;
+})
+```
+
+## executeHyperlink
+
+功能：插入链接
+
+用法：
+
+```javascript
+instance.command.executeHyperlink({
+  type: ElementType.HYPERLINK,
+  value: string,
+  url: string,
+  valueList: IElement[]
+})
+```
+
+## executeDeleteHyperlink
+
+功能：删除链接
+
+用法：
+
+```javascript
+instance.command.executeDeleteHyperlink()
+```
+
+## executeCancelHyperlink
+
+功能：取消链接
+
+用法：
+
+```javascript
+instance.command.executeCancelHyperlink()
+```
+
+## executeEditHyperlink
+
+功能：编辑链接
+
+用法：
+
+```javascript
+instance.command.executeEditHyperlink(newUrl: string)
+```
+
+## executeSeparator
+
+功能：插入分割线
+
+用法：
+
+```javascript
+instance.command.executeSeparator(dashArray: number[], option?: { lineWidth?: number; color?: string })
+```
+
+## executePageBreak
+
+功能：分页符
+
+用法：
+
+```javascript
+instance.command.executePageBreak()
+```
+
+## executeAddWatermark
+
+功能：添加水印
+
+用法：
+
+```javascript
+instance.command.executeAddWatermark({
+  data: string;
+  color?: string;
+  opacity?: number;
+  size?: number;
+  font?: string;
+  layer?: WatermarkLayer;
+})
+```
+
+## executeDeleteWatermark
+
+功能：删除水印
+
+用法：
+
+```javascript
+instance.command.executeDeleteWatermark()
+```
+
+## executeSearch
+
+功能：搜索
+
+用法：
+
+```javascript
+instance.command.executeSearch(keyword: string, options?: ISearchOption)
+```
+
+## executeSetSpellcheckRangeList
+
+功能：设置拼写检查错词区间，在区间下方渲染波浪线（叠加层渲染，不修改文档数据）。传`null`清空
+
+用法：
+
+```javascript
+instance.command.executeSetSpellcheckRangeList(payload: ISpellcheckRange[] | null)
+```
+
+## executeSearchNavigatePre
+
+功能：搜索导航-上一个
+
+用法：
+
+```javascript
+instance.command.executeSearchNavigatePre()
+```
+
+## executeSearchNavigateNext
+
+功能：搜索导航-下一个
+
+用法：
+
+```javascript
+instance.command.executeSearchNavigateNext()
+```
+
+## executeReplace
+
+功能：搜索替换
+
+用法：
+
+```javascript
+instance.command.executeReplace(newWord: string, option?: IReplaceOption)
+```
+
+## executePrint
+
+功能：打印
+
+用法：
+
+```javascript
+instance.command.executePrint(option?: IPrintOption)
+```
+
+## executeReplaceImageElement
+
+功能：替换图片
+
+用法：
+
+```javascript
+instance.command.executeReplaceImageElement(newUrl: string)
+```
+
+## executeSaveAsImageElement
+
+功能：另存为图片
+
+用法：
+
+```javascript
+instance.command.executeSaveAsImageElement()
+```
+
+## executeChangeImageDisplay
+
+功能：改变图片行显示方式
+
+用法：
+
+```javascript
+instance.command.executeChangeImageDisplay(element: IElement, display: ImageDisplay)
+```
+
+## executeSetImageCrop
+
+功能：设置图片裁剪信息
+
+用法：
+
+```javascript
+instance.command.executeSetImageCrop(crop: IImageCrop)
+```
+
+## executePageMode
+
+功能：页面模式
+
+用法：
+
+```javascript
+instance.command.executePageMode(pageMode: PageMode)
+```
+
+## executePageScale
+
+功能：设置缩放比例
+
+用法：
+
+```javascript
+instance.command.executePageScale(scale: number)
+```
+
+## executePageScaleRecovery
+
+功能：恢复页面原始缩放比例
+
+用法：
+
+```javascript
+instance.command.executePageScaleRecovery()
+```
+
+## executePageScaleMinus
+
+功能：页面缩小
+
+用法：
+
+```javascript
+instance.command.executePageScaleMinus()
+```
+
+## executePageScaleAdd
+
+功能：页面放大
+
+用法：
+
+```javascript
+instance.command.executePageScaleAdd()
+```
+
+## executePaperSize
+
+功能：设置纸张大小
+
+用法：
+
+```javascript
+instance.command.executePaperSize(width: number, height: number)
+```
+
+## executePaperDirection
+
+功能：设置纸张方向
+
+用法：
+
+```javascript
+instance.command.executePaperDirection(paperDirection: PaperDirection)
+```
+
+## executePageDirection
+
+功能：设置光标所在节的纸张方向。分页符作为分节边界；首节修改全局方向，传 `null` 恢复全局方向。
+
+用法：
+
+```javascript
+instance.command.executePageDirection(paperDirection: PaperDirection | null)
+```
+
+## executeSetPaperMargin
+
+功能：设置纸张页边距
+
+用法：
+
+```javascript
+instance.command.executeSetPaperMargin([top: number, right: number, bottom: number, left: number])
+```
+
+## executeSetColumns
+
+功能：设置分栏配置
+
+用法：
+
+```javascript
+instance.command.executeSetColumns(config: IColumnOption | null)
+```
+
+## executeSetMainBadge
+
+功能：设置正文徽章
+
+用法：
+
+```javascript
+instance.command.executeSetMainBadge(payload: IBadge | null)
+```
+
+## executeSetAreaBadge
+
+功能：设置区域徽章
+
+用法：
+
+```javascript
+instance.command.executeSetAreaBadge(payload: IAreaBadge[])
+```
+
+## executeInsertElementList
+
+功能：插入元素
+
+用法：
+
+```javascript
+instance.command.executeInsertElementList(elementList: IElement[], options?: IInsertElementListOption)
+```
+
+## executeAppendElementList
+
+功能：追加元素
+
+用法：
+
+```javascript
+instance.command.executeAppendElementList(elementList: IElement[], options?: IAppendElementListOption)
+```
+
+## executeUpdateElementById
+
+功能：根据 id 修改元素属性
+
+用法：
+
+```javascript
+instance.command.executeUpdateElementById(payload: IUpdateElementByIdOption)
+```
+
+## executeDeleteElementById
+
+功能：根据 id 删除元素
+
+用法：
+
+```javascript
+instance.command.executeDeleteElementById(payload: IDeleteElementByIdOption)
+```
+
+## executeSetValue
+
+功能：设置编辑器数据
+
+用法：
+
+```javascript
+instance.command.executeSetValue(payload: Partial<IEditorData>, options?: ISetValueOption)
+```
+
+## executeSetLocale
+
+功能：设置本地语言
+
+用法：
+
+```javascript
+instance.command.executeSetLocale(locale: string)
+```
+
+## executeLocationCatalog
+
+功能：定位目录位置
+
+用法：
+
+```javascript
+instance.command.executeLocationCatalog(titleId: string)
+```
+
+## executeWordTool
+
+功能：文字工具（删除空行、行首空格）
+
+用法：
+
+```javascript
+instance.command.executeWordTool()
+```
+
+## executeSetHTML
+
+功能：设置编辑器 HTML 数据
+
+用法：
+
+```javascript
+instance.command.executeSetHTML(payload: Partial<IEditorHTML)
+```
+
+## executeSetGroup
+
+功能：设置成组
+
+用法：
+
+```javascript
+instance.command.executeSetGroup()
+```
+
+## executeDeleteGroup
+
+功能：删除成组
+
+用法：
+
+```javascript
+instance.command.executeDeleteGroup(groupId: string)
+```
+
+## executeLocationGroup
+
+功能：定位成组位置
+
+用法：
+
+```javascript
+instance.command.executeLocationGroup(groupId: string)
+```
+
+## executeSetZone
+
+功能：设置激活区域（页眉、正文、页脚）
+
+用法：
+
+```javascript
+instance.command.executeSetZone(zone: EditorZone)
+```
+
+控件相关命令已迁移至[控件-方法](./control/command.md)，校验命令已迁移至[控件-验证](./control/validate.md)。
+
+## executeUpdateOptions
+
+功能：修改配置
+
+用法：
+
+```javascript
+instance.command.executeUpdateOptions(payload: IUpdateOption)
+```
+
+## executeInsertTitle
+
+功能：插入标题
+
+用法：
+
+```javascript
+instance.command.executeInsertTitle(payload: IElement)
+```
+
+## executeFocus
+
+功能：光标聚焦
+
+用法：
+
+```javascript
+instance.command.executeFocus(payload?: IFocusOption)
+```
+
+## executeInsertArea
+
+功能： 插入区域
+
+```js
+const areaId = instance.command.executeInsertArea(payload: IInsertAreaOption)
+```
+
+## executeSetAreaProperties
+
+功能：设置区域属性
+
+```js
+instance.command.executeSetAreaProperties(payload: ISetAreaPropertiesOption)
+```
+
+## executeSetAreaValue
+
+功能：设置区域值
+
+```js
+instance.command.executeSetAreaValue(payload: ISetAreaValueOption)
+```
+
+## executeDeleteArea
+
+功能：删除区域
+
+```js
+instance.command.executeDeleteArea(payload?: IDeleteAreaOption)
+```
+
+## executeLocationArea
+
+功能：定位区域位置
+
+```js
+instance.command.executeLocationArea(areaId: string, options?: ILocationAreaOption)
+```
+
+## executeClearGraffiti
+
+功能：清空涂鸦信息
+
+```js
+instance.command.executeClearGraffiti()
+```

@@ -45,7 +45,7 @@ export function matches1305Branch(localVer: string | undefined | null, verBranch
 }
 
 export function catalogDownloadHint(infno: string): string {
-  const base = `${infno} 正式下载无轮次上限，停链依赖平台 infcode/无新文件；TXT 下一 ver 对齐 OpenHIS ReadCsv。游标取最新快照。`;
+  const base = `${infno} 正式下载无轮次上限，停链依赖平台 infcode/无新文件；TXT 下一 ver 对齐平台 ReadCsv。游标取最新快照。`;
   if (infno === '1305') {
     return `${base} 1305 须分别从 F002、F003 各拉一条版本链；切换分支后游标与起点按该分支独立计算。`;
   }

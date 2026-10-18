@@ -6,6 +6,7 @@ import type { NurseStationPricingCatalogRowDto } from '#/api/inpatient/nurse-sta
 
 import { computed, ref, watch } from 'vue';
 
+import { useDebounceFn } from '@vueuse/core';
 import {
   ElAlert,
   ElButton,
@@ -175,11 +176,36 @@ function handleProjectTypeChange(value: string | number | boolean | undefined) {
   emit('projectTypeChange', value as PricingCatalogCategory);
 }
 
+/** 与开药选品一致：关键字变更 300ms 防抖后远程检索 */
+const debouncedCatalogSearch = useDebounceFn(() => {
+  if (!props.modelValue) {
+    return;
+  }
+  emit('catalogSearch');
+}, 300);
+
+/** 回车 / 清空：立刻检索（取消未触发的防抖） */
+function emitImmediateCatalogSearch() {
+  debouncedCatalogSearch.cancel();
+  emit('catalogSearch');
+}
+
+watch(
+  () => props.projectKeyword,
+  () => {
+    if (!props.modelValue) {
+      return;
+    }
+    debouncedCatalogSearch();
+  },
+);
+
 watch(
   () => props.modelValue,
   (visible) => {
     if (!visible) {
       templateDrawerVisible.value = false;
+      debouncedCatalogSearch.cancel();
     }
   },
 );
@@ -245,15 +271,12 @@ watch(
             <ElInput
               :model-value="projectKeyword"
               clearable
-              placeholder="编码/名称"
+              placeholder="请输入编码、项目名称或商品名称"
               class="batch-pricing-filter__keyword"
               @update:model-value="emit('update:projectKeyword', String($event ?? ''))"
-              @keyup.enter="emit('catalogSearch')"
-              @clear="emit('catalogSearch')"
+              @keyup.enter="emitImmediateCatalogSearch"
+              @clear="emitImmediateCatalogSearch"
             />
-            <ElButton type="primary" :loading="catalogLoading" @click="emit('catalogSearch')">
-              查询
-            </ElButton>
           </div>
           <div class="batch-pricing-panel__table">
             <ElTable

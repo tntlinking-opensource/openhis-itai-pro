@@ -7,9 +7,9 @@ import type { ProductDetail } from '#/types/common';
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
-import { useTabs } from '@vben/hooks';
-import { Trash2 } from '@vben/icons';
+import { Page } from '@zxplat/common-ui';
+import { useTabs } from '@zxplat/hooks';
+import { Trash2 } from '@zxplat/icons';
 
 import { dayjs, ElButton, ElMessage, ElMessageBox } from 'element-plus';
 

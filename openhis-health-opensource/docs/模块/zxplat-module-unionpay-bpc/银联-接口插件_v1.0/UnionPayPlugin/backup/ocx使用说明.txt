@@ -1,0 +1,3 @@
+1.用管理员身份运行RegOcx.bat；
+2.CallOcx.htm测试ocx交易；
+3.URegOcx.bat卸载ocx控件；

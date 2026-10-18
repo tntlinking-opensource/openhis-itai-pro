@@ -8,7 +8,7 @@ import type {
 
 import { computed, onMounted, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import {
   ElAlert,
@@ -269,7 +269,7 @@ onMounted(() => {
       :closable="false"
       class="mb-3"
       show-icon
-      title="须配置 openhis.chs.audit.syscode；3103 的 warn_rslt_id 填明细 jrd_id。平台失败将阻断，不可静默跳过。"
+      title="须配置 zxplat.chs.audit.syscode；3103 的 warn_rslt_id 填明细 jrd_id。平台失败将阻断，不可静默跳过。"
       type="info"
     />
 

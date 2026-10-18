@@ -5,7 +5,7 @@ import type { NationalCatalogItem } from '#/chs/api';
 
 import { computed, nextTick, reactive, ref, watch } from 'vue';
 
-import { useVbenModal } from '@vben/common-ui';
+import { useVbenModal } from '@zxplat/common-ui';
 
 import { Delete, Plus } from '@element-plus/icons-vue';
 import { ElAlert, ElButton, ElMessage, ElMessageBox } from 'element-plus';
@@ -40,10 +40,10 @@ import {
 } from '#/utils/format/money-scale';
 import {
   applyCatalogEditabilityFromDetail,
-  buildCatalogEditabilitySchemaPatches,
   CATALOG_EDITABILITY_OK,
   isCatalogStructureLocked,
   isServiceCatalogFieldLocked,
+  SERVICE_CATALOG_LOCKABLE_FORM_FIELDS,
 } from '#/views/basic/catalog/catalog-editability';
 import {
   BUILT_IN_ACTIVITY_EDIT_HINT,
@@ -124,13 +124,28 @@ const structureLockAlertTitle = computed(() => {
   if (isBuiltInActivity.value) {
     return BUILT_IN_ACTIVITY_EDIT_HINT;
   }
-  return editabilityMessage.value || '该诊疗项目已产生业务引用，名称/分类/单位/价格等字段不可修改';
+  return editabilityMessage.value || '医生开过该诊疗项目：名称、目录分类、计价单位、财务类别、医保类别、售价不可修改；业务类型仍可改';
 });
 
 /** 是否展示结构锁定提示条 */
 const showStructureLockAlert = computed(
   () => isBuiltInActivity.value || catalogStructureLocked.value,
 );
+
+/**
+ * 诊疗表单字段是否禁用：业务引用锁名称/目录分类/单位/财务/医保/售价；内置项另锁业务类型。
+ *
+ * @param fieldName 表单字段名
+ */
+function isServiceFormFieldDisabled(fieldName: string): boolean {
+  if (
+    isBuiltInActivity.value &&
+    (BUILT_IN_ACTIVITY_LOCKED_FORM_FIELDS as readonly string[]).includes(fieldName)
+  ) {
+    return true;
+  }
+  return isServiceCatalogFieldLocked(editabilityCode.value, fieldName);
+}
 
 type OptionItem = {
   children?: OptionItem[];
@@ -164,7 +179,7 @@ const convertOptions = (options: null | OptionItem[] | undefined | unknown) => {
 /**
  * 合并 init 下拉与「已知新码」及当前行孤儿值，避免 Select 只回显裸 code。
  *
- * <p>场景：SQL 已写入 `activity_category_code=53` / `ActivityType=7`，但进程字典缓存未刷或后端未发版时，
+ * <p>场景：SQL 已写入 `activity_category_code=53` / `type_enum=7`，但进程字典缓存未刷时，
  * 仍保证编辑页能显示「诊查费」「诊查」。</p>
  *
  * @param options init 下拉（已规范化为 string value）
@@ -202,7 +217,7 @@ const withOrphanSelectOption = (
 
 /** 目录分类：53=诊查费（activity_category_code） */
 const CATEGORY_ORPHAN_LABELS: Record<string, string> = { '53': '诊查费' };
-/** 业务类型：7=诊查（ActivityType.CONSULTATION） */
+/** 业务类型孤儿兜底：7=诊查（术语 activity_type_code 种子码） */
 const TYPE_ORPHAN_LABELS: Record<string, string> = { '7': '诊查' };
 
 /** 病案结算类型候选项（依赖列表页 init） */
@@ -635,21 +650,41 @@ async function resetFormState() {
   syncFormFieldAvailability();
 }
 
-/** 按 editabilityCode 同步表单字段 disabled */
+/** 按 editabilityCode 同步表单字段 disabled（合并已有 componentProps，避免冲掉 options） */
 function syncServiceEditabilitySchema() {
   if (!formApi?.isMounted) {
     return;
   }
-  formApi.updateSchema(buildCatalogEditabilitySchemaPatches('service', editabilityCode.value));
-  // 产品内置：强制锁定名称/类目/类型（叠在业务引用锁之上）
-  if (isBuiltInActivity.value) {
-    formApi.updateSchema(
-      BUILT_IN_ACTIVITY_LOCKED_FORM_FIELDS.map((fieldName) => ({
+  const currentSchema = formApi.getState()?.schema ?? [];
+  const fieldNames = new Set<string>([
+    ...SERVICE_CATALOG_LOCKABLE_FORM_FIELDS,
+    ...BUILT_IN_ACTIVITY_LOCKED_FORM_FIELDS,
+  ]);
+  const patches = [...fieldNames].map((fieldName) => {
+    const existing = currentSchema.find((item) => item.fieldName === fieldName);
+    const prevProps = existing?.componentProps;
+    const disabled = isServiceFormFieldDisabled(fieldName);
+    if (typeof prevProps === 'function') {
+      return {
         fieldName,
-        componentProps: { disabled: true },
-      })),
-    );
-  }
+        componentProps: (...args: unknown[]) => ({
+          ...(prevProps as (...a: unknown[]) => Record<string, unknown>)(...args),
+          disabled,
+        }),
+      };
+    }
+    return {
+      fieldName,
+      componentProps: {
+        ...((prevProps && typeof prevProps === 'object' ? prevProps : {}) as Record<
+          string,
+          unknown
+        >),
+        disabled,
+      },
+    };
+  });
+  formApi.updateSchema(patches);
 }
 
 /** 售价禁用态：业务引用锁定优先，其次有子项时自动合计 */
@@ -657,11 +692,18 @@ function syncRetailPriceFieldSchema() {
   if (!formApi?.isMounted) {
     return;
   }
-  const lockedByEditability = isServiceCatalogFieldLocked(editabilityCode.value, 'retailPrice');
+  const currentSchema = formApi.getState()?.schema ?? [];
+  const existing = currentSchema.find((item) => item.fieldName === 'retailPrice');
+  const prevProps =
+    existing?.componentProps && typeof existing.componentProps === 'object'
+      ? existing.componentProps
+      : {};
+  const lockedByEditability = isServiceFormFieldDisabled('retailPrice');
   formApi.updateSchema([
     {
       fieldName: 'retailPrice',
       componentProps: {
+        ...prevProps,
         disabled: lockedByEditability || hasSelectedChildren.value,
         placeholder: hasSelectedChildren.value ? '由子项自动合计' : '请输入售价',
       },
@@ -1029,6 +1071,9 @@ const [Form, formApi] = useVbenForm(
         fieldName: 'name',
         label: '诊疗名称',
         rules: 'required',
+        componentProps: {
+          disabled: isServiceFormFieldDisabled('name'),
+        },
       },
       {
         component: 'Select',
@@ -1044,6 +1089,7 @@ const [Form, formApi] = useVbenForm(
           filterable: true,
           placeholder: '请选择目录分类',
           clearable: true,
+          disabled: isServiceFormFieldDisabled('categoryCode'),
         },
       },
       {
@@ -1057,8 +1103,10 @@ const [Form, formApi] = useVbenForm(
             props.formData?.typeEnum,
             TYPE_ORPHAN_LABELS,
           ),
-          placeholder: '请选择业务类型',
+          placeholder: '请选择业务类型（字典 activity_type_code）',
           clearable: true,
+          filterable: true,
+          disabled: isServiceFormFieldDisabled('typeEnum'),
         },
       },
       {
@@ -1072,6 +1120,7 @@ const [Form, formApi] = useVbenForm(
           placeholder: '请选择销售/计价单位',
           checkStrictly: true,
           clearable: true,
+          disabled: isServiceFormFieldDisabled('packageUnitCode'),
         },
       },
       {
@@ -1088,11 +1137,13 @@ const [Form, formApi] = useVbenForm(
         component: 'Select',
         fieldName: 'itemTypeCode',
         label: '财务类型',
+        rules: 'required',
         componentProps: {
           options: convertOptions(props.initOptions?.finTypeCodeOptions),
           filterable: true,
           placeholder: '请选择财务类型',
           clearable: true,
+          disabled: isServiceFormFieldDisabled('itemTypeCode'),
         },
       },
       {
@@ -1105,7 +1156,7 @@ const [Form, formApi] = useVbenForm(
           min: 0,
           controlsPosition: 'right',
           placeholder: hasSelectedChildren.value ? '由子项自动合计' : '请输入售价',
-          disabled: hasSelectedChildren.value,
+          disabled: isServiceFormFieldDisabled('retailPrice') || hasSelectedChildren.value,
         },
       },
       {
@@ -1166,6 +1217,7 @@ const [Form, formApi] = useVbenForm(
           filterable: true,
           placeholder: '请选择医保类别',
           clearable: true,
+          disabled: isServiceFormFieldDisabled('ybType'),
         },
       },
       {

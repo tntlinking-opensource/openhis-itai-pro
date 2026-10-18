@@ -19,6 +19,7 @@ import {
   httpLoadNurseStationCostDetailPageInit,
   httpQueryNurseStationInpatientCostDetail,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-cost-detail.http';
+import type { AuditViolation } from '#/chs/api/detail-audit-try';
 import type {
   InpatientSettleChargeLineDto,
   PreSettleInpatientChargesResponse,
@@ -44,6 +45,8 @@ import {
 } from '../components/build-nurse-station-sticky-patient-info';
 import { loadPrintPendingRows } from '../print-center/load-print-pending';
 import { printInpatientPrintCenter } from '../print-center/print-center-print';
+import { INPATIENT_SURGERY_ANESTH_ENABLED } from '#/views/inpatient/surgery-anesth/inpatient-surgery-anesth.config';
+
 import {
   isCostDetailPresentationMode,
   isCostDetailStatusFilter,
@@ -98,6 +101,8 @@ const costDetailQuickDay = ref<CostDetailQuickDay>('');
 const costDetailDateRange = ref<string[]>([]);
 const costDetailKeyword = ref('');
 const costDetailStatusEnum = ref<NurseStationCostDetailStatusFilter>(DEFAULT_STATUS_FILTER);
+/** 麻醉统计：默认关；勾选后仅麻醉申请执行费用 + 挂麻醉申请父项的手麻计费 */
+const costDetailAnesthesiaStatisticsOnly = ref(false);
 const presentationMode = ref<NurseStationCostDetailPresentationMode>('DETAIL');
 const presentationOptions = ref<NurseStationCostDetailPresentationOptionDto[]>(
   DEFAULT_PRESENTATION_OPTIONS,
@@ -129,6 +134,8 @@ const {
 const clinicalPreSettleVisible = ref(false);
 const clinicalPreSettleSnapshot = ref<PreSettleInpatientChargesResponse | null>(null);
 const clinicalPreSettleChargeLines = ref<InpatientSettleChargeLineDto[]>([]);
+const clinicalPreSettleAuditViolations = ref<AuditViolation[]>([]);
+const clinicalPreSettleAuditNote = ref('');
 
 const initRequest = useRequest(httpLoadNurseStationCostDetailPageInit, { manual: true });
 const queryRequest = useRequest(httpQueryNurseStationInpatientCostDetail, { manual: true });
@@ -262,11 +269,20 @@ function handlePresentationModeChange(mode: NurseStationCostDetailPresentationMo
   void handleCostDetailQuery();
 }
 
-/** 重置筛选条件为今日待结算。 */
+/** 重置筛选条件为今日待结算并重查。 */
 function handleCostDetailReset() {
   handleCostDetailQuickDayChange('today');
   costDetailStatusEnum.value = DEFAULT_STATUS_FILTER;
   costDetailKeyword.value = '';
+  costDetailAnesthesiaStatisticsOnly.value = false;
+  void handleCostDetailQuery();
+}
+
+/** 麻醉统计勾选变化：立刻按全量/麻醉相关重查（无需再点查询）。 */
+function handleAnesthesiaStatisticsChange(value: boolean) {
+  // 显式落盘后再查，避免与 v-model 时序交错仍带旧开关
+  costDetailAnesthesiaStatisticsOnly.value = value === true;
+  void handleCostDetailQuery();
 }
 
 /**
@@ -319,6 +335,7 @@ async function handlePrintFeeList() {
       dateTo,
       executionDeadline: `${dateTo} 23:59:59`,
       costStatusEnum: costDetailStatusEnum.value,
+      anesthesiaStatisticsOnly: costDetailAnesthesiaStatisticsOnly.value === true,
     });
     if (selectedRows.length <= 0) {
       ElMessage.warning('暂无「费用清单」可打印数据');
@@ -332,6 +349,7 @@ async function handlePrintFeeList() {
       dateTo,
       executionDeadline: `${dateTo} 23:59:59`,
       costStatusEnum: costDetailStatusEnum.value,
+      anesthesiaStatisticsOnly: costDetailAnesthesiaStatisticsOnly.value === true,
     });
     if (result.ok) {
       ElMessage.success(`已发送打印：费用清单，共 ${result.count} 份`);
@@ -365,6 +383,7 @@ async function handlePrintFeeDetail() {
       dateTo,
       executionDeadline: `${dateTo} 23:59:59`,
       costStatusEnum: costDetailStatusEnum.value,
+      anesthesiaStatisticsOnly: costDetailAnesthesiaStatisticsOnly.value === true,
     });
     if (selectedRows.length <= 0) {
       ElMessage.warning('暂无「费用明细单」可打印数据');
@@ -378,6 +397,7 @@ async function handlePrintFeeDetail() {
       dateTo,
       executionDeadline: `${dateTo} 23:59:59`,
       costStatusEnum: costDetailStatusEnum.value,
+      anesthesiaStatisticsOnly: costDetailAnesthesiaStatisticsOnly.value === true,
     });
     if (result.ok) {
       ElMessage.success(`已发送打印：费用明细单，共 ${result.count} 份`);
@@ -421,6 +441,8 @@ function resolveQueryPayload() {
     presentationMode: presentationMode.value,
     statusEnum: costDetailStatusEnum.value,
     keyword: keyword || undefined,
+    anesthesiaStatisticsOnly:
+      costDetailAnesthesiaStatisticsOnly.value === true ? true : undefined,
   };
 }
 
@@ -489,7 +511,7 @@ function handleCostDetailVisibilityChange() {
   void handleCostDetailQuery();
 }
 
-/** 完整预结算：3101→2303 仅展示金额 */
+/** 完整预结算：不读卡，3101→2301→2303 仅展示金额 */
 async function handleClinicalPreSettle() {
   const context = selectedPatientContext.value;
   if (!context) {
@@ -506,6 +528,7 @@ async function handleClinicalPreSettle() {
         encounterBusNo: context.patient.encounterBusNo,
         statusEnum: context.patient.statusEnum,
         contractDisplay: context.patient.feeType,
+        insutype: context.patient.insutype,
       },
       dialogRef: detailAuditDialogRef,
       progress: clinicalPreSettleProgress,
@@ -515,6 +538,8 @@ async function handleClinicalPreSettle() {
     }
     clinicalPreSettleSnapshot.value = result.snapshot;
     clinicalPreSettleChargeLines.value = result.chargeLines;
+    clinicalPreSettleAuditViolations.value = result.auditViolations;
+    clinicalPreSettleAuditNote.value = result.auditRemindNote;
     openPreviewAfterProgress = true;
   } catch (error) {
     const message = error instanceof Error ? error.message : '完整预结算失败';
@@ -555,6 +580,7 @@ const clinicalPreSettlePrepayOffset = computed(() =>
       </span>
     </div>
     <CostDetailPanel
+      v-model:anesthesia-statistics-only="costDetailAnesthesiaStatisticsOnly"
       v-model:keyword="costDetailKeyword"
       v-model:status-enum="costDetailStatusEnum"
       :date-range="costDetailDateRange"
@@ -565,10 +591,12 @@ const clinicalPreSettlePrepayOffset = computed(() =>
       :presentation-mode="presentationMode"
       :presentation-options="presentationOptions"
       :quick-day="costDetailQuickDay"
+      :show-anesthesia-statistics="INPATIENT_SURGERY_ANESTH_ENABLED"
       :status-filter-options="statusFilterOptions"
       :summary-lines="summaryLines"
       :totals="totals"
       @update:date-range="handleCostDetailDateRangeChange"
+      @on-anesthesia-statistics-change="handleAnesthesiaStatisticsChange"
       @on-presentation-mode-change="handlePresentationModeChange"
       @on-print="handlePrintFeeList"
       @on-print-detail="handlePrintFeeDetail"
@@ -599,6 +627,8 @@ const clinicalPreSettlePrepayOffset = computed(() =>
       :insurance-pre-settled="clinicalPreSettleSnapshot?.insurancePreSettled"
       :insurance-breakdown-items="clinicalPreSettleInsuranceBreakdown"
       :charge-lines="clinicalPreSettleChargeLines"
+      :audit-violations="clinicalPreSettleAuditViolations"
+      :audit-remind-note="clinicalPreSettleAuditNote"
     />
   </div>
 </template>

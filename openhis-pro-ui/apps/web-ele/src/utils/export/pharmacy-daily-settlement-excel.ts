@@ -177,10 +177,11 @@ function buildDefaultFileName(source: PharmacyDailySettlementExcelSource): strin
   const day = formatExportDayStamp();
   const no = source.busNo?.trim();
   // 有单号：单据_单号_日期，便于归档对账
+  // SpreadsheetML 须用 .xls（.xlsx 会被新版 Excel 拒开）
   if (no) {
-    return `${source.documentTitle}_${no}_${day}.xlsx`;
+    return `${source.documentTitle}_${no}_${day}.xls`;
   }
-  return `${source.documentTitle}_${day}.xlsx`;
+  return `${source.documentTitle}_${day}.xls`;
 }
 
 /**

@@ -1,0 +1,50 @@
+{
+  "name": "@zxplat/web-antd",
+  "version": "5.5.9",
+  "homepage": "https://vben.pro",
+  "bugs": "https://github.com/vbenjs/vue-vben-admin/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vbenjs/vue-vben-admin.git",
+    "directory": "apps/web-antd"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "vben",
+    "email": "ann.vben@gmail.com",
+    "url": "https://github.com/anncwb"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "cross-env NODE_OPTIONS=--max-old-space-size=8192 pnpm vite build --mode production",
+    "build:analyze": "cross-env NODE_OPTIONS=--max-old-space-size=8192 pnpm vite build --mode analyze",
+    "dev": "pnpm vite --mode development --port 5779",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit --skipLibCheck"
+  },
+  "imports": {
+    "#/*": "./src/*"
+  },
+  "dependencies": {
+    "@zxplat/access": "workspace:*",
+    "@zxplat/common-ui": "workspace:*",
+    "@zxplat/constants": "workspace:*",
+    "@zxplat/hooks": "workspace:*",
+    "@zxplat/icons": "workspace:*",
+    "@zxplat/layouts": "workspace:*",
+    "@zxplat/locales": "workspace:*",
+    "@zxplat/plugins": "workspace:*",
+    "@zxplat/preferences": "workspace:*",
+    "@zxplat/request": "workspace:*",
+    "@zxplat/stores": "workspace:*",
+    "@zxplat/styles": "workspace:*",
+    "@zxplat/types": "workspace:*",
+    "@zxplat/utils": "workspace:*",
+    "@vueuse/core": "catalog:",
+    "ant-design-vue": "catalog:",
+    "dayjs": "catalog:",
+    "pinia": "catalog:",
+    "vue": "catalog:",
+    "vue-router": "catalog:"
+  }
+}

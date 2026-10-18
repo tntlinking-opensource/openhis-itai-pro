@@ -43,22 +43,33 @@ export interface SpecimenTubeMergeConsumableLine {
   displayOrder?: number;
 }
 
-export interface SpecimenTubeMergeBindings {
-  deviceId: string;
+export interface SpecimenTubeMergeBindingGroup {
+  groupNo: number;
+  /** 展示用，如「组1」；保存可不传 */
+  groupName?: string;
   activityIds: string[];
   bindBloodCollectionFee: boolean;
   consumableLines: SpecimenTubeMergeConsumableLine[];
 }
 
+export interface SpecimenTubeMergeBindings {
+  deviceId: string;
+  groups: SpecimenTubeMergeBindingGroup[];
+}
+
 export interface SaveSpecimenTubeMergeBindingsParams {
   deviceId: string;
-  activityIds: string[];
-  bindBloodCollectionFee: boolean;
-  consumableLines: Array<{
-    targetId: string;
-    quantity: number;
-    unitCode: string;
-    displayOrder?: number;
+  groups: Array<{
+    groupNo: number;
+    groupName?: string;
+    activityIds: string[];
+    bindBloodCollectionFee: boolean;
+    consumableLines: Array<{
+      targetId: string;
+      quantity: number;
+      unitCode: string;
+      displayOrder?: number;
+    }>;
   }>;
 }
 

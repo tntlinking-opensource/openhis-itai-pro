@@ -1,0 +1,10 @@
+{
+  "doc_kind": "PAYMENT_MAP",
+  "category": "SERVICE",
+  "title": "20260424-医疗服务价格项目规范",
+  "source_filename": "20260424-医疗服务价格项目规范.xlsx",
+  "notice_date": "2026-04-24",
+  "effective_date": null,
+  "wash_note": "引擎=openpyxl；支付对照洗数；跳过空编码与分组标题；甲乙丙→1/2/3",
+  "wash_tool": "cursor-ai"
+}

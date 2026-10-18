@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type {
   ScheduledJobExecutionLog,
@@ -9,9 +9,9 @@ import type {
 
 import { computed, onMounted, ref } from 'vue';
 
-import { formatDateTime } from '@vben/utils';
+import { formatDateTime } from '@zxplat/utils';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { ElMessage, ElTag } from 'element-plus';
 

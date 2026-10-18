@@ -3,7 +3,7 @@ import type { FilterProps } from '../types/Filter.d';
 
 import { computed, ref } from 'vue';
 
-import { IconifyIcon } from '@vben-core/icons';
+import { IconifyIcon } from '@zxplat-core/icons';
 
 import FormItem from './FormItem.vue';
 

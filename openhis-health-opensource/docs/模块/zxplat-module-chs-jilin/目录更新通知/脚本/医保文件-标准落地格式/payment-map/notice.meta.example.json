@@ -1,0 +1,10 @@
+{
+  "doc_kind": "PAYMENT_MAP",
+  "category": "SERVICE",
+  "title": "医疗服务价格项目规范医保支付对照结果表",
+  "source_filename": "附件：2.关于明确医疗服务价格项目规范医保支付对照的函附件中对照结果表.xlsx",
+  "notice_date": null,
+  "effective_date": null,
+  "wash_note": "支付对照：项目编码(01*)→甲/乙；跳过标题行与空编码行；甲→1乙→2",
+  "wash_tool": "cursor-ai"
+}

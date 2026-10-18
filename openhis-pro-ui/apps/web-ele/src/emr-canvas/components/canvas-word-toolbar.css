@@ -1,0 +1,49 @@
+/**
+ * Word 工具栏局部样式。
+ * 不走 SFC scoped：院点 override 生产构建曾丢失 scoped CSS。
+ */
+.word-toolbar__file {
+  display: none;
+}
+
+.rib-anchor {
+  display: inline-flex;
+}
+
+.table-picker__border {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #e6e9f0;
+}
+
+.table-picker__border-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.table-picker__field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #334155;
+}
+
+.table-picker__field input[type='color'] {
+  width: 28px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #e6e9f0;
+  background: #fff;
+  cursor: pointer;
+}
+
+.table-picker__field select {
+  height: 24px;
+  font-size: 12px;
+  color: #334155;
+  border: 1px solid #e6e9f0;
+  border-radius: 4px;
+  background: #fff;
+}

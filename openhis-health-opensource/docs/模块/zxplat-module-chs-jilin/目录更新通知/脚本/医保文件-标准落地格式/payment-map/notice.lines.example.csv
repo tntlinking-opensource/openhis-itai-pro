@@ -1,0 +1,5 @@
+action,hilist_code,project_code,hilist_name,begin_date,end_date,change_fields,chrgitm_lv,list_type,source_sheet,source_row,ext_json
+SET_PAY_CLASS,,012301010010000,X线摄影成像,,,,1,201,放射检查,4,"{""映射对照支付类别"":""甲""}"
+SET_PAY_CLASS,,012301010010001,X线摄影成像-床旁X线摄影（加收）,,,,1,201,放射检查,5,"{""映射对照支付类别"":""甲""}"
+SET_PAY_CLASS,,011102020010003,门诊诊查费（普通门诊）-知名专家（加收）,,,,2,201,综合诊查,7,"{""映射对照支付类别"":""乙""}"
+SET_PAY_CLASS,,014600000040000,白内障针拨术,,,,2,201,中医特殊疗法,8,"{""映射对照支付类别"":""乙""}"

@@ -17,8 +17,12 @@ export interface NurseStationModulePatient {
   nurseLevel: string;
   /** 费用性质/医保类型展示（读模型 contractDisplay）。 */
   feeType?: string;
+  /** 险种（310 职工 / 390 居民），完整预结算据此走 2303。 */
+  insutype?: string;
   /** 主治医生姓名（读模型 attendingDoctorName）。 */
   attendingDoctorName?: string;
+  /** 责任护士姓名（读模型 primaryNurseName）。 */
+  primaryNurseName?: string;
   diagnosis?: string;
   /** 入院科室名称（读模型 organizationName）。 */
   organizationName?: string;

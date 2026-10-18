@@ -1,120 +1,1198 @@
-{
-  "engine": "Print",
-  "panels": [
-    {
-      "name": "1",
-      "index": 0,
-      "width": 210,
-      "height": 297,
-      "paperType": "A4",
-      "paperFooter": 800,
-      "paperHeader": 96,
-      "printElements": [
-        {
-          "options": {
-            "top": 16,
-            "left": 24,
-            "field": "hospitalName",
-            "width": 546,
-            "height": 18,
-            "fontSize": 14,
-            "testData": "示例医院",
-            "hideTitle": true,
-            "textAlign": "center",
-            "fontWeight": "bold"
-          },
-          "printElementType": {
-            "type": "text",
-            "title": "文本"
-          }
-        },
-        {
-          "options": {
-            "top": 40,
-            "left": 24,
-            "field": "documentTitle",
-            "width": 546,
-            "height": 20,
-            "fontSize": 16,
-            "testData": "摆药单",
-            "hideTitle": true,
-            "textAlign": "center",
-            "fontWeight": "bold"
-          },
-          "printElementType": {
-            "type": "text",
-            "title": "文本"
-          }
-        },
-        {
-          "options": {
-            "top": 64,
-            "left": 24,
-            "width": 546,
-            "height": 1.2,
-            "borderWidth": 1.2
-          },
-          "printElementType": {
-            "type": "hline",
-            "title": "横线"
-          }
-        },
-        {
-          "options": {
-            "top": 72,
-            "left": 24,
-            "field": "executeDateText",
-            "title": "执行日期",
-            "width": 200,
-            "height": 16,
-            "fontSize": 10,
-            "testData": "2026-08-07"
-          },
-          "printElementType": {
-            "type": "text",
-            "title": "执行日期"
-          }
-        },
-        {
-          "options": {
-            "top": 96,
-            "left": 24,
-            "field": "patientBlocks",
-            "width": 546,
-            "height": 680,
-            "fontSize": 9,
-            "formatter": "function(title,value,options,printData){\nfunction esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');}\nfunction cell(text,align){return '<td style=\"border:1px solid #000;padding:4pt 3pt;text-align:'+(align||'center')+';word-break:break-all;vertical-align:middle;\">'+esc(text)+'</td>';}\nfunction tokens(raw){return String(raw||'').trim().split(/\\s+/).filter(Boolean);}\nfunction simplifyDose(raw){\n  var s=String(raw==null?'':raw).replace(/\\s*\\/\\s*次$/,'').trim();\n  var cut=s.indexOf('(');\n  if(cut<0){cut=s.indexOf('（');}\n  if(cut>0){\n    var head=s.slice(0,cut).trim();\n    var inner=s.slice(cut+1).replace(/[)）]\\s*$/,'').trim();\n    var h=head.match(/^(\\d+(?:\\.\\d+)?)(.*)$/);\n    var n=inner.match(/^(\\d+(?:\\.\\d+)?)(.*)$/);\n    if(h&&n&&String(h[2]).trim()===String(n[2]).trim()&&Number(h[1])===Number(n[1])){return String(Number(h[1]))+String(h[2]).trim();}\n  }\n  return s;\n}\nfunction isTcm(d){\n  if(!d){return false;}\n  if(d.tcmFlag===true||d.tcmFlag==='true'){return true;}\n  if(Array.isArray(d.herbs)&&d.herbs.length>=1){return true;}\n  return tokens(d.drugName).length>=2&&tokens(d.doseText).length>=2;\n}\nfunction fuValue(d){\n  var raw=d&&d.chineseHerbsDoseQuantity;\n  if(raw==null){return '';}\n  var s=String(raw).trim();\n  if(!s){return '';}\n  var n=Number(s);\n  if(!isFinite(n)||n<=0){return '';}\n  return String(n).replace(/(\\.\\d*?[1-9])0+$|\\.0+$/,'$1');\n}\nfunction pairsOf(d){\n  if(Array.isArray(d.herbs)&&d.herbs.length){\n    var ready=[];\n    for(var i=0;i<d.herbs.length;i++){\n      var item=d.herbs[i]||{};\n      ready.push({name:item.name||'',dose:simplifyDose(item.dose||'')});\n    }\n    return ready;\n  }\n  var names=tokens(d.drugName);\n  var doses=tokens(d.doseText);\n  var n=Math.max(names.length,doses.length);\n  var out=[];\n  for(var k=0;k<n;k++){out.push({name:names[k]||'',dose:simplifyDose(doses[k]||'')});}\n  return out;\n}\nfunction herbCell(h){\n  var dose=h.dose?'<span style=\"margin-left:6pt;\">'+esc(h.dose)+'</span>':'';\n  return '<td style=\"border:1px solid #000;padding:5pt 6pt;width:25%;text-align:left;vertical-align:middle;font-size:10pt;\">'+esc(h.name)+dose+'</td>';\n}\nfunction tcmCard(pairs,fu){\n  var html='<div style=\"margin:0 0 8pt 0;border:1px solid #000;\">';\n  var banner='中药';\n  if(fu){banner=banner+'　付数：'+esc(fu);}\n  html+='<div style=\"background:#f0f0f0;padding:3pt 6pt;font-size:9pt;font-weight:bold;\">'+banner+'</div>';\n  html+='<table style=\"width:100%;border-collapse:collapse;table-layout:fixed;\">';\n  var list=pairs.length?pairs:[{name:'',dose:''}];\n  for(var i=0;i<list.length;i+=4){\n    html+='<tr>';\n    for(var c=0;c<4;c++){\n      var h=list[i+c];\n      html+=h?herbCell(h):'<td style=\"border:1px solid #000;padding:5pt 6pt;width:25%;\"></td>';\n    }\n    html+='</tr>';\n  }\n  html+='</table></div>';\n  return html;\n}\nvar blocks=Array.isArray(value)?value:((printData&&printData.patientBlocks)||[]);\nvar html='';\nfor(var i=0;i<blocks.length;i++){\n  var b=blocks[i]||{};\n  var head=esc(b.patientHeadText||'');\n  var drugs=Array.isArray(b.drugRows)?b.drugRows:[];\n  var west=[];\n  var tcm=[];\n  for(var j=0;j<drugs.length;j++){\n    var d=drugs[j]||{};\n    if(isTcm(d)){tcm.push(d);}else{west.push(d);}\n  }\n  html+='<div style=\"margin:0 0 14pt 0;\">';\n  html+='<div style=\"font-size:10pt;font-weight:bold;line-height:1.5;padding:2pt 0 6pt 0;\">'+head+'</div>';\n  for(var t=0;t<tcm.length;t++){html+=tcmCard(pairsOf(tcm[t]),fuValue(tcm[t]));}\n  if(west.length){\n    html+='<table style=\"width:100%;border-collapse:collapse;font-size:9pt;table-layout:fixed;\">';\n    html+='<thead><tr>';\n    html+='<th style=\"border:1px solid #000;background:#f0f0f0;padding:4pt 3pt;width:36%;text-align:left;\">药品名称</th>';\n    html+='<th style=\"border:1px solid #000;background:#f0f0f0;padding:4pt 3pt;width:28%;text-align:left;\">规格</th>';\n    html+='<th style=\"border:1px solid #000;background:#f0f0f0;padding:4pt 3pt;width:18%;text-align:center;\">剂量</th>';\n    html+='<th style=\"border:1px solid #000;background:#f0f0f0;padding:4pt 3pt;width:18%;text-align:center;\">总量</th>';\n    html+='</tr></thead><tbody>';\n    for(var w=0;w<west.length;w++){\n      var row=west[w]||{};\n      html+='<tr>';\n      html+=cell(row.drugName,'left');\n      html+=cell(row.specText,'left');\n      html+=cell(row.doseText,'center');\n      html+=cell(row.totalQuantityText,'center');\n      html+='</tr>';\n    }\n    html+='</tbody></table>';\n  }\n  html+='</div>';\n}\nreturn html;\n}",
-            "hideTitle": true,
-            "lineHeight": 12,
-            "leftSpaceRemoved": false
-          },
-          "printElementType": {
-            "type": "longText",
-            "title": "摆药明细"
-          }
-        }
-      ],
-      "watermarkOptions": {
-        "width": 200,
-        "format": "YYYY-MM-DD HH:mm",
-        "height": 200,
-        "rotate": 25,
-        "content": "",
-        "fontSize": "14px",
-        "fillStyle": "rgba(184, 184, 184, 0.3)",
-        "timestamp": false
-      },
-      "panelLayoutOptions": {
-        "layoutType": "column",
-        "paperStyle": "",
-        "paperWidth": 0,
-        "paperHeight": 0,
-        "layoutRowGap": 0,
-        "layoutColumnGap": 0
-      },
-      "paperNumberContinue": false,
-      "paperNumberDisabled": true
-    }
-  ],
-  "schemaVersion": 1
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>住院医生站 · 患者大屏</title>
+<style>
+:root{
+  --bg:#f7f8fa;
+  --surface:#ffffff;
+  --surface-2:#f7f8fa;
+  --line:#eef0f4;
+  --line-2:#e2e5ec;
+  --text:#18181b;
+  --text-2:#52525b;
+  --text-3:#a1a1aa;
+  --accent:#2563eb;
+  --accent-dark:#1d4ed8;
+  --accent-soft:#eff6ff;
+  --danger:#ef4444;
+  --danger-soft:#fef2f2;
+  --warn:#f59e0b;
+  --warn-soft:#fffbeb;
+  --ok:#10b981;
+  --ok-soft:#ecfdf5;
+  --r:16px;
+  --sh:0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.03);
+  --sh-h:0 12px 28px rgba(16,24,40,.08), 0 2px 6px rgba(16,24,40,.04);
 }
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  font-size:14px;
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  font-feature-settings:"tnum";
+}
+
+button{font-family:inherit;font-size:inherit;color:inherit;background:none;border:none;cursor:pointer}
+input,select{font-family:inherit;font-size:inherit;color:inherit}
+svg{display:block}
+.num{font-variant-numeric:tabular-nums}
+
+/* ============ 顶栏 ============ */
+.topbar{
+  position:sticky;top:0;z-index:30;
+  height:60px;
+  display:flex;align-items:center;justify-content:space-between;
+  gap:20px;
+  padding:0 28px;
+  background:var(--surface);
+  border-bottom:1px solid var(--line);
+}
+
+.brand{display:flex;align-items:center;gap:12px;min-width:0}
+.logo{
+  width:34px;height:34px;flex:none;
+  border-radius:9px;
+  background:linear-gradient(135deg,#3b82f6,#1d4ed8);
+  color:#fff;display:grid;place-items:center;
+  font-size:15px;font-weight:700;
+  letter-spacing:.5px;
+  box-shadow:0 2px 6px rgba(37,99,235,.28);
+}
+.brand-t h1{font-size:15.5px;font-weight:600;letter-spacing:-.1px;line-height:1.3;white-space:nowrap}
+.brand-t p{font-size:12px;color:var(--text-3);margin-top:1px}
+
+.top-meta{display:flex;align-items:center;gap:8px;flex:1;justify-content:center}
+
+.meta-pill{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:5px 11px;border-radius:8px;
+  background:var(--surface-2);
+  border:1px solid var(--line);
+  font-size:12.5px;color:var(--text-2);
+  white-space:nowrap;
+}
+.meta-pill .dot{width:6px;height:6px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px var(--ok-soft)}
+.meta-pill b{color:var(--text);font-weight:600}
+
+.top-actions{display:flex;align-items:center;gap:10px}
+
+.clock{text-align:right;padding-right:12px;border-right:1px solid var(--line);margin-right:4px}
+.clock .t{font-size:16px;font-weight:600;letter-spacing:-.2px;line-height:1.2}
+.clock .d{font-size:11.5px;color:var(--text-3);white-space:nowrap;margin-top:1px}
+
+.icon-btn{
+  width:34px;height:34px;border:1px solid var(--line);border-radius:9px;
+  display:grid;place-items:center;color:var(--text-2);transition:.18s;
+  background:var(--surface);
+}
+.icon-btn:hover{border-color:var(--line-2);background:var(--surface-2);color:var(--text)}
+
+/* ============ 工具栏 ============ */
+.toolbar-area{padding:20px 28px 0}
+
+.toolbar-card{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:16px;
+  padding:6px 8px 6px 6px;
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:14px;
+  box-shadow:var(--sh);
+  flex-wrap:wrap;
+}
+
+.seg-group{display:inline-flex;gap:2px;padding:3px;border-radius:10px}
+
+.seg-item{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:7px 13px;
+  border-radius:8px;
+  font-size:13px;
+  color:var(--text-2);
+  transition:.16s;
+  white-space:nowrap;
+  font-weight:500;
+}
+.seg-item:hover{background:var(--surface-2);color:var(--text)}
+.seg-item.active{background:#f4f5f7;color:var(--text);font-weight:600}
+.seg-item .cnt{
+  display:inline-grid;place-items:center;
+  min-width:18px;height:17px;padding:0 5px;
+  border-radius:5px;
+  background:rgba(24,24,27,.07);
+  font-size:11px;font-weight:600;
+  color:var(--text-2);
+  transition:.16s;
+}
+.seg-item.active .cnt{background:var(--text);color:#fff}
+
+.toolbar-right{display:flex;align-items:center;gap:8px;padding-right:4px;flex-wrap:wrap}
+
+.select{
+  height:34px;padding:0 30px 0 12px;
+  border:1px solid var(--line);border-radius:9px;
+  background:var(--surface) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2.5' stroke-linecap='round'><path d='M6 9l6 6 6-6'/></svg>") no-repeat right 11px center;
+  appearance:none;
+  font-size:13px;color:var(--text-2);
+  cursor:pointer;outline:none;transition:.18s;
+}
+.select:hover{border-color:var(--line-2);background-color:var(--surface-2)}
+.select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+
+.search-wrap{position:relative;width:240px}
+.search-wrap svg{
+  position:absolute;left:12px;top:50%;transform:translateY(-50%);
+  width:14px;height:14px;color:var(--text-3);pointer-events:none;
+}
+.search-wrap input{
+  width:100%;height:34px;
+  padding:0 13px 0 34px;
+  border:1px solid var(--line);
+  border-radius:9px;
+  background:var(--surface);
+  font-size:13px;
+  outline:none;
+  transition:.18s;
+}
+.search-wrap input::placeholder{color:var(--text-3)}
+.search-wrap input:hover{border-color:var(--line-2)}
+.search-wrap input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+.search-wrap input::-webkit-search-cancel-button{-webkit-appearance:none}
+
+/* ============ 主内容 ============ */
+.content{padding:20px 28px 40px}
+
+.ward{margin-bottom:28px}
+.ward:last-child{margin-bottom:0}
+
+.ward-head{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:12px;margin-bottom:12px;
+}
+.ward-title{display:flex;align-items:center;gap:10px;min-width:0}
+.ward-title h3{font-size:14px;font-weight:600;letter-spacing:-.1px;color:var(--text)}
+.ward-title .dot{
+  width:5px;height:5px;border-radius:50%;
+  background:var(--accent);flex:none;
+  box-shadow:0 0 0 3px var(--accent-soft);
+}
+.ward-sub{font-size:12px;color:var(--text-3);white-space:nowrap;font-weight:400}
+.ward-count{font-size:12px;color:var(--text-3);white-space:nowrap;font-weight:500}
+
+.grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(316px,1fr));
+  gap:14px;
+}
+
+/* ============ 患者卡片 ============ */
+.card{
+  position:relative;
+  padding:16px 16px 14px;
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:var(--r);
+  box-shadow:var(--sh);
+  cursor:pointer;
+  outline:none;
+  transition:border-color .2s, box-shadow .25s, transform .2s;
+}
+.card:hover,.card:focus-visible{
+  border-color:var(--line-2);
+  box-shadow:var(--sh-h);
+  transform:translateY(-2px);
+}
+
+.card-head{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:10px;margin-bottom:14px;
+}
+
+.bed-badge{
+  display:inline-flex;align-items:center;gap:7px;
+  font-size:12.5px;font-weight:600;
+  color:var(--text-2);
+  letter-spacing:-.1px;
+}
+.bed-badge .status-dot{width:7px;height:7px;border-radius:50%;flex:none}
+.status-dot.critical{background:var(--danger);box-shadow:0 0 0 3px var(--danger-soft)}
+.status-dot.new{background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.status-dot.postop{background:var(--warn);box-shadow:0 0 0 3px var(--warn-soft)}
+.status-dot.discharge{background:var(--ok);box-shadow:0 0 0 3px var(--ok-soft)}
+.status-dot.normal{background:#d4d4d8;box-shadow:0 0 0 3px #f4f4f5}
+
+.card-tags{display:flex;align-items:center;gap:6px}
+
+.tag{
+  padding:2px 9px;
+  border-radius:6px;
+  font-size:11px;font-weight:600;
+  line-height:1.6;
+  white-space:nowrap;
+  letter-spacing:.1px;
+}
+.tag-critical{background:var(--danger-soft);color:var(--danger)}
+.tag-new{background:var(--accent-soft);color:var(--accent-dark)}
+.tag-postop{background:var(--warn-soft);color:#b45309}
+.tag-discharge{background:var(--ok-soft);color:#047857}
+.tag-warning{background:#fee2e2;color:#dc2626}
+
+/* 姓名 + 头像 */
+.card-person{
+  display:flex;align-items:center;gap:13px;
+  margin-bottom:13px;
+}
+
+.avatar{
+  width:44px;height:44px;flex:none;
+  border-radius:12px;
+  display:grid;place-items:center;
+  position:relative;
+  overflow:hidden;
+  box-shadow:0 2px 6px rgba(16,24,40,.14);
+}
+.avatar svg{width:100%;height:100%;display:block}
+.avatar.male{background:linear-gradient(135deg,#7cb0f7 0%,#3b82f6 100%)}
+.avatar.female{background:linear-gradient(135deg,#f7a8cd 0%,#ec4899 100%)}
+
+.person-t{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}
+.person-name{display:flex;align-items:baseline;gap:8px}
+.person-name .n{
+  font-size:19px;font-weight:700;letter-spacing:-.2px;line-height:1.1;
+  color:var(--text);
+}
+.person-name .d{font-size:12.5px;color:var(--text-3);font-weight:400}
+.person-diag{
+  font-size:13px;color:var(--text-2);font-weight:400;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  line-height:1.45;
+}
+
+/* 信息块 —— 两行三列，图一布局 */
+.card-meta{
+  display:grid;
+  grid-template-columns:1fr 1fr 1fr;
+  gap:11px 0;
+  padding:11px 4px;
+  background:var(--surface-2);
+  border:1px solid var(--line);
+  border-radius:10px;
+  margin-bottom:13px;
+}
+.card-meta .item{
+  display:flex;flex-direction:column;gap:3px;
+  min-width:0;
+  padding:0 12px;
+  border-left:1px solid var(--line);
+}
+.card-meta .item:nth-child(3n+1){
+  border-left:none;
+  padding-left:14px;
+}
+.card-meta .item:nth-child(3n){
+  padding-right:14px;
+}
+.card-meta .k{font-size:10.5px;color:var(--text-3);white-space:nowrap;letter-spacing:.2px;font-weight:500}
+.card-meta .v{
+  font-size:13px;font-weight:600;color:var(--text);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  letter-spacing:-.1px;
+}
+.card-meta .v.negative{color:var(--danger)}
+
+/* ============ 操作按钮 —— 6个，两列三行，统一样式 ============ */
+.actions{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:6px;
+}
+
+.act-btn{
+  height:32px;
+  border-radius:9px;
+  font-size:12.5px;
+  font-weight:500;
+  display:flex;align-items:center;justify-content:center;
+  gap:5px;
+  white-space:nowrap;
+  background:var(--surface);
+  border:1px solid var(--line);
+  color:var(--text-2);
+  transition:.16s;
+  letter-spacing:-.1px;
+}
+.act-btn svg{width:13px;height:13px;flex:none;opacity:.7}
+.act-btn:hover{
+  background:var(--surface-2);
+  border-color:var(--line-2);
+  color:var(--text);
+}
+.act-btn:hover svg{opacity:1}
+.act-btn:active{transform:scale(.98)}
+
+/* ============ 空状态 ============ */
+.empty{
+  padding:100px 0;text-align:center;
+  color:var(--text-3);font-size:13.5px;
+}
+
+/* ============ 抽屉 ============ */
+.mask{
+  position:fixed;inset:0;z-index:50;
+  background:rgba(24,24,27,.35);
+  opacity:0;pointer-events:none;
+  transition:opacity .26s;
+  backdrop-filter:blur(2px);
+}
+.mask.open{opacity:1;pointer-events:auto}
+
+.drawer{
+  position:fixed;top:0;right:0;bottom:0;z-index:60;
+  width:440px;max-width:94vw;
+  background:var(--surface);
+  box-shadow:-16px 0 48px rgba(16,24,40,.16);
+  transform:translateX(100%);
+  transition:transform .32s cubic-bezier(.4,0,.2,1);
+  display:flex;flex-direction:column;
+}
+.drawer.open{transform:none}
+
+.d-head{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:16px 22px 14px;
+  border-bottom:1px solid var(--line);
+  flex:none;
+}
+.d-head .left{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.d-close{
+  width:32px;height:32px;border-radius:8px;
+  display:grid;place-items:center;
+  font-size:20px;line-height:1;color:var(--text-3);
+  transition:.16s;
+}
+.d-close:hover{background:var(--surface-2);color:var(--text)}
+
+.d-id{padding:18px 22px;border-bottom:1px solid var(--line);flex:none}
+.d-id .person{display:flex;align-items:center;gap:14px}
+.d-id .avatar{width:52px;height:52px;border-radius:14px}
+.d-id h2{font-size:22px;font-weight:700;letter-spacing:-.3px;line-height:1.2}
+.d-id .sub{margin-top:4px;font-size:12.5px;color:var(--text-3)}
+.d-id .diag{margin-top:14px;font-size:13px;color:var(--text-2);line-height:1.55}
+.d-id .diag b{color:var(--text);font-weight:600}
+
+.d-tabs{
+  display:flex;gap:2px;padding:0 22px;
+  border-bottom:1px solid var(--line);
+  flex:none;overflow-x:auto;
+}
+.d-tab{
+  position:relative;
+  padding:12px 12px 11px;
+  font-size:13px;color:var(--text-3);
+  transition:color .16s;white-space:nowrap;
+  font-weight:500;
+}
+.d-tab:hover{color:var(--text-2)}
+.d-tab.active{color:var(--text);font-weight:600}
+.d-tab.active::after{
+  content:"";position:absolute;left:12px;right:12px;bottom:-1px;height:2px;
+  background:var(--text);border-radius:2px 2px 0 0;
+}
+
+.d-body{flex:1;overflow-y:auto;padding:0 22px 32px}
+.d-body::-webkit-scrollbar{width:6px}
+.d-body::-webkit-scrollbar-thumb{background:#e4e4e7;border-radius:3px}
+.d-body::-webkit-scrollbar-thumb:hover{background:#d4d4d8}
+
+.panel{display:none;padding-top:2px}
+.panel.active{display:block}
+
+.sec{padding:18px 0}
+.sec + .sec{border-top:1px solid var(--line)}
+.sec h4{
+  margin-bottom:11px;
+  font-size:11px;font-weight:600;
+  letter-spacing:.8px;
+  color:var(--text-3);
+  text-transform:uppercase;
+}
+
+.kv{display:grid;grid-template-columns:1fr 1fr;gap:14px 16px}
+.kv > div{display:flex;flex-direction:column;gap:3px;min-width:0}
+.kv span{font-size:11.5px;color:var(--text-3)}
+.kv b{
+  font-size:13px;font-weight:600;color:var(--text);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  letter-spacing:-.1px;
+}
+.kv b.negative{color:var(--danger)}
+
+.focus{
+  padding:12px 14px;
+  background:var(--surface-2);
+  border-left:3px solid var(--accent);
+  border-radius:0 9px 9px 0;
+  font-size:13px;color:var(--text-2);line-height:1.7;
+}
+
+.order{
+  display:flex;align-items:flex-start;gap:11px;
+  padding:12px 0;border-bottom:1px solid var(--line);
+}
+.order:last-child{border-bottom:none}
+.order .idx{
+  flex:none;width:22px;height:22px;border-radius:6px;
+  background:var(--surface-2);color:var(--text-3);
+  display:grid;place-items:center;
+  font-size:11px;font-weight:600;
+  border:1px solid var(--line);
+}
+.order .bd{flex:1;min-width:0}
+.order .tx{font-size:13px;color:var(--text);line-height:1.55}
+.order .mt{margin-top:5px;display:flex;gap:8px;font-size:11px;color:var(--text-3);align-items:center}
+
+.badge{
+  display:inline-block;padding:1px 7px;border-radius:5px;
+  font-size:10.5px;font-weight:600;
+  background:var(--surface-2);color:var(--text-2);
+  border:1px solid var(--line);
+}
+.badge.long{background:var(--accent-soft);color:var(--accent-dark);border-color:#dbeafe}
+.badge.temp{background:var(--warn-soft);color:#b45309;border-color:#fef3c7}
+
+.lab-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.lab-table th{
+  text-align:left;padding:0 0 9px;
+  font-size:11px;font-weight:600;
+  letter-spacing:.6px;color:var(--text-3);
+  text-transform:uppercase;
+}
+.lab-table th:last-child,.lab-table td:last-child{text-align:right}
+.lab-table td{
+  padding:9px 0;border-top:1px solid var(--line);
+  color:var(--text-2);
+}
+.lab-table td.nm{color:var(--text);font-weight:500}
+.lab-table td.vl{font-weight:600;color:var(--text);font-variant-numeric:tabular-nums}
+.lab-table td.vl.high,.lab-table td.vl.low{color:var(--warn)}
+.lab-table td.vl.critical{color:var(--danger)}
+.lab-table td.rf{font-size:11px;color:var(--text-3)}
+
+.tl{position:relative;padding-left:20px}
+.tl::before{
+  content:"";position:absolute;left:4px;top:5px;bottom:5px;
+  width:1px;background:var(--line-2);
+}
+.tl-item{position:relative;padding-bottom:18px}
+.tl-item:last-child{padding-bottom:0}
+.tl-item::before{
+  content:"";position:absolute;left:-20px;top:4px;
+  width:9px;height:9px;border-radius:50%;
+  background:#fff;border:2px solid var(--line-2);
+}
+.tl-item.hot::before{border-color:var(--danger);background:var(--danger-soft)}
+.tl-time{font-size:11px;color:var(--text-3);font-variant-numeric:tabular-nums;font-weight:500}
+.tl-text{margin-top:3px;font-size:13px;color:var(--text-2);line-height:1.6}
+.tl-text b{color:var(--text);font-weight:600}
+
+/* ============ Toast ============ */
+.toast{
+  position:fixed;
+  left:50%;bottom:36px;
+  transform:translate(-50%,10px);
+  padding:10px 18px;
+  background:#18181b;
+  color:#fff;
+  font-size:13px;
+  border-radius:10px;
+  box-shadow:0 10px 28px rgba(16,24,40,.24);
+  opacity:0;
+  transition:.25s;
+  z-index:200;
+  pointer-events:none;
+  white-space:nowrap;
+  font-weight:500;
+}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+@media (max-width:1180px){
+  .top-meta{display:none}
+}
+@media (max-width:1000px){
+  .toolbar-card{flex-direction:column;align-items:stretch;gap:8px;padding:8px}
+  .toolbar-right{padding-right:0;padding-top:8px;border-top:1px solid var(--line)}
+  .search-wrap{flex:1;width:auto}
+}
+@media (max-width:900px){
+  .clock{display:none}
+  .seg-group{overflow-x:auto}
+  .grid{grid-template-columns:1fr}
+  .content{padding:16px 16px 28px}
+  .toolbar-area{padding:14px 16px 0}
+  .topbar{padding:0 16px;height:56px}
+  .brand-t h1{font-size:14.5px}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="logo">医</div>
+    <div class="brand-t">
+      <h1>心血管内科一病区</h1>
+      <p>住院医生站 · 患者大屏</p>
+    </div>
+  </div>
+  <div class="top-meta">
+    <span class="meta-pill"><i class="dot"></i>白班 · 08:00 – 16:00</span>
+    <span class="meta-pill">主管医生 · <b>李建国</b></span>
+  </div>
+  <div class="top-actions">
+    <div class="clock">
+      <div class="t" id="clockTime">--:--</div>
+      <div class="d" id="clockDate">----</div>
+    </div>
+    <button class="icon-btn" id="fullscreenBtn" title="全屏显示" aria-label="全屏显示">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<section class="toolbar-area">
+  <div class="toolbar-card">
+    <div class="seg-group" id="filters"></div>
+    <div class="toolbar-right">
+      <select class="select" id="sortBy">
+        <option value="bed">按床号排序</option>
+        <option value="day">按住院时长</option>
+        <option value="name">按姓名排序</option>
+      </select>
+      <label class="search-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>
+        </svg>
+        <input id="search" type="search" placeholder="搜索床号、姓名、诊断或医生" autocomplete="off">
+      </label>
+    </div>
+  </div>
+</section>
+
+<main class="content" id="content"></main>
+
+<div class="mask" id="mask"></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="患者详情"></aside>
+
+<script>
+(function () {
+  "use strict";
+
+  const pad2 = n => String(n).padStart(2, "0");
+
+  function strHash(s) {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 2147483647;
+    return h || 1;
+  }
+  function seeded(seed) {
+    let s = seed % 2147483647;
+    if (s <= 0) s += 2147483646;
+    return function () {
+      s = (s * 16807) % 2147483647;
+      return (s - 1) / 2147483646;
+    };
+  }
+
+  /* ========== 性别头像 SVG ========== */
+  const MALE_SVG =
+    '<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">' +
+      '<circle cx="20" cy="15" r="7.2" fill="#ffffff"/>' +
+      '<path d="M20 24.5c-7.4 0-13 4.8-13.6 10.7-.05.55.4 1.05.95 1.05h25.3c.55 0 1-.5.95-1.05C32.9 29.3 27.4 24.5 20 24.5z" fill="#ffffff"/>' +
+    '</svg>';
+
+  const FEMALE_SVG =
+    '<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">' +
+      '<path d="M20 4.5c-6.8 0-11.5 4.7-11.5 10.6 0 2.3.5 4.4 1.5 6.2v6.3c0 .9.75 1.6 1.6 1.6h1.6v-8.4c0-4.1 2.9-7.2 7.3-7.2s7.3 3.1 7.3 7.2v8.4h1.6c.85 0 1.6-.7 1.6-1.6v-6.3c1-1.8 1.5-3.9 1.5-6.2C31.5 9.2 26.8 4.5 20 4.5z" fill="#ffffff"/>' +
+      '<path d="M20 25.6c-7 0-12.4 4.6-13 10.2-.05.55.4 1.05.95 1.05h24.1c.55 0 1-.5.95-1.05-.6-5.6-6-10.2-13-10.2z" fill="#ffffff"/>' +
+    '</svg>';
+
+  function avatarHTML(p, cls) {
+    const isFemale = p.sex === "女";
+    return '<div class="avatar ' + (isFemale ? "female" : "male") + (cls ? " " + cls : "") + '">' +
+             (isFemale ? FEMALE_SVG : MALE_SVG) +
+           '</div>';
+  }
+
+  /* ========== 配置 ========== */
+  const STATUS = {
+    critical : { label: "危重",   cls: "tag-critical"  },
+    new      : { label: "新入院", cls: "tag-new"       },
+    postop   : { label: "术后",   cls: "tag-postop"    },
+    discharge: { label: "待出院", cls: "tag-discharge" },
+    normal   : null
+  };
+
+  const FILTERS = [
+    { key: "all",       label: "在院患者" },
+    { key: "critical",  label: "危重"     },
+    { key: "new",       label: "新入院"   },
+    { key: "postop",    label: "术后"     },
+    { key: "discharge", label: "待出院"   }
+  ];
+
+  const FOCUS = {
+    critical : "持续心电监护，密切观察生命体征及意识变化，抢救设备床旁备用。",
+    new      : "完善入院常规检查，评估病情，及时完成首次病程记录。",
+    postop   : "观察穿刺点有无渗血及血肿，监测凝血功能，注意卧床制动。",
+    discharge: "核对出院带药及医嘱，完成出院宣教，预约复诊时间。",
+    normal   : "常规对症治疗，按时监测生命体征，按医嘱执行护理。"
+  };
+
+  const NURSES  = ["王晓琳","李梦","张倩","刘婷","陈思","赵雪","周颖","孙悦"];
+  const ALLERGY = ["无","青霉素","头孢类","磺胺类","无","造影剂","无","海鲜","无"];
+
+  const LAB_DEFS = [
+    { name:"肌钙蛋白I", abbr:"cTnI", unit:"ng/mL",  lo:0,   hi:0.04, dec:3, critHi:1.0,  critLo:null, base:[0.008,0.030] },
+    { name:"脑钠肽",    abbr:"BNP",  unit:"pg/mL",  lo:0,   hi:100,  dec:0, critHi:5000, critLo:null, base:[28,85]      },
+    { name:"血钾",      abbr:"K⁺",   unit:"mmol/L", lo:3.5, hi:5.3,  dec:2, critHi:6.0,  critLo:3.0,  base:[3.8,4.9]    },
+    { name:"肌酐",      abbr:"Cr",   unit:"μmol/L", lo:44,  hi:106,  dec:0, critHi:700,  critLo:null, base:[62,98]      },
+    { name:"白细胞",    abbr:"WBC",  unit:"×10⁹/L", lo:3.5, hi:9.5,  dec:2, critHi:30,   critLo:2.0,  base:[4.5,8.6]    },
+    { name:"血红蛋白",  abbr:"Hb",   unit:"g/L",    lo:130, hi:175,  dec:0, critHi:null, critLo:60,   base:[133,162]    }
+  ];
+
+  const ORDER_POOL = [
+    "持续心电监护，每小时记录生命体征",
+    "低盐低脂饮食，记录 24 小时出入量",
+    "绝对卧床休息，床上活动肢体",
+    "阿司匹林肠溶片 100mg po qd",
+    "硫酸氢氯吡格雷片 75mg po qd",
+    "阿托伐他汀钙片 20mg po qn",
+    "琥珀酸美托洛尔缓释片 47.5mg po qd",
+    "呋塞米注射液 20mg iv st",
+    "螺内酯片 20mg po qd",
+    "氯化钾缓释片 0.5g po tid",
+    "单硝酸异山梨酯缓释片 40mg po qd",
+    "地高辛片 0.125mg po qd",
+    "盐酸胺碘酮注射液 150mg ivgtt st",
+    "0.9% 氯化钠 100ml + 头孢曲松钠 2g ivgtt qd",
+    "监测凝血功能、电解质，必要时复查"
+  ];
+
+  /* ========== 图标 ========== */
+  const ICONS = {
+    order:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6v4l4 12a2 2 0 0 1-2 3H7a2 2 0 0 1-2-3L9 7V3z"/><path d="M9 3v4h6V3"/><path d="M7.5 14h9"/></svg>',
+    diag:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>',
+    record: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>',
+    home:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-7h-6v7H4a1 1 0 0 1-1-1V9.5z"/></svg>',
+    temp:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>',
+    fee:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>'
+  };
+
+  const ACT_DEFS = [
+    { key:"order",  label:"开立医嘱", icon:"order"  },
+    { key:"diag",   label:"诊断录入", icon:"diag"   },
+    { key:"record", label:"住院病历", icon:"record" },
+    { key:"home",   label:"病案首页", icon:"home"   },
+    { key:"temp",   label:"体温单",   icon:"temp"   },
+    { key:"fee",    label:"费用明细", icon:"fee"    }
+  ];
+
+  /* ========== 原始数据 ========== */
+  const RAW = [
+    { bed:"01", name:"张伟",   sex:"男", age:68, diag:"急性心肌梗死",           doctor:"李建国", level:"Ⅰ", day:3,  status:"critical"  },
+    { bed:"02", name:"王秀兰", sex:"女", age:74, diag:"慢性心力衰竭",           doctor:"李建国", level:"Ⅰ", day:8,  status:"normal"    },
+    { bed:"03", name:"刘建军", sex:"男", age:56, diag:"高血压 3 级（很高危）",  doctor:"陈敏",   level:"Ⅱ", day:2,  status:"new"       },
+    { bed:"04", name:"赵国强", sex:"男", age:62, diag:"冠心病 · 支架植入术后",  doctor:"陈敏",   level:"Ⅱ", day:12, status:"postop"    },
+    { bed:"05", name:"孙丽华", sex:"女", age:59, diag:"心房颤动",               doctor:"王海涛", level:"Ⅱ", day:5,  status:"normal"    },
+    { bed:"06", name:"周文斌", sex:"男", age:45, diag:"病毒性心肌炎",           doctor:"王海涛", level:"Ⅰ", day:1,  status:"new"       },
+    { bed:"07", name:"吴桂英", sex:"女", age:81, diag:"慢性心力衰竭急性加重",   doctor:"李建国", level:"Ⅰ", day:15, status:"critical"  },
+    { bed:"08", name:"郑海涛", sex:"男", age:50, diag:"稳定型心绞痛",           doctor:"陈敏",   level:"Ⅱ", day:4,  status:"normal"    },
+    { bed:"09", name:"冯小琴", sex:"女", age:66, diag:"扩张型心肌病",           doctor:"王海涛", level:"Ⅱ", day:9,  status:"normal"    },
+    { bed:"10", name:"陈志强", sex:"男", age:70, diag:"急性冠脉综合征",         doctor:"李建国", level:"Ⅰ", day:2,  status:"new"       },
+    { bed:"11", name:"蒋美玲", sex:"女", age:48, diag:"阵发性室上性心动过速",   doctor:"陈敏",   level:"Ⅱ", day:3,  status:"postop"    },
+    { bed:"12", name:"韩立国", sex:"男", age:57, diag:"冠状动脉支架植入术后",   doctor:"王海涛", level:"Ⅱ", day:6,  status:"postop"    },
+    { bed:"13", name:"曹玉芳", sex:"女", age:72, diag:"老年退行性心瓣膜病",     doctor:"李建国", level:"Ⅱ", day:20, status:"discharge" },
+    { bed:"14", name:"谢文军", sex:"男", age:61, diag:"心源性休克",             doctor:"陈敏",   level:"Ⅰ", day:1,  status:"critical"  },
+    { bed:"15", name:"卢建华", sex:"男", age:53, diag:"急性心包炎",             doctor:"王海涛", level:"Ⅲ", day:7,  status:"discharge" },
+    { bed:"16", name:"唐秀英", sex:"女", age:77, diag:"慢性肺源性心脏病",       doctor:"李建国", level:"Ⅱ", day:11, status:"normal"    },
+    { bed:"17", name:"邓伟明", sex:"男", age:49, diag:"室性早搏",               doctor:"陈敏",   level:"Ⅲ", day:2,  status:"normal"    },
+    { bed:"18", name:"姚丽娟", sex:"女", age:64, diag:"风湿性心脏病",           doctor:"王海涛", level:"Ⅱ", day:14, status:"postop"    },
+    { bed:"19", name:"方国平", sex:"男", age:58, diag:"原发性高血压",           doctor:"李建国", level:"Ⅲ", day:5,  status:"discharge" },
+    { bed:"20", name:"邹晓峰", sex:"男", age:43, diag:"心肌桥",                 doctor:"陈敏",   level:"Ⅲ", day:3,  status:"normal"    },
+    { bed:"21", name:"汪春梅", sex:"女", age:69, diag:"窦性心动过缓",           doctor:"王海涛", level:"Ⅱ", day:6,  status:"normal"    },
+    { bed:"22", name:"袁志刚", sex:"男", age:65, diag:"主动脉瓣狭窄",           doctor:"李建国", level:"Ⅰ", day:4,  status:"postop"    },
+    { bed:"23", name:"石秀珍", sex:"女", age:73, diag:"不稳定型心绞痛",         doctor:"陈敏",   level:"Ⅱ", day:8,  status:"normal"    },
+    { bed:"24", name:"崔建国", sex:"男", age:60, diag:"慢性心力衰竭",           doctor:"王海涛", level:"Ⅱ", day:10, status:"discharge" }
+  ];
+
+  function genLabs(p) {
+    const rnd = seeded(strHash(p.bed + p.name + "lab"));
+    const abnRate = p.status === "critical" ? 0.55 : p.status === "new" ? 0.30 : 0.18;
+    return LAB_DEFS.map(function (def) {
+      const b0 = def.base[0], b1 = def.base[1];
+      let v = b0 + rnd() * (b1 - b0);
+      let flag = "normal";
+      if (rnd() < abnRate) {
+        const goHigh = rnd() < 0.72;
+        const span = (def.hi - def.lo) || def.hi || 1;
+        if (goHigh) {
+          v = def.hi + rnd() * span * (p.status === "critical" ? 1.9 : 0.7);
+          flag = (def.critHi != null && v >= def.critHi) ? "critical" : "high";
+        } else {
+          v = def.lo - rnd() * span * 0.45;
+          if (v < 0) v = def.lo * 0.35;
+          flag = (def.critLo != null && v <= def.critLo) ? "critical" : "low";
+        }
+      }
+      return { name:def.name, abbr:def.abbr, unit:def.unit, dec:def.dec,
+               lo:def.lo, hi:def.hi, value:v, flag:flag };
+    });
+  }
+
+  function genOrders(p) {
+    const rnd = seeded(strHash(p.bed + p.name + "order"));
+    const pool = ORDER_POOL.slice();
+    const n = 5 + Math.floor(rnd() * 4);
+    const picked = [];
+    for (let i = 0; i < n && pool.length; i++) {
+      picked.push(pool.splice(Math.floor(rnd() * pool.length), 1)[0]);
+    }
+    return picked.map(function (txt, i) {
+      const isDrug = /mg|g |ml|iv|po|ivgtt/.test(txt);
+      const type = i < 2 ? "long" : (isDrug ? (rnd() < 0.5 ? "long" : "temp") : "long");
+      const hh = 8 + Math.floor(rnd() * 10);
+      return { text:txt, type:type, typeLabel: type === "long" ? "长期" : "临时",
+               time: pad2(hh) + ":" + pad2(Math.floor(rnd() * 60)), doctor:p.doctor };
+    });
+  }
+
+  function genTimeline(p) {
+    const items = [
+      { hot:false, t:"今日 08:12", txt:"晨间查房，患者诉胸闷较前缓解，继续目前治疗方案。" },
+      { hot:false, t:"今日 06:30", txt:"夜间生命体征平稳，未诉特殊不适，睡眠可。" },
+      { hot:false, t:"昨日 20:45", txt:"予以 <b>呋塞米 20mg iv</b>，尿量约 600ml，症状改善。" }
+    ];
+    if (p.status === "critical") {
+      items.unshift({ hot:true, t:"今日 09:40", txt:"<b>病情变化</b>：患者诉胸闷加重，已通知主管医师并予处理。" });
+    }
+    if (p.status === "new") {
+      items.unshift({ hot:false, t:"今日 10:05", txt:"完成入院评估及首次病程记录，已下达常规医嘱。" });
+    }
+    if (p.status === "postop") {
+      items.unshift({ hot:false, t:"今日 09:20", txt:"术后第 " + Math.max(1, Math.round(p.day / 2)) + " 天，穿刺点敷料干燥，无渗血。" });
+    }
+    if (p.status === "discharge") {
+      items.unshift({ hot:false, t:"今日 11:00", txt:"已完成出院宣教，出院带药已核对，明日办理出院手续。" });
+    }
+    return items;
+  }
+
+  const patients = RAW.map(function (p, i) {
+    const bedNum = parseInt(p.bed, 10);
+    const rnd = seeded(strHash(p.bed + p.name + "fee"));
+    const deposit = 3000 + Math.floor(rnd() * 15000);
+    const cost = Math.floor(rnd() * 26000);
+    const balance = deposit - cost;
+
+    return Object.assign({}, p, {
+      idx: i,
+      mrn: "ZY2026-10-" + String(140001 + i),
+      nurseName: NURSES[i % NURSES.length],
+      allergy: ALLERGY[i % ALLERGY.length],
+      ward: Math.ceil(bedNum / 3),
+      deposit: deposit,
+      balance: balance,
+      labs: genLabs(p),
+      orders: genOrders(p),
+      timeline: genTimeline(p)
+    });
+  });
+
+  const state = { filter: "all", keyword: "", sort: "bed" };
+
+  const filtersEl = document.getElementById("filters");
+  const contentEl = document.getElementById("content");
+  const searchEl  = document.getElementById("search");
+  const maskEl    = document.getElementById("mask");
+  const drawerEl  = document.getElementById("drawer");
+  const sortSel   = document.getElementById("sortBy");
+
+  function tick() {
+    const d = new Date();
+    const week = ["日","一","二","三","四","五","六"][d.getDay()];
+    document.getElementById("clockTime").textContent = pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+    document.getElementById("clockDate").textContent =
+      d.getFullYear() + "年" + (d.getMonth() + 1) + "月" + d.getDate() + "日 周" + week;
+  }
+  tick();
+  setInterval(tick, 10000);
+
+  function countBy(key) {
+    if (key === "all") return patients.length;
+    return patients.filter(p => p.status === key).length;
+  }
+
+  function renderFilters() {
+    filtersEl.innerHTML = FILTERS.map(function (f) {
+      const active = state.filter === f.key;
+      return '<button class="seg-item' + (active ? " active" : "") + '" data-key="' + f.key + '">' +
+               f.label + '<span class="cnt">' + countBy(f.key) + '</span>' +
+             '</button>';
+    }).join("");
+  }
+
+  function getVisible() {
+    const kw = state.keyword.trim().toLowerCase();
+    return patients.filter(function (p) {
+      if (state.filter !== "all" && p.status !== state.filter) return false;
+      if (kw) {
+        const hay = (p.bed + "床 " + p.name + " " + p.diag + " " + p.doctor + " " + p.mrn).toLowerCase();
+        if (hay.indexOf(kw) === -1) return false;
+      }
+      return true;
+    });
+  }
+
+  function groupByWard(list) {
+    const map = new Map();
+    list.forEach(function (p) {
+      if (!map.has(p.ward)) map.set(p.ward, []);
+      map.get(p.ward).push(p);
+    });
+    const sorters = {
+      bed:  (a, b) => a.bed.localeCompare(b.bed, "zh"),
+      day:  (a, b) => b.day - a.day,
+      name: (a, b) => a.name.localeCompare(b.name, "zh")
+    };
+    const sorter = sorters[state.sort] || sorters.bed;
+    return [...map.keys()].sort((a, b) => a - b).map(function (w) {
+      return { ward: w, list: map.get(w).slice().sort(sorter) };
+    });
+  }
+
+  function fmtMoney(n) {
+    return (n < 0 ? "-" : "") + Math.abs(n).toFixed(2) + "元";
+  }
+
+  function actionsHTML() {
+    return '<div class="actions">' +
+             ACT_DEFS.map(function (a) {
+               return '<button class="act-btn" data-act="' + a.key + '">' +
+                        ICONS[a.icon] + '<span>' + a.label + '</span>' +
+                      '</button>';
+             }).join("") +
+           '</div>';
+  }
+
+  function cardHTML(p) {
+    const st = STATUS[p.status];
+    const neg = p.balance < 0;
+
+    return '<article class="card" data-status="' + p.status + '" data-idx="' + p.idx + '" tabindex="0" role="button" aria-label="' + p.name + ' 患者详情">' +
+             '<div class="card-head">' +
+               '<span class="bed-badge"><i class="status-dot ' + p.status + '"></i>' + p.bed + ' 床</span>' +
+               '<div class="card-tags">' +
+                 (st ? '<span class="tag ' + st.cls + '">' + st.label + '</span>' : '') +
+                 (neg ? '<span class="tag tag-warning">余额预警</span>' : '') +
+               '</div>' +
+             '</div>' +
+             '<div class="card-person">' +
+               avatarHTML(p) +
+               '<div class="person-t">' +
+                 '<div class="person-name">' +
+                   '<span class="n">' + p.name + '</span>' +
+                   '<span class="d">' + p.sex + ' · ' + p.age + ' 岁</span>' +
+                 '</div>' +
+                 '<div class="person-diag" title="' + p.diag + '">[主]' + p.diag + '</div>' +
+               '</div>' +
+             '</div>' +
+             '<div class="card-meta">' +
+               '<div class="item"><span class="k">住院号</span><span class="v">' + p.mrn + '</span></div>' +
+               '<div class="item"><span class="k">主治医生</span><span class="v">' + p.doctor + '</span></div>' +
+               '<div class="item"><span class="k">护理级别</span><span class="v">' + p.level + '级护理</span></div>' +
+               '<div class="item"><span class="k">住院时长</span><span class="v">' + p.day + ' 天</span></div>' +
+               '<div class="item"><span class="k">余额</span><span class="v' + (neg ? " negative" : "") + '">' + fmtMoney(p.balance) + '</span></div>' +
+               '<div class="item"><span class="k">预交金</span><span class="v">' + fmtMoney(p.deposit) + '</span></div>' +
+             '</div>' +
+             actionsHTML() +
+           '</article>';
+  }
+
+  function render() {
+    renderFilters();
+    const list = getVisible();
+    const groups = groupByWard(list);
+
+    if (!groups.length) {
+      contentEl.innerHTML = '<div class="empty">未找到匹配的患者</div>';
+      return;
+    }
+
+    contentEl.innerHTML = groups.map(function (g) {
+      const bedStart = pad2((g.ward - 1) * 3 + 1);
+      const bedEnd = pad2(g.ward * 3);
+      return '<section class="ward">' +
+               '<div class="ward-head">' +
+                 '<div class="ward-title">' +
+                   '<span class="dot"></span>' +
+                   '<h3>' + g.ward + ' 病室</h3>' +
+                   '<span class="ward-sub">' + bedStart + '–' + bedEnd + ' 床</span>' +
+                 '</div>' +
+                 '<span class="ward-count">' + g.list.length + ' 位患者</span>' +
+               '</div>' +
+               '<div class="grid">' + g.list.map(cardHTML).join("") + '</div>' +
+             '</section>';
+    }).join("");
+  }
+
+  let toastTimer = null;
+  function toast(msg) {
+    let el = document.querySelector(".toast");
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "toast";
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    requestAnimationFrame(function () { el.classList.add("show"); });
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.remove("show"); }, 1800);
+  }
+
+  function labRow(lab) {
+    const isAbn = lab.flag !== "normal";
+    const arrow = lab.flag === "high" || lab.flag === "critical" ? "↑" : (lab.flag === "low" ? "↓" : "");
+    const cls = lab.flag === "critical" ? "critical" : isAbn ? (lab.flag === "high" ? "high" : "low") : "";
+    return '<tr>' +
+             '<td class="nm">' + lab.name + '<span style="color:#a1a1aa;font-size:10.5px;margin-left:5px">' + lab.abbr + '</span></td>' +
+             '<td class="vl ' + cls + '">' + lab.value.toFixed(lab.dec) + (arrow ? '<span style="font-size:11px;margin-left:2px">' + arrow + '</span>' : '') + '</td>' +
+             '<td class="rf">' + lab.lo + ' – ' + lab.hi + '</td>' +
+           '</tr>';
+  }
+
+  function buildDrawer(p) {
+    const st = STATUS[p.status];
+    const neg = p.balance < 0;
+
+    const ordersHTML = p.orders.map(function (o, i) {
+      return '<div class="order">' +
+               '<div class="idx">' + (i + 1) + '</div>' +
+               '<div class="bd">' +
+                 '<div class="tx">' + o.text + '</div>' +
+                 '<div class="mt">' +
+                   '<span class="badge ' + (o.type === "long" ? "long" : "temp") + '">' + o.typeLabel + '</span>' +
+                   '<span>' + o.time + '</span><span>' + o.doctor + '</span>' +
+                 '</div>' +
+               '</div>' +
+             '</div>';
+    }).join("");
+
+    const labsHTML = p.labs.map(labRow).join("");
+
+    const timelineHTML = p.timeline.map(function (item) {
+      return '<div class="tl-item' + (item.hot ? " hot" : "") + '">' +
+               '<div class="tl-time">' + item.t + '</div>' +
+               '<div class="tl-text">' + item.txt + '</div>' +
+             '</div>';
+    }).join("");
+
+    drawerEl.innerHTML =
+      '<div class="d-head">' +
+        '<div class="left">' +
+          '<span class="bed-badge"><i class="status-dot ' + p.status + '"></i>' + p.bed + ' 床</span>' +
+          (st ? '<span class="tag ' + st.cls + '">' + st.label + '</span>' : '') +
+          (neg ? '<span class="tag tag-warning">余额预警</span>' : '') +
+          '<span class="badge">' + p.ward + ' 病室</span>' +
+        '</div>' +
+        '<button class="d-close" id="dClose" aria-label="关闭">×</button>' +
+      '</div>' +
+
+      '<div class="d-id">' +
+        '<div class="person">' +
+          avatarHTML(p) +
+          '<div>' +
+            '<h2>' + p.name + '</h2>' +
+            '<div class="sub">' + p.sex + ' · ' + p.age + ' 岁 · 住院号 ' + p.mrn + ' · ' + p.level + ' 级护理</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="diag">入院诊断 <b>[主]' + p.diag + '</b></div>' +
+      '</div>' +
+
+      '<div class="d-tabs">' +
+        '<button class="d-tab active" data-tab="overview">概览</button>' +
+        '<button class="d-tab" data-tab="orders">医嘱</button>' +
+        '<button class="d-tab" data-tab="labs">检验</button>' +
+        '<button class="d-tab" data-tab="course">病程</button>' +
+      '</div>' +
+
+      '<div class="d-body">' +
+
+        '<div class="panel active" data-panel="overview">' +
+          '<section class="sec">' +
+            '<h4>住院信息</h4>' +
+            '<div class="kv">' +
+              '<div><span>住院号</span><b>' + p.mrn + '</b></div>' +
+              '<div><span>住院时长</span><b>' + p.day + ' 天</b></div>' +
+              '<div><span>护理级别</span><b>' + p.level + ' 级护理</b></div>' +
+              '<div><span>过敏史</span><b>' + p.allergy + '</b></div>' +
+            '</div>' +
+          '</section>' +
+          '<section class="sec">' +
+            '<h4>费用信息</h4>' +
+            '<div class="kv">' +
+              '<div><span>预交金</span><b>' + fmtMoney(p.deposit) + '</b></div>' +
+              '<div><span>余额</span><b class="' + (neg ? "negative" : "") + '">' + fmtMoney(p.balance) + '</b></div>' +
+            '</div>' +
+          '</section>' +
+          '<section class="sec">' +
+            '<h4>医护团队</h4>' +
+            '<div class="kv">' +
+              '<div><span>主治医生</span><b>' + p.doctor + '</b></div>' +
+              '<div><span>责任护士</span><b>' + p.nurseName + '</b></div>' +
+            '</div>' +
+          '</section>' +
+          '<section class="sec">' +
+            '<h4>今日关注</h4>' +
+            '<div class="focus">' + (FOCUS[p.status] || FOCUS.normal) + '</div>' +
+          '</section>' +
+          '<section class="sec">' +
+            '<h4>快捷操作</h4>' +
+            actionsHTML() +
+          '</section>' +
+        '</div>' +
+
+        '<div class="panel" data-panel="orders">' +
+          '<section class="sec">' +
+            '<h4>当前医嘱 · ' + p.orders.length + ' 条</h4>' +
+            ordersHTML +
+          '</section>' +
+        '</div>' +
+
+        '<div class="panel" data-panel="labs">' +
+          '<section class="sec">' +
+            '<h4>最近检验结果</h4>' +
+            '<table class="lab-table">' +
+              '<thead><tr><th>项目</th><th>结果</th><th>参考范围</th></tr></thead>' +
+              '<tbody>' + labsHTML + '</tbody>' +
+            '</table>' +
+          '</section>' +
+        '</div>' +
+
+        '<div class="panel" data-panel="course">' +
+          '<section class="sec">' +
+            '<h4>近期记录</h4>' +
+            '<div class="tl">' + timelineHTML + '</div>' +
+          '</section>' +
+        '</div>' +
+
+      '</div>';
+  }
+
+  function openDrawer(p) {
+    buildDrawer(p);
+    drawerEl.classList.add("open");
+    maskEl.classList.add("open");
+  }
+  function closeDrawer() {
+    drawerEl.classList.remove("open");
+    maskEl.classList.remove("open");
+  }
+
+  function actName(key) {
+    const def = ACT_DEFS.find(a => a.key === key);
+    return def ? def.label : key;
+  }
+
+  filtersEl.addEventListener("click", function (e) {
+    const chip = e.target.closest(".seg-item");
+    if (!chip) return;
+    state.filter = chip.dataset.key;
+    render();
+  });
+
+  searchEl.addEventListener("input", function () {
+    state.keyword = this.value;
+    render();
+  });
+
+  sortSel.addEventListener("change", function () {
+    state.sort = this.value;
+    render();
+  });
+
+  contentEl.addEventListener("click", function (e) {
+    const btn = e.target.closest(".act-btn");
+    if (btn) {
+      e.stopPropagation();
+      const card = btn.closest(".card");
+      const p = patients[Number(card.dataset.idx)];
+      toast(p.name + " · " + actName(btn.dataset.act) + "（演示）");
+      return;
+    }
+    const card = e.target.closest(".card");
+    if (card) openDrawer(patients[Number(card.dataset.idx)]);
+  });
+
+  contentEl.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    if (e.target.closest(".act-btn")) return;
+    const card = e.target.closest(".card");
+    if (card) {
+      e.preventDefault();
+      openDrawer(patients[Number(card.dataset.idx)]);
+    }
+  });
+
+  drawerEl.addEventListener("click", function (e) {
+    if (e.target.closest("#dClose")) { closeDrawer(); return; }
+    const btn = e.target.closest(".act-btn");
+    if (btn) {
+      const name = drawerEl.querySelector(".d-id h2").textContent;
+      toast(name + " · " + actName(btn.dataset.act) + "（演示）");
+      return;
+    }
+    const tab = e.target.closest(".d-tab");
+    if (!tab) return;
+    const key = tab.dataset.tab;
+    drawerEl.querySelectorAll(".d-tab").forEach(function (t) {
+      t.classList.toggle("active", t === tab);
+    });
+    drawerEl.querySelectorAll(".panel").forEach(function (pnl) {
+      pnl.classList.toggle("active", pnl.dataset.panel === key);
+    });
+  });
+
+  maskEl.addEventListener("click", closeDrawer);
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") closeDrawer();
+    if (e.key === "/" && document.activeElement !== searchEl) {
+      e.preventDefault();
+      searchEl.focus();
+    }
+  });
+
+  document.getElementById("fullscreenBtn").addEventListener("click", function () {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(function () {});
+    } else {
+      document.exitFullscreen();
+    }
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

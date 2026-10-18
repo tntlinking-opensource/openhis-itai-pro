@@ -1,0 +1,1287 @@
+{
+  "code": "IP_WORD_748",
+  "name": "营养风险筛查表NRS-2002评估表",
+  "category": "病程记录",
+  "sourceTemplateId": "748",
+  "typeCode": "INPATIENT_病程记录",
+  "summary": "Word原样迁移v1 · 段1/表2 · 元4/日0/勾21/单0 · 约2页",
+  "estimatedPages": 2,
+  "structure": {
+    "paraCount": 1,
+    "tableCount": 2,
+    "meta": 4,
+    "date": 0,
+    "plainFill": 0,
+    "fill": 4,
+    "checkbox": 21,
+    "radio": 0
+  },
+  "data": {
+    "header": [
+      {
+        "id": "emrHospitalTitle",
+        "value": "医院名称",
+        "font": "SimHei",
+        "size": 29,
+        "bold": true,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center",
+        "rowMargin": 1
+      },
+      {
+        "id": "emrDocumentTitle",
+        "value": "营养风险筛查表NRS-2002评估表",
+        "font": "SimSun",
+        "size": 21,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "type": "separator",
+        "value": "",
+        "lineWidth": 1.15
+      }
+    ],
+    "main": [
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_022",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 99
+          },
+          {
+            "width": 99
+          },
+          {
+            "width": 99
+          },
+          {
+            "width": 99
+          },
+          {
+            "width": 99
+          },
+          {
+            "width": 99
+          },
+          {
+            "width": 104
+          }
+        ],
+        "tableToolDisabled": true,
+        "rowFlex": "left",
+        "trList": [
+          {
+            "height": 48,
+            "minHeight": 48,
+            "tdList": [
+              {
+                "colspan": 7,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "南关国基医院",
+                    "rowFlex": "center"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "营养风险筛查表NRS-2002评估表",
+                    "rowFlex": "center"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "姓名：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "患者姓名",
+                      "conceptId": "patientName",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "性别：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "性别",
+                      "conceptId": "gender",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "年龄",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "身高： cm",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "现体重： kg",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "BMI：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "蛋白： g/L",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "疾病诊断：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 3,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "center"
+                  }
+                ]
+              },
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "科室：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "科室",
+                      "conceptId": "deptName",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 2,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "住院号：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "text",
+                      "value": null,
+                      "placeholder": "住院号",
+                      "conceptId": "inpatientNo",
+                      "prefix": "[",
+                      "postfix": "]",
+                      "highlight": "#eff6ff",
+                      "underline": false,
+                      "border": false,
+                      "disabled": true
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 3,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "住院日期",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 2,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "手术日期",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 2,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "测评日期",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 48,
+            "minHeight": 48,
+            "tdList": [
+              {
+                "colspan": 7,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "NRS2002营养风险筛查总评分（疾病有关评分+营养状态评分+年龄评分）：　　　　　　　　　　分",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 48,
+            "minHeight": 48,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "疾病评分：",
+                    "bold": true,
+                    "rowFlex": "center"
+                  }
+                ]
+              },
+              {
+                "colspan": 6,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "评分1分：髋骨折",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_001",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "慢性疾病急性发作或有并发症者",
+                          "code": "chk_001"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_002",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "COPD",
+                          "code": "chk_002"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_003",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "血液透析",
+                          "code": "chk_003"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_004",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "肝硬化",
+                          "code": "chk_004"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_005",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "选项",
+                          "code": "chk_005"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 6,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "一般恶性肿瘤患者",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_006",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "糖尿病",
+                          "code": "chk_006"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_007",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "选项",
+                          "code": "chk_007"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 6,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "评分2分：腹部大手术",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_008",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "脑卒中",
+                          "code": "chk_008"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_009",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "重度肺炎",
+                          "code": "chk_009"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_010",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "血液恶性肿瘤",
+                          "code": "chk_010"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_011",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "选项",
+                          "code": "chk_011"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 6,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "评分3分：颅脑损伤",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_012",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "骨髓移植",
+                          "code": "chk_012"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_013",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "大于APACHE10分的ICU患者",
+                          "code": "chk_013"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_014",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "选项",
+                          "code": "chk_014"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 7,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "小结：疾病有关评分",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 72,
+            "minHeight": 72,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "营养状态：",
+                    "bold": true,
+                    "rowFlex": "center"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "center"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "",
+                    "rowFlex": "center"
+                  }
+                ]
+              },
+              {
+                "colspan": 6,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "1.BMI（kg/㎡）",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_015",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "小于18.5（3分）注：因严重胸腹水、水肿得不到准确BMI值时，无严重肝肾功能异常者，用白蛋白替代（按ESPEN2006） （g/L）（<30g/L，3分）",
+                          "code": "chk_015"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 48,
+            "minHeight": 48,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 6,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "2.体重下降>5%是在",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_016",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "3个月内（1分）",
+                          "code": "chk_016"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_017",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "2个月内（2分）",
+                          "code": "chk_017"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_018",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "1个月内（3分）",
+                          "code": "chk_018"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 48,
+            "minHeight": 48,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "value": "",
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 6,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "3.一周内进食量：较从前减少 ",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_019",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "25%-50%（1分）",
+                          "code": "chk_019"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_020",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "51%-75%（2分）",
+                          "code": "chk_020"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  },
+                  {
+                    "type": "control",
+                    "value": "",
+                    "control": {
+                      "type": "checkbox",
+                      "value": null,
+                      "code": null,
+                      "conceptId": "chk_021",
+                      "flexDirection": "row",
+                      "prefix": "",
+                      "postfix": "",
+                      "valueSets": [
+                        {
+                          "value": "76%-100%（3分）",
+                          "code": "chk_021"
+                        }
+                      ]
+                    },
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 7,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "小结：营养状态评分",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "年龄评分：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  }
+                ]
+              },
+              {
+                "colspan": 6,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "年龄≧70岁（1分）",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "　　　　　　　　　　　　",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "年龄<70岁（0分）",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 42,
+            "minHeight": 42,
+            "tdList": [
+              {
+                "colspan": 7,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "小结：年龄评分",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "height": 144,
+            "minHeight": 144,
+            "tdList": [
+              {
+                "colspan": 7,
+                "rowspan": 1,
+                "verticalAlign": "middle",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "对于表中没有明确列出诊断的疾病参考以下标准，依照调查者的理解进行评分。",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "1分：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "慢性疾病患者因出现并发症而住院治疗，病人虚弱但不需卧床。蛋白质需要量略有增加，但可通过口服补充来弥补。",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "2分：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "患者需要卧床，如腹部大手术后。蛋白质需要量相应增加，但大多数人仍可以通过肠外或肠内营养支持得到恢复。",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "3分：",
+                    "bold": true,
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "患者在加强病房中靠机械通气支持。蛋白质需要量增加而且不能被肠外或肠内营养支持所弥补。但是通过肠外或肠内营养支持可使蛋白质分解和氮丢失明显减少。",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "type": "table",
+        "value": "",
+        "id": "tbl_023",
+        "width": 698,
+        "colgroup": [
+          {
+            "width": 698
+          }
+        ],
+        "tableToolDisabled": true,
+        "rowFlex": "left",
+        "trList": [
+          {
+            "height": 144,
+            "minHeight": 144,
+            "tdList": [
+              {
+                "colspan": 1,
+                "rowspan": 1,
+                "verticalAlign": "top",
+                "value": [
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "1.总分值≧3分：（或胸水、腹水、水肿且血清蛋白<35g/L者）患者处于营养不良或营养风险，需要营养支持，结合临床，制定营养治疗计划。",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "2.总分值<3分：每周复查营养风险筛查。以后复查的结果如果≧3分，即进入营养支持程序。",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "value": "\n",
+                    "rowFlex": "left"
+                  },
+                  {
+                    "font": "SimSun",
+                    "size": 16,
+                    "value": "3.如患者计划进行腹部大手术，就在首次评定时按照新的分值（2分）评分，并最终按新总评分决定是否需要营养支持（≧3分）。",
+                    "rowFlex": "left"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "医师签名：",
+        "bold": true,
+        "rowFlex": "center"
+      }
+    ],
+    "footer": []
+  }
+}

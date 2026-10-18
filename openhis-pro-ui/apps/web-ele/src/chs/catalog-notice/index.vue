@@ -19,7 +19,7 @@ import type {
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import {
   ElAlert,
@@ -253,8 +253,19 @@ function scanStatusLabel(status?: string) {
   return status || '—';
 }
 
+/**
+ * 文件头是否具备可排序业务日（通知日或生效日）。
+ */
+function hasNoticeBusinessDate(row: NoticeDocRow) {
+  return Boolean(row.noticeDate || row.effectiveDate);
+}
+
+/**
+ * 未应用/部分应用且具备业务日的文件才允许点应用。
+ */
 function canApplyDocRow(row: NoticeDocRow) {
   if (row.id == null) return false;
+  if (!hasNoticeBusinessDate(row)) return false;
   const status = row.applyStatus || 'NOT_APPLIED';
   return status === 'NOT_APPLIED' || status === 'PARTIAL' || status === 'APPLYING';
 }
@@ -813,6 +824,10 @@ function resolveNoticeUiError(error: unknown, fallback: string): string {
 
 async function handleApplyDoc(row: NoticeDocRow) {
   if (row.id == null) return;
+  if (!hasNoticeBusinessDate(row)) {
+    ElMessage.warning('通知日与生效日均为空，禁止应用。请补洗数日期后重新入库。');
+    return;
+  }
   try {
     await ElMessageBox.confirm(
       `确认应用文件「${row.title || row.id}」？将分批写入 overlay / 回写 / 未收费同步。中断后可对「部分应用」续跑。`,
@@ -1161,7 +1176,7 @@ onMounted(() => {
       :title="
         scanResult?.scanRoot
           ? `扫描根：${scanResult.scanRoot}`
-          : '请配置 openhis.chs.notice.canonical-root 后在「扫描入库」中重新扫描'
+          : '请配置 zxplat.chs.notice.canonical-root 后在「扫描入库」中重新扫描'
       "
     />
 
@@ -1277,6 +1292,7 @@ onMounted(() => {
                 </template>
               </ElTableColumn>
               <ElTableColumn prop="noticeDate" label="通知日" width="110" />
+              <ElTableColumn prop="effectiveDate" label="生效日" width="110" />
               <ElTableColumn prop="lineCount" label="行数" width="70" />
               <ElTableColumn label="动作" min-width="160" show-overflow-tooltip>
                 <template #default="{ row }">
@@ -1766,6 +1782,8 @@ onMounted(() => {
       <div v-loading="previewLoading" class="flex flex-col gap-3">
         <div class="flex flex-wrap gap-4 text-sm">
           <span>Overlay 变更：{{ previewResult?.overlayUpsertCount ?? 0 }}</span>
+          <span>待映射：{{ previewResult?.pendingMapCount ?? 0 }}</span>
+          <span>跳过：{{ previewResult?.skippedCount ?? 0 }}</span>
           <span>回写：{{ previewResult?.writebackCount ?? 0 }}</span>
           <span>未收费同步：{{ previewResult?.unchargedSyncCount ?? 0 }}</span>
         </div>

@@ -90,6 +90,19 @@ export interface ExecuteInpatientDischargeResponse {
   succeeded?: boolean;
 }
 
+/** 取消办理出院 */
+export interface CancelInpatientNurseDischargeRequest {
+  encounterId: string;
+}
+
+/** 取消办理出院响应 */
+export interface CancelInpatientNurseDischargeResponse {
+  encounterId?: string;
+  /** 取消后状态：ON_HOLD=待出院；IN_PROGRESS=已入科 */
+  restoredStatusEnum?: string;
+  succeeded?: boolean;
+}
+
 /** 清床离院 */
 export interface ClearDischargedBedRequest {
   encounterId: string;

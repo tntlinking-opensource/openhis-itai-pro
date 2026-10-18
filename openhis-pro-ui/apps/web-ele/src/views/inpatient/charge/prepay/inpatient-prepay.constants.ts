@@ -1,4 +1,4 @@
-/** 可办理预交金收退的就诊状态；队列另可读 COMPLETED/DISCHARGED，写仍仅下列四态 */
+/** 可办理预交金收退的就诊状态；队列另可读 COMPLETED/DISCHARGED/CANCELLED，写仍仅下列四态 */
 export const PREPAY_ALLOWED_ENCOUNTER_STATUSES = [
   'REGISTERED',
   'IN_PROGRESS',
@@ -10,7 +10,7 @@ export const PREPAY_ALLOWED_ENCOUNTER_STATUSES = [
 export const PREPAY_STAY_SCOPE = {
   ALL: 'ALL',
   IN_HOSPITAL: 'IN_HOSPITAL',
-  /** COMPLETED 待清床 + DISCHARGED 已离院 */
+  /** COMPLETED/DISCHARGED/CANCELLED；后端另要求存在预交金流水才入队 */
   NOT_IN_HOSPITAL: 'NOT_IN_HOSPITAL',
 } as const;
 

@@ -1,7 +1,7 @@
 import { reactive, watch } from 'vue';
 
-import { preferences, usePreferences } from '@vben/preferences';
-import { convertToRgb } from '@vben/utils';
+import { preferences, usePreferences } from '@zxplat/preferences';
+import { convertToRgb } from '@zxplat/utils';
 
 /**
  * 用于适配各个框架的设计系统

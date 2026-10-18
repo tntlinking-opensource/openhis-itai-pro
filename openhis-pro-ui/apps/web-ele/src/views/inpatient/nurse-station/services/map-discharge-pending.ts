@@ -7,7 +7,7 @@ import type {
   NurseStationOrderExecuteWriteSlotDto,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-order-execute.types';
 
-import { formatDateTime } from '@vben/utils';
+import { formatDateTime } from '@zxplat/utils';
 
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 

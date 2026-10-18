@@ -3,7 +3,7 @@ import type { PatientTraceAssignmentQueueRowDto } from '#/api/inpatient/nurse-st
 
 import { nextTick, ref, watch } from 'vue';
 
-import { Search } from '@vben/icons';
+import { Search } from '@zxplat/icons';
 
 import { ElButton, ElInput, ElRadio, ElRadioGroup, ElTable, ElTableColumn } from 'element-plus';
 

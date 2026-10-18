@@ -6,7 +6,7 @@ import type { EmrTemplateStationKind } from '#/views/basic/emr-template/emr-temp
 
 import { computed, nextTick, ref, watch } from 'vue';
 
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 import { Document, Folder, FolderOpened } from '@element-plus/icons-vue';
 import {

@@ -1,8 +1,8 @@
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 import { useAuthStore } from '#/store';
 
-const STORAGE_PREFIX = 'openhis:pharmacy:op-dispense-auto-review';
+const STORAGE_PREFIX = 'zxplat:pharmacy:op-dispense-auto-review';
 const ENABLED_VALUE = '1';
 
 /** 当前登录上下文下的 localStorage 键 */

@@ -4,7 +4,7 @@ import type { CallToSeeResponse, QueueListItemDto } from '#/api/booking/queue-bo
 import { onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import { ElButton, ElCard, ElEmpty, ElInput, ElMessage, ElOption, ElSelect } from 'element-plus';
 

@@ -1,6 +1,6 @@
 import type { Router } from 'vue-router';
 
-import { useAccessStore } from '@vben/stores';
+import { useAccessStore } from '@zxplat/stores';
 
 import { getMenuTreeByLoginUserApi } from '#/api/core/system/menu';
 import { bootstrapImpersonationMeta } from '#/composables/use-impersonation';

@@ -1,6 +1,6 @@
 import { createRouter, createWebHashHistory, createWebHistory } from 'vue-router';
 
-import { resetStaticRoutes, stopProgress } from '@vben/utils';
+import { resetStaticRoutes, stopProgress } from '@zxplat/utils';
 
 import { createRouterGuard } from './guard';
 import { routes } from './routes';

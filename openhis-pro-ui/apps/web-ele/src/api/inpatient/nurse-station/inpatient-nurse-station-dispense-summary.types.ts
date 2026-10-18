@@ -12,6 +12,12 @@ export interface PagePendingDispenseSummaryLinesRequest extends PageParams {
   medicineCategoryTab: NurseStationDispenseSummaryMedicineCategoryTab;
   therapyFilter: NurseStationDispenseSummaryTherapyFilter;
   queryDeadline?: string;
+  /**
+   * 麻醉申请范围（与后端 BR-IP-SUM-018 对齐）：
+   * true=仅麻醉申请药品（申请单号 AA 前缀）；false/不传=排除麻醉申请药品。
+   * 无类目 25 / 同单号池兼容。
+   */
+  anesthesiaApplyOnly?: boolean;
 }
 
 /** 待汇总明细 · 可勾选时间点 */
@@ -82,8 +88,12 @@ export interface NurseStationDispenseSummarySlipHeaderDto {
   dispenseTime?: string;
   purposeLocationId?: string;
   purposeLocationName?: string;
+  /** 申领科室（点汇总/发送的人的登录科室） */
+  requestingDepartmentName?: string;
   applicantId?: string;
   applicantName?: string;
+  /** 申领科室（病区所属科室） */
+  applicantDepartmentName?: string;
   receiverId?: string;
   receiverName?: string;
   supplyStatusEnum?: string;
@@ -205,4 +215,49 @@ export interface CancelMedicationSummaryRequest {
 export interface CancelMedicationSummaryResponse {
   summaryNos?: string[];
   message?: string;
+}
+
+/** 按患者查询取消执行退药清单（IF-IP-SUM-10） */
+export interface ListCancelExecuteReturnMedicineLinesRequest {
+  encounterIds: string[];
+  medicineCategoryTab: NurseStationDispenseSummaryMedicineCategoryTab;
+}
+
+/** 取消执行退药明细行 */
+export interface NurseStationCancelExecuteReturnLineDto {
+  dispenseId?: string;
+  medReqId?: string;
+  medicationId?: string;
+  medicationName?: string;
+  specificationText?: string;
+  quantity?: number | string;
+  unitCode?: string;
+  unitCodeText?: string;
+  refundStatusEnum?: string;
+  refundStatusEnumText?: string;
+  locationId?: string;
+  locationName?: string;
+  procedureId?: string;
+  /** 取消执行人 / 退药人主键 */
+  cancelOperatorId?: string;
+  /** 取消执行人 / 退药人姓名 */
+  cancelOperatorName?: string;
+  /** 取消执行时间点时刻（occurrence_time） */
+  cancelOccurrenceTime?: string;
+  /** 退药总价（原执行账单绝对值） */
+  totalPrice?: number | string;
+}
+
+/** 取消执行退药 · 按就诊（单患者）分组 */
+export interface NurseStationCancelExecuteReturnPatientGroupDto {
+  encounterId?: string;
+  patientId?: string;
+  patientName?: string;
+  bedDisplay?: string;
+  returnLines?: NurseStationCancelExecuteReturnLineDto[];
+}
+
+/** 取消执行退药清单响应 */
+export interface ListCancelExecuteReturnMedicineLinesResponse {
+  patientGroups?: NurseStationCancelExecuteReturnPatientGroupDto[];
 }

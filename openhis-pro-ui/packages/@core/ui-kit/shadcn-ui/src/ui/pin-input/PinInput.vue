@@ -3,7 +3,7 @@ import type { PinInputRootEmits, PinInputRootProps } from 'reka-ui';
 
 import { computed } from 'vue';
 
-import { cn } from '@vben-core/shared/utils';
+import { cn } from '@zxplat-core/shared/utils';
 
 import { PinInputRoot, useForwardPropsEmits } from 'reka-ui';
 

@@ -16,7 +16,7 @@ import type { BillingPatientCardPatient } from '#/components/charge/billing-pati
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
-import { RotateCw } from '@vben/icons';
+import { RotateCw } from '@zxplat/icons';
 
 import { useDebounceFn } from '@vueuse/core';
 import dayjs from 'dayjs';

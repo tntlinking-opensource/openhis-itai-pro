@@ -1,11 +1,11 @@
 <script lang="ts" setup>
-import type { ThemeModeType } from '@vben/types';
+import type { ThemeModeType } from '@zxplat/types';
 
-import { MoonStar, Sun, SunMoon } from '@vben/icons';
-import { $t } from '@vben/locales';
-import { preferences, updatePreferences, usePreferences } from '@vben/preferences';
+import { MoonStar, Sun, SunMoon } from '@zxplat/icons';
+import { $t } from '@zxplat/locales';
+import { preferences, updatePreferences, usePreferences } from '@zxplat/preferences';
 
-import { ToggleGroup, ToggleGroupItem, VbenTooltip } from '@vben-core/shadcn-ui';
+import { ToggleGroup, ToggleGroupItem, VbenTooltip } from '@zxplat-core/shadcn-ui';
 
 import ThemeButton from './theme-button.vue';
 

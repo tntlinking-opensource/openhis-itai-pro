@@ -1,8 +1,0 @@
-OpenHIS Frontend (openhis-pro-ui)
-Copyright 2026 OpenHIS Contributors
-
-Licensed under the GNU Lesser General Public License v3.0 or later (LGPL-3.0-or-later).
-See LICENSE in the repository root.
-
-Third-party components and their licenses are documented in package.json
-files and lockfile dependency reports where applicable.

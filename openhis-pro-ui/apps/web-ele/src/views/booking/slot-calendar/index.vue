@@ -3,7 +3,7 @@ import type { SlotDetailDto, SlotListItemDto } from '#/api/booking/slot-manage';
 
 import { computed, reactive, ref, watch } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import {
   bookingOptionValue,

@@ -19,11 +19,17 @@ import { buildInpatientOralMedSheetPrintData } from './inpatient-oral-med-sheet'
 import { buildInpatientPatrolCardPrintData } from './inpatient-patrol-card';
 import { buildInpatientTempOrderPrintData } from './inpatient-temp-order';
 import { buildInpatientBedCardPrintData } from './inpatient-bed-card';
+import { buildInpatientAdmissionCertificatePrintData } from './inpatient-admission-certificate';
+import { buildInpatientInsuranceSettlementPrintData } from './inpatient-insurance-settlement';
+import { buildInpatientReturnMedicinePrintData } from './inpatient-return-medicine';
 import { buildInpatientPrepayReceiptPrintData } from './inpatient-prepay-receipt';
+import { buildInpatientPrepayChangePrintData } from './inpatient-prepay-change';
 import { buildInpatientWristbandPrintData } from './inpatient-wristband';
 import { buildInvMovementPrintData } from './inv-movement';
 import { buildInvReturnPrintData } from './inv-return';
 import { buildInvStocktakePrintData } from './inv-stocktake';
+import { buildOutpatientChargeFeeListPrintData } from './outpatient-charge-fee-list';
+import { buildOutpatientChargeInvoicePrintData } from './outpatient-charge-invoice';
 import { buildOutpatientChargeReceiptPrintData } from './outpatient-charge-receipt';
 import { buildOutpatientDailySettlementPrintData } from './outpatient-daily-settlement';
 import { buildOutpatientInfusionLabelPrintData } from './outpatient-infusion-label';
@@ -41,9 +47,13 @@ import { buildTestPrintData } from './test-print';
 registerPrintMapper(PRINT_SCENARIO.outpatientRx, buildOutpatientPrescriptionPrintData);
 registerPrintMapper(PRINT_SCENARIO.outpatientTcmRx, buildOutpatientTcmPrescriptionPrintData);
 registerPrintMapper(PRINT_SCENARIO.examinationPrint, buildExaminationPrintData);
+registerPrintMapper(PRINT_SCENARIO.examinationPrintA5, buildExaminationPrintData);
 registerPrintMapper(PRINT_SCENARIO.testPrint, buildTestPrintData);
+registerPrintMapper(PRINT_SCENARIO.testPrintA5, buildTestPrintData);
 registerPrintMapper(PRINT_SCENARIO.opRegPrint, buildOutpatientRegisterReceiptPrintData);
 registerPrintMapper(PRINT_SCENARIO.chargeReceipt, buildOutpatientChargeReceiptPrintData);
+registerPrintMapper(PRINT_SCENARIO.chargeInvoice, buildOutpatientChargeInvoicePrintData);
+registerPrintMapper(PRINT_SCENARIO.opFeeListPrint, buildOutpatientChargeFeeListPrintData);
 registerPrintMapper(PRINT_SCENARIO.opTreatmentPrint, buildOutpatientTreatmentSheetPrintData);
 registerPrintMapper(PRINT_SCENARIO.opInfusionLabelPrint, buildOutpatientInfusionLabelPrintData);
 registerPrintMapper(PRINT_SCENARIO.ipInfusionLabelPrint, buildOutpatientInfusionLabelPrintData);
@@ -76,6 +86,19 @@ registerPrintMapper(PRINT_SCENARIO.ipPatrolCardPrint, buildInpatientPatrolCardPr
 registerPrintMapper(PRINT_SCENARIO.ipWristbandPrint, buildInpatientWristbandPrintData);
 registerPrintMapper(PRINT_SCENARIO.ipBedCardPrint, buildInpatientBedCardPrintData);
 registerPrintMapper(PRINT_SCENARIO.ipPrepayReceiptPrint, buildInpatientPrepayReceiptPrintData);
+registerPrintMapper(PRINT_SCENARIO.ipPrepayChangePrint, buildInpatientPrepayChangePrintData);
+registerPrintMapper(
+  PRINT_SCENARIO.ipAdmissionCertificatePrint,
+  buildInpatientAdmissionCertificatePrintData,
+);
+registerPrintMapper(
+  PRINT_SCENARIO.ipInsuranceSettlementPrint,
+  buildInpatientInsuranceSettlementPrintData,
+);
+registerPrintMapper(
+  PRINT_SCENARIO.ipReturnMedicinePrint,
+  buildInpatientReturnMedicinePrintData,
+);
 registerPrintMapper(PRINT_SCENARIO.ipOralMedLabelPrint, buildInpatientOralMedLabelPrintData);
 registerPrintMapper(PRINT_SCENARIO.ipExamApplyPrint, buildInpatientExamApplyPrintData);
 registerPrintMapper(PRINT_SCENARIO.ipLabApplyPrint, buildInpatientLabApplyPrintData);
@@ -189,10 +212,37 @@ export type {
 export { buildInpatientBedCardPrintData } from './inpatient-bed-card';
 export type { InpatientBedCardPrintData, InpatientBedCardPrintSource } from './inpatient-bed-card';
 export { buildInpatientPrepayReceiptPrintData } from './inpatient-prepay-receipt';
+export { buildInpatientPrepayChangePrintData } from './inpatient-prepay-change';
+export type {
+  InpatientPrepayChangeKind,
+  InpatientPrepayChangePrintData,
+  InpatientPrepayChangePrintSource,
+} from './inpatient-prepay-change';
 export type {
   InpatientPrepayReceiptPrintData,
   InpatientPrepayReceiptPrintSource,
 } from './inpatient-prepay-receipt';
+export {
+  buildInpatientAdmissionCertificatePrintData,
+  formatAdmissionCertificatePrepayAmount,
+  resolveAdmissionCertificateDiagnosisText,
+  resolveAdmissionCertificateGenderText,
+} from './inpatient-admission-certificate';
+export type {
+  InpatientAdmissionCertificatePrintData,
+  InpatientAdmissionCertificatePrintSource,
+} from './inpatient-admission-certificate';
+export { buildInpatientInsuranceSettlementPrintData } from './inpatient-insurance-settlement';
+export type {
+  InpatientInsuranceSettlementPrintData,
+  InpatientInsuranceSettlementPrintSource,
+} from './inpatient-insurance-settlement';
+export { buildInpatientReturnMedicinePrintData } from './inpatient-return-medicine';
+export type {
+  InpatientReturnMedicineDrugRow,
+  InpatientReturnMedicinePrintData,
+  InpatientReturnMedicinePrintSource,
+} from './inpatient-return-medicine';
 export {
   formatAmountInChineseWords,
   resolvePrepayReceiptChannelBucket,
@@ -217,6 +267,12 @@ export type {
   InvStocktakePrintLineRow,
   InvStocktakePrintSource,
 } from './inv-stocktake';
+export { buildOutpatientChargeFeeListPrintData } from './outpatient-charge-fee-list';
+export type {
+  ChargeFeeListPrintSource,
+  OutpatientChargeFeeListPrintData,
+  OutpatientChargeFeeListRow,
+} from './outpatient-charge-fee-list';
 export { buildOutpatientChargeReceiptPrintData } from './outpatient-charge-receipt';
 export type {
   ChargeReceiptSlipPrintSource,
@@ -237,6 +293,7 @@ export {
   isInfusionMedicationLine,
   resolveInfusionLabelPrintDayCount,
   resolveInfusionLabelPrintTimesPerDay,
+  truncateInfusionLabelSpecText,
 } from './outpatient-infusion-label';
 export type {
   InfusionLabelPrintGroup,

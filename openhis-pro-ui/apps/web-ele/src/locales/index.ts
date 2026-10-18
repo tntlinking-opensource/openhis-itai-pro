@@ -2,11 +2,11 @@ import type { Language } from 'element-plus/es/locale';
 
 import type { App } from 'vue';
 
-import type { LocaleSetupOptions, SupportedLanguagesType } from '@vben/locales';
+import type { LocaleSetupOptions, SupportedLanguagesType } from '@zxplat/locales';
 
 import { ref } from 'vue';
 
-import { $t, setupI18n as coreSetup, loadLocalesMapFromDir } from '@vben/locales';
+import { $t, setupI18n as coreSetup, loadLocalesMapFromDir } from '@zxplat/locales';
 
 import dayjs from 'dayjs';
 import enLocale from 'element-plus/es/locale/lang/en';
@@ -88,7 +88,7 @@ async function loadElementLocale(lang: SupportedLanguagesType) {
 async function setupI18n(app: App, options: LocaleSetupOptions = {}) {
   let defaultLocale = BOOTSTRAP_DEFAULT_LOCALE;
   try {
-    const { preferences } = await import('@vben/preferences/es/preferences-manager');
+    const { preferences } = await import('@zxplat/preferences/es/preferences-manager');
     defaultLocale = preferences.app.locale;
   } catch {
     // 偏好设置尚未就绪时使用内置默认语言

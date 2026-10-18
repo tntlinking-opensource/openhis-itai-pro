@@ -7,6 +7,8 @@ import type {
   GetMedicationSummarySlipDetailResponse,
   GetMedicationSummarySlipPatientDetailRequest,
   GetMedicationSummarySlipPatientDetailResponse,
+  ListCancelExecuteReturnMedicineLinesRequest,
+  ListCancelExecuteReturnMedicineLinesResponse,
   PageMedicationSummarySlipHeadersRequest,
   PageMedicationSummarySlipHeadersResponse,
   PagePendingDispenseSummaryLinesRequest,
@@ -86,6 +88,16 @@ export async function httpCancelMedicationSummary(
 ): Promise<CancelMedicationSummaryResponse> {
   return publicRequestClient.post<CancelMedicationSummaryResponse>(
     `${BASE}/cancelMedicationSummary`,
+    body,
+  );
+}
+
+/** 按患者查询取消执行产生的退药清单（只读） */
+export async function httpListCancelExecuteReturnMedicineLines(
+  body: ListCancelExecuteReturnMedicineLinesRequest,
+): Promise<ListCancelExecuteReturnMedicineLinesResponse> {
+  return publicRequestClient.post<ListCancelExecuteReturnMedicineLinesResponse>(
+    `${BASE}/listCancelExecuteReturnMedicineLines`,
     body,
   );
 }

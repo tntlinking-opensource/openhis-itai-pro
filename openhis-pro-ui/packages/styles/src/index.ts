@@ -1,1 +1,1 @@
-import '@vben-core/design';
+import '@zxplat-core/design';

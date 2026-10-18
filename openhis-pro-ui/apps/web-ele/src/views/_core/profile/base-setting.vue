@@ -3,8 +3,8 @@ import type { VbenFormSchema } from '#/adapter/form';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
-import { ProfileBaseSetting } from '@vben/common-ui';
-import { useUserStore } from '@vben/stores';
+import { ProfileBaseSetting } from '@zxplat/common-ui';
+import { useUserStore } from '@zxplat/stores';
 
 import { getUserRolesApi } from '#/api/user/user';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';

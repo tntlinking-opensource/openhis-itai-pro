@@ -2,7 +2,7 @@
   科室退库单右侧主区。
 -->
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { VxeGridProps, VxeGridPropTypes } from '#/adapter/vxe-table';
 import type { FormInstance } from 'element-plus';
@@ -16,9 +16,9 @@ import type { ApiOptionItem } from '#/types/api-response';
 
 import { computed, nextTick, reactive, ref, watch, onBeforeUnmount, onDeactivated } from 'vue';
 
-import { Trash2 } from '@vben/icons';
-import { useUserStore } from '@vben/stores';
-import { formatDateTime } from '@vben/utils';
+import { Trash2 } from '@zxplat/icons';
+import { useUserStore } from '@zxplat/stores';
+import { formatDateTime } from '@zxplat/utils';
 
 import InvDocActions from '@inventory/components/inv-doc-actions.vue';
 import InvDocGridToolbar from '@inventory/components/inv-doc-grid-toolbar.vue';

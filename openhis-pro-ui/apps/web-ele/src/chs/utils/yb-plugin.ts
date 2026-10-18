@@ -1,5 +1,5 @@
 /**
- * 医保读卡本地插件（OpenHIS.Win，默认 http://127.0.0.1:5000）。
+ * 医保读卡本地插件（Zxplat.Win，默认 http://127.0.0.1:5000）。
  * 9001 签到：浏览器优先取 MAC/IP；失败时由服务端 sign_mac / yb_plugin_url 回退。
  */
 const DEFAULT_PLUGIN_DATA_URL = 'http://127.0.0.1:5000/api/data/';
@@ -342,7 +342,7 @@ export function getYbEcOrgId(): string {
   return typeof fromEnv === 'string' ? fromEnv.trim() : '';
 }
 
-/** 健康检查地址（OpenHIS.Win GET /api/health） */
+/** 健康检查地址（Zxplat.Win GET /api/health） */
 export function getYbPluginHealthUrl(dataUrl = getYbPluginDataUrl()): string {
   try {
     const origin = new URL(dataUrl).origin;
@@ -385,7 +385,7 @@ async function fetchWithTimeout(
   }
 }
 
-/** 探测 OpenHIS.Win 是否在线 */
+/** 探测 Zxplat.Win 是否在线 */
 export async function isYbPluginOnline(pluginUrl = getYbPluginDataUrl()): Promise<boolean> {
   try {
     const response = await fetchWithTimeout(
@@ -399,13 +399,13 @@ export async function isYbPluginOnline(pluginUrl = getYbPluginDataUrl()): Promis
   }
 }
 
-/** OpenHIS.Win 未启动时的统一提示文案 */
+/** zxplat.Win 未启动时的统一提示文案 */
 export function formatYbPluginOfflineMessage(pluginUrl = getYbPluginDataUrl()): string {
   try {
     const origin = new URL(getYbPluginHealthUrl(pluginUrl)).origin;
-    return `本机 OpenHIS.Win 未启动，请先启动托盘程序（${origin}）`;
+    return `本机 Zxplat.Win 未启动，请先启动托盘程序（${origin}）`;
   } catch {
-    return '本机 OpenHIS.Win 未启动，请先启动托盘程序（默认 http://127.0.0.1:5000）';
+    return '本机 Zxplat.Win 未启动，请先启动托盘程序（默认 http://127.0.0.1:5000）';
   }
 }
 
@@ -415,7 +415,7 @@ export function formatYbPluginError(error: unknown, pluginUrl = getYbPluginDataU
     return enrichHeaSecPluginError(error.message);
   }
   if (error instanceof TypeError) {
-    return `无法连接 ${pluginUrl}，请确认 OpenHIS.Win 已启动并监听对应端口`;
+    return `无法连接 ${pluginUrl}，请确认 Zxplat.Win 已启动并监听对应端口`;
   }
   if (error instanceof Error) {
     return enrichHeaSecPluginError(error.message);
@@ -429,7 +429,7 @@ const HEASEC_RETURN_CODE_HINT: Record<number, string> = {
   [-2]: '无卡，请将社保卡/身份证放在读卡器上',
   [-3]: '有卡未上电',
   [-4]: '卡无应答',
-  [-5]: '加载动态库失败，请检查读卡器驱动及 SSSE32.dll、SSCardDriver.dll、Neu_SFZ*.dll 是否已部署到 OpenHIS.Win 目录',
+  [-5]: '加载动态库失败，请检查读卡器驱动及 SSSE32.dll、SSCardDriver.dll、Neu_SFZ*.dll 是否已部署到 Zxplat.Win 目录',
   [-11]: '读卡器连接错',
   [-12]: '未建立连接',
   [-13]: '动态库不支持该命令',
@@ -468,8 +468,8 @@ function lookupNationEcHint(returnCode: string, outMessage?: string): string | u
   if (outMessage?.includes('网络连接失败')) {
     const url = getYbEcVoucherUrl();
     return url
-      ? `本机 OpenHIS.Win 无法连接电子凭证服务（${url}），请检查专网/防火墙或联系信息科`
-      : '本机 OpenHIS.Win 无法连接电子凭证服务，请检查 VITE_GLOB_YB_EC_VOUCHER_URL 与网络';
+      ? `本机 Zxplat.Win 无法连接电子凭证服务（${url}），请检查专网/防火墙或联系信息科`
+      : '本机 Zxplat.Win 无法连接电子凭证服务，请检查 VITE_GLOB_YB_EC_VOUCHER_URL 与网络';
   }
   const text = returnCode.trim();
   return NATION_EC_RETURN_CODE_HINT[text];
@@ -500,8 +500,8 @@ export function enrichHeaSecPluginError(message: string): string {
   if (message.includes('网络连接失败')) {
     const url = getYbEcVoucherUrl();
     const hint = url
-      ? `本机 OpenHIS.Win 无法连接电子凭证服务（${url}），请检查专网/防火墙`
-      : '本机 OpenHIS.Win 无法连接电子凭证服务';
+      ? `本机 Zxplat.Win 无法连接电子凭证服务（${url}），请检查专网/防火墙`
+      : '本机 Zxplat.Win 无法连接电子凭证服务';
     if (!message.includes(hint)) {
       return `${message}（${hint}）`;
     }
@@ -915,7 +915,7 @@ export async function resolveSignEndpointForSignIn(options?: {
     return {
       fromPlugin: false,
       pluginOnline: false,
-      fallbackReason: `OpenHIS.Win 未响应（${getYbPluginHealthUrl(pluginUrl)}）`,
+      fallbackReason: `Zxplat.Win 未响应（${getYbPluginHealthUrl(pluginUrl)}）`,
     };
   }
 

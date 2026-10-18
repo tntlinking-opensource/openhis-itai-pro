@@ -3,7 +3,7 @@ import type { OutpatientPatientCardPayload } from './patient-card.types';
 
 import { ref, watch } from 'vue';
 
-import { CalendarSearch, ChevronLeft, ChevronRight, RotateCw, Search } from '@vben/icons';
+import { CalendarSearch, ChevronLeft, ChevronRight, RotateCw, Search } from '@zxplat/icons';
 
 import { ElButton, ElDatePickerPanel, ElInput, ElPopover } from 'element-plus';
 

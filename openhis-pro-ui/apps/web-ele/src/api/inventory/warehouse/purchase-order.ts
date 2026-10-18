@@ -1,5 +1,5 @@
 /**
- * 药库订货单 — 对接 Whale {@code POST /api/app/inventoryWarehousePurchaseOrder/<method>}
+ * 药库订货单 — 对接 ZXPlat {@code POST /api/app/inventoryWarehousePurchaseOrder/<method>}
  * 契约见 AS-INV-WHS-001-SDD；枚举均为领域 {@code getCode()} 字符串。
  */
 import type { ApiOptionItem, ApiResponse } from '#/types/api-response';
@@ -253,7 +253,7 @@ export const WHS_PO_ALL_WAREHOUSES_PURPOSE_LOCATION_ID = '0';
 /** 侧栏药库下拉「全部」占位项展示文案 */
 export const WHS_PO_ALL_WAREHOUSES_LABEL = '全部库房';
 
-/** {@link com.openhis.health.domain.share.enums.SupplyCategory#STOCK_SUPPLY} */
+/** {@link com.zxplat.domain.share.enums.SupplyCategory#STOCK_SUPPLY} */
 export const WHS_PO_CATEGORY_STOCK = 'STOCK_SUPPLY';
 
 export async function loadPurchaseOrderFormInitApi(body?: LoadPurchaseOrderFormInitRequest) {

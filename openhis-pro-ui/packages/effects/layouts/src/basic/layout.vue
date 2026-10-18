@@ -2,19 +2,19 @@
 import type { SetupContext } from 'vue';
 import type { RouteLocationNormalizedLoaded } from 'vue-router';
 
-import type { MenuRecordRaw } from '@vben/types';
+import type { MenuRecordRaw } from '@zxplat/types';
 
 import { computed, onMounted, useSlots, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
-import { useRefresh } from '@vben/hooks';
-import { $t, i18n } from '@vben/locales';
-import { preferences, updatePreferences, usePreferences } from '@vben/preferences';
-import { useAccessStore } from '@vben/stores';
-import { cloneDeep, mapTree } from '@vben/utils';
+import { useRefresh } from '@zxplat/hooks';
+import { $t, i18n } from '@zxplat/locales';
+import { preferences, updatePreferences, usePreferences } from '@zxplat/preferences';
+import { useAccessStore } from '@zxplat/stores';
+import { cloneDeep, mapTree } from '@zxplat/utils';
 
-import { VbenAdminLayout } from '@vben-core/layout-ui';
-import { VbenBackTop, VbenLogo } from '@vben-core/shadcn-ui';
+import { VbenAdminLayout } from '@zxplat-core/layout-ui';
+import { VbenBackTop, VbenLogo } from '@zxplat-core/shadcn-ui';
 
 import { CheckUpdates } from '../widgets';
 import { LayoutContent, LayoutContentSpinner } from './content';

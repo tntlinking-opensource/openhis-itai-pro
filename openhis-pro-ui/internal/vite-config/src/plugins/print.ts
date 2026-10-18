@@ -2,7 +2,7 @@ import type { PluginOption } from 'vite';
 
 import type { PrintPluginOptions } from '../typing';
 
-import { colors } from '@vben/node-utils';
+import { colors } from '@zxplat/node-utils';
 
 export const vitePrintPlugin = (options: PrintPluginOptions = {}): PluginOption => {
   const { infoMap = {} } = options;

@@ -4,15 +4,30 @@ import type { VxeGridInstance } from 'vxe-table';
 
 import type { AdviceProductOption, ProductQueryParams } from '../services/advice.types';
 
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, reactive, ref, useSlots, watch } from 'vue';
 
-import { Search } from '@element-plus/icons-vue';
+import { Search, Star, StarFilled } from '@element-plus/icons-vue';
 import { useDebounceFn } from '@vueuse/core';
 import { ElButton, ElIcon, ElMessage, ElSwitch } from 'element-plus';
 import { VxeInput, VxePulldown } from 'vxe-pc-ui';
 import { VxeGrid } from 'vxe-table';
 
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import {
+  type AnesthFavoriteKind,
+  type AnesthFavoriteMedSnapshot,
+  adoptAnesthFavoriteLive,
+  anesthFavoriteBucket,
+  anesthFavoriteRowMatches,
+  favoriteMatchesKeyword,
+  isAnesthFavoriteMed,
+  readAnesthFavoriteLive,
+  shiftAnesthFavorite,
+  rememberAnesthFavoriteLive,
+  removeAnesthFavoriteMed,
+  resolveAnesthFavoriteOwner,
+  toggleAnesthFavoriteMed,
+} from '#/views/inpatient/doctor-station/surgery-anesth/anesth-favorite-meds';
 
 import {
   formatAdviceCatalogStockCellText,
@@ -53,10 +68,23 @@ const props = withDefaults(
      */
     catalogScope?: 'ALL' | 'MEDICATION_ONLY';
     /**
+     * 锁定类目并隐藏 Tab（手术/麻醉选品：仅药品或仅诊疗，对齐临嘱下拉但收窄范围）。
+     */
+    lockCategory?: 'MEDICATION' | 'SERVICE';
+    /** 诊疗类目过滤（麻醉 25 / 手术 24）；仅 lockCategory=SERVICE 时有意义 */
+    categoryEnum?: string;
+    /**
      * 已选项目时，首次展开是否回填当前药名（编辑态换药不闪空）。
      * 用户一旦改过检索，再展开不再强制回填旧名，直到换选新品；默认 false。
      */
     keepSelectedLabelOnOpen?: boolean;
+    /** 只读态禁止展开选品 */
+    disabled?: boolean;
+    /**
+     * 麻醉申请常用：本机标星，下拉顶部按顺序展示，可拖拽。
+     * 麻醉项目传 service，麻醉药品传 medication；其它选品不传。
+     */
+    favoriteKind?: AnesthFavoriteKind;
     modelValue: string;
     placeholder?: string;
     remoteMethod: (params: ProductQueryParams) => Promise<{
@@ -69,7 +97,11 @@ const props = withDefaults(
     expandNonce: 0,
     focusTriggerNonce: 0,
     catalogScope: 'ALL',
+    lockCategory: undefined,
+    categoryEnum: '',
     keepSelectedLabelOnOpen: false,
+    disabled: false,
+    favoriteKind: undefined,
   },
 );
 
@@ -97,15 +129,92 @@ const triggerWrapRef = ref<HTMLElement | null>(null);
 /** 弹层内键盘高亮行（与 VxeGrid 当前行同步） */
 const keyboardRowIndex = ref(-1);
 
-/** 可见的目录类目 Tab（出院带药仅药品） */
+/** 常用药回查代数：关闭下拉或连续打开时丢掉过期结果 */
+let favoriteGeneration = 0;
+/** 本次打开已回查到的目录行；missing 表示编码已查过但不在目录 */
+const favoriteLive = ref<Record<string, AdviceProductOption | 'missing'>>({});
+/** 刚上移/下移的那一行，用来带一点过渡高亮 */
+const movingFavoriteId = ref('');
+let movingFavoriteTimer = 0;
+
+/** 当前登录人的常用药；未开常用或未登录时为空 */
+const favoriteItems = computed(() => {
+  if (!props.favoriteKind) {
+    return [] as AnesthFavoriteMedSnapshot[];
+  }
+  const owner = resolveAnesthFavoriteOwner();
+  return anesthFavoriteBucket(owner.userId, owner.organizationId, props.favoriteKind);
+});
+
+/** 常用块：关键字在名称/编码/商品名/规格里；「只看库存>0」时藏掉已确认的零库存 */
+const visibleFavorites = computed(() => {
+  const keywordText = keyword.value.trim();
+  const matched = favoriteItems.value.filter((item) => favoriteMatchesKeyword(item, keywordText));
+  if (!onlyPositiveStock.value) {
+    return matched;
+  }
+  return matched.filter((item) => {
+    const live = favoriteLive.value[item.id];
+    if (!live || live === 'missing') {
+      return true;
+    }
+    return !isAdviceCatalogZeroStock(live);
+  });
+});
+
+/** 有常用记录，但开了库存过滤后一条都不显示 */
+const favoritesHiddenByStock = computed(() => {
+  if (!props.favoriteKind || !onlyPositiveStock.value) {
+    return false;
+  }
+  const keywordText = keyword.value.trim();
+  const matched = favoriteItems.value.filter((item) => favoriteMatchesKeyword(item, keywordText));
+  if (matched.length === 0 || visibleFavorites.value.length > 0) {
+    return false;
+  }
+  return matched.every((item) => {
+    const live = favoriteLive.value[item.id];
+    return Boolean(live) && live !== 'missing' && isAdviceCatalogZeroStock(live);
+  });
+});
+
+const showFavoriteBlock = computed(
+  () => Boolean(props.favoriteKind) && (visibleFavorites.value.length > 0 || favoritesHiddenByStock.value),
+);
+
+/** 可见的目录类目 Tab（出院带药仅药品；锁定类目时隐藏 Tab） */
 const visibleCategoryTabs = computed(() => {
+  if (props.lockCategory) {
+    return [];
+  }
   if (props.catalogScope === 'MEDICATION_ONLY') {
     return ADVICE_CATEGORY_TABS.filter((t) => t.code === 'MEDICATION');
   }
   return ADVICE_CATEGORY_TABS;
 });
 
+/** 锁定类目时不展示「全部/药品/诊疗」切页 */
+const showCategoryTabs = computed(() => visibleCategoryTabs.value.length > 0);
+
+/** 诊疗锁定时无库存过滤；药品锁定/普通选品保留「只看库存>0」 */
+const showStockFilter = computed(() => props.lockCategory !== 'SERVICE');
+
+const slots = useSlots();
+/** 父级注入工具条左侧（如麻醉项目/麻醉药品切换） */
+const hasToolbarLeading = computed(() => Boolean(slots['toolbar-leading']));
+
+/** 工具条：有 Tab、库存开关或自定义左侧槽才显示 */
+const showCatalogToolbar = computed(
+  () => showCategoryTabs.value || showStockFilter.value || hasToolbarLeading.value,
+);
+
 function productTableNamesForCategory(cat: AdviceCategory): string[] | undefined {
+  if (props.lockCategory === 'MEDICATION') {
+    return ['med_medication_definition'];
+  }
+  if (props.lockCategory === 'SERVICE') {
+    return ['wkf_activity_definition'];
+  }
   // 出院带药：强制仅药品定义表
   if (props.catalogScope === 'MEDICATION_ONLY') {
     return ['med_medication_definition'];
@@ -115,6 +224,20 @@ function productTableNamesForCategory(cat: AdviceCategory): string[] | undefined
   if (cat === 'SERVICE') return ['wkf_activity_definition'];
   if (cat === 'DEVICE') return ['adm_device_definition'];
   return undefined;
+}
+
+/** 当前实际目录类目（锁定/出院带药优先于 Tab） */
+function resolveActiveCategory(): AdviceCategory {
+  if (props.lockCategory === 'MEDICATION') {
+    return 'MEDICATION';
+  }
+  if (props.lockCategory === 'SERVICE') {
+    return 'SERVICE';
+  }
+  if (props.catalogScope === 'MEDICATION_ONLY') {
+    return 'MEDICATION';
+  }
+  return activeCategory.value;
 }
 
 watch(
@@ -159,9 +282,9 @@ watch(
 function resetEphemeralSearchState() {
   keyword.value = '';
   searchEdited.value = false;
-  // 出院带药目录固定药品 Tab，其余回全部
-  activeCategory.value = props.catalogScope === 'MEDICATION_ONLY' ? 'MEDICATION' : 'ALL';
-  onlyPositiveStock.value = true;
+  // 锁定类目 / 出院带药固定 Tab；其余回全部
+  activeCategory.value = resolveActiveCategoryForReset();
+  onlyPositiveStock.value = props.lockCategory !== 'SERVICE';
   pageNo.value = 1;
   options.value = [];
   gridOptions.data = [];
@@ -169,6 +292,20 @@ function resetEphemeralSearchState() {
   gridOptions.pagerConfig.currentPage = 1;
   gridOptions.pagerConfig.total = 0;
   keyboardRowIndex.value = -1;
+}
+
+/** 收起/换锁时重置 Tab：锁定类目固定，否则回全部/药品 */
+function resolveActiveCategoryForReset(): AdviceCategory {
+  if (props.lockCategory === 'MEDICATION') {
+    return 'MEDICATION';
+  }
+  if (props.lockCategory === 'SERVICE') {
+    return 'SERVICE';
+  }
+  if (props.catalogScope === 'MEDICATION_ONLY') {
+    return 'MEDICATION';
+  }
+  return 'ALL';
 }
 
 /** 标记用户正在换药检索，后续展开勿再灌回旧药名 */
@@ -201,6 +338,9 @@ function prepareOpenKeyword() {
 
 /** 点击输入框打开下拉 */
 function openPopup() {
+  if (props.disabled) {
+    return;
+  }
   // 已展开再点：只重拉，勿 prepareOpenKeyword（否则会把正在输入的词打回旧药名）
   if (showPopup.value) {
     void loadOptions();
@@ -212,6 +352,9 @@ function openPopup() {
 
 /** 后缀箭头：关闭则直接关；打开则先准备检索态再展开 */
 function togglePopup() {
+  if (props.disabled) {
+    return;
+  }
   if (showPopup.value) {
     showPopup.value = false;
     return;
@@ -250,7 +393,7 @@ const displayPlaceholder = computed(() => props.placeholder || '请输入编码�
 const gridColumns = computed(() => {
   const cols = props.columns;
   const hasName = cols.some((c) => c.prop === 'name');
-  return cols.map((column, index) => {
+  const mapped = cols.map((column, index) => {
     const base = { field: column.prop, title: column.label, showOverflow: true as const };
     const flex = hasName ? column.prop === 'name' : index === cols.length - 1;
     if (column.prop === 'availableQuantity') {
@@ -272,12 +415,32 @@ const gridColumns = computed(() => {
     }
     return { ...base, width: column.width };
   });
+  if (!props.favoriteKind) {
+    return mapped;
+  }
+  mapped.push({
+    field: '__favorite',
+    title: '常用',
+    width: 64,
+    align: 'center',
+    slots: { default: 'favoriteStar' },
+  });
+  return mapped;
 });
+
+const DEFAULT_GRID_HEIGHT = 420;
+const MIN_GRID_HEIGHT = 180;
+/** 面板内边距 + 工具条大约占用（表格含分页） */
+const DROPDOWN_CHROME_PX = 64;
+const VIEWPORT_GAP_PX = 12;
+
+/** 优先向下；下方不够再向上，并按剩余视口收缩表格高度 */
+const panelPlacement = ref<'bottom' | 'top'>('bottom');
 
 const gridOptions = reactive({
   autoResize: true,
   border: true,
-  height: 420,
+  height: DEFAULT_GRID_HEIGHT,
   rowConfig: { keyField: 'id', isHover: true, isCurrent: true },
   pagerConfig: {
     enabled: true,
@@ -287,6 +450,39 @@ const gridOptions = reactive({
   },
   data: [] as AdviceProductOption[],
 });
+
+/**
+ * 按触发器相对视口位置决定弹出方向与表格高度，避免上下被裁切。
+ */
+function applyDropdownViewportLayout() {
+  const el = triggerWrapRef.value;
+  if (!el) {
+    panelPlacement.value = 'bottom';
+    gridOptions.height = DEFAULT_GRID_HEIGHT;
+    return;
+  }
+  const rect = el.getBoundingClientRect();
+  const favoriteRows = visibleFavorites.value.length + (favoritesHiddenByStock.value ? 1 : 0);
+  const favoriteChrome = showFavoriteBlock.value ? Math.min(216, 50 + favoriteRows * 30) : 0;
+  const chrome =
+    (showCatalogToolbar.value ? DROPDOWN_CHROME_PX + 36 : DROPDOWN_CHROME_PX) + favoriteChrome;
+  const spaceBelow = window.innerHeight - rect.bottom - VIEWPORT_GAP_PX;
+  const spaceAbove = rect.top - VIEWPORT_GAP_PX;
+  const preferBottom = spaceBelow >= MIN_GRID_HEIGHT + chrome || spaceBelow >= spaceAbove;
+  const space = preferBottom ? spaceBelow : spaceAbove;
+  panelPlacement.value = preferBottom ? 'bottom' : 'top';
+  gridOptions.height = Math.max(
+    MIN_GRID_HEIGHT,
+    Math.min(DEFAULT_GRID_HEIGHT, Math.floor(space - chrome)),
+  );
+}
+
+function onWindowResizeWhileOpen() {
+  if (!showPopup.value) {
+    return;
+  }
+  applyDropdownViewportLayout();
+}
 
 const syncGridCurrentRow = async () => {
   await nextTick();
@@ -311,16 +507,258 @@ function syncGridDataFromOptions() {
   keyboardRowIndex.value = options.value.length > 0 ? 0 : -1;
 }
 
+function favoriteOwnerReady(): { organizationId: string; userId: string } | null {
+  const owner = resolveAnesthFavoriteOwner();
+  if (!owner.userId) {
+    return null;
+  }
+  return owner;
+}
+
+function sameFavoriteRow(row: AdviceProductOption, item: AnesthFavoriteMedSnapshot): boolean {
+  return anesthFavoriteRowMatches(item, row);
+}
+
+/** 按编码回查常用药的当前库存和开立字段；不改目录分页 */
+async function refreshFavoriteLives() {
+  if (!props.favoriteKind) {
+    favoriteLive.value = {};
+    return;
+  }
+  const owner = favoriteOwnerReady();
+  const items = favoriteItems.value;
+  const generation = ++favoriteGeneration;
+  if (!owner || items.length === 0) {
+    favoriteLive.value = {};
+    return;
+  }
+  const next: Record<string, AdviceProductOption | 'missing'> = {};
+  const pending: AnesthFavoriteMedSnapshot[] = [];
+  for (const item of items) {
+    const cached = readAnesthFavoriteLive(owner.organizationId, item.id);
+    if (cached) {
+      next[item.id] = cached;
+    } else {
+      pending.push(item);
+    }
+  }
+  favoriteLive.value = next;
+  if (pending.length === 0) {
+    return;
+  }
+  const fetched = await Promise.all(
+    pending.map(async (item) => {
+      const text = item.code.trim() || item.name.trim();
+      if (!text) {
+        return { id: item.id, row: 'missing' as const };
+      }
+      try {
+        const cat = props.favoriteKind === 'service' ? 'SERVICE' : 'MEDICATION';
+        const result = await props.remoteMethod({
+          pageNo: 1,
+          pageSize: 20,
+          keyword: text,
+          productTableNames: productTableNamesForCategory(cat),
+          positiveQuantityOnly: false,
+          categoryEnum: props.categoryEnum?.trim() || undefined,
+        });
+        const parsed = parsePagedRowsFromApiData<AdviceProductOption>(result as unknown);
+        const hit = parsed.content.find((row) => sameFavoriteRow(row, item));
+        return { id: item.id, row: hit ?? ('missing' as const) };
+      } catch {
+        return { id: item.id, row: 'missing' as const };
+      }
+    }),
+  );
+  if (generation !== favoriteGeneration) {
+    return;
+  }
+  const merged = { ...favoriteLive.value };
+  const kind = props.favoriteKind;
+  for (const entry of fetched) {
+    let liveId = entry.id;
+    if (kind && entry.row !== 'missing') {
+      liveId = adoptAnesthFavoriteLive(
+        owner.userId,
+        owner.organizationId,
+        kind,
+        entry.id,
+        entry.row,
+      );
+    }
+    merged[liveId] = entry.row;
+    rememberAnesthFavoriteLive(owner.organizationId, liveId, entry.row);
+  }
+  favoriteLive.value = merged;
+}
+
+function favoriteIsZeroStock(item: AnesthFavoriteMedSnapshot): boolean {
+  const live = favoriteLive.value[item.id];
+  if (!live || live === 'missing') {
+    return false;
+  }
+  return isAdviceCatalogZeroStock(live);
+}
+
+function favoriteStockLabel(item: AnesthFavoriteMedSnapshot): string {
+  const live = favoriteLive.value[item.id];
+  if (!live) {
+    return '刷新中';
+  }
+  if (live === 'missing') {
+    return '已不在目录';
+  }
+  return formatAdviceCatalogStockCellText(live);
+}
+
+function favoriteClickDisabled(item: AnesthFavoriteMedSnapshot): boolean {
+  const live = favoriteLive.value[item.id];
+  return !live || live === 'missing';
+}
+
+function onFavoriteClick(item: AnesthFavoriteMedSnapshot) {
+  const live = favoriteLive.value[item.id];
+  if (!live) {
+    return;
+  }
+  if (live === 'missing') {
+    ElMessage.warning('该项已不在目录，可取消常用');
+    return;
+  }
+  handleSelect({ row: live });
+}
+
+function onToggleFavorite(row: AdviceProductOption, event: Event) {
+  event.stopPropagation();
+  const owner = favoriteOwnerReady();
+  const kind = props.favoriteKind;
+  if (!owner || !kind) {
+    ElMessage.warning('未获取到登录信息，暂时不能保存常用');
+    return;
+  }
+  const result = toggleAnesthFavoriteMed(owner.userId, owner.organizationId, kind, row);
+  if (result === 'limit') {
+    ElMessage.warning('常用最多 20 条');
+    return;
+  }
+  if (result === 'added') {
+    favoriteLive.value = { ...favoriteLive.value, [String(row.id)]: row };
+    rememberAnesthFavoriteLive(owner.organizationId, String(row.id), row);
+    ElMessage.success('已加入常用');
+    void nextTick(() => applyDropdownViewportLayout());
+    return;
+  }
+  const next = { ...favoriteLive.value };
+  delete next[String(row.id)];
+  favoriteLive.value = next;
+  ElMessage.success('已取消常用');
+  void nextTick(() => applyDropdownViewportLayout());
+}
+
+function onUnpinFavorite(item: AnesthFavoriteMedSnapshot, event: Event) {
+  event.stopPropagation();
+  const owner = favoriteOwnerReady();
+  const kind = props.favoriteKind;
+  if (!owner || !kind) {
+    return;
+  }
+  removeAnesthFavoriteMed(owner.userId, owner.organizationId, kind, item.id);
+  const next = { ...favoriteLive.value };
+  delete next[item.id];
+  favoriteLive.value = next;
+  void nextTick(() => applyDropdownViewportLayout());
+}
+
+function rowIsFavorite(row: AdviceProductOption): boolean {
+  const owner = favoriteOwnerReady();
+  const kind = props.favoriteKind;
+  if (!owner || !kind) {
+    return false;
+  }
+  return isAnesthFavoriteMed(owner.userId, owner.organizationId, kind, row);
+}
+
+function favoriteCode(item: AnesthFavoriteMedSnapshot): string {
+  const live = favoriteLive.value[item.id];
+  if (live && live !== 'missing') {
+    const code = String(live.code ?? '').trim();
+    if (code) {
+      return code;
+    }
+  }
+  return item.code.trim() || '—';
+}
+
+function favoriteName(item: AnesthFavoriteMedSnapshot): string {
+  const live = favoriteLive.value[item.id];
+  if (live && live !== 'missing') {
+    const name = String(live.name ?? '').trim();
+    if (name) {
+      return name;
+    }
+  }
+  return item.name.trim() || '—';
+}
+
+function favoriteSpec(item: AnesthFavoriteMedSnapshot): string {
+  const live = favoriteLive.value[item.id];
+  if (live && live !== 'missing') {
+    const spec = String(live.spec ?? '').trim();
+    if (spec) {
+      return spec;
+    }
+  }
+  return item.spec.trim() || '—';
+}
+
+function favoriteSortNo(item: AnesthFavoriteMedSnapshot): number {
+  const index = favoriteItems.value.findIndex((row) => row.id === item.id);
+  return index >= 0 ? index + 1 : 0;
+}
+
+function canShiftFavorite(item: AnesthFavoriteMedSnapshot, delta: -1 | 1): boolean {
+  const index = favoriteItems.value.findIndex((row) => row.id === item.id);
+  if (index < 0) {
+    return false;
+  }
+  const next = index + delta;
+  return next >= 0 && next < favoriteItems.value.length;
+}
+
+function markMovingFavorite(id: string) {
+  movingFavoriteId.value = id;
+  window.clearTimeout(movingFavoriteTimer);
+  movingFavoriteTimer = window.setTimeout(() => {
+    if (movingFavoriteId.value === id) {
+      movingFavoriteId.value = '';
+    }
+  }, 420);
+}
+
+function onShiftFavorite(item: AnesthFavoriteMedSnapshot, delta: -1 | 1, event: Event) {
+  event.stopPropagation();
+  const owner = favoriteOwnerReady();
+  const kind = props.favoriteKind;
+  if (!owner || !kind || !canShiftFavorite(item, delta)) {
+    return;
+  }
+  shiftAnesthFavorite(owner.userId, owner.organizationId, kind, item.id, delta);
+  markMovingFavorite(item.id);
+}
+
 const loadOptions = async () => {
   const generation = ++loadGeneration;
   loading.value = true;
+  const favoriteTask = refreshFavoriteLives();
   try {
+    const cat = resolveActiveCategory();
     const result = await props.remoteMethod({
       pageNo: pageNo.value,
       pageSize: pageSize.value,
       keyword: keyword.value.trim(),
-      productTableNames: productTableNamesForCategory(activeCategory.value),
-      positiveQuantityOnly: onlyPositiveStock.value,
+      productTableNames: productTableNamesForCategory(cat),
+      positiveQuantityOnly: cat === 'SERVICE' ? false : onlyPositiveStock.value,
+      categoryEnum: props.categoryEnum?.trim() || undefined,
     });
     if (generation !== loadGeneration) {
       return;
@@ -344,7 +782,9 @@ const loadOptions = async () => {
     }
   }
   if (generation === loadGeneration) {
+    await favoriteTask;
     await syncGridCurrentRow();
+    applyDropdownViewportLayout();
   }
 };
 
@@ -409,7 +849,7 @@ watch(
 
 watch(
   () => showPopup.value,
-  (visible) => {
+  async (visible) => {
     if (visible) {
       pageNo.value = 1;
       if (props.keepSelectedLabelOnOpen) {
@@ -425,27 +865,56 @@ watch(
           }
         }
       } else {
-        const defaultCategory = props.catalogScope === 'MEDICATION_ONLY' ? 'MEDICATION' : 'ALL';
+        const defaultCategory = resolveActiveCategoryForReset();
         if (keyword.value || options.value.length > 0 || activeCategory.value !== defaultCategory) {
           resetEphemeralSearchState();
         }
       }
+      await nextTick();
+      applyDropdownViewportLayout();
+      window.addEventListener('resize', onWindowResizeWhileOpen);
       void loadOptions();
+      // 布局后再算一次：工具条渲染后 chrome 更准
+      await nextTick();
+      applyDropdownViewportLayout();
       return;
     }
+    window.removeEventListener('resize', onWindowResizeWhileOpen);
     loadGeneration += 1;
+    favoriteGeneration += 1;
     keyword.value = '';
     searchEdited.value = false;
-    onlyPositiveStock.value = true;
+    onlyPositiveStock.value = props.lockCategory !== 'SERVICE';
     keyboardRowIndex.value = -1;
+    panelPlacement.value = 'bottom';
+    gridOptions.height = DEFAULT_GRID_HEIGHT;
     if (!props.keepSelectedLabelOnOpen) {
       options.value = [];
       gridOptions.data = [];
       total.value = 0;
       gridOptions.pagerConfig.total = 0;
-      activeCategory.value = props.catalogScope === 'MEDICATION_ONLY' ? 'MEDICATION' : 'ALL';
+      activeCategory.value = resolveActiveCategoryForReset();
     }
     void nextTick(() => gridRef.value?.clearCurrentRow());
+  },
+);
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', onWindowResizeWhileOpen);
+  window.clearTimeout(movingFavoriteTimer);
+});
+
+watch(
+  () => [props.lockCategory, props.categoryEnum] as const,
+  async () => {
+    activeCategory.value = resolveActiveCategoryForReset();
+    onlyPositiveStock.value = props.lockCategory !== 'SERVICE';
+    pageNo.value = 1;
+    if (showPopup.value) {
+      await nextTick();
+      applyDropdownViewportLayout();
+      void loadOptions();
+    }
   },
 );
 
@@ -468,6 +937,14 @@ watch(onlyPositiveStock, () => {
   pageNo.value = 1;
   void loadOptions();
 });
+
+/** 点常用列只标星，不把该行加入申请明细 */
+const onGridCellClick = (params: { column?: { field?: string }; row: AdviceProductOption }) => {
+  if (params.column?.field === '__favorite') {
+    return;
+  }
+  handleSelect({ row: params.row });
+};
 
 /** 选品：零库存拦截并提示，不关闭下拉、不回写选中项 */
 const handleSelect = ({ row }: { row: AdviceProductOption }) => {
@@ -545,7 +1022,12 @@ function handleInputClear() {
   <!-- 触发区宽度固定 400px（scoped 规则），避免与父级合并的 w-full 在 Tailwind 顺序上覆盖 w-[400px] -->
   <div class="advice-order-select-trigger-host min-w-0">
     <!-- Vue 传给 VxePulldown 的 class 未落到根结点；宽度靠下方 :deep + !important 覆盖 vxe 默认 180px / inline-block -->
-    <VxePulldown v-model="showPopup" transfer :z-index="6000">
+    <VxePulldown
+      v-model="showPopup"
+      transfer
+      :placement="panelPlacement"
+      :z-index="6000"
+    >
       <template #default>
         <div ref="triggerWrapRef" class="advice-order-select-input-wrap relative w-full">
           <span
@@ -561,6 +1043,7 @@ function handleInputClear() {
             clearable
             class="advice-order-select-vxe-input w-full"
             :placeholder="displayPlaceholder"
+            :disabled="disabled"
             @click="openPopup"
             @clear="handleInputClear"
             @suffix-click="togglePopup"
@@ -573,8 +1056,10 @@ function handleInputClear() {
           class="advice-order-select-dropdown w-[min(100vw-24px,1080px)] min-w-[960px] border border-[#dcdfe6] bg-white p-2 shadow-[0_6px_16px_rgb(0_0_0_/_12%)]"
         >
           <div
+            v-if="showCatalogToolbar"
             class="mb-2 flex items-center gap-1 rounded border border-[#d7e4f2] bg-[#f6fbff] p-1"
           >
+            <slot name="toolbar-leading" />
             <ElButton
               v-for="tab in visibleCategoryTabs"
               :key="tab.code"
@@ -585,18 +1070,96 @@ function handleInputClear() {
               {{ tab.label }}
             </ElButton>
             <div
+              v-if="showStockFilter"
               class="ml-auto flex shrink-0 items-center gap-2 px-2 text-sm text-[var(--el-text-color-regular)]"
             >
               <span class="whitespace-nowrap">只看库存&gt;0</span>
               <ElSwitch v-model="onlyPositiveStock" size="small" />
             </div>
           </div>
+          <div v-if="showFavoriteBlock" class="advice-order-select-fav">
+            <div class="advice-order-select-fav__title">常用</div>
+            <div class="advice-order-select-fav__head">
+              <span>序号</span>
+              <span>编码</span>
+              <span>项目名称</span>
+              <span>规格</span>
+              <span>库存</span>
+              <span>操作</span>
+            </div>
+            <div v-if="favoritesHiddenByStock" class="advice-order-select-fav__empty">
+              常用项当前无库存，已隐藏
+            </div>
+            <TransitionGroup name="fav-list" tag="div" class="advice-order-select-fav__list">
+            <div
+              v-for="item in visibleFavorites"
+              :key="item.id"
+              class="advice-order-select-fav__row"
+              :class="{
+                'is-disabled': favoriteClickDisabled(item),
+                'is-moving': movingFavoriteId === item.id,
+              }"
+              role="button"
+              tabindex="0"
+              @click="onFavoriteClick(item)"
+              @keydown.enter.prevent="onFavoriteClick(item)"
+            >
+              <span class="advice-order-select-fav__no">{{ favoriteSortNo(item) }}</span>
+              <span class="advice-order-select-fav__code" :title="favoriteCode(item)">
+                {{ favoriteCode(item) }}
+              </span>
+              <span class="advice-order-select-fav__name" :title="favoriteName(item)">
+                {{ favoriteName(item) }}
+              </span>
+              <span class="advice-order-select-fav__spec" :title="favoriteSpec(item)">
+                {{ favoriteSpec(item) }}
+              </span>
+              <span
+                class="advice-order-select-fav__stock"
+                :class="{
+                  'is-missing': favoriteLive[item.id] === 'missing',
+                  'is-zero': favoriteIsZeroStock(item),
+                }"
+              >
+                {{ favoriteStockLabel(item) }}
+              </span>
+              <span class="advice-order-select-fav__ops" @click.stop>
+                <button
+                  type="button"
+                  class="advice-order-select-fav__link"
+                  :disabled="!canShiftFavorite(item, -1)"
+                  @click="onShiftFavorite(item, -1, $event)"
+                >
+                  上移
+                </button>
+                <button
+                  type="button"
+                  class="advice-order-select-fav__link"
+                  :disabled="!canShiftFavorite(item, 1)"
+                  @click="onShiftFavorite(item, 1, $event)"
+                >
+                  下移
+                </button>
+                <button
+                  type="button"
+                  class="advice-order-select-fav__star"
+                  title="取消常用"
+                  @click="onUnpinFavorite(item, $event)"
+                >
+                  <ElIcon :size="16">
+                    <StarFilled />
+                  </ElIcon>
+                </button>
+              </span>
+            </div>
+            </TransitionGroup>
+          </div>
           <VxeGrid
             ref="gridRef"
             v-bind="gridOptions"
             :columns="gridColumns"
             :loading="loading"
-            @cell-click="handleSelect"
+            @cell-click="onGridCellClick"
             @page-change="handlePageChange"
           >
             <template #availableQuantity="{ row }">
@@ -610,6 +1173,20 @@ function handleInputClear() {
             </template>
             <template #merchandiseName="{ row }">
               <span>{{ String(row.merchandiseName ?? '').trim() || '—' }}</span>
+            </template>
+            <template #favoriteStar="{ row }">
+              <button
+                type="button"
+                class="advice-order-select-star"
+                :class="{ 'is-on': rowIsFavorite(row) }"
+                :title="rowIsFavorite(row) ? '取消常用' : '设为常用'"
+                @click="onToggleFavorite(row, $event)"
+              >
+                <ElIcon :size="16">
+                  <StarFilled v-if="rowIsFavorite(row)" />
+                  <Star v-else />
+                </ElIcon>
+              </button>
             </template>
           </VxeGrid>
         </div>
@@ -665,5 +1242,186 @@ function handleInputClear() {
 .advice-order-select-stock-zero {
   color: var(--el-color-danger);
   font-weight: 500;
+}
+
+.advice-order-select-fav {
+  max-height: 216px;
+  margin-bottom: 8px;
+  overflow: auto;
+  border: 1px solid #d7e4f2;
+  border-radius: 4px;
+  background: #f8fbff;
+}
+
+.advice-order-select-fav__title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--el-color-primary);
+  background: #f8fbff;
+}
+
+.advice-order-select-fav__empty {
+  padding: 4px 8px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+
+.advice-order-select-fav__head,
+.advice-order-select-fav__row {
+  display: grid;
+  grid-template-columns: 44px 136px minmax(0, 1.8fr) minmax(0, 0.8fr) 96px 124px;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 4px 8px;
+}
+
+.advice-order-select-fav__head {
+  position: sticky;
+  top: 28px;
+  z-index: 1;
+  border-top: 1px solid #e6eef6;
+  background: #eef6fd;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--el-text-color-regular);
+}
+
+.advice-order-select-fav__list {
+  position: relative;
+}
+
+.advice-order-select-fav__row {
+  border: 0;
+  border-top: 1px solid #e6eef6;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.35s ease;
+}
+
+.advice-order-select-fav__row.is-moving,
+.advice-order-select-fav__row.is-moving:hover {
+  background: var(--el-color-primary-light-8);
+}
+
+.fav-list-move {
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.fav-list-enter-active,
+.fav-list-leave-active {
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s ease;
+}
+
+.fav-list-enter-from {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.fav-list-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.fav-list-leave-active {
+  position: absolute;
+  width: 100%;
+}
+
+.advice-order-select-fav__no {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--el-text-color-regular);
+  text-align: center;
+}
+
+.advice-order-select-fav__ops {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.advice-order-select-fav__link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--el-color-primary);
+  cursor: pointer;
+}
+
+.advice-order-select-fav__link:hover:not(:disabled) {
+  color: var(--el-color-primary-light-3);
+}
+
+.advice-order-select-fav__link:disabled {
+  color: var(--el-text-color-placeholder);
+  cursor: not-allowed;
+}
+
+.advice-order-select-fav__row.is-disabled {
+  cursor: default;
+}
+
+.advice-order-select-fav__row:hover {
+  background: var(--el-fill-color-light);
+}
+
+.advice-order-select-fav__code,
+.advice-order-select-fav__name,
+.advice-order-select-fav__spec {
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 21px;
+  color: var(--el-text-color-primary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.advice-order-select-fav__code,
+.advice-order-select-fav__name {
+  font-weight: 500;
+}
+
+.advice-order-select-fav__spec {
+  color: var(--el-text-color-regular);
+}
+
+.advice-order-select-fav__stock {
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+
+.advice-order-select-fav__stock.is-zero,
+.advice-order-select-fav__stock.is-missing {
+  color: var(--el-color-danger);
+}
+
+.advice-order-select-fav__star,
+.advice-order-select-star {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--el-text-color-placeholder);
+  cursor: pointer;
+}
+
+.advice-order-select-fav__star,
+.advice-order-select-star.is-on {
+  color: var(--el-color-warning);
 }
 </style>

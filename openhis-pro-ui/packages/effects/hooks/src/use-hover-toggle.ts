@@ -4,7 +4,7 @@ import type { Ref } from 'vue';
 
 import { computed, effectScope, onUnmounted, ref, unref, watch } from 'vue';
 
-import { isFunction } from '@vben/utils';
+import { isFunction } from '@zxplat/utils';
 
 import { useElementHover } from '@vueuse/core';
 

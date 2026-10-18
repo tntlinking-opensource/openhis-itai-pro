@@ -32,7 +32,7 @@ export async function runWorkInjuryRegister9102(
   options?: { silent?: boolean },
 ): Promise<void> {
   if (!(await isWorkInjuryPluginOnline())) {
-    throw new Error('请启动 OpenHIS.Win 并启用工伤模块（/api/work-injury/health）');
+    throw new Error('请启动 Zxplat.Win 并启用工伤模块（/api/work-injury/health）');
   }
   await runWorkInjuryPhase({
     initialRequest: {
@@ -51,7 +51,7 @@ export async function runWorkInjuryRegister2301(
   params: RunWorkInjuryRegister2301Params,
 ): Promise<void> {
   if (!(await isWorkInjuryPluginOnline())) {
-    throw new Error('请启动 OpenHIS.Win 并启用工伤模块');
+    throw new Error('请启动 Zxplat.Win 并启用工伤模块');
   }
   await runWorkInjuryPhase({
     initialRequest: {

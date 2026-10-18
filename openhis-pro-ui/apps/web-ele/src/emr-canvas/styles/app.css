@@ -1,0 +1,12 @@
+﻿html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  color: var(--el-text-color-primary);
+  background: var(--el-bg-color-page);
+}

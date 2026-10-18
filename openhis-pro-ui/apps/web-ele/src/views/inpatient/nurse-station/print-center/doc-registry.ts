@@ -1,6 +1,61 @@
 import type { PrintDocType, PrintNavCategory, PrintPendingRow } from './print-center.types';
 
+import { PRINT_SCENARIO } from '#/utils/print/constants/print-scenario';
+import {
+  SERVICE_CATEGORY_ENTRUST,
+  SERVICE_CATEGORY_PROCEDURE,
+} from '#/utils/print/constants/service-request-category-codes';
+import { INPATIENT_SURGERY_ANESTH_ENABLED } from '#/views/inpatient/surgery-anesth/inpatient-surgery-anesth.config';
+
 import { findPrintDocType, PRINT_DOC_TYPES, PRINT_NAV_CATEGORIES } from './print-center.types';
+
+/** 打印中心单据 → 打印机偏好场景码（体温单无模板，不绑定） */
+const PRINT_CENTER_SCENARIO_BY_DOC: Partial<Record<PrintDocType, string>> = {
+  patrol_card: PRINT_SCENARIO.ipPatrolCardPrint,
+  wristband: PRINT_SCENARIO.ipWristbandPrint,
+  bed_card: PRINT_SCENARIO.ipBedCardPrint,
+  infusion_label: PRINT_SCENARIO.ipInfusionLabelPrint,
+  oral_med_label: PRINT_SCENARIO.ipOralMedLabelPrint,
+  exam_apply: PRINT_SCENARIO.ipExamApplyPrint,
+  lab_apply: PRINT_SCENARIO.ipLabApplyPrint,
+  specimen_barcode: PRINT_SCENARIO.ipSpecimenBarcodePrint,
+  nursing_record: PRINT_SCENARIO.ipNursingRecordPrint,
+  long_order: PRINT_SCENARIO.ipLongOrderPrint,
+  temp_order: PRINT_SCENARIO.ipTempOrderPrint,
+  fee_list: PRINT_SCENARIO.ipFeeListPrint,
+  fee_detail: PRINT_SCENARIO.ipFeeDetailPrint,
+  dispense_summary: PRINT_SCENARIO.ipDispenseSummaryPrint,
+  dispense_sheet: PRINT_SCENARIO.ipDispenseSheetPrint,
+  order_dispense_sheet: PRINT_SCENARIO.ipOrderDispenseSheetPrint,
+  oral_med_sheet: PRINT_SCENARIO.ipOralMedSheetPrint,
+};
+
+/** 单据对应的打印机缓存场景码；未对接模板时返回空串 */
+export function resolvePrintCenterScenarioCode(docType: PrintDocType): string {
+  return PRINT_CENTER_SCENARIO_BY_DOC[docType] ?? '';
+}
+
+/**
+ * 临时医嘱内容筛选：全部 / 手术 / 麻醉 / 嘱托（code，禁止用展示文案分支）。
+ * 与手麻开关同组展示；手麻关闭时仅用 OrderEntrustFilter。
+ */
+export type TempOrderSurgeryAnesthFilter = 'all' | 'anesthesia' | 'entrust' | 'surgery';
+
+/** 长期医嘱（及手麻关闭时的临嘱）嘱托筛选：全部 / 嘱托 */
+export type OrderEntrustFilter = 'all' | 'entrust';
+
+/** 输液贴 / 输液巡视卡长临筛选：全部 / 长期 / 临时（code，禁止用展示文案分支） */
+export type InfusionTherapyFilter = 'all' | 'long' | 'temp';
+
+/**
+ * 申请单号是否麻醉申请（与后端 ScopeSupport 同口径：仅 AA 前缀）。
+ *
+ * @param prescriptionNo 方号/申请单号
+ * @returns true=麻醉申请内容
+ */
+export function isAnesthesiaApplyPrescriptionNo(prescriptionNo?: null | string): boolean {
+  return String(prescriptionNo ?? '').trim().startsWith('AA');
+}
 
 /** 待打表列定义（按单据切换表头语义） */
 export interface PrintColumnDef {
@@ -11,6 +66,7 @@ export interface PrintColumnDef {
     | 'title'
     | 'subtitle'
     | 'frequencyDisplay'
+    | 'therapyTypeText'
     | 'timeText'
     | 'statusText'
     | 'printStatusText'
@@ -68,6 +124,12 @@ export interface PrintEmptyHintContext {
   /** 查询区间文案，如 2026-08-15 或 2026-08-01 ~ 2026-08-15 */
   dateRangeLabel: string;
   oralMedInfusionFilter: 'all' | 'infusion' | 'non_infusion';
+  /** 临时医嘱：全部 / 手术 / 麻醉 / 嘱托 */
+  tempOrderSurgeryAnesthFilter?: TempOrderSurgeryAnesthFilter;
+  /** 长期医嘱（及手麻关闭时的临嘱）：全部 / 嘱托 */
+  orderEntrustFilter?: OrderEntrustFilter;
+  /** 输液贴 / 输液巡视卡：全部 / 长期 / 临时 */
+  infusionTherapyFilter?: InfusionTherapyFilter;
   patientScopeOk: boolean;
   scope: 'single' | 'multiple' | 'ward' | undefined;
 }
@@ -137,12 +199,13 @@ const LABEL_COLUMNS: PrintColumnDef[] = [
   { key: 'pageHint', label: '张数', width: 80, align: 'center' },
 ];
 
-/** 输液贴 / 巡视卡：组行展示，内容可折行，带频次 */
+/** 输液贴：组行展示，内容可折行，带长临与频次 */
 const INFUSION_GROUP_COLUMNS: PrintColumnDef[] = [
   { key: 'bedNo', label: '床号', width: 80, align: 'center' },
   { key: 'patientName', label: '患者', width: 88, align: 'center' },
   { key: 'title', label: '标签内容', minWidth: 260 },
   { key: 'subtitle', label: '组/规格', width: 140, align: 'center' },
+  { key: 'therapyTypeText', label: '长临', width: 72, align: 'center' },
   { key: 'frequencyDisplay', label: '频次', width: 96, align: 'center' },
   { key: 'timeText', label: '时间', width: 88, align: 'center' },
   { key: 'statusText', label: '状态', width: 96, align: 'center' },
@@ -154,6 +217,7 @@ const PATROL_COLUMNS: PrintColumnDef[] = [
   { key: 'patientName', label: '患者', width: 88, align: 'center' },
   { key: 'title', label: '内容', minWidth: 260 },
   { key: 'subtitle', label: '组/规格', width: 140, align: 'center' },
+  { key: 'therapyTypeText', label: '长临', width: 72, align: 'center' },
   { key: 'frequencyDisplay', label: '频次', width: 96, align: 'center' },
   { key: 'timeText', label: '时间', width: 88, align: 'center' },
   { key: 'statusText', label: '状态', width: 96, align: 'center' },
@@ -179,14 +243,14 @@ const WRISTBAND_COLUMNS: PrintColumnDef[] = [
   { key: 'timeText', label: '入院日', width: 120, align: 'center' },
 ];
 
-/** 床头卡：对齐纸单字段（护理级别/诊断/主治/医保） */
+/** 床头卡：对齐贴纸字段（护理级别/诊断/主管医生·责任护士） */
 const BED_CARD_COLUMNS: PrintColumnDef[] = [
   { key: 'bedNo', label: '床号', width: 80, align: 'center' },
   { key: 'patientName', label: '患者', width: 96, align: 'center' },
   { key: 'title', label: '护理级别', width: 100, align: 'center' },
   { key: 'subtitle', label: '诊断', minWidth: 140 },
-  { key: 'timeText', label: '入院日', width: 120, align: 'center' },
-  { key: 'pageHint', label: '主治/医保', width: 140, align: 'center' },
+  { key: 'timeText', label: '入院时间', width: 140, align: 'center' },
+  { key: 'pageHint', label: '医生/护士', width: 140, align: 'center' },
 ];
 
 const NURSING_COLUMNS: PrintColumnDef[] = [
@@ -316,6 +380,106 @@ export function needsOralMedInfusionFilter(docType: PrintDocType): boolean {
   return docType === 'oral_med_sheet';
 }
 
+/** 输液贴 / 输液巡视卡：全部 / 长期 / 临时 */
+export function needsInfusionTherapyFilter(docType: PrintDocType): boolean {
+  return docType === 'infusion_label' || docType === 'patrol_card';
+}
+
+/**
+ * 输液贴、输液巡视卡待打行按长临收窄。
+ * 长期只留 LONG_TERM；临时只留 TEMPORARY；出院带药仅在「全部」中展示。
+ *
+ * @param rows 已校对输液组
+ * @param filter all / long / temp
+ */
+export function filterInfusionRowsByTherapy(
+  rows: PrintPendingRow[],
+  filter: InfusionTherapyFilter,
+): PrintPendingRow[] {
+  if (filter === 'long') {
+    return rows.filter((row) => row.therapyTypeCode === 'LONG_TERM');
+  }
+  if (filter === 'temp') {
+    return rows.filter((row) => row.therapyTypeCode === 'TEMPORARY');
+  }
+  return rows;
+}
+
+/** 临时医嘱：全部/手术/麻醉/嘱托（手麻开关关闭时不展示，改用嘱托组） */
+export function needsTempOrderSurgeryAnesthFilter(docType: PrintDocType): boolean {
+  return docType === 'temp_order' && INPATIENT_SURGERY_ANESTH_ENABLED;
+}
+
+/**
+ * 长期医嘱嘱托筛选；临嘱仅在手麻关闭时单独展示（手麻开启时嘱托已并入手麻单选组）。
+ */
+export function needsOrderEntrustFilter(docType: PrintDocType): boolean {
+  if (docType === 'long_order') {
+    return true;
+  }
+  return docType === 'temp_order' && !INPATIENT_SURGERY_ANESTH_ENABLED;
+}
+
+/**
+ * 待打行是否嘱托（categoryEnum=52；BR-IP-ORD-028）。
+ *
+ * @param row 长/临待打行
+ */
+export function isEntrustPendingRow(row: Pick<PrintPendingRow, 'categoryEnum'>): boolean {
+  return String(row.categoryEnum ?? '').trim() === SERVICE_CATEGORY_ENTRUST;
+}
+
+/**
+ * 长期/临时医嘱待打行按嘱托收窄。
+ *
+ * @param rows 已校对长/临待打行
+ * @param filter all / entrust
+ */
+export function filterOrderRowsByEntrust(
+  rows: PrintPendingRow[],
+  filter: OrderEntrustFilter,
+): PrintPendingRow[] {
+  if (filter === 'entrust') {
+    return rows.filter((row) => isEntrustPendingRow(row));
+  }
+  return rows;
+}
+
+/**
+ * 临时医嘱待打行按手术/麻醉/嘱托收窄。
+ * 全部/手术排除 AA；麻醉仅认申请单号 AA 前缀；嘱托按 categoryEnum=52。
+ *
+ * @param rows 已校对临时医嘱待打行
+ * @param filter all / surgery / anesthesia / entrust
+ */
+export function filterTempOrderRowsBySurgeryAnesth(
+  rows: PrintPendingRow[],
+  filter: TempOrderSurgeryAnesthFilter,
+): PrintPendingRow[] {
+  if (filter === 'surgery') {
+    return rows.filter(
+      (row) =>
+        row.categoryEnum === SERVICE_CATEGORY_PROCEDURE &&
+        !isAnesthesiaApplyPrescriptionNo(row.prescriptionNo),
+    );
+  }
+  if (filter === 'anesthesia') {
+    return rows.filter((row) => isAnesthesiaApplyPrescriptionNo(row.prescriptionNo));
+  }
+  if (filter === 'entrust') {
+    return rows.filter(
+      (row) => isEntrustPendingRow(row) && !isAnesthesiaApplyPrescriptionNo(row.prescriptionNo),
+    );
+  }
+  // 全部：排除麻醉申请（正常临嘱）
+  return rows.filter((row) => !isAnesthesiaApplyPrescriptionNo(row.prescriptionNo));
+}
+
+/** 普通长/临待打：排除麻醉申请（AA 前缀，与后端默认口径一致） */
+export function excludeAnesthesiaApplyPendingRows(rows: PrintPendingRow[]): PrintPendingRow[] {
+  return rows.filter((row) => !isAnesthesiaApplyPrescriptionNo(row.prescriptionNo));
+}
+
 /** 输液巡视卡：按频次拆张开关 */
 export function needsFrequencySplitSwitch(docType: PrintDocType): boolean {
   return docType === 'patrol_card';
@@ -347,9 +511,21 @@ export function resolvePrintEmptyDescription(ctx: PrintEmptyHintContext): string
   }
   const when = ctx.dateRangeLabel || '所选日期';
   if (ctx.docType === 'patrol_card') {
+    if (ctx.infusionTherapyFilter === 'long') {
+      return `${when} 没有可打印的长期输液药品（含待执行/已执行）`;
+    }
+    if (ctx.infusionTherapyFilter === 'temp') {
+      return `${when} 没有可打印的临时输液药品（含待执行/已执行）`;
+    }
     return `${when} 没有可打印的输液药品（含待执行/已执行）`;
   }
   if (ctx.docType === 'infusion_label') {
+    if (ctx.infusionTherapyFilter === 'long') {
+      return `${when} 没有已校对的长期输液医嘱（含已执行/未执行）`;
+    }
+    if (ctx.infusionTherapyFilter === 'temp') {
+      return `${when} 没有已校对的临时输液医嘱（含已执行/未执行）`;
+    }
     return `${when} 没有已校对的输液药品医嘱（含已执行/未执行）`;
   }
   if (ctx.docType === 'oral_med_label') {
@@ -378,6 +554,21 @@ export function resolvePrintEmptyDescription(ctx: PrintEmptyHintContext): string
   }
   if (ctx.docType === 'nursing_record') {
     return `${when} 没有护理记录`;
+  }
+  if (ctx.docType === 'temp_order' && ctx.tempOrderSurgeryAnesthFilter === 'surgery') {
+    return `${when} 没有可打印的手术医嘱`;
+  }
+  if (ctx.docType === 'temp_order' && ctx.tempOrderSurgeryAnesthFilter === 'anesthesia') {
+    return `${when} 没有可打印的麻醉申请医嘱`;
+  }
+  if (ctx.docType === 'temp_order' && ctx.tempOrderSurgeryAnesthFilter === 'entrust') {
+    return `${when} 没有可打印的嘱托医嘱`;
+  }
+  if (ctx.docType === 'long_order' && ctx.orderEntrustFilter === 'entrust') {
+    return `${when} 没有可打印的嘱托医嘱`;
+  }
+  if (ctx.docType === 'temp_order' && ctx.orderEntrustFilter === 'entrust') {
+    return `${when} 没有可打印的嘱托医嘱`;
   }
   if (ctx.docType === 'fee_list') {
     return `${when} 没有可打印的费用清单项目`;

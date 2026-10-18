@@ -141,7 +141,7 @@ async function doSubmit(): Promise<boolean> {
       throw new Error('工伤模块未启用');
     }
     if (!(await isWorkInjuryPluginOnline())) {
-      throw new Error('请启动 OpenHIS.Win 并启用工伤模块');
+      throw new Error('请启动 Zxplat.Win 并启用工伤模块');
     }
     await runWorkInjuryRegister2301({
       encounterId: props.encounterId,

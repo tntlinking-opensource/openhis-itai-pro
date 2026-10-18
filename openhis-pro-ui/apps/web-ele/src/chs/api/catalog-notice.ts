@@ -19,6 +19,7 @@ export interface NoticeScanItem {
   category?: string;
   title?: string;
   noticeDate?: string;
+  effectiveDate?: string;
   lineCount?: number;
   addCount?: number;
   stopCount?: number;
@@ -190,6 +191,8 @@ export interface PreviewNoticeApplyParams {
 
 export interface PreviewNoticeApplyResult {
   overlayUpsertCount?: number;
+  pendingMapCount?: number;
+  skippedCount?: number;
   writebackCount?: number;
   unchargedSyncCount?: number;
   samples?: ApplyPreviewSample[];

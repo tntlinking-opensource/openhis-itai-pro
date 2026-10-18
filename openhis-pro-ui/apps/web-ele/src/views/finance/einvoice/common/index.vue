@@ -3,7 +3,7 @@ import type { CommonLineRequest, IssueCommonRequest } from '#/api/einvoice-boss/
 
 import { computed, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import {
   ElButton,

@@ -1,80 +1,62 @@
-# OpenHIS 前端（openhis-pro-ui）
+# zxplat-ui
 
-基于 [Vue Vben Admin](https://github.com/vbenjs/vue-vben-admin) 的医院信息系统前端 monorepo，主应用为 Vue 3 + Element Plus（`apps/web-ele`）。
+ZXPlat 前端 monorepo（**独立仓库**，不在 ZXPlat 主仓内）。
 
-**许可证**：[LGPL-3.0-or-later](LICENSE)（与后端 [whale-sever](../whale-sever/) 一致）。
+- **仓库**：https://gitee.com/wuhan-xinzhi-xinyuan-software/zxplat-ui.git
+- **包作用域**：@zxplat/* · @zxplat-core/*
+- **应用**：apps/web-ele（主线）· apps/web-antd（壳）
+- **院点 overlay**：本仓 `projects/project-H*/`（env + overrides）
 
-院点差异放在 `projects/project-H*/`（与后端 `whale-project/` 对称），详见 [whale-doc/01-架构/前端院点定制方案.md](../whale-doc/01-架构/前端院点定制方案.md)。
-
----
-
-## 技术栈
-
-- **框架**: Vue 3、Vite
-- **UI**: Element Plus、Vxe Table
-- **状态**: Pinia
-- **路由**: Vue Router
-- **包管理**: pnpm、Turbo
-
-## 环境要求
-
-- Node.js >= 20.12.0
-- pnpm >= 10.0.0
-
-## 快速开始
-
-```bash
-# 安装依赖
-pnpm install
-
-# 启动主应用（Element Plus 版）
-pnpm dev
-
-# 构建主应用
-pnpm build:ele
-```
-
-院点定制构建（需 `projects/project-H*` 目录）：
-
-```bash
-# 示例：朝阳中医院
-OPENHIS_PROJECT=H22010402403 pnpm run dev:ele:project
-pnpm run build:ele:project
-```
-
-## 项目结构
+## 目录
 
 ```text
-openhis-pro-ui/
-├── apps/
-│   └── web-ele/          # 主应用（Element Plus）
-│       └── src/
-│           ├── api/      # 接口
-│           ├── views/    # 页面
-│           ├── router/
-│           └── ...
-├── packages/             # 公共包
-├── projects/             # 院点定制（project-H*）
-│   └── project-H*/
-│       ├── .env.production
-│       └── overrides/    # 编译期重载 #/ 路径
-└── pnpm-workspace.yaml
+zxplat-ui/
+  apps/web-ele/          # 产品主线
+  projects/
+    project-H…/          # 院点 overlay（与定点码对应）
+      .env.*
+      overrides/
+      README.md
+  scripts/zxplat-project/run-web-ele.mjs
 ```
 
-## 主要功能模块
+主仓 `zxplat/projects/<id>/` 仅保留 **backend + docs**；UI 以本仓为准。
 
-- **库存/库房**: 盘点、采购、调拨、报损等（`views/inventory/`）
-- **基础数据**: 患者、药品、收费类型、病区/库位等
-- **系统管理**: 菜单、用户权限、租户、供应商等
-- **门诊/收费**: 挂号、医生工作站等
+## 与主仓协作（同级目录）
 
-## 开发说明
+```text
+03.ZXPlat/
+  zxplat/       # 后端 + 院点 backend/docs
+  zxplat-ui/    # 前端 + 院点 overlay
+```
 
-- 代码规范：提交前执行 ESLint、Prettier、lint-staged（lefthook pre-commit）
-- 类型检查：`pnpm run check:type`
-- 格式化：`pnpm run format`
-- 后端联调：默认对接 `whale-health/health-app`（见 `apps/web-ele` 环境配置）
+```bash
+git clone https://gitee.com/wuhan-xinzhi-xinyuan-software/ZXPlat.git zxplat
+git clone https://gitee.com/wuhan-xinzhi-xinyuan-software/zxplat-ui.git zxplat-ui
+cd zxplat-ui && pnpm install
+```
 
-## 许可证
+## 本地启动
 
-全部前端源码许可以仓库根目录 **[LICENSE](LICENSE)**（GNU LGPL v3 或更高版本）为准。生产构建产物会在 bundle 头部注入 LGPL 版权注释（见 `internal/vite-config/src/plugins/license.ts`）。
+在本仓根目录执行（pnpm workspace，不要进 `apps` 单独装依赖）。
+
+```powershell
+# 主线 Element Plus（apps/web-ele，端口 5778）
+pnpm run dev:ele
+
+# Ant Design 壳（apps/web-antd，端口 5779）
+pnpm run dev:antd
+
+# 带院点 overlay（env + projects/project-{定点码}/overrides）
+node scripts/zxplat-project/run-web-ele.mjs --project H22010402403 -- pnpm vite --mode development --port 5778
+```
+
+日常开发用 `dev:ele`。要对齐院点 env 和 overrides，用第三条，把定点码换成目标院点。
+
+```bash
+# 院点构建示例
+$env:ZXPLAT_PROJECT = "H22010200596"
+node scripts/zxplat-project/run-web-ele.mjs -- pnpm vite build --mode production
+```
+
+脚本优先解析本仓 `projects/project-{id}/`；若无则回退旧路径（主仓 `…/ui`，兼容迁移期）。

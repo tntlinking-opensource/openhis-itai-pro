@@ -3,7 +3,7 @@ import type { RouteRecordRaw } from 'vue-router';
 import { computed, type ComputedRef } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { useAccessStore } from '@vben/stores';
+import { useAccessStore } from '@zxplat/stores';
 
 import { useAuthStore } from '#/store';
 

@@ -34,6 +34,14 @@ export interface OutpatientChargeReceiptPrintData {
   accountBalanceText: string;
   cashierName: string;
   chargeTimeText: string;
+  /** 门诊号 */
+  encounterBusNo: string;
+  /** 挂号时间 */
+  registerTimeText: string;
+  /** 开方科室 */
+  orderingDepartmentName: string;
+  /** 开方医生 */
+  orderingDoctorName: string;
 }
 
 /** printChargeReceipt.slip（后端 ChargeReceiptSlipDto） */
@@ -61,6 +69,10 @@ export interface ChargeReceiptSlipPrintSource {
   accountBalanceText?: string;
   cashierName?: string;
   chargeTimeText?: string;
+  encounterBusNo?: string;
+  registerTimeText?: string;
+  orderingDepartmentName?: string;
+  orderingDoctorName?: string;
   encounterId?: null | number | string;
 }
 
@@ -129,5 +141,9 @@ export function buildOutpatientChargeReceiptPrintData(
     accountBalanceText: str(source.accountBalanceText),
     cashierName: str(source.cashierName),
     chargeTimeText: str(source.chargeTimeText),
+    encounterBusNo: str(source.encounterBusNo),
+    registerTimeText: str(source.registerTimeText),
+    orderingDepartmentName: str(source.orderingDepartmentName),
+    orderingDoctorName: str(source.orderingDoctorName),
   };
 }

@@ -1,9 +1,10 @@
 /**
  * 前端 SpreadsheetML 工作簿下载（Excel 可直接打开）。
- * 无 xlsx 依赖时使用；文件名统一 .xlsx，与项目其它导出口径一致。
+ * 无 xlsx 依赖时使用。内容为 Excel 2003 XML（SpreadsheetML），
+ * **扩展名须为 `.xls`**：写成 `.xlsx` 会被新版 Excel 以「格式或扩展名无效」拒开。
  *
  * 数量/金额须传 number，写出 ss:Type="Number"；否则 Excel 只能计数不能求和。
- * 口径对齐 whale-doc monetary-amount-contract §1.1。
+ * 口径对齐 docs monetary-amount-contract §1.1。
  */
 
 /** 单元格：文本 / 数字；空值写空白。 */
@@ -71,17 +72,33 @@ export function buildSpreadsheetMlWorkbook(sheetName: string, rows: SpreadsheetC
 }
 
 /**
- * 触发浏览器下载 Excel（.xlsx）。
+ * 将下载名规范为 SpreadsheetML 可用的 `.xls`（误传 `.xlsx` 时改写）。
+ *
+ * @param fileName 原始文件名
+ */
+function resolveSpreadsheetMlFileName(fileName: string): string {
+  let base = fileName.trim() || 'export';
+  const lower = base.toLowerCase();
+  // 误用 OOXML 扩展名：新版 Excel 会拒开 SpreadsheetML 内容
+  if (lower.endsWith('.xlsx')) {
+    base = `${base.slice(0, -5)}.xls`;
+  } else if (!lower.endsWith('.xls')) {
+    base = `${base}.xls`;
+  }
+  return base;
+}
+
+/**
+ * 触发浏览器下载 Excel（SpreadsheetML → `.xls`）。
  *
  * @param content SpreadsheetML XML 正文
- * @param fileName 下载名；无 .xlsx 后缀时自动补齐
+ * @param fileName 下载名；`.xlsx` 会改写为 `.xls`，无后缀时自动补 `.xls`
  */
 export function triggerSpreadsheetMlDownload(content: string, fileName: string) {
-  const safeName = fileName.trim().endsWith('.xlsx')
-    ? fileName.trim()
-    : `${fileName.trim() || 'export'}.xlsx`;
-  const blob = new Blob([`\uFEFF${content}`], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=utf-8;',
+  const safeName = resolveSpreadsheetMlFileName(fileName);
+  // MIME 用 ms-excel；正文为 SpreadsheetML XML（非 OOXML zip）
+  const blob = new Blob([content], {
+    type: 'application/vnd.ms-excel;charset=utf-8;',
   });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');

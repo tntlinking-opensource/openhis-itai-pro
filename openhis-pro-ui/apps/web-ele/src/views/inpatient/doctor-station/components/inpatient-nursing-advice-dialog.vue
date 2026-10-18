@@ -3,6 +3,7 @@ import type { FormInstance, FormRules } from 'element-plus';
 
 import type { InpatientDoctorStationPatient } from '../doctorPatientStore';
 import type { AdviceProductOption } from '../advice/services/advice.types';
+import type { ActiveNursingLevelAdviceSnapshot } from '../advice/services/inpatient-advice-nursing';
 
 import { computed, ref, watch } from 'vue';
 
@@ -17,7 +18,7 @@ import {
   INPATIENT_NURSING_LEVEL_RATE_LABEL,
 } from '../advice/services/advice-tab.constants';
 import {
-  hasActiveNursingLevelOnPatient,
+  loadActiveNursingLevelFromAdvice,
   loadNursingLevelCatalogOptions,
   saveAndSignNursingLevelAdvice,
 } from '../advice/services/inpatient-advice-nursing';
@@ -42,6 +43,8 @@ const emit = defineEmits<{
 
 const formRef = ref<FormInstance>();
 const nursingOptions = ref<AdviceProductOption[]>([]);
+/** 打开弹窗时从医嘱列表解析的有效护理级别（停嘱后立刻退出） */
+const activeNursingLevel = ref<ActiveNursingLevelAdviceSnapshot | null>(null);
 
 const form = ref({
   activityDefinitionId: '',
@@ -67,23 +70,38 @@ const catalogRequest = useRequest(
   { manual: true, showErrorMessage: false },
 );
 
+const activeNursingRequest = useRequest(
+  async () => {
+    const patient = props.patient;
+    if (!patient) return null;
+    const encounterId = (patient.encounterId ?? '').trim();
+    const patientId = (patient.patientId ?? '').trim();
+    if (!encounterId || !patientId) return null;
+    return loadActiveNursingLevelFromAdvice({ encounterId, patientId });
+  },
+  { manual: true, showErrorMessage: false },
+);
+
 const submitRequest = useRequest(saveAndSignNursingLevelAdvice, {
   manual: true,
   showErrorMessage: false,
 });
 
-const dialogLoading = computed(() => catalogRequest.loading.value || submitRequest.loading.value);
+const dialogLoading = computed(
+  () =>
+    catalogRequest.loading.value ||
+    activeNursingRequest.loading.value ||
+    submitRequest.loading.value,
+);
 
-/** 当前有效护理级别展示名（患者队列 enrich） */
+/** 当前有效护理级别展示名（医嘱列表） */
 const currentNursingLevelLabel = computed(() => {
-  const name = String(props.patient?.nursingLevelName ?? '').trim();
+  const name = String(activeNursingLevel.value?.displayName ?? '').trim();
   return name || '—';
 });
 
-/** 是否存在有效护理级别，换级须先停嘱 */
-const hasActiveNursingLevel = computed(() =>
-  hasActiveNursingLevelOnPatient(props.patient?.nursingLevelStatusEnum),
-);
+/** 是否存在有效护理级别，换级须先停嘱（读医嘱列表态，不读患者队列 enrich） */
+const hasActiveNursingLevel = computed(() => activeNursingLevel.value != null);
 
 /** 选中目录行（提交 unit/执行科室；频次固定 QD） */
 const selectedNursingOption = computed(() =>
@@ -92,24 +110,28 @@ const selectedNursingOption = computed(() =>
   ),
 );
 
-/** 弹窗打开：加载护理级别目录（频次固定每日一次） */
+/** 弹窗打开：并行加载目录 + 当前医嘱中的有效护理级别 */
 watch(visible, (open) => {
   if (!open) return;
   form.value.activityDefinitionId = '';
+  activeNursingLevel.value = null;
   formRef.value?.clearValidate();
-  void catalogRequest.run().then((options) => {
-    nursingOptions.value = options ?? [];
-    if (nursingOptions.value.length === 0) {
-      ElMessage.warning('未找到护理级别目录，请确认主数据已维护 category=26 的诊疗活动');
-    }
-    const currentActId = preserveApiIdForRequest(props.patient?.nursingLevelActivityId);
-    if (
-      currentActId &&
-      nursingOptions.value.some((opt) => opt.productDefinitionId === currentActId)
-    ) {
-      form.value.activityDefinitionId = currentActId;
-    }
-  });
+  void Promise.all([catalogRequest.run(), activeNursingRequest.run()]).then(
+    ([options, active]) => {
+      nursingOptions.value = options ?? [];
+      activeNursingLevel.value = active ?? null;
+      if (nursingOptions.value.length === 0) {
+        ElMessage.warning('未找到护理级别目录，请确认主数据已维护 category=26 的诊疗活动');
+      }
+      const currentActId = preserveApiIdForRequest(active?.activityDefinitionId);
+      if (
+        currentActId &&
+        nursingOptions.value.some((opt) => opt.productDefinitionId === currentActId)
+      ) {
+        form.value.activityDefinitionId = currentActId;
+      }
+    },
+  );
 });
 
 /** 提交开立护理级别（长期 · 频次固定 QD · 暂存+签发） */
@@ -119,8 +141,22 @@ async function handleSubmit() {
     ElMessage.warning('请先选择患者');
     return;
   }
-  if (hasActiveNursingLevel.value) {
-    ElMessage.warning('已存在有效护理级别医嘱，请先在医嘱列表停嘱后再换级');
+  // 提交前再读一次医嘱列表，避免打开后刚停嘱仍被旧快照拦住或漏拦
+  try {
+    const encounterId = (patient.encounterId ?? '').trim();
+    const patientId = (patient.patientId ?? '').trim();
+    if (!encounterId || !patientId) {
+      ElMessage.warning('缺少就诊或患者信息');
+      return;
+    }
+    const latest = await activeNursingRequest.run();
+    activeNursingLevel.value = latest ?? null;
+    if (latest) {
+      ElMessage.warning('已存在有效护理级别医嘱，请先在医嘱列表停嘱后再换级');
+      return;
+    }
+  } catch {
+    ElMessage.error('校验当前护理级别失败，请稍后重试');
     return;
   }
   const encounterId = (patient.encounterId ?? '').trim();
@@ -204,7 +240,7 @@ function handleCancel() {
           placeholder="请选择护理级别"
           filterable
           class="w-full"
-          :loading="catalogRequest.loading.value"
+          :loading="catalogRequest.loading.value || activeNursingRequest.loading.value"
           :disabled="dialogLoading || hasActiveNursingLevel"
         >
           <ElOption
@@ -230,7 +266,7 @@ function handleCancel() {
       <ElButton
         type="primary"
         :loading="submitRequest.loading.value"
-        :disabled="hasActiveNursingLevel"
+        :disabled="hasActiveNursingLevel || activeNursingRequest.loading.value"
         @click="handleSubmit"
       >
         提交
@@ -250,6 +286,5 @@ function handleCancel() {
 
 .ip-nursing-advice-form__readonly {
   color: var(--el-text-color-regular);
-  line-height: 32px;
 }
 </style>

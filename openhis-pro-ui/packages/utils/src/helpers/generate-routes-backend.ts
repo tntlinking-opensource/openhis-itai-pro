@@ -4,7 +4,7 @@ import type {
   ComponentRecordType,
   GenerateMenuAndRoutesOptions,
   RouteRecordStringComponent,
-} from '@vben-core/typings';
+} from '@zxplat-core/typings';
 
 /**
  * 动态生成路由 - 后端方式

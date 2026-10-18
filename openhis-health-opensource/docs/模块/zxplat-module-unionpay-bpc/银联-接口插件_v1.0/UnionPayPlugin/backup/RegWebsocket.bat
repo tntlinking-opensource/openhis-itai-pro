@@ -1,0 +1,1 @@
+Reg Add "HKCU\software\Microsoft\Windows\CurrentVersion\Run" /V "ums_websocket" /D "c:\gmc\websocket.exe" /F

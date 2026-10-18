@@ -43,11 +43,19 @@ const emit = defineEmits<{
   confirm: [payload: AddItemRuleConfirmPayload];
 }>();
 
+/** 下拉行：label 仍是名称，busNo 只在列表里展示，避免写入规则名称。 */
+interface CatalogPickOption extends ApiOptionItem {
+  busNo?: string;
+}
+
 const itemTable = ref<string>();
 const distributionCategoryCode = ref<string>();
 const selectedItemIds = ref<string[]>([]);
-const itemOptions = ref<ApiOptionItem[]>([]);
+const itemOptions = ref<CatalogPickOption[]>([]);
+/** 已选项缓存。远程检索会换掉当前页，确认时仍要带上之前勾过的物品。 */
+const selectedOptionCache = ref<CatalogPickOption[]>([]);
 const itemLoading = ref(false);
+let itemRequestSeq = 0;
 
 const dialogVisible = computed({
   get: () => props.visible,
@@ -66,55 +74,123 @@ const distributionCategoryOptions = computed(() =>
 /** 目录物品选项（同物品可再配不同药房，不做已绑去重） */
 const selectableItemOptions = computed(() => itemOptions.value);
 
-/** 按类型与类别加载物品目录 */
-async function loadItemOptions() {
-  if (!itemTable.value) {
+/** 把仍处于勾选状态的选项留在缓存里，供确认时取名称。 */
+function retainSelectedOptions(options: CatalogPickOption[]) {
+  const selectedIds = new Set(selectedItemIds.value.map((id) => String(id)));
+  const merged = new Map<string, CatalogPickOption>();
+  for (const option of selectedOptionCache.value) {
+    const id = String(option.value);
+    if (selectedIds.has(id)) {
+      merged.set(id, option);
+    }
+  }
+  for (const option of options) {
+    const id = String(option.value);
+    if (selectedIds.has(id)) {
+      merged.set(id, option);
+    }
+  }
+  selectedOptionCache.value = [...merged.values()];
+}
+
+/** 目录行转下拉项；主键保持字符串，避免 Long 精度丢失。 */
+function toCatalogPickOption(id: unknown, name: unknown, busNo: unknown): CatalogPickOption | undefined {
+  const value = String(id ?? '').trim();
+  if (!value) {
+    return undefined;
+  }
+  const code = String(busNo ?? '').trim();
+  const title = String(name ?? '').trim();
+  return {
+    value,
+    label: title || code,
+    busNo: code || undefined,
+  };
+}
+
+/** 按发放类别检索目录。空关键字只拉一页；有关键字时服务端匹配名称、拼音、五笔和业务编码。 */
+async function loadItemOptions(keyword?: string) {
+  if (!itemTable.value || !distributionCategoryCode.value) {
     itemOptions.value = [];
     return;
   }
+  const seq = ++itemRequestSeq;
+  const trimmedKeyword = keyword?.trim() ?? '';
   itemLoading.value = true;
   try {
+    let mapped: CatalogPickOption[] = [];
     if (USE_SERVICE_LOCATION_MOCK) {
-      itemOptions.value = getMockItemDefinitions(itemTable.value, distributionCategoryCode.value);
+      const mockOptions = getMockItemDefinitions(itemTable.value, distributionCategoryCode.value);
+      mapped = mockOptions.filter((item) => {
+        if (!trimmedKeyword) {
+          return true;
+        }
+        const kw = trimmedKeyword.toLowerCase();
+        return item.label.toLowerCase().includes(kw) || String(item.value).toLowerCase().includes(kw);
+      });
+    } else {
+      // 空关键字也只取 50：原先 500 会把下拉选项一次撑爆，弹窗打开即卡
+      const params = {
+        pageNo: 1,
+        pageSize: 50,
+        categoryCode: distributionCategoryCode.value,
+        keyword: trimmedKeyword || undefined,
+      };
+      if (isMedicationItemTable(itemTable.value)) {
+        const res = await pageMedicationCatalogApi(params);
+        const content = res?.data?.content ?? [];
+        mapped = content.flatMap((item) => {
+          const option = toCatalogPickOption(item.id ?? item.medicationDefId, item.name, item.busNo);
+          return option ? [option] : [];
+        });
+      } else if (isDeviceItemTable(itemTable.value)) {
+        const res = await pageDeviceCatalogApi(params);
+        const content = res?.data?.content ?? [];
+        mapped = content.flatMap((item) => {
+          const option = toCatalogPickOption(item.id, item.name ?? item.merchandiseName, item.busNo);
+          return option ? [option] : [];
+        });
+      }
+    }
+    if (seq !== itemRequestSeq) {
       return;
     }
-    const params = {
-      pageNo: 1,
-      pageSize: 500,
-      categoryCode: distributionCategoryCode.value,
-    };
-    if (isMedicationItemTable(itemTable.value)) {
-      const res = await pageMedicationCatalogApi(params);
-      const content = res?.data?.content ?? [];
-      itemOptions.value = content.map((item) => ({
-        value: String(item.id ?? item.medicationDefId ?? ''),
-        label: String(item.name ?? ''),
-      }));
-      return;
-    }
-    if (isDeviceItemTable(itemTable.value)) {
-      const res = await pageDeviceCatalogApi(params);
-      const content = res?.data?.content ?? [];
-      itemOptions.value = content.map((item) => ({
-        value: String(item.id ?? ''),
-        label: String(item.name ?? item.merchandiseName ?? ''),
-      }));
+    itemOptions.value = mapped;
+    retainSelectedOptions(mapped);
+  } catch {
+    if (seq === itemRequestSeq) {
+      ElMessage.error('检索物品失败，请稍后重试');
     }
   } finally {
-    itemLoading.value = false;
+    if (seq === itemRequestSeq) {
+      itemLoading.value = false;
+    }
   }
+}
+
+/** 输入关键字后远程检索；下拉展开时组件会以空关键字调用一次。 */
+function onItemKeywordSearch(keyword: string) {
+  loadItemOptions(keyword);
+}
+
+/** 丢掉进行中的检索，并清空已选与候选。 */
+function resetItemPickState() {
+  itemRequestSeq += 1;
+  selectedItemIds.value = [];
+  selectedOptionCache.value = [];
+  itemOptions.value = [];
+  itemLoading.value = false;
 }
 
 /** 物品类型变更时重置已选 */
 function onItemTableChange() {
-  selectedItemIds.value = [];
   distributionCategoryCode.value = undefined;
-  itemOptions.value = [];
+  resetItemPickState();
 }
 
 /** 发放类别变更时重置已选并刷新目录 */
 function onCategoryChange() {
-  selectedItemIds.value = [];
+  resetItemPickState();
   loadItemOptions();
 }
 
@@ -123,8 +199,7 @@ function handleClose() {
   dialogVisible.value = false;
   itemTable.value = undefined;
   distributionCategoryCode.value = undefined;
-  selectedItemIds.value = [];
-  itemOptions.value = [];
+  resetItemPickState();
 }
 
 /** 确认添加选中的具体物品 */
@@ -141,9 +216,11 @@ function handleConfirm() {
     ElMessage.warning('请至少选择一个具体物品');
     return;
   }
-  const picked = selectableItemOptions.value.filter((item) =>
-    selectedItemIds.value.includes(String(item.value)),
-  );
+  retainSelectedOptions(itemOptions.value);
+  const picked = selectedItemIds.value.flatMap((id) => {
+    const option = selectedOptionCache.value.find((item) => String(item.value) === String(id));
+    return option ? [option] : [];
+  });
   if (!picked.length) {
     ElMessage.warning('请至少选择一个具体物品');
     return;
@@ -162,11 +239,14 @@ watch(
     if (open) {
       itemTable.value = undefined;
       distributionCategoryCode.value = undefined;
-      selectedItemIds.value = [];
-      itemOptions.value = [];
+      resetItemPickState();
     }
   },
 );
+
+watch(selectedItemIds, () => {
+  retainSelectedOptions(itemOptions.value);
+});
 </script>
 
 <template>
@@ -220,20 +300,27 @@ watch(
           v-model="selectedItemIds"
           multiple
           filterable
+          remote
+          reserve-keyword
           collapse-tags
           collapse-tags-tooltip
-          placeholder="可多选，已绑定的不显示"
+          placeholder="输入编码、名称或拼音检索，可多选"
           style="width: 400px"
           :loading="itemLoading"
           :disabled="!itemTable || !distributionCategoryCode"
-          @visible-change="(open: boolean) => open && loadItemOptions()"
+          :remote-method="onItemKeywordSearch"
         >
           <ElOption
             v-for="item in selectableItemOptions"
             :key="item.value"
             :label="item.label"
             :value="item.value"
-          />
+          >
+            <span v-if="item.busNo" class="mr-2 text-[var(--el-text-color-secondary)]">{{
+              item.busNo
+            }}</span>
+            <span>{{ item.label }}</span>
+          </ElOption>
         </ElSelect>
       </div>
     </div>

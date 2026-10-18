@@ -3,7 +3,7 @@ import type { VbenFormProps } from './types';
 
 import { ref, watchEffect } from 'vue';
 
-import { useForwardPropsEmits } from '@vben-core/composables';
+import { useForwardPropsEmits } from '@zxplat-core/composables';
 
 import FormActions from './components/form-actions.vue';
 import { COMPONENT_BIND_EVENT_MAP, COMPONENT_MAP, DEFAULT_FORM_COMMON_CONFIG } from './config';

@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import type { PatientAdmissionFilter, PatientStatusFilter } from './patient-list-panel.context';
+import type { PatientAdmissionFilter, PatientTaskFilter } from './patient-list-panel.context';
 
 import { inject, toRef } from 'vue';
 
 import { DArrowLeft, DArrowRight, FullScreen, Refresh } from '@element-plus/icons-vue';
 
-import { encounterStatusToNurseStationLabel } from '../services/map-inpatient-nurse-station-api';
+import {
+  encounterStatusToNurseStationLabel,
+  isPatientAdmittedToday,
+} from '../services/map-inpatient-nurse-station-api';
 import {
   formatInpatientAccountBalanceSecondaryText,
   formatNurseStationAccountBalance,
@@ -31,7 +34,8 @@ const {
   changeAdmissionFilter,
   changeKeyword,
   changeRegionIds,
-  changeStatusFilter,
+  changeStatusFilters,
+  changeTodayAdmissionOnly,
   changeWardIds,
   filterPanelExpanded,
   filteredPatients,
@@ -46,11 +50,16 @@ const {
   regionNameByIdRecord,
   selectedRegionIds,
   selectedWardIds,
-  statusFilter,
+  statusFilters,
   statusOptions,
+  todayAdmissionOnly,
   toggleFilterPanel,
   togglePatientCardSelection,
   togglePatientSelection,
+  toggleSelectAllFilteredPatients,
+  allFilteredPatientsSelected,
+  filteredPatientsIndeterminate,
+  selectionPolicy,
   totalPatientCount,
   wardNameByIdRecord,
 } = context;
@@ -62,14 +71,30 @@ function handleKeywordInput(value: string) {
   changeKeyword(value);
 }
 
-/** 切换任务筛选并拉取队列。 */
-function handleStatusFilterChange(value: PatientStatusFilter) {
-  changeStatusFilter(value);
+/** 选「全部」：清空任务筛选 */
+function handleSelectAllTasks() {
+  changeStatusFilters([]);
+}
+
+/** 切换待校对 / 待执行（可多选；都关掉则回全部） */
+function handleToggleTaskFilter(value: PatientTaskFilter) {
+  const current = statusFilters.value.filter(
+    (item) => item === 'pending-audit' || item === 'pending-execute',
+  );
+  const next = current.includes(value)
+    ? current.filter((item) => item !== value)
+    : [...current, value];
+  changeStatusFilters(next);
 }
 
 /** 切换入科状态筛选并拉取队列。 */
 function handleAdmissionFilterChange(value: PatientAdmissionFilter) {
   changeAdmissionFilter(value);
+}
+
+/** 切换「今日入院」本地筛选（不重拉队列）。 */
+function handleToggleTodayAdmission() {
+  changeTodayAdmissionOnly(!todayAdmissionOnly.value);
 }
 
 /** 病区勾选变化后拉取队列。 */
@@ -110,6 +135,11 @@ function handleCardDblClick(patient: (typeof filteredPatients.value)[number]) {
 /** 勾选框选择变化后同步到父层。 */
 function handleCheckboxChange(id: string, value: boolean) {
   togglePatientSelection(id, value);
+}
+
+/** 全选/取消全选当前筛选队列。 */
+function handleSelectAllChange(value: boolean) {
+  toggleSelectAllFilteredPatients(value);
 }
 
 /** 开始拖拽患者卡片并上抛给父层组装载荷。 */
@@ -167,6 +197,11 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
   const balance = row.availableBalance ?? row.accountBalance;
   return resolveNurseStationPatientBalanceTone(balance, row.lowBalanceWarning);
 }
+
+/** 是否今日入院（卡片配色与角标） */
+function isTodayAdmission(row: (typeof filteredPatients.value)[number]): boolean {
+  return isPatientAdmittedToday(row);
+}
 </script>
 
 <template>
@@ -207,6 +242,7 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
           <ElInput
             :model-value="keyword"
             clearable
+            size="small"
             placeholder="姓名/病区/床号模糊搜索"
             class="nurse-search-bar__keyword"
             @update:model-value="handleKeywordInput"
@@ -215,14 +251,16 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
             :icon="Refresh"
             :loading="queueLoading"
             circle
+            size="small"
             class="nurse-search-bar__refresh"
             title="刷新"
             @click.stop="handleRefreshFilters"
           />
         </div>
-        <div class="nurse-search-bar__row">
+        <div class="nurse-search-bar__row nurse-search-bar__row--filters">
           <ElSelect
             :model-value="admissionFilter"
+            size="small"
             class="nurse-search-bar__admission"
             @update:model-value="handleAdmissionFilterChange"
           >
@@ -233,18 +271,35 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
               :value="item.value"
             />
           </ElSelect>
-          <ElSelect
-            :model-value="statusFilter"
-            class="nurse-search-bar__status"
-            @update:model-value="handleStatusFilterChange"
-          >
-            <ElOption
+          <div class="nurse-task-seg" role="group" aria-label="任务筛选">
+            <button
+              type="button"
+              class="nurse-task-seg__item"
+              :class="{ 'is-active': statusFilters.length === 0 }"
+              @click.stop="handleSelectAllTasks"
+            >
+              全部
+            </button>
+            <button
               v-for="item in statusOptions"
               :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </ElSelect>
+              type="button"
+              class="nurse-task-seg__item"
+              :class="{ 'is-active': statusFilters.includes(item.value) }"
+              @click.stop="handleToggleTaskFilter(item.value)"
+            >
+              {{ item.label }}
+            </button>
+          </div>
+          <button
+            type="button"
+            class="nurse-today-toggle"
+            :class="{ 'is-active': todayAdmissionOnly }"
+            title="仅看今日入院患者，可与待校对/待执行叠加"
+            @click.stop="handleToggleTodayAdmission"
+          >
+            今日入院
+          </button>
         </div>
       </div>
       <div class="nurse-content-body">
@@ -303,12 +358,33 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
                 </div>
               </template>
               <template v-else-if="filteredPatients.length > 0">
+                <div
+                  v-if="selectionPolicy === 'multiple'"
+                  class="nurse-select-all"
+                  @click.stop
+                >
+                  <ElCheckbox
+                    :model-value="allFilteredPatientsSelected"
+                    :indeterminate="filteredPatientsIndeterminate"
+                    @change="(value: boolean) => handleSelectAllChange(value)"
+                  >
+                    全选
+                  </ElCheckbox>
+                  <span class="nurse-select-all__count"
+                    >{{ filteredPatients.length }} 人</span
+                  >
+                </div>
                 <div class="nurse-card-list">
                   <div
                     v-for="row in filteredPatients"
                     :key="row.id"
                     class="nurse-patient-card nurse-patient-card--draggable"
-                    :class="{ 'is-selected': row.selected }"
+                    :class="{
+                      'is-selected': row.selected,
+                      'is-pending-audit': row.pendingAudit > 0,
+                      'is-pending-execute': row.pendingExecute > 0,
+                      'is-today-admission': isTodayAdmission(row),
+                    }"
                     title="按住拖动到右侧「入出转管理」床位图，在目标床位上松开以分床或换床"
                     draggable="true"
                     @dragstart="handlePatientDragStart($event, row)"
@@ -341,11 +417,20 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
                           >
                         </div>
                         <div class="nurse-patient-card__sub-row">
-                          <span
-                            class="nurse-patient-card__status"
-                            :class="`is-${resolvePatientStatusTone(row)}`"
-                          >
-                            {{ formatPatientStatusLabel(row) }}
+                          <span class="nurse-patient-card__status-group">
+                            <span
+                              class="nurse-patient-card__status"
+                              :class="`is-${resolvePatientStatusTone(row)}`"
+                            >
+                              {{ formatPatientStatusLabel(row) }}
+                            </span>
+                            <span
+                              v-if="isTodayAdmission(row)"
+                              class="nurse-patient-card__today-badge"
+                              title="今日入院"
+                            >
+                              今日
+                            </span>
                           </span>
                           <span class="nurse-patient-card__balance-wrap">
                             <span class="nurse-patient-card__balance-main">
@@ -394,8 +479,20 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
                         </span>
                       </div>
                       <div class="nurse-patient-card__tasks">
-                        <span class="nurse-patient-card__audit">校 {{ row.pendingAudit }}</span>
-                        <span class="nurse-patient-card__execute">执 {{ row.pendingExecute }}</span>
+                        <span
+                          class="nurse-patient-card__task nurse-patient-card__audit"
+                          :class="{ 'is-on': row.pendingAudit > 0 }"
+                          :title="`待校对 ${row.pendingAudit}`"
+                        >
+                          校 <b>{{ row.pendingAudit }}</b>
+                        </span>
+                        <span
+                          class="nurse-patient-card__task nurse-patient-card__execute"
+                          :class="{ 'is-on': row.pendingExecute > 0 }"
+                          :title="`待执行 ${row.pendingExecute}`"
+                        >
+                          执 <b>{{ row.pendingExecute }}</b>
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -483,7 +580,7 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
   color: #e6a23c;
 }
 .nurse-top-stat--execute .nurse-top-stat__value {
-  color: #f56c6c;
+  color: #0284c7;
 }
 .nurse-content {
   display: flex;
@@ -555,10 +652,12 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
   min-height: 0;
 }
 .nurse-search-bar {
+  background: #f7f8fa;
+  border-bottom: 1px solid var(--el-border-color-lighter);
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 6px 8px;
+  gap: 8px;
+  padding: 8px;
 }
 .nurse-search-bar__row {
   align-items: center;
@@ -573,20 +672,132 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
 .nurse-search-bar__refresh {
   flex-shrink: 0;
 }
-.nurse-search-bar__admission,
-.nurse-search-bar__status {
+.nurse-search-bar__row--filters {
+  align-items: center;
+  gap: 8px;
+}
+
+.nurse-search-bar__admission {
+  flex: 0 0 104px;
+  min-width: 104px;
+  width: 104px;
+}
+
+.nurse-search-bar__admission :deep(.el-select__wrapper) {
+  min-height: 28px;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+/** 任务分段：占满剩余宽度，与在科同高 */
+.nurse-task-seg {
+  background: #fff;
+  border: 1px solid var(--el-border-color);
+  border-radius: 6px;
+  display: flex;
   flex: 1;
+  height: 28px;
   min-width: 0;
+  overflow: hidden;
+}
+
+.nurse-task-seg__item {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--el-border-color-lighter);
+  color: #606266;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 1;
+  font-size: 12px;
+  justify-content: center;
+  line-height: 1;
+  margin: 0;
+  min-width: 0;
+  padding: 0 4px;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+  white-space: nowrap;
+}
+
+.nurse-task-seg__item:last-child {
+  border-right: 0;
+}
+
+.nurse-task-seg__item:hover:not(.is-active) {
+  background: #f0f2f5;
+  color: var(--el-color-primary);
+}
+
+.nurse-task-seg__item.is-active {
+  background: var(--el-color-primary);
+  color: #fff;
+  font-weight: 600;
+}
+
+/** 今日入院：独立 AND 筛选，翡翠绿与任务分段区分 */
+.nurse-today-toggle {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #a7f3d0;
+  border-radius: 6px;
+  color: #047857;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 12px;
+  height: 28px;
+  justify-content: center;
+  line-height: 1;
+  margin: 0;
+  padding: 0 8px;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+  white-space: nowrap;
+}
+
+.nurse-today-toggle:hover:not(.is-active) {
+  background: #ecfdf5;
+  border-color: #34d399;
+  color: #047857;
+}
+
+.nurse-today-toggle.is-active {
+  background: #059669;
+  border-color: #059669;
+  color: #fff;
+  font-weight: 600;
 }
 .nurse-table {
+  display: flex;
   flex: 1;
+  flex-direction: column;
   min-height: 0;
 }
 .nurse-table__loading-placeholder {
   min-height: 320px;
 }
+.nurse-select-all {
+  align-items: center;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 4px 10px;
+}
+.nurse-select-all__count {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1;
+}
 .nurse-card-list {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: 6px;
 }
@@ -637,6 +848,13 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
   font-size: 12px;
   justify-content: space-between;
   line-height: 1.35;
+  min-width: 0;
+}
+.nurse-patient-card__status-group {
+  align-items: center;
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 6px;
   min-width: 0;
 }
 .nurse-patient-card__status {
@@ -710,6 +928,17 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
   font-size: 14px;
   font-weight: 700;
   line-height: 1.2;
+}
+.nurse-patient-card__today-badge {
+  background: #d1fae5;
+  border-radius: 4px;
+  color: #047857;
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  padding: 2px 5px;
 }
 .nurse-patient-card__level-wrap {
   align-items: center;
@@ -786,25 +1015,105 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
 .nurse-patient-card__tasks {
   align-items: center;
   display: flex;
-  gap: 8px;
+  flex-shrink: 0;
+  gap: 4px;
   justify-content: flex-end;
   margin-left: auto;
   text-align: right;
 }
-.nurse-patient-card__audit {
-  color: #e6a23c;
+.nurse-patient-card__task {
+  align-items: center;
+  background: #f3f4f6;
+  border-radius: 999px;
+  color: #9ca3af;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 600;
+  gap: 2px;
+  line-height: 1;
+  padding: 3px 7px;
 }
-.nurse-patient-card__execute {
-  color: #f56c6c;
+.nurse-patient-card__task b {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+.nurse-patient-card__audit.is-on {
+  background: #fff7ed;
+  box-shadow: inset 0 0 0 1px #fdba74;
+  color: #9a3412;
+}
+.nurse-patient-card__audit.is-on b {
+  color: #c2410c;
+  font-size: 13px;
+}
+.nurse-patient-card__execute.is-on {
+  background: #0284c7;
+  box-shadow: none;
+  color: #fff;
+}
+.nurse-patient-card__execute.is-on b {
+  color: #fff;
+  font-size: 13px;
+}
+.nurse-patient-card.is-pending-audit:not(.is-pending-execute) {
+  background: linear-gradient(90deg, #fffbeb 0%, #fff 28%);
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+.nurse-patient-card.is-pending-execute:not(.is-pending-audit) {
+  background: linear-gradient(90deg, #f0f9ff 0%, #fff 28%);
+  box-shadow: inset 3px 0 0 #0284c7;
+}
+.nurse-patient-card.is-pending-audit.is-pending-execute {
+  background: linear-gradient(90deg, #f0f9ff 0%, #fff 28%);
+  box-shadow: inset 3px 0 0 #0284c7;
+}
+.nurse-patient-card.is-today-admission:not(.is-pending-audit):not(.is-pending-execute) {
+  background: linear-gradient(90deg, #ecfdf5 0%, #fff 32%);
+  border-color: #a7f3d0;
+  box-shadow: inset 3px 0 0 #10b981;
 }
 .nurse-patient-card:hover {
   background: rgb(249 250 251 / 50%);
   border-color: rgb(59 130 246 / 30%);
 }
+.nurse-patient-card.is-pending-audit:hover:not(.is-pending-execute) {
+  background: linear-gradient(90deg, #fffbeb 0%, rgb(249 250 251 / 80%) 40%);
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+.nurse-patient-card.is-pending-execute:hover:not(.is-pending-audit),
+.nurse-patient-card.is-pending-audit.is-pending-execute:hover {
+  background: linear-gradient(90deg, #f0f9ff 0%, rgb(249 250 251 / 80%) 40%);
+  box-shadow: inset 3px 0 0 #0284c7;
+}
+.nurse-patient-card.is-today-admission:hover:not(.is-pending-audit):not(.is-pending-execute) {
+  background: linear-gradient(90deg, #ecfdf5 0%, rgb(249 250 251 / 80%) 40%);
+  border-color: #6ee7b7;
+  box-shadow: inset 3px 0 0 #10b981;
+}
 .nurse-patient-card.is-selected {
   background: rgb(59 130 246 / 5%);
   border-color: var(--el-color-primary);
   box-shadow: 0 1px 2px rgb(15 23 42 / 8%);
+}
+.nurse-patient-card.is-selected.is-pending-audit:not(.is-pending-execute) {
+  background: linear-gradient(90deg, #fffbeb 0%, rgb(59 130 246 / 6%) 40%);
+  box-shadow:
+    inset 3px 0 0 #f59e0b,
+    0 1px 2px rgb(15 23 42 / 8%);
+}
+.nurse-patient-card.is-selected.is-pending-execute:not(.is-pending-audit),
+.nurse-patient-card.is-selected.is-pending-audit.is-pending-execute {
+  background: linear-gradient(90deg, #f0f9ff 0%, rgb(59 130 246 / 6%) 40%);
+  box-shadow:
+    inset 3px 0 0 #0284c7,
+    0 1px 2px rgb(15 23 42 / 8%);
+}
+.nurse-patient-card.is-selected.is-today-admission:not(.is-pending-audit):not(.is-pending-execute) {
+  background: linear-gradient(90deg, #ecfdf5 0%, rgb(59 130 246 / 6%) 40%);
+  border-color: var(--el-color-primary);
+  box-shadow:
+    inset 3px 0 0 #10b981,
+    0 1px 2px rgb(15 23 42 / 8%);
 }
 
 .nurse-patient-card--draggable {

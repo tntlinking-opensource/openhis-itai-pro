@@ -5,7 +5,7 @@ import type { OptionDto } from '#/api/inpatient-registration';
 
 import { computed, reactive, ref, watch } from 'vue';
 
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 import dayjs from 'dayjs';
 import {
@@ -14,8 +14,11 @@ import {
   ElDialog,
   ElForm,
   ElFormItem,
+  ElInputNumber,
   ElMessage,
   ElOption,
+  ElRadio,
+  ElRadioGroup,
   ElSelect,
 } from 'element-plus';
 
@@ -23,6 +26,7 @@ import { httpGetEncounterDiagnosis } from '#/api/doctor-station/diagnosis.http';
 import {
   httpCheckInpatientAdmissionExistsByAmbEncounter,
   httpRequestInpatientAdmission,
+  httpWithdrawInpatientAdmission,
 } from '#/api/doctor-station/inpatient-admission.http';
 import {
   httpListWardsByDepartment,
@@ -44,6 +48,11 @@ import {
   preserveApiIdForRequest,
   resolveLoginPractitionerIdForRequest,
 } from '#/utils/format/preserve-api-id';
+import {
+  printAdmissionCertificate,
+  resolveAdmissionCertificateDiagnosisText,
+  resolveAdmissionCertificateGenderText,
+} from '#/utils/print';
 import {
   DEFAULT_ADM_COND_CODE_GENERAL,
   DEFAULT_ADMIT_SOURCE_CODE_ROUTINE,
@@ -87,8 +96,11 @@ const prefilledDiagnosisRow = ref<EncounterDiagnosisRowDto | null>(null);
 const existingLine = reactive({
   exists: false,
   inpatientEncounterId: '' as string | undefined,
+  inpatientEncounterBusNo: '' as string | undefined,
   statusEnum: '' as string | undefined,
 });
+
+const printingCertificate = ref(false);
 
 const form = reactive({
   targetDepartmentId: '',
@@ -96,22 +108,40 @@ const form = reactive({
   admitSourceCode: DEFAULT_ADMIT_SOURCE_CODE_ROUTINE,
   inWayCode: DEFAULT_IN_WAY_CODE_OUTPATIENT_TRANSFER,
   priorityCode: DEFAULT_ADM_COND_CODE_GENERAL,
+  /**
+   * 费用性质意向：INSURANCE=医保 / SELF_PAY=自费。
+   * 仅提示款台；真实费用性质由登记处选择合同。
+   */
+  chargeIntent: '' as '' | 'INSURANCE' | 'SELF_PAY',
+  /** 意向预交金总额；医生只填总额，支付方式由登记处填写 */
+  advanceDepositAmount: undefined as number | undefined,
   admissionDiagnosis: createEmptyAdmissionDiagnosisFormState(),
 });
 
 const checkRequest = useRequest(httpCheckInpatientAdmissionExistsByAmbEncounter, { manual: true });
 const submitRequest = useRequest(httpRequestInpatientAdmission, { manual: true });
+const withdrawRequest = useRequest(httpWithdrawInpatientAdmission, { manual: true });
 
-const dialogLoading = computed(() => checkRequest.loading.value || submitRequest.loading.value);
+const dialogLoading = computed(
+  () =>
+    checkRequest.loading.value ||
+    submitRequest.loading.value ||
+    withdrawRequest.loading.value,
+);
 
 /** 已存在住院线时禁止再次申请 */
 const submitBlocked = computed(() => existingLine.exists);
+
+/** 仅待登记（PLANNED）允许医生撤回，撤回后表单可再编辑提交 */
+const canWithdraw = computed(
+  () => existingLine.exists && existingLine.statusEnum?.trim() === 'PLANNED',
+);
 
 const existingStatusHint = computed(() => {
   if (!existingLine.exists) return '';
   const status = existingLine.statusEnum?.trim() || '—';
   if (status === 'PLANNED') {
-    return '该就诊已提交住院申请（待登记），请至住院收费窗口办理登记。';
+    return '该就诊已提交住院申请（待登记）。可撤回后修改再提交，或至住院收费窗口办理登记。';
   }
   return `该就诊已有住院记录（状态：${status}），不可重复申请。`;
 });
@@ -153,6 +183,22 @@ function formatEncounterStartTime(raw: null | string | undefined): string {
   return parsed.isValid() ? parsed.format('YYYY-MM-DD HH:mm') : raw.trim();
 }
 
+/**
+ * 解析提交用意向预交金总额：仅正数有效，未填或 ≤0 不传。
+ *
+ * @param raw 表单金额
+ * @returns 正数金额，或 undefined（不落草稿）
+ */
+function resolveAdvanceDepositAmountForSubmit(
+  raw: number | undefined,
+): number | undefined {
+  // 未填或非正数：不传字段，后端不落意向草稿
+  if (raw == null || !Number.isFinite(raw) || raw <= 0) {
+    return undefined;
+  }
+  return raw;
+}
+
 /** 关闭弹窗 */
 function closeDialog() {
   emit('update:modelValue', false);
@@ -169,13 +215,83 @@ function resetFormState() {
   form.admitSourceCode = DEFAULT_ADMIT_SOURCE_CODE_ROUTINE;
   form.inWayCode = DEFAULT_IN_WAY_CODE_OUTPATIENT_TRANSFER;
   form.priorityCode = DEFAULT_ADM_COND_CODE_GENERAL;
+  form.chargeIntent = '';
+  form.advanceDepositAmount = undefined;
   form.admissionDiagnosis = createEmptyAdmissionDiagnosisFormState();
   prefilledDiagnosisRow.value = null;
   existingLine.exists = false;
   existingLine.inpatientEncounterId = undefined;
+  existingLine.inpatientEncounterBusNo = undefined;
   existingLine.statusEnum = undefined;
   wardOptions.value = [];
   westernDiagnosisOptions.value = [];
+}
+
+/** 入院科室展示名 */
+function resolveDepartmentLabel(organizationId: string): string {
+  const id = organizationId.trim();
+  if (!id) return '';
+  return organizationOptions.value.find((item) => item.value === id)?.label?.trim() || '';
+}
+
+/** 病情优先级展示名 */
+function resolvePriorityLabel(priorityCode: string): string {
+  const code = priorityCode.trim();
+  if (!code) return '';
+  return admCondCodeOptions.value.find((item) => String(item.value) === code)?.label?.trim() || '';
+}
+
+/** 费用性质意向展示名（医保/自费） */
+function resolveChargeIntentLabel(chargeIntent: string): string {
+  const code = chargeIntent.trim();
+  if (code === 'INSURANCE') return '医保';
+  if (code === 'SELF_PAY') return '自费';
+  return '';
+}
+
+/** 组装并打印住院证 */
+async function handlePrintAdmissionCertificate() {
+  const patient = props.patient;
+  const patientName = patient?.patientName?.trim() || '';
+  if (!patientName) {
+    ElMessage.warning('缺少患者姓名，无法打印住院证');
+    return;
+  }
+  printingCertificate.value = true;
+  try {
+    const ageText = patient?.ageText?.trim() || '';
+    // 住院证费用性质：表单「医保/自费」；未选时回落门诊合同展示
+    const paymentMethodText =
+      resolveChargeIntentLabel(form.chargeIntent) || patient?.contractDisplay?.trim() || '';
+    if (!paymentMethodText) {
+      ElMessage.warning('请先选择费用性质（医保/自费）再打印');
+      return;
+    }
+    await printAdmissionCertificate({
+      encounterId: existingLine.inpatientEncounterId,
+      source: {
+        departmentName: resolveDepartmentLabel(form.targetDepartmentId),
+        inpatientNo: existingLine.inpatientEncounterBusNo?.trim() || '',
+        patientName,
+        genderText: resolveAdmissionCertificateGenderText(
+          patient?.genderEnumText || patient?.genderEnum,
+        ),
+        ageText,
+        address: patient?.address?.trim() || '',
+        phone: patient?.phone?.trim() || '',
+        diagnosisText: resolveAdmissionCertificateDiagnosisText(
+          form.admissionDiagnosis,
+          westernDiagnosisOptions.value,
+        ),
+        conditionText: resolvePriorityLabel(form.priorityCode),
+        paymentMethodText,
+        // 预交金：与弹窗「预交金」同值（可选；未填则模板金额为空）
+        prepayAmount: form.advanceDepositAmount,
+      },
+    });
+  } finally {
+    printingCertificate.value = false;
+  }
 }
 
 /** 加载住院科室与入院方式/类型术语下拉 */
@@ -253,6 +369,15 @@ async function applyExistingInpatientEncounterToForm(encounter: RegistrationEnco
   form.inWayCode = encounter.inWayCode?.trim() || DEFAULT_IN_WAY_CODE_OUTPATIENT_TRANSFER;
   form.priorityCode =
     normalizeAdmCondTermCode(encounter.priorityEnum) || DEFAULT_ADM_COND_CODE_GENERAL;
+  // 办理意向回显（登记上下文 encounter.chargeIntent）
+  const intent = String(encounter.chargeIntent ?? '').trim();
+  if (intent === 'INSURANCE' || intent === 'SELF_PAY') {
+    form.chargeIntent = intent;
+  }
+  // 意向预交金 DRAFT 总额回显（登记上下文 encounter.advanceDepositAmount）
+  const draftAdvance = Number(encounter.advanceDepositAmount ?? NaN);
+  form.advanceDepositAmount =
+    Number.isFinite(draftAdvance) && draftAdvance > 0 ? draftAdvance : undefined;
   form.admissionDiagnosis = {
     ...createEmptyAdmissionDiagnosisFormState(),
     readonlyDisplay:
@@ -260,6 +385,10 @@ async function applyExistingInpatientEncounterToForm(encounter: RegistrationEnco
       encounter.primaryConditionDefinitionId?.trim() ||
       '',
   };
+  const busNo = encounter.encounterBusNo?.trim();
+  if (busNo) {
+    existingLine.inpatientEncounterBusNo = busNo;
+  }
 }
 
 /** 已提交住院申请：从住院线登记上下文回显科室/病区/诊断等 */
@@ -341,6 +470,45 @@ function buildAdmissionDiagnoses() {
   });
 }
 
+/**
+ * 撤回待登记住院申请：取消住院线后解除只读，保留表单内容供直接编辑再提交。
+ */
+async function handleWithdraw() {
+  if (!canWithdraw.value) {
+    ElMessage.warning('仅待登记的住院申请可撤回');
+    return;
+  }
+  const ambEncounterId = preserveApiIdForRequest(props.ambEncounterId);
+  const operatorId = preserveApiIdForRequest(userStore.userInfo?.id);
+  if (!ambEncounterId) {
+    ElMessage.warning('缺少门诊就诊标识');
+    return;
+  }
+  if (!operatorId) {
+    ElMessage.warning('无法获取当前操作人，请重新登录');
+    return;
+  }
+  const res = await withdrawRequest.run({ ambEncounterId, operatorId });
+  // 撤回失败：保持只读，避免误提交
+  if (!res.success) {
+    ElMessage.error('撤回住院申请失败');
+    return;
+  }
+  // 解除防重锁：款台待登记队列随 CANCELLED 不可见；表单科室/病区/意向等保留供编辑
+  existingLine.exists = false;
+  existingLine.inpatientEncounterId = undefined;
+  existingLine.inpatientEncounterBusNo = undefined;
+  existingLine.statusEnum = undefined;
+  // 只读回显诊断无目录 ID，撤回后从门诊主诊重新预填，便于直接改后提交
+  try {
+    await prefillDiagnosisFromAmbEncounter();
+  } catch {
+    form.admissionDiagnosis = createEmptyAdmissionDiagnosisFormState();
+  }
+  ElMessage.success('已撤回住院申请，可修改后重新提交');
+  emit('submitted');
+}
+
 /** 提交住院申请 */
 async function handleSubmit() {
   if (submitBlocked.value) {
@@ -377,6 +545,13 @@ async function handleSubmit() {
     ElMessage.warning('入院诊断不能为空');
     return;
   }
+  // 费用性质意向：必选，仅提示款台医保/自费
+  if (!form.chargeIntent) {
+    ElMessage.warning('请选择费用性质（医保/自费）');
+    return;
+  }
+  // 意向预交金：仅提交正数总额；支付方式由住院登记处填写
+  const advanceDepositAmount = resolveAdvanceDepositAmountForSubmit(form.advanceDepositAmount);
 
   const patientId = preserveApiIdForRequest(props.patientId);
   const wardId = preserveApiIdForRequest(form.wardId);
@@ -391,6 +566,8 @@ async function handleSubmit() {
     admitSourceCode: form.admitSourceCode || undefined,
     inWayCode: form.inWayCode || undefined,
     priorityCode: form.priorityCode || undefined,
+    chargeIntent: form.chargeIntent,
+    ...(advanceDepositAmount != null ? { advanceDepositAmount } : {}),
   });
   if (res.success) {
     const busNo = res.inpatientEncounterBusNo?.trim();
@@ -540,11 +717,48 @@ watch(
             />
           </ElSelect>
         </ElFormItem>
+        <ElFormItem label="费用性质" required>
+          <ElRadioGroup v-model="form.chargeIntent" :disabled="submitBlocked">
+            <ElRadio value="INSURANCE">医保</ElRadio>
+            <ElRadio value="SELF_PAY">自费</ElRadio>
+          </ElRadioGroup>
+        </ElFormItem>
+        <ElFormItem label="预交金">
+          <ElInputNumber
+            v-model="form.advanceDepositAmount"
+            :precision="2"
+            :step="100"
+            :min="0"
+            controls-position="right"
+            class="w-full"
+            :disabled="submitBlocked"
+            placeholder="可选，仅填总额"
+          />
+          <div class="mt-1 text-xs text-[var(--el-text-color-secondary)]">
+            仅填总额；支付方式由住院收费窗口登记时确认
+          </div>
+        </ElFormItem>
       </ElForm>
     </div>
 
     <template #footer>
+      <ElButton
+        :loading="printingCertificate"
+        :disabled="dialogLoading || !patient?.patientName"
+        @click="handlePrintAdmissionCertificate"
+      >
+        打印住院证
+      </ElButton>
       <ElButton @click="closeDialog">取消</ElButton>
+      <ElButton
+        v-if="canWithdraw"
+        type="warning"
+        :loading="withdrawRequest.loading.value"
+        :disabled="dialogLoading"
+        @click="handleWithdraw"
+      >
+        撤回申请
+      </ElButton>
       <ElButton
         type="primary"
         :loading="dialogLoading"

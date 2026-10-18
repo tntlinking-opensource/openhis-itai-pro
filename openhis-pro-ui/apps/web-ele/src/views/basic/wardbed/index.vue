@@ -1,11 +1,11 @@
 <script lang="ts" setup>
 import type { WardBed, WardBedInitResponse } from '#/api/basic/ward-bed';
 
-import { computed, onActivated, onMounted, ref, watch } from 'vue';
+import { computed, onActivated, onMounted, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
-import { Plus, Refresh, Search } from '@element-plus/icons-vue';
+import { Plus, Refresh } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 
 import {
@@ -42,13 +42,14 @@ type WardBedTreeRow = WardBedRow & {
   children?: WardBedTreeRow[];
   __section?: WardSection;
   __subCount?: string;
+  __orgNames?: string;
 };
 
 const loading = ref(false);
-const filterKeyword = ref('');
+/** 病区下拉筛选；空表示全部病区。 */
+const selectedWardId = ref<string>('');
 const initOptions = ref<WardBedInitResponse>();
 const organizationOptions = ref<Array<{ label: string; value: string }>>([]);
-const selectedOrganizationId = ref<string>('');
 const allWards = ref<WardBedRow[]>([]);
 const wardSections = ref<WardSection[]>([]);
 
@@ -66,46 +67,68 @@ const statusLabelMap = computed(() => {
   return map;
 });
 
-/** 当前机构下病区（列表接口已按机构过滤，此处仅做空机构兜底） */
-const orgWards = computed(() => {
-  if (!selectedOrganizationId.value) return [];
-  return allWards.value;
+/** 科室 id → 名称（病区挂靠展示） */
+const organizationNameById = computed(() => {
+  const map = new Map<string, string>();
+  for (const item of organizationOptions.value) {
+    map.set(item.value, item.label);
+  }
+  return map;
 });
 
-/** 按关键词过滤病区/病房/床位 */
+/**
+ * 解析病区挂靠科室展示名（主挂靠 + 多选挂靠）。
+ *
+ * @param ward 病区行
+ */
+function formatWardOrganizationNames(ward: WardBedRow): string {
+  const ids: string[] = [];
+  if (Array.isArray(ward.organizationIds)) {
+    for (const raw of ward.organizationIds) {
+      const id = preserveApiIdForRequest(raw);
+      if (id && !ids.includes(id)) {
+        ids.push(id);
+      }
+    }
+  }
+  if (ids.length === 0) {
+    const single = preserveApiIdForRequest(ward.organizationId);
+    if (single) {
+      ids.push(single);
+    }
+  }
+  if (ids.length === 0) {
+    return '—';
+  }
+  return ids
+    .map((id) => organizationNameById.value.get(id) || id)
+    .join('、');
+}
+
+/** 病区下拉选项（按名称）。 */
+const wardSelectOptions = computed(() =>
+  allWards.value
+    .filter((ward) => ward.id)
+    .map((ward) => ({
+      label: ward.name || String(ward.id),
+      value: String(ward.id),
+    })),
+);
+
+/**
+ * 按病区下拉过滤；未选/点叉清空则展示全部病区（树默认收起，点行展开）。
+ */
 const filteredSections = computed(() => {
-  const keyword = filterKeyword.value.trim().toLowerCase();
-  if (!keyword) return wardSections.value;
-
-  return wardSections.value
-    .map((section) => {
-      const wardName = String(section.ward.name || '').toLowerCase();
-      const wardHit = wardName.includes(keyword);
-
-      const rooms = section.rooms
-        .map((room) => {
-          const roomName = String(room.name || '').toLowerCase();
-          const roomHit = roomName.includes(keyword);
-          const beds = ((room.children as WardBedRow[] | undefined) || []).filter((bed) =>
-            String(bed.name || '')
-              .toLowerCase()
-              .includes(keyword),
-          );
-
-          if (wardHit || roomHit) return room;
-          if (beds.length > 0) return { ...room, children: beds };
-          return null;
-        })
-        .filter((room): room is WardBedRow => room !== null);
-
-      if (wardHit) return section;
-      if (rooms.length > 0) return { ...section, rooms };
-      return null;
-    })
-    .filter((section): section is WardSection => section !== null);
+  // clearable 清空时可能是 null/undefined，禁止对空值调 trim
+  const raw = selectedWardId.value;
+  if (raw === null || raw === undefined || String(raw).trim() === '') {
+    return wardSections.value;
+  }
+  const wardId = String(raw).trim();
+  return wardSections.value.filter((section) => String(section.ward.id) === wardId);
 });
 
-/** 树表数据：病区 → 病房 → 床位，默认全展开 */
+/** 树表数据：病区 → 病房 → 床位（不默认展开） */
 const treeTableData = computed(() => {
   return filteredSections.value.map((section) => {
     const bedCount = section.rooms.reduce((sum, room) => sum + getRoomBedCount(room), 0);
@@ -113,14 +136,17 @@ const treeTableData = computed(() => {
       ...section.ward,
       __section: section,
       __subCount: `${section.rooms.length} 间病房 · ${bedCount} 张床`,
+      __orgNames: formatWardOrganizationNames(section.ward),
       children: section.rooms.map((room) => ({
         ...room,
         __section: section,
         __subCount: `${getRoomBedCount(room)} 张床`,
+        __orgNames: '—',
         children: ((room.children as WardBedRow[] | undefined) || []).map((bed) => ({
           ...bed,
           __section: section,
           __subCount: '—',
+          __orgNames: '—',
         })),
       })),
     };
@@ -144,10 +170,10 @@ function getLevelLabel(formEnum?: string) {
 
 /** 状态标签类型 */
 function getStatusTagType(statusEnum?: string) {
-  return statusEnum === WARD_BED_STATUS_CODE.ACTIVE ? 'success' : 'info';
+  return statusEnum === WARD_BED_STATUS_CODE.ACTIVE ? 'success' : 'warning';
 }
 
-/** 加载机构下拉等初始化数据 */
+/** 加载住院科室选项（仅供挂靠展示与编辑弹窗，不作列表入口） */
 async function loadInitOptions() {
   const response = await wardBedInitApi();
   initOptions.value = response;
@@ -155,40 +181,49 @@ async function loadInitOptions() {
     label: item.label,
     value: String(item.value),
   }));
-  if (!selectedOrganizationId.value && organizationOptions.value.length) {
-    selectedOrganizationId.value = organizationOptions.value[0]?.value || '';
-  }
 }
 
-/** 将接口行归一化：雪花 ID 统一 string，避免比较/树表 row-key 异常 */
+/**
+ * 将接口行归一化：雪花 ID 统一 string，避免比较/树表 row-key 异常。
+ *
+ * @param item 接口病区/病房/床位
+ */
 function normalizeWardBedRow(item: WardBed): WardBedRow {
   const id = preserveApiIdForRequest(item.id);
   const organizationId = preserveApiIdForRequest(item.organizationId);
   const parentId = preserveApiIdForRequest(item.parentId);
+  const organizationIds = Array.isArray(item.organizationIds)
+    ? item.organizationIds
+        .map((raw) => preserveApiIdForRequest(raw))
+        .filter((value): value is string => !!value)
+    : undefined;
   const children = unwrapApiList<WardBed>(item.children).map((child) => normalizeWardBedRow(child));
   return {
     ...item,
     id,
     organizationId,
+    organizationIds,
     parentId,
     children: children.length > 0 ? children : undefined,
   };
 }
 
-/** 按当前选中机构拉取病区列表 */
+/** 拉取全院病区列表（不按科室入口过滤） */
 async function loadWards() {
-  const orgId = selectedOrganizationId.value;
-  if (!orgId) {
-    allWards.value = [];
-    return;
-  }
-  const response = await getWardListApi({ id: orgId });
+  const response = await getWardListApi();
   allWards.value = unwrapApiList<WardBed>(response).map((item) => normalizeWardBedRow(item));
+  // 刷新后若当前下拉选中的病区已不存在，清空筛选
+  if (
+    selectedWardId.value &&
+    !allWards.value.some((ward) => String(ward.id) === selectedWardId.value)
+  ) {
+    selectedWardId.value = '';
+  }
 }
 
-/** 并行加载当前机构下每个病区的病房与床位 */
+/** 并行加载每个病区的病房与床位 */
 async function loadWardSections() {
-  const wards = orgWards.value.filter((ward) => ward.id);
+  const wards = allWards.value.filter((ward) => ward.id);
   if (!wards.length) {
     wardSections.value = [];
     return;
@@ -233,29 +268,30 @@ function openDialog(options: {
   dialogVisible.value = true;
 }
 
-/** 新增病区 */
+/** 新增病区：在弹窗内选挂靠科室（可多选），不强制先选科室入口 */
 function handleAddWard() {
-  if (!selectedOrganizationId.value) {
-    ElMessage.warning('请先选择机构');
-    return;
-  }
   openDialog({
     lockFormEnum: true,
     formData: {
       formEnum: WARD_BED_FORM_CODE.WARD,
-      organizationId: selectedOrganizationId.value,
     },
   });
 }
 
-/** 从病区或当前选中机构解析创建用的 organizationId（雪花 ID 须保持 string） */
+/**
+ * 从病区解析创建病房/床位用的主挂靠科室。
+ *
+ * @param ward 所属病区
+ */
 function resolveOrganizationIdForWard(ward: WardBedRow): string | undefined {
   const fromWard = ward.organizationId;
   if (fromWard !== null && fromWard !== undefined && String(fromWard).trim() !== '') {
     return String(fromWard);
   }
-  const fromSelected = selectedOrganizationId.value?.trim();
-  return fromSelected || undefined;
+  if (Array.isArray(ward.organizationIds) && ward.organizationIds.length > 0) {
+    return preserveApiIdForRequest(ward.organizationIds[0]);
+  }
+  return undefined;
 }
 
 /** 在指定病区下新增病房 */
@@ -369,20 +405,6 @@ async function handleDialogSuccess() {
   await refreshAll();
 }
 
-watch(selectedOrganizationId, async (organizationId) => {
-  if (!organizationId || loading.value) return;
-  loading.value = true;
-  try {
-    await loadWards();
-    await loadWardSections();
-  } catch (error) {
-    console.error('切换机构后加载病区失败:', error);
-    ElMessage.error('加载数据失败，请稍后重试');
-  } finally {
-    loading.value = false;
-  }
-});
-
 onMounted(() => {
   refreshAll();
 });
@@ -400,27 +422,22 @@ onActivated(async () => {
   <Page auto-content-height>
     <div v-loading="loading" class="wardbed-list">
       <div class="wardbed-list__toolbar">
-        <span class="wardbed-list__label">机构</span>
+        <span class="wardbed-list__label">病区</span>
         <el-select
-          v-model="selectedOrganizationId"
-          class="wardbed-list__org"
+          v-model="selectedWardId"
+          class="wardbed-list__ward"
+          clearable
           filterable
-          placeholder="请选择机构"
+          placeholder="全部病区"
+          @clear="selectedWardId = ''"
         >
           <el-option
-            v-for="item in organizationOptions"
+            v-for="item in wardSelectOptions"
             :key="item.value"
             :label="item.label"
             :value="item.value"
           />
         </el-select>
-        <el-input
-          v-model="filterKeyword"
-          class="wardbed-list__search"
-          clearable
-          placeholder="搜索病区 / 病房 / 床位"
-          :prefix-icon="Search"
-        />
         <el-button :icon="Refresh" @click="refreshAll">刷新</el-button>
         <el-button type="primary" :icon="Plus" @click="handleAddWard">新增病区</el-button>
       </div>
@@ -431,7 +448,6 @@ onActivated(async () => {
         row-key="id"
         border
         stripe
-        default-expand-all
         :max-height="BASIC_TABLE_MAX_HEIGHT"
         :tree-props="{ children: 'children' }"
         empty-text="暂无数据"
@@ -447,6 +463,16 @@ onActivated(async () => {
         <el-table-column label="类型" width="88" align="center">
           <template #default="{ row }">
             {{ getLevelLabel(row.formEnum) }}
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="挂靠科室"
+          min-width="180"
+          align="left"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">
+            {{ row.__orgNames || '—' }}
           </template>
         </el-table-column>
         <el-table-column label="下级数量" width="160" align="center">
@@ -513,14 +539,10 @@ onActivated(async () => {
         <template #empty>
           <div class="wardbed-list__empty">
             <span>{{
-              filterKeyword
-                ? '没有匹配的数据'
-                : selectedOrganizationId
-                  ? '该机构下暂无病区，请点击「新增病区」'
-                  : '请先选择机构'
+              selectedWardId ? '没有匹配的病区' : '暂无病区，请点击「新增病区」'
             }}</span>
             <el-button
-              v-if="selectedOrganizationId && !filterKeyword"
+              v-if="!selectedWardId"
               type="primary"
               link
               :icon="Plus"
@@ -537,7 +559,7 @@ onActivated(async () => {
       v-model:visible="dialogVisible"
       :form-data="dialogFormData"
       :parent-ward="dialogParentWard"
-      :ward-list="orgWards"
+      :ward-list="allWards"
       :room-list="dialogRoomList"
       :lock-form-enum="dialogLockFormEnum"
       @success="handleDialogSuccess"
@@ -567,11 +589,7 @@ onActivated(async () => {
   color: var(--el-text-color-regular);
 }
 
-.wardbed-list__org {
-  width: 200px;
-}
-
-.wardbed-list__search {
+.wardbed-list__ward {
   width: 260px;
 }
 

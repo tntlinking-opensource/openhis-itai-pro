@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'openhis-hiprint-local-draft';
+const STORAGE_KEY = 'zxplat-hiprint-local-draft';
 
 export interface LocalDesignDraft {
   PrintJson: Record<string, unknown>;

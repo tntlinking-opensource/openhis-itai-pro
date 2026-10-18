@@ -16,8 +16,8 @@ import type {
 import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
-import { useTabs } from '@vben/hooks';
+import { Page } from '@zxplat/common-ui';
+import { useTabs } from '@zxplat/hooks';
 
 import { ElButton, ElDialog, ElMessage, ElTabPane, ElTabs, ElTag } from 'element-plus';
 
@@ -706,7 +706,7 @@ onMounted(() => {
           </div>
         </ElTabPane>
 
-        <!-- 列对齐老 icuGrid -->
+        <!-- 列对齐老 icuGrid；数据来自首页 mrms_homepage_icu -->
         <ElTabPane label="重症记录" name="icu">
           <div class="settle-preview__table-wrap">
             <table class="settle-preview__table">
@@ -715,15 +715,25 @@ onMounted(() => {
                   <th>重症监护病房类型</th>
                   <th>重症监护进入时间</th>
                   <th>重症监护退出时间</th>
-                  <th>重症监护合计时长(时/分/秒)</th>
+                  <th>重症监护合计时长(天/时/分)</th>
                 </tr>
               </thead>
-              <tbody />
+              <tbody>
+                <tr
+                  v-for="(row, idx) in (preview?.icuinfo as Record<string, string>[] | undefined) || []"
+                  :key="`icu-${idx}`"
+                >
+                  <td>{{ row.scs_cutd_ward_type || row.scsCutdWardType || '' }}</td>
+                  <td>{{ row.scs_cutd_inpool_time || row.scsCutdInpoolTime || '' }}</td>
+                  <td>{{ row.scs_cutd_exit_time || row.scsCutdExitTime || '' }}</td>
+                  <td>{{ row.scs_cutd_sum_dura || row.scsCutdSumDura || '' }}</td>
+                </tr>
+              </tbody>
             </table>
           </div>
         </ElTabPane>
 
-        <!-- 列对齐老 bldGrid -->
+        <!-- 列对齐老 bldGrid；数据来自首页 mrms_homepage_bld -->
         <ElTabPane label="输血记录" name="blood">
           <div class="settle-preview__table-wrap">
             <table class="settle-preview__table">
@@ -734,7 +744,16 @@ onMounted(() => {
                   <th>输血计量单位</th>
                 </tr>
               </thead>
-              <tbody />
+              <tbody>
+                <tr
+                  v-for="(row, idx) in (preview?.bldinfo as Record<string, string>[] | undefined) || []"
+                  :key="`bld-${idx}`"
+                >
+                  <td>{{ row.bld_cat || row.bldCat || '' }}</td>
+                  <td>{{ row.bld_amt || row.bldAmt || '' }}</td>
+                  <td>{{ row.bld_unt || row.bldUnt || '' }}</td>
+                </tr>
+              </tbody>
             </table>
           </div>
         </ElTabPane>

@@ -51,6 +51,11 @@ export interface MedicalTechWorkstationContext {
   selectedPatientSummary: Ref<MedicalTechPatientQueueItemDto | null>;
   /** 执行成功后刷新壳层左侧队列 */
   reloadPatientQueue: () => Promise<void>;
+  /**
+   * 右侧内容强制重载令牌：再次点选同一患者或点「刷新」时递增，
+   * 避免 selectedEncounterId 不变导致 watch 不触发。
+   */
+  contentReloadToken: Ref<number>;
 }
 
 export const medicalTechWorkstationContextKey: InjectionKey<MedicalTechWorkstationContext> = Symbol(

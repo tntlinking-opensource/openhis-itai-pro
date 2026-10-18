@@ -1,5 +1,7 @@
 import type { JSONContent } from '@tiptap/core';
 
+import { isCanvasPayload } from '#/emr-canvas/utils/emr-content';
+
 import { syncFillableJsonNodeContent } from './components/simple-editor/emr-data-element-text';
 
 /** 医生站患者条等传入的片段信息，用于在接口不可用时的本地映射 */
@@ -60,6 +62,10 @@ export const PATIENT_BOUND_FIELD_KEYS: ReadonlySet<string> = new Set([
   'insuranceName',
   'idCard',
   'medicalRecordNo',
+  'inpatientNo',
+  'deptName',
+  'wardName',
+  'bedNo',
 ]);
 
 /**
@@ -294,6 +300,76 @@ export function ensureContextDateMetadataDefaults(
   return out;
 }
 
+function canvasControlText(control: Record<string, unknown>): string {
+  const raw = control.value;
+  if (Array.isArray(raw)) {
+    return raw
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        if (item && typeof item === 'object' && 'value' in item) {
+          return String((item as { value?: unknown }).value ?? '');
+        }
+        return '';
+      })
+      .join('')
+      .trim();
+  }
+  if (typeof raw === 'string') return raw.trim();
+  return '';
+}
+
+/** Canvas 控件：按 conceptId 写入，页眉和正文同名字段都会带上 */
+function applyCanvasControlMetadata(
+  root: unknown,
+  vals: Record<string, string>,
+  readonlyOnly: boolean,
+  options?: ApplyMetadataValuesOptions,
+) {
+  const onlyKeys = options?.onlyKeys;
+  const allowForceOverwrite = options?.forceOverwriteBoundKeys !== false;
+
+  const visit = (node: unknown) => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      for (const child of node) visit(child);
+      return;
+    }
+    const rec = node as Record<string, unknown>;
+    const control = rec.control;
+    if (control && typeof control === 'object' && !Array.isArray(control)) {
+      const ctrl = control as Record<string, unknown>;
+      const key = String(ctrl.conceptId ?? '').trim();
+      if (key && (!onlyKeys || onlyKeys.has(key))) {
+        const nextVal = vals[key] ?? '';
+        const skipEmptyOnlyKey = Boolean(onlyKeys) && !String(nextVal).trim();
+        if (!skipEmptyOnlyKey && String(nextVal).trim()) {
+          const cur = canvasControlText(ctrl);
+          const forceOverwrite =
+            allowForceOverwrite && Boolean(key && shouldForceOverwriteMetadataKey(key));
+          const keepSavedStamp = isDocumentStampMetadataKey(key) && Boolean(cur);
+          if (!keepSavedStamp && (forceOverwrite || !readonlyOnly || !cur)) {
+            if (cur !== String(nextVal)) {
+              ctrl.value = [
+                {
+                  value: String(nextVal),
+                  type: 'text',
+                  size: typeof ctrl.size === 'number' ? ctrl.size : 14,
+                  highlight: typeof ctrl.highlight === 'string' ? ctrl.highlight : '#eff6ff',
+                },
+              ];
+            }
+          }
+        }
+      }
+    }
+    for (const child of Object.values(rec)) {
+      if (child && typeof child === 'object') visit(child);
+    }
+  };
+
+  visit(root);
+}
+
 /**
  * 将元数据写入模板/文书 JSON（套模板时预填，避免编辑器 watch 竞态导致首屏空白）。
  * @param readonlyOnly 为 true 时：只读域始终写入；可改域仅在当前值为空时预填
@@ -308,6 +384,11 @@ export function applyMetadataValuesToContentJson(
   const cloned = cloneEmrJsonContent(doc);
   const onlyKeys = options?.onlyKeys;
   const allowForceOverwrite = options?.forceOverwriteBoundKeys !== false;
+
+  if (isCanvasPayload(cloned)) {
+    applyCanvasControlMetadata(cloned, vals, readonlyOnly, options);
+    return cloned;
+  }
 
   const visit = (node: JSONContent, parentBlockName = '') => {
     const type = node.type ?? '';

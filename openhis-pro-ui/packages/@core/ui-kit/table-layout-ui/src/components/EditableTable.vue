@@ -10,8 +10,8 @@ import type {
 
 import { computed, h, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue';
 
-import { Plus } from '@vben-core/icons';
-import { VbenButton } from '@vben-core/shadcn-ui';
+import { Plus } from '@zxplat-core/icons';
+import { VbenButton } from '@zxplat-core/shadcn-ui';
 
 import { ElMessageBox } from 'element-plus';
 import { Trash2 } from 'lucide-vue-next';

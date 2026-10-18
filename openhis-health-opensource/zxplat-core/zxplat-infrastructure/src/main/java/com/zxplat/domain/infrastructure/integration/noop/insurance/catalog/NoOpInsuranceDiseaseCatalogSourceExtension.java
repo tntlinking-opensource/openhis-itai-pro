@@ -1,0 +1,13 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.zxplat.domain.infrastructure.integration.noop.insurance.catalog;
+
+import com.zxplat.domain.infrastructure.integration.insurance.catalog.InsuranceDiseaseCatalogSourceExtension;
+
+/**
+ * 未装配 chs-jilin 时的默认 {@link InsuranceDiseaseCatalogSourceExtension}。
+ */
+public final class NoOpInsuranceDiseaseCatalogSourceExtension implements InsuranceDiseaseCatalogSourceExtension {
+}

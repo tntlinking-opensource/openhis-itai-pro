@@ -18,7 +18,7 @@ import { SPECIMEN_BARCODE_SPLIT_URGENT_FROM_MERGE } from '#/utils/print/constant
 import {
   clusterRowsBySpecimenMerge,
   isLabSpecimenExecuteRow,
-  resolveSpecimenBarcodeMergeDeviceId,
+  resolveSpecimenBarcodeMergeClusterKey,
   specimenMergeOperateRowSpan,
 } from '#/utils/print/nurse-station-print-targets';
 
@@ -55,10 +55,22 @@ const executeTableRef = ref<InstanceType<typeof ElTable> | null>(null);
 /** 院点拆急：合管内加急项单独出贴 */
 const splitUrgentFromMerge = SPECIMEN_BARCODE_SPLIT_URGENT_FROM_MERGE;
 
-/** 医技列表行的合管设备主键（拆急院点：急项视为无合管） */
+/** 医技列表行的合管聚类键 merge:deviceId:groupNo（拆急院点：急项视为无合管） */
 function labMergeId(row: NurseAdviceExecuteRow): string {
-  return resolveSpecimenBarcodeMergeDeviceId(row.specimenTubeMergeDeviceId, row.priorityEnum);
+  return resolveSpecimenBarcodeMergeClusterKey(
+    row.specimenTubeMergeDeviceId,
+    row.specimenTubeMergeGroupNo,
+    row.priorityEnum,
+  );
 }
+
+/**
+ * 上方「项目列表」待执行行：排除检验（类目 22）。
+ * 检验仅出现在下方「医技列表」供采血贴，不可勾选执行。
+ */
+const pendingExecuteItems = computed(() =>
+  props.executeItems.filter((row) => !isLabSpecimenExecuteRow(row)),
+);
 
 /** 医技列表：检验行按合管设备聚组，供操作列合并 */
 const labPrintItems = computed(() =>
@@ -105,8 +117,9 @@ const onSelectionChange = (selection: NurseAdviceExecuteRow[]) => {
   emit('selectionChange', keys);
 };
 
-/** 药品行仅展示，不参与勾选与执行 */
+/** 药品/检验仅展示或不在本表；不参与勾选与执行 */
 const executeRowSelectable = (row: NurseAdviceExecuteRow) =>
+  !isLabSpecimenExecuteRow(row) &&
   !isNurseExecuteMedicationRow(row) &&
   !(row.statusEnum && isNurseExecuteRowCompleted(row.statusEnum));
 
@@ -114,7 +127,7 @@ const executeRowSelectable = (row: NurseAdviceExecuteRow) =>
 const canPrintInfusionLabelRow = (row: NurseAdviceExecuteRow) =>
   isNurseExecuteMedicationRow(row) && row.infusionFlag === true;
 
-/** 同一申请单首行：用于组间分隔线 */
+/** 同一申请单首行：用于组间分隔线（相对上方待执行表，已不含检验） */
 const isApplyFormGroupStart = (row: NurseAdviceExecuteRow, rowIndex: number): boolean => {
   const formNo = row.applyFormNo?.trim();
   if (!formNo) {
@@ -123,7 +136,7 @@ const isApplyFormGroupStart = (row: NurseAdviceExecuteRow, rowIndex: number): bo
   if (rowIndex <= 0) {
     return true;
   }
-  const previous = props.executeItems[rowIndex - 1];
+  const previous = pendingExecuteItems.value[rowIndex - 1];
   return previous?.applyFormNo?.trim() !== formNo;
 };
 
@@ -133,7 +146,7 @@ const isApplyFormGroupEnd = (row: NurseAdviceExecuteRow, rowIndex: number): bool
   if (!formNo) {
     return false;
   }
-  const next = props.executeItems[rowIndex + 1];
+  const next = pendingExecuteItems.value[rowIndex + 1];
   return next?.applyFormNo?.trim() !== formNo;
 };
 
@@ -143,7 +156,7 @@ const isApplyFormGroupContinue = (row: NurseAdviceExecuteRow, rowIndex: number):
   if (!formNo || rowIndex <= 0) {
     return false;
   }
-  return props.executeItems[rowIndex - 1]?.applyFormNo?.trim() === formNo;
+  return pendingExecuteItems.value[rowIndex - 1]?.applyFormNo?.trim() === formNo;
 };
 
 const executeRowClassName = ({
@@ -218,7 +231,7 @@ async function clearTableSelection() {
   executeTableRef.value?.clearSelection();
 }
 
-/** 与 `executeRowSelectable` 一致：仅勾选可执行的非药品行 */
+/** 与 `executeRowSelectable` 一致：仅勾选上方待执行表中可执行的非药品、非检验行 */
 async function setTableSelectionForKeys(keys: string[]) {
   await nextTick();
   const table = executeTableRef.value;
@@ -227,7 +240,7 @@ async function setTableSelectionForKeys(keys: string[]) {
   }
   table.clearSelection();
   const keySet = new Set(keys);
-  for (const row of props.executeItems) {
+  for (const row of pendingExecuteItems.value) {
     if (keySet.has(row.key) && executeRowSelectable(row)) {
       table.toggleRowSelection(row, true);
     }
@@ -267,7 +280,7 @@ defineExpose({
       <ElTable
         ref="executeTableRef"
         v-loading="executeTableLoading"
-        :data="executeItems"
+        :data="pendingExecuteItems"
         row-key="key"
         :row-class-name="executeRowClassName"
         :cell-class-name="executeTableCellClassName"

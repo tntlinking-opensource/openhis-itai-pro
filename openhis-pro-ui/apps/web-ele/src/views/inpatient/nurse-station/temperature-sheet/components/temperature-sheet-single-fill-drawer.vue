@@ -17,6 +17,12 @@ import dayjs from 'dayjs';
 import { ElMessage } from 'element-plus';
 
 import {
+  TEMPERATURE_SHEET_SHOW_ALLERGY_DRUG_INPUT,
+  TEMPERATURE_SHEET_SHOW_DRAINAGE_INPUT,
+  TEMPERATURE_SHEET_SHOW_OTHER_INPUT,
+  TEMPERATURE_SHEET_SHOW_REMARK_INPUT,
+} from '#/views/inpatient/nurse-station/temperature-sheet/temperature-sheet-footer.config';
+import {
   httpDeleteNurseStationTemperatureSheet,
   httpGetNurseStationTemperatureSheetData,
   httpLoadNurseStationTemperatureSheetInit,
@@ -29,6 +35,7 @@ import {
   applyFillSlotsToEditableDraft,
   applySavedVitalSignIdsToFillRows,
   clearTemperatureSheetPreviousDaySupplementFields,
+  collectTemperatureSheetClearedVitalSignIds,
   collectTemperatureSheetSaveRequests,
   createDefaultEditableFillRows,
   createEmptyExtraRecord,
@@ -595,17 +602,21 @@ async function handleSaveAllSlots(): Promise<void> {
     return;
   }
 
+  const extraForSave = isAdmissionDayRecord.value
+    ? clearTemperatureSheetPreviousDaySupplementFields(extraRecord.value)
+    : extraRecord.value;
   const saveRequests = collectTemperatureSheetSaveRequests(
     tempRecordRows.value,
-    // 入院日不提交前一日统计项
-    isAdmissionDayRecord.value
-      ? clearTemperatureSheetPreviousDaySupplementFields(extraRecord.value)
-      : extraRecord.value,
+    extraForSave,
     recordDate.value,
     patient.encounterId,
     patient.patientId,
   );
-  if (saveRequests.length === 0) {
+  const clearedVitalSignIds = collectTemperatureSheetClearedVitalSignIds(
+    tempRecordRows.value,
+    extraForSave,
+  );
+  if (saveRequests.length === 0 && clearedVitalSignIds.length === 0) {
     ElMessage.warning('请至少填写一项生命体征或特殊事件');
     return;
   }
@@ -619,6 +630,14 @@ async function handleSaveAllSlots(): Promise<void> {
   savingAll.value = true;
   try {
     const savedResults: Array<{ timeSlot: string; vitalSignId?: string }> = [];
+    // 先删已落库空槽，避免大便次数 0 等被空请求跳过后原值仍在
+    for (const vitalSignId of clearedVitalSignIds) {
+      await httpDeleteNurseStationTemperatureSheet({
+        vitalSignId,
+        encounterId: patient.encounterId,
+        patientId: patient.patientId,
+      });
+    }
     // 后端单槽保存，按有时次内容逐条提交（含特殊事件）
     for (const request of saveRequests) {
       const response = await httpSaveNurseStationTemperatureSheetAtRecordedTime(request);
@@ -630,7 +649,15 @@ async function handleSaveAllSlots(): Promise<void> {
 
     tempRecordRows.value = applySavedVitalSignIdsToFillRows(tempRecordRows.value, savedResults);
     await loadFillDrawerSlots();
-    ElMessage.success(`已保存 ${saveRequests.length} 条体温单记录`);
+    if (saveRequests.length > 0 && clearedVitalSignIds.length > 0) {
+      ElMessage.success(
+        `已保存 ${saveRequests.length} 条，已清除 ${clearedVitalSignIds.length} 条空记录`,
+      );
+    } else if (clearedVitalSignIds.length > 0) {
+      ElMessage.success('已清除空记录');
+    } else {
+      ElMessage.success(`已保存 ${saveRequests.length} 条体温单记录`);
+    }
     emit('saved', patient.encounterId);
   } finally {
     savingAll.value = false;
@@ -719,8 +746,8 @@ defineExpose({
         <section class="fill-card">
           <header class="fill-card-title">
             生命体征（主录入）
-            <ElTag size="small" type="info"
-              >快捷项：出院/物理降温/药物降温/体温不升；图表竖排仅展示入院/转科/手术/分娩/出院/死亡；转科/死亡/分娩/出院须选时间；入院由患者入院时间自动带入</ElTag
+            <span class="fill-card-tip"
+              >快捷项：出院/物理降温/药物降温/体温不升；图表竖排仅展示入院/转科/手术/回室/分娩/出院/死亡；手术/回室/转科/死亡/分娩/出院须选时间；入院由患者入院时间自动带入</span
             >
           </header>
           <div class="fill-grid-head">
@@ -820,14 +847,14 @@ defineExpose({
         <section class="fill-card fill-extra-card">
           <header class="fill-card-title">
             补充记录
-            <ElTag v-if="isAdmissionDayRecord" size="small" type="info">
-              入院当日不填大便次数、小便次数、总入量、其他、尿量；次日录入后显示在入院日列
-            </ElTag>
-            <ElTag v-else size="small" type="info">
-              大便次数、小便次数、总入量、其他、尿量为前一日（{{
+            <span v-if="isAdmissionDayRecord" class="fill-card-tip">
+              入院当日不填大便次数、小便次数、总入量、引流量、尿量；次日录入后显示在入院日列
+            </span>
+            <span v-else class="fill-card-tip">
+              大便次数、小便次数、总入量、引流量、尿量为前一日（{{
                 supplementStatisticalDateLabel || '—'
               }}）统计，保存后显示在前一日列
-            </ElTag>
+            </span>
           </header>
           <div class="extra-grid">
             <div class="extra-item">
@@ -872,11 +899,28 @@ defineExpose({
                 <template #suffix>ml</template>
               </ElInput>
             </div>
-            <div v-if="!isAdmissionDayRecord" class="extra-item">
+            <div
+              v-if="!isAdmissionDayRecord && TEMPERATURE_SHEET_SHOW_DRAINAGE_INPUT"
+              class="extra-item"
+            >
+              <span class="extra-label">引流量</span>
+              <ElInput v-model="extraRecord.drainage" placeholder="引流量">
+                <template #suffix>ml</template>
+              </ElInput>
+            </div>
+            <div v-if="TEMPERATURE_SHEET_SHOW_ALLERGY_DRUG_INPUT" class="extra-item">
+              <span class="extra-label">过敏药物</span>
+              <ElInput v-model="extraRecord.allergyDrug" placeholder="过敏药物" />
+            </div>
+            <div v-if="TEMPERATURE_SHEET_SHOW_OTHER_INPUT" class="extra-item">
               <span class="extra-label">其他</span>
               <ElInput v-model="extraRecord.other" placeholder="其他">
                 <template #suffix>ml</template>
               </ElInput>
+            </div>
+            <div v-if="TEMPERATURE_SHEET_SHOW_REMARK_INPUT" class="extra-item">
+              <span class="extra-label">备注</span>
+              <ElInput v-model="extraRecord.remark" placeholder="备注" />
             </div>
           </div>
         </section>
@@ -948,6 +992,19 @@ defineExpose({
   color: #334155;
   background: #f8fafc;
   border-bottom: 1px solid #e5e7eb;
+}
+.fill-card-tip {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #f59e0b;
+  background: #fffbeb;
+  color: #9a3412;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+  text-align: right;
 }
 .fill-grid-head,
 .fill-row {

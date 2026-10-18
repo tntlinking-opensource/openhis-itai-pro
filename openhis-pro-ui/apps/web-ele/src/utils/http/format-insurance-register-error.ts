@@ -40,6 +40,15 @@ function isFmiIdCardCertFailure(msg: string): boolean {
   return hasFmiAuth || hasCardCipher;
 }
 
+/** 平台报统筹区不符等，多指向省外异地未备案/备案无效。 */
+function isOffsitePoolingAreaMismatch(msg: string): boolean {
+  return (
+    msg.includes('统筹区与该定点所属统筹区不符') ||
+    msg.includes('统筹区不符') ||
+    (msg.includes('统筹区') && msg.includes('不符合业务要求'))
+  );
+}
+
 /** 将医保挂号/收费/进销存等相关后端错误转为友好、可持久展示的用户文案。 */
 export function formatInsuranceRegisterError(
   errorCode: string | undefined,
@@ -218,7 +227,30 @@ export function formatInsuranceRegisterError(
     };
   }
 
-  if (msg.includes('2204') || msg.includes('费用上传')) {
+  if (
+    msg.includes('未查到基础目录信息') ||
+    msg.includes('查询结算目录信息失败') ||
+    msg.includes('未对码项目')
+  ) {
+    const clean = msg.split('>>>')[0]?.trim() || msg;
+    return {
+      title: '医保收费：目录未对码',
+      message: [
+        clean,
+        '',
+        '请按上面点名的药品、耗材或诊疗，在目录里维护正确的国家医保编码后再上传。',
+        '耗材上传只用医保码前 15 位，平台按这段码查基础目录。',
+        '',
+        '若仍失败，请联系信息科或医保办，并提供上述技术详情。',
+      ].join('\n'),
+    };
+  }
+
+  if (
+    msg.includes('2204') ||
+    msg.includes('费用上传') ||
+    (msg.includes('2301') && msg.includes('费用'))
+  ) {
     const clean = msg.split('>>>')[0]?.trim() || msg;
     // 长春 feeListDBO.41 / feeListDBO_41：费用明细主键冲突（同 feedetl_sn 重复 2204）
     if (
@@ -287,7 +319,7 @@ export function formatInsuranceRegisterError(
             '市医保对身份证（02）需上送读卡第二缓冲 SignBuff 作卡密；若仍为明文身份证号，或 SignBuff 为空，易触发本错误。',
             '',
             '请按以下步骤处理：',
-            '1. 确认本机 OpenHIS.Win 已更新，重新读身份证（应取得 SignBuff 卡密）后再挂号',
+            '1. 确认本机 Zxplat.Win 已更新，重新读身份证（应取得 SignBuff 卡密）后再挂号',
             '2. 若读卡仍无卡密：改扫「医保电子凭证」或刷「社保卡」',
             '3. 确认当日医保签到（9001）有效后重试',
             '',
@@ -311,6 +343,27 @@ export function formatInsuranceRegisterError(
       };
     }
 
+    // 统筹区不符：标题与【重要提示】前置，避免淹没在常见原因列表里
+    if (isOffsitePoolingAreaMismatch(clean)) {
+      return {
+        title: '医保平台调用失败：请先核对异地备案',
+        message: [
+          clean,
+          '',
+          '【重要提示】患者属于异地患者，可能没有备案，请检查备案信息。',
+          '',
+          '常见原因：',
+          '· 省外异地就医未办理定点/转诊备案，或备案未生效、已过期',
+          '· 当日医保签到（9001）失效，可尝试重新签到',
+          '· 业务入参与平台校验规则不符',
+          '· 医保专网或平台短暂异常',
+          '',
+          '若仍失败，请联系信息科或医保办，并提供上述技术详情。',
+        ].join('\n'),
+      };
+    }
+
+    // 通用平台失败：不提示异地备案（仅 isOffsitePoolingAreaMismatch 等异地特征才提示）
     return {
       title: '医保平台调用失败',
       message: [

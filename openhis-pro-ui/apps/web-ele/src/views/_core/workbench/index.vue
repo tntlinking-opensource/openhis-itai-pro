@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import { Search } from '@element-plus/icons-vue';
 import { ElEmpty, ElInput, ElMessage } from 'element-plus';

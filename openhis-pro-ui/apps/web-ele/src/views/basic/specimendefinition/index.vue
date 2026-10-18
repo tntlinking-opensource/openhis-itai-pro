@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type {
   PageSpecimenDefinitionParams,
@@ -9,10 +9,10 @@ import type { ApiOptionItem, ApiResponse, PageApiResponse } from '#/types/api-re
 
 import { computed, onMounted, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
-import { formatDateTime } from '@vben/utils';
+import { Page } from '@zxplat/common-ui';
+import { formatDateTime } from '@zxplat/utils';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { ElButton, ElMessage, ElMessageBox, ElSpace, ElTag } from 'element-plus';
 
@@ -112,7 +112,7 @@ function statusTagType(statusEnum?: string): 'danger' | 'info' | 'success' | 'wa
     case SPECIMEN_STATUS_ENUM.ACTIVE: {
       return 'success';
     }
-    case SPECIMEN_STATUS_ENUM.DRAFT: {
+    case SPECIMEN_STATUS_ENUM.INACTIVE: {
       return 'warning';
     }
     case SPECIMEN_STATUS_ENUM.DISCARDED: {

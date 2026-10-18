@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type {
   PeisActivityDto,
@@ -9,8 +9,8 @@ import type {
 
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 
-import { Page } from '@vben/common-ui';
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { Page } from '@zxplat/common-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import {
   deleteObservationDefApi,
@@ -25,6 +25,7 @@ import {
 } from '#/api/peis/catalog-config';
 import { useRequest } from '#/hooks/use-request';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
+import { loadActivityTypeCodeOptions } from '#/views/basic/services/load-activity-type-code-options';
 import {
   ElButton,
   ElDialog,
@@ -206,16 +207,8 @@ const categoryLabelOptions = [
   { value: PROJECT_CONCLUSION_CATEGORY, label: '项目结论' },
 ];
 
-/** 项目类型下拉（对齐 ActivityType code；含外检 6、诊查 7） */
-const typeOptions = [
-  { value: '1', label: '检验' },
-  { value: '2', label: '检查' },
-  { value: '3', label: '护理' },
-  { value: '4', label: '手术' },
-  { value: '5', label: '其他' },
-  { value: '6', label: '外检' },
-  { value: '7', label: '诊查' },
-];
+/** 项目类型下拉（术语 activity_type_code，含现场增码） */
+const typeOptions = ref<Array<{ value: string; label: string }>>([]);
 
 const genderOptions = [
   { value: 'BOTH', label: '不限' },
@@ -308,6 +301,7 @@ function columnsForTab(tab: CatalogTab): TableColumn[] {
   return [
     { prop: 'display', label: '套餐名称', minWidth: 160 },
     { prop: 'code', label: '业务号', minWidth: 120 },
+    { prop: 'typeEnum', label: '业务类型', width: 90, slot: 'typeEnum' },
     { prop: 'salePrice', label: '套餐价', width: 90, slot: 'salePrice' },
     { prop: 'childCount', label: '项目数', width: 90, slot: 'childCount' },
     { prop: 'statusEnum', label: '状态', width: 90, slot: 'statusEnum' },
@@ -481,9 +475,10 @@ async function openCreate() {
     return;
   }
   if (activeTab.value === 'activity') {
+    // 业务类型不预填硬编码，须从术语下拉必选
     editForm.value = {
       statusEnum: 'active',
-      typeEnum: '1',
+      typeEnum: undefined,
       permittedGenderEnum: 'BOTH',
       sortOrder: undefined,
       observationDefinitionIds: [],
@@ -494,7 +489,8 @@ async function openCreate() {
     void loadObservationOptions();
     return;
   }
-  editForm.value = { statusEnum: 'active', childActivityIds: [] };
+  // 套餐：业务类型必填，不写死默认码
+  editForm.value = { statusEnum: 'active', typeEnum: undefined, childActivityIds: [] };
   actPickerKeyword.value = '';
   editVisible.value = true;
   void loadActivityOptions();
@@ -671,10 +667,14 @@ async function handleSave() {
       ElMessage.warning('请填写项目名称');
       return;
     }
+    if (!String(form.typeEnum ?? '').trim()) {
+      ElMessage.warning('请选择业务类型');
+      return;
+    }
     await saveActivityApi({
       activityId: toOptionalId(form.activityId),
       display: form.display.trim(),
-      typeEnum: form.typeEnum,
+      typeEnum: String(form.typeEnum).trim(),
       statusEnum: form.statusEnum || 'active',
       // 必须传字符串雪花 ID；Number() 会精度丢失导致后端查不到 OD
       observationDefinitionIds: toIdStrings(form.observationDefinitionIds),
@@ -688,9 +688,14 @@ async function handleSave() {
       ElMessage.warning('请填写套餐名称');
       return;
     }
+    if (!String(form.typeEnum ?? '').trim()) {
+      ElMessage.warning('请选择业务类型');
+      return;
+    }
     await savePackageApi({
       packageActivityId: toOptionalId(form.packageActivityId),
       display: form.display.trim(),
+      typeEnum: String(form.typeEnum).trim(),
       statusEnum: form.statusEnum || 'active',
       childActivityIds: toIdStrings(form.childActivityIds),
     });
@@ -703,7 +708,14 @@ async function handleSave() {
 }
 
 onMounted(() => {
-  void runLoad();
+  void (async () => {
+    try {
+      typeOptions.value = await loadActivityTypeCodeOptions();
+    } catch (error) {
+      console.error('加载诊疗业务类型字典失败', error);
+    }
+    await runLoad();
+  })();
 });
 </script>
 
@@ -827,8 +839,14 @@ onMounted(() => {
             <ElFormItem label="名称" required>
               <ElInput v-model="editForm.display" />
             </ElFormItem>
-            <ElFormItem label="类型" required>
-              <ElSelect v-model="editForm.typeEnum" class="w-full">
+            <ElFormItem label="业务类型" required>
+              <ElSelect
+                v-model="editForm.typeEnum"
+                class="w-full"
+                filterable
+                clearable
+                placeholder="请选择业务类型"
+              >
                 <ElOption
                   v-for="opt in typeOptions"
                   :key="opt.value"
@@ -959,6 +977,22 @@ onMounted(() => {
           <div class="package-edit-grid">
             <ElFormItem label="套餐名称" required>
               <ElInput v-model="editForm.display" />
+            </ElFormItem>
+            <ElFormItem label="业务类型" required>
+              <ElSelect
+                v-model="editForm.typeEnum"
+                class="w-full"
+                filterable
+                clearable
+                placeholder="请选择业务类型"
+              >
+                <ElOption
+                  v-for="opt in typeOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </ElSelect>
             </ElFormItem>
             <ElFormItem label="状态">
               <ElSelect v-model="editForm.statusEnum" class="w-full">

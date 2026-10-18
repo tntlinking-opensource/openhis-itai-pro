@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import { computed, nextTick, ref, watch } from 'vue';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { ElButton, ElDialog, ElIcon, ElInput, ElTabPane, ElTabs } from 'element-plus';
 

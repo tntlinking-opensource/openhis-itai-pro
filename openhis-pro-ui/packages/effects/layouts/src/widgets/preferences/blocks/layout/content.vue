@@ -3,7 +3,7 @@ import type { Component } from 'vue';
 
 import { computed } from 'vue';
 
-import { $t } from '@vben/locales';
+import { $t } from '@zxplat/locales';
 
 import { ContentCompact, ContentWide } from '../../icons';
 

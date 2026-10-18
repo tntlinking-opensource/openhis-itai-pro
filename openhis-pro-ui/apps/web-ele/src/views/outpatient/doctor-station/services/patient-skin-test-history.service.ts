@@ -6,7 +6,7 @@ import type {
 import type { DoctorStationAdviceRowDto } from '#/api/doctor-station/advice.types';
 import type { OutpatientSkinTestRowDto } from '#/api/outpatient-nurse-station/outpatient-nurse-station.types';
 
-import { formatDateTime } from '@vben/utils';
+import { formatDateTime } from '@zxplat/utils';
 
 import { httpPageDoctorStationAdvice } from '#/api/doctor-station/advice.http';
 import { httpListOutpatientSkinTestRows } from '#/api/outpatient-nurse-station/outpatient-nurse-station.http';

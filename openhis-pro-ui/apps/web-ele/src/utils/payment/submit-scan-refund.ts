@@ -1,6 +1,6 @@
 import type { ClientRefundResultDto } from '#/api/payment/payment.types';
 
-import { isUnionPayWinReady } from '#/api/local/openhisWin';
+import { isUnionPayWinReady } from '#/api/local/zxplatWin';
 import { httpListOriginalPayChannelCodes } from '#/api/outpatient-refund/outpatient-refund.http';
 import { httpGetBpcOrdersByPayment, type BpcOrderSummaryDto } from '#/api/payment/union-pay-bpc';
 import {
@@ -39,7 +39,7 @@ export type ScanRefundPath =
   /** BPC 消费单已 REFUNDED：银联侧已退，只需带凭证收口院内 */
   | { kind: 'already_refunded'; order: BpcOrderSummaryDto };
 
-const CLIENT_REFUND_CACHE_PREFIX = 'whale.scanRefund.clientResult:';
+const CLIENT_REFUND_CACHE_PREFIX = 'zxplat.scanRefund.clientResult:';
 
 /** 本机银联退货凭证 sessionStorage key。 */
 function cacheStorageKey(paymentId: number | string): string {
@@ -313,7 +313,7 @@ export async function submitScanRefund(
 
   const winReady = await isUnionPayWinReady();
   if (!winReady) {
-    throw new Error('原支付为扫码收单，请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
+    throw new Error('原支付为扫码收单，请启动本地客户端（Zxplat.Win）并确认银联组件已安装');
   }
 
   const merTradeNo = path.successOrder.merTradeNo!;

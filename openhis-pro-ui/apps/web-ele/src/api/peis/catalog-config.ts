@@ -61,6 +61,8 @@ export interface PeisPackageDto {
   packageActivityId?: string | number;
   code?: string;
   display?: string;
+  /** 业务类型（术语 activity_type_code） */
+  typeEnum?: string;
   statusEnum?: string;
   /** 原价/零售价 SALE */
   salePrice?: number | string;
@@ -95,6 +97,8 @@ export interface SaveActivityRequest {
 export interface SavePackageRequest {
   packageActivityId?: IdLike;
   display: string;
+  /** 业务类型（术语 activity_type_code，必填） */
+  typeEnum: string;
   statusEnum: string;
   childActivityIds?: IdLike[];
 }

@@ -130,8 +130,14 @@ export interface RegisterFormAreaExpose {
   }) => Promise<void>;
   /** 号源日历点选预填三要素（不锁定，可微调） */
   applySlotSelection: (payload: RegisterSlotSelectionPayload) => Promise<void>;
-  /** 把选中患者写入患者信息表单 */
-  applyPatientRecord: (patient: RegisterPatientRecord) => void;
+  /**
+   * 把患者写入患者信息表单。
+   * rebind 默认 true：换人时重绑身份快照。补姓名/地址传 false，证件号已变则不重绑。
+   */
+  applyPatientRecord: (
+    patient: RegisterPatientRecord,
+    options?: { rebind?: boolean },
+  ) => void;
   /** 解除预约锁定并保留已填值 */
   clearBookingLock: () => void;
   /** 清空患者信息表单各字段 */
@@ -174,6 +180,13 @@ export interface RegisterFormAreaExpose {
   getServiceTypeLabel: (serviceTypeId: unknown) => string | undefined;
   /** 汇总患者区、挂号区字段及挂号费、号源类型 id，供提交 */
   getSubmitValues: () => Promise<Record<string, unknown>>;
+  /**
+   * 姓名/身份证/性别/出生日期相对选中档案已变时解除绑定。
+   * 未绑定或仍一致时返回 null。
+   */
+  releaseBoundPatientIfIdentityChanged: (
+    values: Record<string, unknown>,
+  ) => { idCardChanged: boolean } | null;
   /** 清空挂号 + 患者信息，并清空下方待遇确认展示块 */
   resetForClear: () => void;
   /** 提交成功后重置表单并刷新医生下拉；费用性质回填自费，科室/医生/号源不预填 */

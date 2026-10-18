@@ -18,7 +18,7 @@ const BASE = '/inventoryPharmacyRequisition';
 
 // --- DTO（与 Java 驼峰一致）---
 
-/** 与后端 {@link com.openhis.whale.core.application.dto.OptionDto} 同构。 */
+/** 与后端 {@link com.zxplat.framework.core.application.dto.OptionDto} 同构。 */
 export interface PharmacyRequisitionOptionDto {
   sort?: string | number;
   value?: string;
@@ -256,13 +256,13 @@ export interface PageProductsForPharmacyRequisitionResponse {
 
 // --- 与后端 SupplyType / SupplyRequestType / SupplyCategory getCode() 字符串一致 ---
 
-/** {@link com.openhis.health.domain.share.enums.SupplyType#PHARMACY_REQUISITION} */
+/** {@link com.zxplat.domain.share.enums.SupplyType#PHARMACY_REQUISITION} */
 export const PHA_REQUISITION_TYPE_ENUM = 'PHARMACY_REQUISITION';
 /** 源：药库 CABINET */
 export const PHA_REQUISITION_SOURCE_TYPE_ENUM = 'CABINET';
 /** 目的：药房 PHARMACY */
 export const PHA_REQUISITION_PURPOSE_TYPE_ENUM = 'PHARMACY';
-/** {@link com.openhis.health.domain.share.enums.SupplyCategory#STOCK_SUPPLY} */
+/** {@link com.zxplat.domain.share.enums.SupplyCategory#STOCK_SUPPLY} */
 export const PHA_REQUISITION_CATEGORY_ENUM = 'STOCK_SUPPLY';
 
 // --- API ---

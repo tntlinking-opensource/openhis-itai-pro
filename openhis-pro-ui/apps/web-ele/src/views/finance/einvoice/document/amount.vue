@@ -4,8 +4,8 @@ import type { BossDocumentDetailDto, BossLineDto } from '#/api/einvoice-boss/doc
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
-import { useAccess } from '@vben/access';
+import { Page } from '@zxplat/common-ui';
+import { useAccess } from '@zxplat/access';
 
 import {
   ElButton,

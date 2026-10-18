@@ -5,7 +5,7 @@ import type { ApiOptionItem } from '#/types/api-response';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
-import { formatDateTime } from '@vben/utils';
+import { formatDateTime } from '@zxplat/utils';
 
 import { ElMessage } from 'element-plus';
 
@@ -58,7 +58,6 @@ const tableForm = ref<Partial<PriceAdjustmentHeadForm>>({
 const tableData = ref<PriceAdjustmentLineRow[]>([]);
 const auditForm = ref<Record<string, unknown>>({});
 
-const adjustmentReasonOptions = ref<ApiOptionItem[]>([]);
 const itemTableTabOptions = ref<ApiOptionItem[]>([]);
 
 const orderList = ref<Record<string, unknown>[]>([]);
@@ -100,22 +99,17 @@ const documentEditable = computed(() => {
   return isPriceAdjustmentDocumentEditable(activeStatusEnum.value);
 });
 
-/** 页初始化：下拉选项 */
+/** 页初始化：项目类型等选项（调价原因为手写文案，不下发枚举） */
 async function initPage() {
   try {
     const data = await initPriceAdjustmentPageApi();
-    adjustmentReasonOptions.value = data.adjustmentReasonOptions ?? [];
     itemTableTabOptions.value = data.itemTableTabOptions ?? [];
-    if (!tableForm.value.adjustmentReason && adjustmentReasonOptions.value.length > 0) {
-      tableForm.value.adjustmentReason = String(adjustmentReasonOptions.value[0]?.value ?? '');
-    }
   } catch {
-    adjustmentReasonOptions.value = [];
     itemTableTabOptions.value = [];
   }
 }
 
-/** 左侧列表：保留本地草稿 + 服务端分页（操作科室由后端会话解析） */
+/** 左侧列表：保留本地草稿 + 服务端分页（不传 statusEnum；操作科室仅后端会话 Gate，列表不收窄） */
 async function getList() {
   const dr = listDateRange.value;
   const draftRows = orderList.value.filter((r) => r._draft);
@@ -135,7 +129,7 @@ function resetFormAndTableData() {
   tableData.value = [];
   auditForm.value = {};
   tableForm.value = {
-    adjustmentReason: String(adjustmentReasonOptions.value[0]?.value ?? ''),
+    adjustmentReason: '',
     adjustmentTime: formatDateTime(new Date()),
   };
 }
@@ -228,7 +222,7 @@ watch(
     if (!busNo || Array.isArray(busNo)) return;
     const busNoText = String(busNo).trim();
     if (!busNoText) return;
-    if (adjustmentReasonOptions.value.length === 0) {
+    if (itemTableTabOptions.value.length === 0) {
       await initPage();
     }
     // 深链有单号：直接按 busNo 拉详情，不经侧栏日期/列表过滤
@@ -271,7 +265,6 @@ onMounted(async () => {
     <PriceAdjustmentMainPane
       class="min-h-0 flex-1"
       :adjustment-detail-rows="tableData"
-      :adjustment-reason-options="adjustmentReasonOptions"
       :audit-form="auditForm"
       :bus-no="selectedBusNo"
       :document-editable="documentEditable"

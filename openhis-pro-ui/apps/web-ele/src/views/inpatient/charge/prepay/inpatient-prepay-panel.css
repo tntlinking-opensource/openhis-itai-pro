@@ -52,3 +52,33 @@
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
 }
+
+.prepay-pay-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.prepay-pay-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.prepay-pay-row__channel {
+  width: 140px;
+}
+
+.prepay-pay-rows__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.prepay-pay-rows__total {
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+}

@@ -1,7 +1,7 @@
 <script setup>
 import { ref, watch } from 'vue';
 
-import { formatDate } from '@vben/utils';
+import { formatDate } from '@zxplat/utils';
 
 import {
   pageStockInOrderDetailApi,

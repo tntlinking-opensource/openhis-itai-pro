@@ -6,6 +6,7 @@ import type {
   LoadOutpatientRefundExecutionDetailResponse,
   LoadOutpatientRefundPageInitRequest,
   LoadOutpatientRefundPageInitResponse,
+  OriginalPayChannelAmountDto,
   PageOutpatientRefundQueueRequest,
   PageOutpatientRefundQueueResponse,
   SwitchPreservedChargeItemsAccountResponse,
@@ -61,6 +62,16 @@ export async function httpListOriginalPayChannelCodes(
   body: ListOriginalPayChannelCodesRequest,
 ): Promise<string[]> {
   return publicRequestClient.post<string[]>('/outpatientRefund/listOriginalPayChannelCodes', body);
+}
+
+/** 按原支付主单汇总各渠道实付（退号确认窗原路金额，不用就诊预结算现金） */
+export async function httpListOriginalPayChannelAmounts(
+  body: ListOriginalPayChannelCodesRequest,
+): Promise<OriginalPayChannelAmountDto[]> {
+  return publicRequestClient.post<OriginalPayChannelAmountDto[]>(
+    '/outpatientRefund/listOriginalPayChannelAmounts',
+    body,
+  );
 }
 
 /** 按原支付主单执行门诊账单退费 */

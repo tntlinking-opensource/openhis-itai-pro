@@ -1,5 +1,5 @@
-import { preferences } from '@vben/preferences';
-import { useUserStore } from '@vben/stores';
+import { preferences } from '@zxplat/preferences';
+import { useUserStore } from '@zxplat/stores';
 
 import { useAuthStore } from '#/store';
 
@@ -67,7 +67,7 @@ export function isHongqiHospitalSite(): boolean {
   if (hospitalName.includes('红旗')) {
     return true;
   }
-  const projectId = String(import.meta.env.VITE_OPENHIS_PROJECT ?? '')
+  const projectId = String(import.meta.env.VITE_ZXPLAT_PROJECT ?? '')
     .trim()
     .replace(/^project-/i, '');
   return projectId === 'H22010402403';

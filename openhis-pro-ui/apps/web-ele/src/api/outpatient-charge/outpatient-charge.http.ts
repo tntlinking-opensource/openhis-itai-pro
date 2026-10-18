@@ -12,6 +12,8 @@ import type {
   PrepareUnionPayMakeupCollectRequest,
   PreSettleOutpatientChargesRequest,
   PreSettleOutpatientChargesResponse,
+  PreviewOutpatientChargeDiscountsRequest,
+  PreviewOutpatientChargeDiscountsResponse,
   PrintChargeReceiptParams,
   PrintChargeReceiptResult,
   SwitchEncounterChargeItemsAccountResponse,
@@ -47,6 +49,16 @@ export async function httpLoadPendingChargeItems(
 ): Promise<LoadPendingChargeItemsResponse> {
   return publicRequestClient.post<LoadPendingChargeItemsResponse>(
     '/outpatientCharge/loadPendingChargeItems',
+    body,
+  );
+}
+
+/** 按当前折扣试算列表折后价（只读，不落草稿） */
+export async function httpPreviewOutpatientChargeDiscounts(
+  body: PreviewOutpatientChargeDiscountsRequest,
+): Promise<PreviewOutpatientChargeDiscountsResponse> {
+  return publicRequestClient.post<PreviewOutpatientChargeDiscountsResponse>(
+    '/outpatientCharge/previewOutpatientChargeDiscounts',
     body,
   );
 }

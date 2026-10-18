@@ -14,8 +14,8 @@ import type { ReportPrintColumnDef, ReportPrintSummaryItem } from '#/utils/print
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
-import { formatDate } from '@vben/utils';
+import { Page } from '@zxplat/common-ui';
+import { formatDate } from '@zxplat/utils';
 
 import { Download, Printer, Refresh, Search, Setting } from '@element-plus/icons-vue';
 import {

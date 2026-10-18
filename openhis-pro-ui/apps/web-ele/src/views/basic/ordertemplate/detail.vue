@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type {
   OrderTemplateHeaderItem,
@@ -11,7 +11,7 @@ import type { ApiOptionItem } from '#/types/api-response';
 
 import { computed, onMounted, ref, watch } from 'vue';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import {
   ElButton,

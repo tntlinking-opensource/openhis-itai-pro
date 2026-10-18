@@ -1,0 +1,2 @@
+com.zxplat.plugin.pacs.application.config.PacsAutoConfiguration
+com.zxplat.plugin.pacsimaging.application.config.ImagingAutoConfiguration

@@ -262,8 +262,8 @@ html.layout-viewport-compact .el-message-box__btns {
 }
 
 /* 错误/打印指引弹窗：标题保持 16px 醒目，正文随 compact 13px */
-html.layout-viewport-compact .whale-persistent-error-messagebox .el-message-box__message,
-html.layout-viewport-compact .whale-print-troubleshoot-messagebox .el-message-box__message {
+html.layout-viewport-compact .zxplat-persistent-error-messagebox .el-message-box__message,
+html.layout-viewport-compact .zxplat-print-troubleshoot-messagebox .el-message-box__message {
   font-size: var(--overlay-body-font-size);
 }
 

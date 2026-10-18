@@ -1,13 +1,13 @@
 import type { ComputedRef } from 'vue';
 
-import type { MenuRecordRaw } from '@vben/types';
+import type { MenuRecordRaw } from '@zxplat/types';
 
 import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
-import { preferences } from '@vben/preferences';
-import { useAccessStore } from '@vben/stores';
-import { findRootMenuByPath } from '@vben/utils';
+import { preferences } from '@zxplat/preferences';
+import { useAccessStore } from '@zxplat/stores';
+import { findRootMenuByPath } from '@zxplat/utils';
 
 import { useNavigation } from './use-navigation';
 

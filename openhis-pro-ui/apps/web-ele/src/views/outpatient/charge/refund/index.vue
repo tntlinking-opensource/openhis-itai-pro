@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { PreSettleChargeLinePreviewDto } from '#/api/outpatient-charge/outpatient-charge.types';
 import type {
@@ -14,7 +14,7 @@ import type {
 
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
-import { RotateCw } from '@vben/icons';
+import { RotateCw } from '@zxplat/icons';
 
 import { useDebounceFn } from '@vueuse/core';
 import dayjs from 'dayjs';
@@ -583,12 +583,6 @@ const handleQueuePageChange = () => {
   void loadRefundQueue();
 };
 
-/** 每页条数变化时回到第一页 */
-const handleQueueSizeChange = () => {
-  queuePager.pageNo = 1;
-  void loadRefundQueue();
-};
-
 /** 表格勾选变更：按原支付整单展开，不支持单条拟退行单独勾选 */
 const handleDetailSelectionChange = (selection: RefundDetailTableRow[]) => {
   if (syncingDetailSelection.value) {
@@ -899,18 +893,16 @@ onMounted(() => {
               @select="handleChoosePatient"
             />
           </div>
-          <div class="shrink-0 pt-1">
+          <div class="charge-queue-pager shrink-0 pt-1">
             <ElPagination
               v-model:current-page="queuePager.pageNo"
               v-model:page-size="queuePager.pageSize"
               :disabled="queueLoading"
-              :page-sizes="[10, 20, 50]"
+              :pager-count="5"
               :total="queueTotal"
-              background
-              layout="total, sizes, prev, pager, next"
-              small
+              layout="total, prev, pager, next"
+              size="small"
               @current-change="handleQueuePageChange"
-              @size-change="handleQueueSizeChange"
             />
           </div>
         </div>

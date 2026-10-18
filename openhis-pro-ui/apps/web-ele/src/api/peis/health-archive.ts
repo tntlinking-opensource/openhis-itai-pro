@@ -65,10 +65,31 @@ export function loadArchiveApi(data: LoadArchiveRequest) {
   return publicRequestClient.post<LoadArchiveResponse>('/peisHealthArchive/loadArchive', data);
 }
 
-export function saveArchiveApi(data: SaveArchiveRequest) {
+export interface SaveArchiveApiOptions {
+  /**
+   * 软失败：HTTP 拦截器不自动 toast，由调用方处理提示。
+   * 用于「患者主档已保存、体检档案附属写入失败」等场景，避免误报整单失败。
+   */
+  softFailToast?: boolean;
+}
+
+/**
+ * 保存体检健康档案。
+ *
+ * @param data 档案字段；patientId 须为 string，禁止 Number 雪花主键
+ * @param options softFailToast 时由调用方自行 toast
+ */
+export function saveArchiveApi(data: SaveArchiveRequest, options?: SaveArchiveApiOptions) {
+  const headers =
+    options?.softFailToast === true
+      ? {
+          'X-Zxplat-Soft-Fail': '1',
+        }
+      : undefined;
   return publicRequestClient.post<{ archiveId?: IdLike; patientId?: IdLike }>(
     '/peisHealthArchive/saveArchive',
     data,
+    { headers },
   );
 }
 

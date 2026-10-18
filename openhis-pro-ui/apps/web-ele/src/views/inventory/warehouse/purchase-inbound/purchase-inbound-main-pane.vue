@@ -2,7 +2,7 @@
   药库进货单右侧主区：单头/明细 + useVbenVxeGrid；单据操作吸底。
 -->
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 import type { VxeGridPropTypes } from '#/adapter/vxe-table';
 import type {
   CreateInboundReceiptResponseDto,
@@ -19,8 +19,8 @@ import type { FormInstance } from 'element-plus';
 
 import { computed, nextTick, onBeforeUnmount, onDeactivated, ref, watch } from 'vue';
 
-import { Trash2 } from '@vben/icons';
-import { formatDateTime } from '@vben/utils';
+import { Trash2 } from '@zxplat/icons';
+import { formatDateTime } from '@zxplat/utils';
 
 import InvDocActions from '@inventory/components/inv-doc-actions.vue';
 import InvDocAmountSummaryBar from '@inventory/components/inv-doc-amount-summary-bar.vue';
@@ -36,6 +36,7 @@ import {
   ElForm,
   ElFormItem,
   ElInput,
+  ElLoading,
   ElMessage,
   ElMessageBox,
   ElOption,
@@ -126,6 +127,10 @@ import { uploadAndExpandInboundSmallCodesApi } from '#/api/msfx/upload';
 import { MSFX_HIS_SCENE } from '#/msfx/constants';
 import { isMsfxUiEnabled } from '#/msfx/is-msfx-ui-enabled';
 import { assignMsfxTraceCodesToRows } from '#/msfx/utils/assign-trace-codes';
+import {
+  msfxUpstreamDrugNeedsPreExpand,
+  preExpandMsfxUpstreamDrugRows,
+} from '#/msfx/utils/pre-expand-upstream-codes';
 import MsfxUploadStatusBar from '#/msfx/components/msfx-upload-status-bar.vue';
 import MsfxUpstreamPullDialog from '#/msfx/components/msfx-upstream-pull-dialog.vue';
 import MsfxUpstreamGenerateConfirmDialog from '#/msfx/components/msfx-upstream-generate-confirm-dialog.vue';
@@ -1995,15 +2000,17 @@ async function handlePullSmallCodes(payload: {
   for (let i = 0; i < packCodes.length; i += MSFX_EXPAND_CHUNK_SIZE) {
     chunks.push(packCodes.slice(i, i + MSFX_EXPAND_CHUNK_SIZE));
   }
-  const loading = ElMessage({
-    message:
-      chunks.length > 1
-        ? `正在展开小码：0/${chunks.length} 批完成，请勿关闭…`
-        : oneLevelOnly
-          ? '正在上报入库并逐级展开，请勿关闭…'
-          : '正在上报入库并拉取小码，请勿关闭…',
-    type: 'info',
-    duration: 0,
+  const initialPullText =
+    chunks.length > 1
+      ? `正在拉取追溯码：0/${chunks.length} 批，请勿编辑或关闭…`
+      : oneLevelOnly
+        ? '正在上报入库并逐级展开，请勿编辑或关闭…'
+        : '正在上报入库并拉取小码，请勿编辑或关闭…';
+  // 全屏锁：拉码未完成时挡住进货单/确认窗操作，避免中途改别的把展开打断
+  const loading = ElLoading.service({
+    lock: true,
+    text: initialPullText,
+    background: 'rgba(0, 0, 0, 0.35)',
   });
 
   const mergedCodeItems: MsfxUpstreamTraceCodeItem[] = [];
@@ -2025,6 +2032,9 @@ async function handlePullSmallCodes(payload: {
   try {
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i]!;
+      if (chunks.length > 1) {
+        loading.setText(`正在拉取追溯码：${i}/${chunks.length} 批，请勿编辑或关闭…`);
+      }
       try {
         const res = await uploadAndExpandInboundSmallCodesApi({
           busNo,
@@ -2041,7 +2051,10 @@ async function handlePullSmallCodes(payload: {
         });
         const data = res.data ?? {};
         lastHint = String(data.hint ?? '').trim();
-        const codeItems = data.codeItems ?? [];
+        const chunkSet = new Set(chunk);
+        const codeItems = (data.codeItems ?? []).filter((item) =>
+          Boolean(String(item?.code ?? '').trim()),
+        );
         const smallCodes = (data.smallCodes ?? [])
           .map((c) => String(c ?? '').trim())
           .filter(Boolean);
@@ -2050,22 +2063,31 @@ async function handlePullSmallCodes(payload: {
           .filter(Boolean);
         const expanded =
           incomingCodes.length > 0 &&
-          (incomingCodes.length !== chunk.length || incomingCodes.some((c) => !chunk.includes(c)));
+          (incomingCodes.length !== chunk.length || incomingCodes.some((c) => !chunkSet.has(c)));
         // 本批全是最小码（误标中码）：后端回填 codeItems，须并入小码，不可当「未展开」丢弃
         const alreadySmallest =
           incomingCodes.length > 0 &&
           (lastHint.includes('已是最小包装') ||
             (incomingCodes.length === chunk.length &&
-              incomingCodes.every((c) => chunk.includes(c)) &&
+              incomingCodes.every((c) => chunkSet.has(c)) &&
               codeItems.every((item) => isAlreadySmallestItem(item))));
         if (expanded || alreadySmallest) {
           anyExpanded = true;
           mergedCodeItems.push(...codeItems);
           resolvedSourceCodes.push(...chunk);
         } else if (smallCodes.length > chunk.length) {
-          anyExpanded = true;
-          mergedSmall.push(...smallCodes);
-          resolvedSourceCodes.push(...chunk);
+          // 防御：后端曾把整单所有行码并进 smallCodes，多行一起拉时会串到本行
+          const looksLikeWholeDocDump =
+            smallCodes.length > Math.max(chunk.length * 20, 50);
+          if (looksLikeWholeDocDump) {
+            ElMessage.warning(
+              `第 ${i + 1}/${chunks.length} 批返回码数异常（${smallCodes.length}），已忽略以免串到本行`,
+            );
+          } else {
+            anyExpanded = true;
+            mergedSmall.push(...smallCodes);
+            resolvedSourceCodes.push(...chunk);
+          }
         } else {
           ElMessage.warning(
             `第 ${i + 1}/${chunks.length} 批尚未返回小码：${lastHint || '请稍后重试本批'}`,
@@ -2073,6 +2095,11 @@ async function handlePullSmallCodes(payload: {
           // 未决中大码不计入小码，也不标 resolved，保留原码可再拉
         }
         doneBatches += 1;
+        if (chunks.length > 1) {
+          loading.setText(
+            `正在拉取追溯码：${doneBatches}/${chunks.length} 批完成，请勿编辑或关闭…`,
+          );
+        }
       } catch (error) {
         const raw =
           error && typeof error === 'object' && 'message' in error
@@ -2269,10 +2296,75 @@ async function handleMsfxUpstreamApply(payload: {
   }
 
   const drugRows = payload.drugRows ?? [];
-  // 有上游药品：确认生成/追加明细（同供应商可多次拉）
+  // 有上游药品：下一步先预展开中大码，确认页直接看到可入库码数；确认只负责写入
   if (drugRows.length > 0) {
     pendingMsfxApplyPayload.value = payload;
-    msfxGenerateDrugRows.value = drugRows;
+    await ensureHisSupplierFromUpstreamPull();
+    let supplierEntId =
+      String(payload.fromEntId ?? '').trim() || String(msfxSupplierEntId.value ?? '').trim();
+    if (!supplierEntId) {
+      try {
+        const { value } = await ElMessageBox.prompt(
+          '拉取小码须填写码上放心上游企业 ID（须与出库单发货企业一致）',
+          '填写上游企业 ID',
+          {
+            confirmButtonText: '确定',
+            cancelButtonText: '跳过预拉码',
+            inputPlaceholder: 'ent_id',
+          },
+        );
+        supplierEntId = String(value ?? '').trim();
+        if (supplierEntId) {
+          msfxSupplierEntId.value = supplierEntId;
+        }
+      } catch {
+        supplierEntId = '';
+      }
+    }
+    const needPre = drugRows.some((d) => msfxUpstreamDrugNeedsPreExpand(d));
+    if (needPre && supplierEntId) {
+      const loading = ElLoading.service({
+        lock: true,
+        text: '正在按上游单拉取追溯码（上报 102 并展开），完成后进入确认页…',
+        background: 'rgba(0, 0, 0, 0.35)',
+      });
+      try {
+        const result = await preExpandMsfxUpstreamDrugRows(drugRows, {
+          busNo: resolvePullSmallCodesBusNo(),
+          supplierEntId,
+          supplierEntName:
+            String(payload.fromEntName ?? '').trim() || resolveMsfxUploadSupplierName() || undefined,
+          supplierRefEntId: resolveMsfxUploadSupplierRef() || undefined,
+          billTime: String(headForm.value.applyTime ?? '').trim() || undefined,
+          expandSessionKey: `pre-apply-${String(payload.importId ?? 'x')}-${Date.now()}`,
+          onProgress: (text) => loading.setText(text),
+        });
+        msfxGenerateDrugRows.value = result.drugRows;
+        pendingMsfxApplyPayload.value = { ...payload, drugRows: result.drugRows };
+        if (result.expandedCount > 0) {
+          ElMessage.success(`已预拉取 ${result.expandedCount} 种药品追溯码，请核对后确认生成`);
+        }
+        if (result.failedNames.length > 0) {
+          ElMessage.warning(
+            `以下药品未展开完，可在确认页点「拉取」重试：${result.failedNames.slice(0, 3).join('、')}${
+              result.failedNames.length > 3 ? '…' : ''
+            }`,
+          );
+        }
+      } catch (error) {
+        msfxGenerateDrugRows.value = drugRows;
+        ElMessage.warning(
+          `预拉取追溯码未完成（${pickApiErrMsg(error) || '请稍后在确认页手动拉取'}），仍可进入确认页`,
+        );
+      } finally {
+        loading.close();
+      }
+    } else {
+      if (needPre && !supplierEntId) {
+        ElMessage.info('未填上游企业 ID，跳过预拉码；可在确认页逐行点「拉取」');
+      }
+      msfxGenerateDrugRows.value = drugRows;
+    }
     msfxGenerateConfirmVisible.value = true;
     return;
   }
@@ -2354,10 +2446,10 @@ async function handleMsfxGenerateConfirm(lines: MsfxGenerateConfirmLine[]) {
     ElMessage.warning('拉单上下文已失效，请重新拉单');
     return;
   }
-  const loading = ElMessage({
-    message: '正在写入进货明细…',
-    type: 'info',
-    duration: 0,
+  const loading = ElLoading.service({
+    lock: true,
+    text: '正在写入进货明细（码已对齐，仅落盘，不再调平台）…',
+    background: 'rgba(0, 0, 0, 0.35)',
   });
   try {
     for (const line of lines) {
@@ -2397,14 +2489,18 @@ async function handleMsfxGenerateConfirm(lines: MsfxGenerateConfirmLine[]) {
       ElMessage.warning(`追溯码数量与入库数量不一致，不允许带入：${sample}`);
       return;
     }
+    loading.setText('正在写入网格明细…');
     const inserted = await insertConfirmedMsfxInboundLines(lines);
     if (inserted <= 0) {
       ElMessage.warning('未写入任何明细行');
       return;
     }
+    loading.setText('正在保存进货单并绑定上游单…');
+    // 上步已预展开/对齐追溯码：落盘时禁止再跑 102+relation（否则「写明细」又卡很久）
     await finishMsfxUpstreamApplyAfterGridChange(payload, {
       generatedCount: inserted,
       unmatchedNames: [],
+      skipMsfxAutoExpand: true,
     });
     pendingMsfxApplyPayload.value = null;
     msfxGenerateDrugRows.value = [];
@@ -2414,7 +2510,7 @@ async function handleMsfxGenerateConfirm(lines: MsfxGenerateConfirmLine[]) {
         ? String((error as { message?: string }).message ?? '')
         : '';
     if (/timeout/i.test(raw)) {
-      ElMessage.error('展开追溯码超时。请在确认页选择「中大码」入库，或缩小单次拉单数量后重试');
+      ElMessage.error('保存进货单超时。码已在上一步对齐，请缩小单次明细后重试保存');
     } else {
       ElMessage.error(pickApiErrMsg(error) || '写入进货明细失败');
     }
@@ -2432,9 +2528,9 @@ async function finishMsfxUpstreamApplyAfterGridChange(
     billCode?: string;
     traceCodes: string[];
   },
-  meta: { generatedCount: number; unmatchedNames: string[] },
+  meta: { generatedCount: number; unmatchedNames: string[]; skipMsfxAutoExpand?: boolean },
 ) {
-  const { generatedCount, unmatchedNames } = meta;
+  const { generatedCount, unmatchedNames, skipMsfxAutoExpand } = meta;
   flushInboundDraftPersist();
 
   if (payload.fromEntId) {
@@ -2467,7 +2563,8 @@ async function finishMsfxUpstreamApplyAfterGridChange(
       clearInvDocDraftCache(INV_DOC_DRAFT_SCENE.warehousePurchaseInbound, draftId);
     }
     parentSync.bindActivePersistDocKey(busNo);
-    if (!inboundRowsNeedMsfxSmallCodeExpand()) {
+    // 跳过事后展开时由文末统一 emit，避免重复刷新
+    if (!skipMsfxAutoExpand && !inboundRowsNeedMsfxSmallCodeExpand()) {
       emit('documentSaved', { busNo });
     }
   } else if (props.documentEditable) {
@@ -2508,7 +2605,12 @@ async function finishMsfxUpstreamApplyAfterGridChange(
     ElMessage.warning(`进货明细已写入，上游单绑定未完成：${pickApiErrMsg(error)}`);
   }
 
-  await tryMsfxUploadAndExpandAfterPull(busNo);
+  // 确认生成路径已在「下一步」对齐码；此处再 102 会把写明细拖成数分钟
+  if (!skipMsfxAutoExpand) {
+    await tryMsfxUploadAndExpandAfterPull(busNo);
+  } else {
+    emit('documentSaved', { busNo });
+  }
 }
 
 /** 拆零入库仍是中大码（码数 < 入库支数）时，用本进货单号正式 102 再展开支码 */
@@ -2552,10 +2654,10 @@ async function tryMsfxUploadAndExpandAfterPull(busNo: string): Promise<void> {
     return;
   }
 
-  const loading = ElMessage({
-    message: '正在用本进货单上报码上放心（102）并展开支码，请勿关闭页面…',
-    type: 'info',
-    duration: 0,
+  const loading = ElLoading.service({
+    lock: true,
+    text: '正在用本进货单上报码上放心（102）并展开支码，请勿编辑或关闭…',
+    background: 'rgba(0, 0, 0, 0.35)',
   });
   try {
     const res = await uploadAndExpandInboundSmallCodesApi({

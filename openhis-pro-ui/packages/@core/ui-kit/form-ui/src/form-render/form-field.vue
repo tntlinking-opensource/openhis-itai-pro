@@ -5,7 +5,7 @@ import type { FormFieldProps, MaybeComponentProps } from '../types';
 
 import { computed, nextTick, onUnmounted, useTemplateRef, watch } from 'vue';
 
-import { CircleAlert } from '@vben-core/icons';
+import { CircleAlert } from '@zxplat-core/icons';
 import {
   FormControl,
   FormDescription,
@@ -14,9 +14,9 @@ import {
   FormMessage,
   VbenRenderContent,
   VbenTooltip,
-} from '@vben-core/shadcn-ui';
-import { globalShareState } from '@vben-core/shared/global-state';
-import { cn, isFunction, isObject, isString } from '@vben-core/shared/utils';
+} from '@zxplat-core/shadcn-ui';
+import { globalShareState } from '@zxplat-core/shared/global-state';
+import { cn, isFunction, isObject, isString } from '@zxplat-core/shared/utils';
 
 import { toTypedSchema } from '@vee-validate/zod';
 import { useFieldError, useFormValues } from 'vee-validate';

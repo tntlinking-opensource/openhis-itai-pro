@@ -1,5 +1,5 @@
 {
-  "name": "@vben/stores",
+  "name": "@zxplat/stores",
   "version": "5.5.9",
   "homepage": "https://github.com/vbenjs/vue-vben-admin",
   "bugs": "https://github.com/vbenjs/vue-vben-admin/issues",
@@ -20,9 +20,9 @@
     }
   },
   "dependencies": {
-    "@vben-core/preferences": "workspace:*",
-    "@vben-core/shared": "workspace:*",
-    "@vben-core/typings": "workspace:*",
+    "@zxplat-core/preferences": "workspace:*",
+    "@zxplat-core/shared": "workspace:*",
+    "@zxplat-core/typings": "workspace:*",
     "pinia": "catalog:",
     "pinia-plugin-persistedstate": "catalog:",
     "secure-ls": "catalog:",

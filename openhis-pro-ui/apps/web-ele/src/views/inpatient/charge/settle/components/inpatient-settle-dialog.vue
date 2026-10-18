@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { InpatientSettleChargeLineDto } from '#/api/inpatient-settle';
 

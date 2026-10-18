@@ -1,6 +1,7 @@
 import type { HiprintPrinterItem } from './fetch-printer-list';
 import type { InvFormPaperKind, InvFormTripleSpec } from './form-print-preference';
 import type { PrinterPreference } from './printer-preference';
+import type { ServiceApplyPaperSize } from './service-apply-paper-preference';
 
 import { isInvPrintScenario } from './constants/print-scenario';
 import { resolvePrintScenarioLabel } from './constants/print-scenario-labels';
@@ -14,6 +15,12 @@ import {
 } from './form-print-preference';
 import { openPrinterSelectDialog } from './open-printer-select-dialog';
 import { getPrinterPreference, savePrinterPreference } from './printer-preference';
+import {
+  getServiceApplyPaperSizePreference,
+  normalizeServiceApplyPaperSize,
+  remapServiceApplyScenarioByPaper,
+  saveServiceApplyPaperSizePreference,
+} from './service-apply-paper-preference';
 
 export type PrinterSelectMode = 'always' | 'auto' | 'never';
 
@@ -30,6 +37,9 @@ export interface ResolvePrinterOptions {
   showPaperKind?: boolean;
   initialPaperKind?: InvFormPaperKind;
   initialTripleSpec?: InvFormTripleSpec;
+  /** 门诊申请单：同窗选择 A4 / A5 */
+  showServiceApplyPaperSize?: boolean;
+  initialServiceApplyPaperSize?: ServiceApplyPaperSize;
 }
 
 export interface ResolvePrinterResult {
@@ -37,6 +47,9 @@ export interface ResolvePrinterResult {
   cancelled: boolean;
   paperKind?: InvFormPaperKind;
   tripleSpec?: InvFormTripleSpec;
+  serviceApplyPaperSize?: ServiceApplyPaperSize;
+  /** 申请单改纸张后的最终场景码（可能与入参不同） */
+  resolvedScenarioCode?: string;
 }
 
 interface PromptDecision {
@@ -99,18 +112,18 @@ function decidePrompt(
   };
 }
 
-/** 弹窗标题：库房打印带纸张 */
+/** 弹窗标题：带纸张时用合一文案 */
 function resolveDialogTitle(
   dialogMode: 'print' | 'settings' | undefined,
-  showPaperKind: boolean,
+  showAnyPaper: boolean,
 ): string {
   if (dialogMode === 'settings') {
-    return showPaperKind ? '设置纸张与打印机' : '设置默认打印机';
+    return showAnyPaper ? '设置纸张与打印机' : '设置默认打印机';
   }
-  return showPaperKind ? '选择纸张与打印机' : '选择打印机';
+  return showAnyPaper ? '选择纸张与打印机' : '选择打印机';
 }
 
-/** 打开选择弹窗并落盘打印机（及库房纸张）偏好 */
+/** 打开选择弹窗并落盘打印机（及纸张）偏好 */
 async function promptAndSave(options: {
   scenarioCode: string;
   scenarioLabel: string;
@@ -118,13 +131,16 @@ async function promptAndSave(options: {
   showPaperKind: boolean;
   initialPaperKind?: InvFormPaperKind;
   initialTripleSpec?: InvFormTripleSpec;
+  showServiceApplyPaperSize: boolean;
+  initialServiceApplyPaperSize?: ServiceApplyPaperSize;
   initialPrinterName?: string;
   initialSkipPrompt: boolean;
   unavailableHint: string;
 }): Promise<ResolvePrinterResult> {
+  const showAnyPaper = options.showPaperKind || options.showServiceApplyPaperSize;
   const selected = await openPrinterSelectDialog({
     bindingLabel: options.scenarioLabel,
-    title: resolveDialogTitle(options.dialogMode, options.showPaperKind),
+    title: resolveDialogTitle(options.dialogMode, showAnyPaper),
     confirmText: options.dialogMode === 'settings' ? '保存' : '打印',
     initialPrinterName: options.initialPrinterName,
     initialSkipPrompt: options.initialSkipPrompt,
@@ -133,15 +149,13 @@ async function promptAndSave(options: {
     showPaperKind: options.showPaperKind,
     initialPaperKind: options.initialPaperKind,
     initialTripleSpec: options.initialTripleSpec,
+    showServiceApplyPaperSize: options.showServiceApplyPaperSize,
+    initialServiceApplyPaperSize: options.initialServiceApplyPaperSize,
   });
   if (!selected) {
     return { cancelled: true };
   }
-  savePrinterPreference(options.scenarioCode, {
-    printerName: selected.printerName,
-    skipPrompt: selected.skipPrompt,
-    updatedAt: new Date().toISOString(),
-  });
+
   let paperKind: InvFormPaperKind | undefined;
   let tripleSpec: InvFormTripleSpec | undefined;
   if (options.showPaperKind) {
@@ -158,7 +172,40 @@ async function promptAndSave(options: {
       });
     }
   }
-  return { printer: selected.printerName, cancelled: false, paperKind, tripleSpec };
+
+  let serviceApplyPaperSize: ServiceApplyPaperSize | undefined;
+  let resolvedScenarioCode = options.scenarioCode;
+  if (options.showServiceApplyPaperSize) {
+    serviceApplyPaperSize = normalizeServiceApplyPaperSize(
+      selected.serviceApplyPaperSize ?? options.initialServiceApplyPaperSize,
+    );
+    // 打印时按纸张切 A4/A5 场景；设置页只改偏好，不改绑定场景
+    if (options.dialogMode !== 'settings') {
+      resolvedScenarioCode = remapServiceApplyScenarioByPaper(
+        options.scenarioCode,
+        serviceApplyPaperSize,
+      );
+    }
+    saveServiceApplyPaperSizePreference(serviceApplyPaperSize);
+  }
+
+  savePrinterPreference(resolvedScenarioCode, {
+    printerName: selected.printerName,
+    skipPrompt: selected.skipPrompt,
+    updatedAt: new Date().toISOString(),
+  });
+
+  return {
+    printer: selected.printerName,
+    cancelled: false,
+    paperKind,
+    tripleSpec,
+    serviceApplyPaperSize,
+    resolvedScenarioCode:
+      options.showServiceApplyPaperSize && options.dialogMode !== 'settings'
+        ? resolvedScenarioCode
+        : undefined,
+  };
 }
 
 /** 解析本次打印应使用的打印机（必要时弹窗） */
@@ -167,8 +214,10 @@ export async function resolvePrinterForPrint(
 ): Promise<ResolvePrinterResult> {
   const scenarioCode = options.scenarioCode.trim();
   const showPaperKind = options.showPaperKind === true;
+  const showServiceApplyPaperSize = options.showServiceApplyPaperSize === true;
+  const showAnyPaper = showPaperKind || showServiceApplyPaperSize;
   const explicitPrinter = options.printer?.trim();
-  if (explicitPrinter && !showPaperKind) {
+  if (explicitPrinter && !showAnyPaper) {
     return { printer: explicitPrinter, cancelled: false };
   }
 
@@ -182,8 +231,11 @@ export async function resolvePrinterForPrint(
   const initialTripleSpec = normalizeInvFormTripleSpec(
     options.initialTripleSpec ?? paperPref?.tripleSpec,
   );
+  const initialServiceApplyPaperSize = normalizeServiceApplyPaperSize(
+    options.initialServiceApplyPaperSize ?? getServiceApplyPaperSizePreference(),
+  );
 
-  if (selectPrinter === 'never' && !showPaperKind) {
+  if (selectPrinter === 'never' && !showAnyPaper) {
     return { printer: pref?.printerName, cancelled: false };
   }
 
@@ -193,14 +245,14 @@ export async function resolvePrinterForPrint(
   } catch (error) {
     if (
       selectPrinter === 'auto' &&
-      !showPaperKind &&
+      !showAnyPaper &&
       pref?.skipPrompt !== false &&
       pref?.printerName
     ) {
       return { printer: pref.printerName, cancelled: false };
     }
     const message =
-      error instanceof Error ? error.message : '无法连接打印客户端，请确认 OpenHIS.Win 已启动';
+      error instanceof Error ? error.message : '无法连接打印客户端，请确认 Zxplat.Win 已启动';
     return promptAndSave({
       scenarioCode,
       scenarioLabel,
@@ -208,6 +260,8 @@ export async function resolvePrinterForPrint(
       showPaperKind,
       initialPaperKind,
       initialTripleSpec,
+      showServiceApplyPaperSize,
+      initialServiceApplyPaperSize,
       initialPrinterName: pref?.printerName,
       initialSkipPrompt: pref?.skipPrompt !== false,
       unavailableHint: message,
@@ -216,13 +270,19 @@ export async function resolvePrinterForPrint(
 
   const decision = decidePrompt(scenarioCode, pref, printers, selectPrinter);
   const paperLocked = paperPref?.paperKindFromSettings === true;
-  // 纸张后加：旧「不再询问」仍弹一次确认纸张；确认并勾选后才跳过
+  // 库房纸张后加：旧「不再询问」仍弹一次确认纸张；确认并勾选后才跳过
+  // 申请单纸张随打印机弹窗：打印机可跳过时一并跳过，用本地纸张偏好
   if (!decision.shouldPrompt && (!showPaperKind || paperLocked)) {
+    const resolvedScenarioCode = showServiceApplyPaperSize
+      ? remapServiceApplyScenarioByPaper(scenarioCode, initialServiceApplyPaperSize)
+      : undefined;
     return {
       printer: decision.initialPrinterName,
       cancelled: false,
       paperKind: showPaperKind ? initialPaperKind : undefined,
       tripleSpec: showPaperKind ? initialTripleSpec : undefined,
+      serviceApplyPaperSize: showServiceApplyPaperSize ? initialServiceApplyPaperSize : undefined,
+      resolvedScenarioCode,
     };
   }
 
@@ -233,6 +293,8 @@ export async function resolvePrinterForPrint(
     showPaperKind,
     initialPaperKind,
     initialTripleSpec,
+    showServiceApplyPaperSize,
+    initialServiceApplyPaperSize,
     initialPrinterName: decision.initialPrinterName || pref?.printerName,
     initialSkipPrompt: decision.initialSkipPrompt,
     unavailableHint: decision.unavailableHint,

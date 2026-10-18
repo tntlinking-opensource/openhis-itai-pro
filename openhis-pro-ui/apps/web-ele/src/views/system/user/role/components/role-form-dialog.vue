@@ -5,7 +5,7 @@ import type { CreateRoleParams, RoleInfo, UpdateRoleParams } from '#/api/user/ro
 
 import { computed, nextTick, reactive, ref, watch } from 'vue';
 
-import { useVbenModal } from '@vben/common-ui';
+import { useVbenModal } from '@zxplat/common-ui';
 
 import { ElCheckbox, ElCheckboxGroup, ElMessage, ElTree } from 'element-plus';
 

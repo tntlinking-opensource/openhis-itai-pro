@@ -76,22 +76,46 @@ export interface PrintPendingRow {
   /** 医嘱执行行键 */
   listRowKey?: string;
   orderId?: string;
+  /** 申请业务号（采血贴/LIS applyNo） */
+  busNo?: string;
   /** 输液成组号 */
   groupId?: string;
   /** 频次 code（拆张用；禁止用 frequencyDisplay 推断） */
   rateCode?: string;
   /** 查询日去重计划点数（rateCode 缺失时作每日次数回落） */
   daySlotCount?: number;
-  /** 是否输液（患者用药单筛选用；标记 infusionFlag 或 用法 methodCode） */
+  /** 是否输液（瓶贴/用药单筛选用；仅 infusionFlag，不按用法 methodCode） */
   infusionFlag?: boolean;
+  /**
+   * 长临 code（LONG_TERM / TEMPORARY / DISCHARGE_MEDICATION）。
+   * 输液贴标记与筛选只用本字段，禁止用 therapyTypeText 文案分支。
+   */
+  therapyTypeCode?: string;
+  /** 长临展示（长期 / 临时 / 出院带药；仅展示） */
+  therapyTypeText?: string;
   /** 合管检验设备主键（采血贴按 device 分组） */
   specimenTubeMergeDeviceId?: string;
+  specimenTubeMergeGroupNo?: number | string;
+  /**
+   * 采血贴合管展示行：折叠后的成员原行（打印时展开；列表一行对应一张贴）。
+   */
+  specimenMergeMembers?: PrintPendingRow[];
   /**
    * 检验开立数量展示（如「2次」；与申请单数量列同源 dosageDisplay；采血贴张数用）。
    */
   dosageDisplay?: string;
   /** 医嘱优先级 code（加急=EM；采血贴印「急」） */
   priorityEnum?: string;
+  /** 诊疗类目 code（手术=24；临时医嘱手术筛选用，禁止用 subtitle 推断） */
+  categoryEnum?: string;
+  /** 申请单号（麻醉申请 AA 前缀；临嘱「麻醉」筛选收口） */
+  prescriptionNo?: string;
+  /** 医嘱类型 code（MED_REQUEST / SERVICE_REQUEST） */
+  orderType?: string;
+  /**
+   * 贴签查询日 YYYY-MM-DD（输液贴跨天时每行对应一天；打印/审计回查用）。
+   */
+  queryDate?: string;
 }
 
 export const PRINT_DOC_CATEGORIES: PrintDocCategoryOption[] = [
@@ -140,8 +164,8 @@ export const PRINT_DOC_TYPES: PrintDocTypeOption[] = [
     label: '床头卡',
     category: 'care',
     scope: 'multiple',
-    previewKind: 'paper',
-    description: '按患者打印床头卡（长21cm×宽13cm）',
+    previewKind: 'label',
+    description: '按患者打印床头卡（宽8cm×高6cm 输液贴纸）',
   },
   {
     code: 'infusion_label',
@@ -191,7 +215,7 @@ export const PRINT_DOC_TYPES: PrintDocTypeOption[] = [
     scope: 'multiple',
     previewKind: 'label',
     description:
-      '按开嘱日查询；按检验医嘱开立数量打对应贴数（如 2次→2 张；合管组取组内最大；categoryEnum=22，30×50mm）',
+      '按开嘱日查询；按检验医嘱开立数量打对应贴数（如 2次→2 张；合管组取组内最大；categoryEnum=22，排除采血费；30×50mm）',
   },
   {
     code: 'temp_sheet',
@@ -215,7 +239,7 @@ export const PRINT_DOC_TYPES: PrintDocTypeOption[] = [
     category: 'order',
     scope: 'single',
     previewKind: 'table',
-    description: '支持全部打印 / 续打',
+    description: '支持全部打印 / 续打；可筛嘱托',
   },
   {
     code: 'temp_order',
@@ -223,7 +247,7 @@ export const PRINT_DOC_TYPES: PrintDocTypeOption[] = [
     category: 'order',
     scope: 'single',
     previewKind: 'table',
-    description: '支持全部打印 / 未打 / 续打',
+    description: '支持全部打印 / 未打 / 续打；可筛手术 / 麻醉 / 嘱托（互斥）',
   },
   {
     code: 'fee_list',

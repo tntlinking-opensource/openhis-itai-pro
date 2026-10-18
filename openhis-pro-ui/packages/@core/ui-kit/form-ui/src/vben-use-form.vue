@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import type { Recordable } from '@vben-core/typings';
+import type { Recordable } from '@zxplat-core/typings';
 
 import type { ExtendedFormApi, VbenFormProps } from './types';
 
 // import { toRaw, watch } from 'vue';
 import { nextTick, onMounted, watch } from 'vue';
 
-import { useForwardPriorityValues } from '@vben-core/composables';
-import { cloneDeep, get, isEqual, set } from '@vben-core/shared/utils';
+import { useForwardPriorityValues } from '@zxplat-core/composables';
+import { cloneDeep, get, isEqual, set } from '@zxplat-core/shared/utils';
 
 import { useDebounceFn } from '@vueuse/core';
 

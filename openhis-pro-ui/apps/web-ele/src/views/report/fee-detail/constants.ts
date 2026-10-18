@@ -3,18 +3,22 @@ import type {
   FeeDetailReportSummaryFooterDto,
 } from '#/api/report/fee-detail';
 
-/** 金额列 prop，模板内统一套负数样式（仅进/售价）。 */
+/** 金额列 prop，模板内统一套负数样式（进/售价/优惠/实收）。 */
 export const FEE_DETAIL_AMOUNT_PROPS = [
   'purchaseUnitPrice',
   'purchaseAmount',
   'saleUnitPrice',
   'saleAmount',
+  'discountAmount',
+  'actualReceivedAmount',
 ] as const;
 
-/** 明细 Tab 全局合计金额字段展示配置（本轮不展示实收）。 */
+/** 明细 Tab 全局合计金额字段展示配置（售价/优惠/实收靠前，进价殿后）。 */
 export const FEE_DETAIL_SUMMARY_DISPLAY = [
-  { key: 'purchaseAmountTotal', label: '进价合计' },
   { key: 'saleAmountTotal', label: '售价合计' },
+  { key: 'discountAmountTotal', label: '优惠合计' },
+  { key: 'actualReceivedAmountTotal', label: '实收合计' },
+  { key: 'purchaseAmountTotal', label: '进价合计' },
 ] as const satisfies ReadonlyArray<{
   key: keyof FeeDetailAmountSummaryDto;
   label: string;

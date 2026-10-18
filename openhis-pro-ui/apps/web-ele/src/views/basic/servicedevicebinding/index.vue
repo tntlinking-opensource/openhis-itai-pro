@@ -1,6 +1,7 @@
 <script lang="ts" setup>
-import type { TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@zxplat-core/table-layout-ui';
 
+import type { DeviceCatalogItem, ServiceCatalogItem } from '#/api';
 import type {
   ServiceDeviceBindingInitResponse,
   ServiceDeviceBindingItem,
@@ -11,9 +12,9 @@ import type { ApiOptionItem } from '#/types/api-response';
 
 import { computed, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import {
   ElButton,
@@ -28,6 +29,7 @@ import {
   ElTabs,
 } from 'element-plus';
 
+import { pageDeviceCatalogApi, pageServiceCatalogApi } from '#/api';
 import {
   SERVICE_DEVICE_BIND_TYPE_ACTIVITY,
   SERVICE_DEVICE_BIND_TYPE_USAGE,
@@ -38,12 +40,15 @@ import {
   SERVICE_DEVICE_TARGET_TABLE_DEVICE,
   deleteServiceDeviceBindingApi,
   initServiceDeviceBindingApi,
-  listDeviceDefOptionsApi,
   pageServiceDeviceBindingApi,
   saveServiceDeviceBindingApi,
   serviceDeviceBindingUnitOptionsByTargetApi,
 } from '#/api/basic/service-device-binding';
+import SelectTable from '#/components/select-table.vue';
+import { PublicationStatusCode } from '#/constants/domain/publication-status';
 import { useRequest } from '#/hooks/use-request';
+import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
 
 defineOptions({ name: 'ServiceDeviceBindingPage' });
 
@@ -53,9 +58,10 @@ interface SourceOptionItem {
 }
 
 type EditableRow = {
-  __backup?: Partial<ServiceDeviceBindingItem>;
+  __backup?: Partial<ServiceDeviceBindingItem> & { __selectedLabel?: string };
   __editing?: boolean;
   __rowKey?: string;
+  __selectedLabel?: string;
   __unitOptions?: ApiOptionItem[];
   __unitRequestSeq?: number;
 } & ServiceDeviceBindingItem;
@@ -181,7 +187,7 @@ const tableColumns: TableColumn[] = [
   {
     prop: 'devActName',
     label: '绑定目标',
-    minWidth: 220,
+    minWidth: 280,
     showOverflowTooltip: true,
     slot: 'targetId',
   },
@@ -216,6 +222,27 @@ const tableColumns: TableColumn[] = [
   },
 ];
 
+/** 诊疗选品列（对齐合管配置 / 诊疗目录列表信息密度） */
+const activityPickColumns = [
+  { prop: 'busNo', label: '编码', width: 140 },
+  { prop: 'name', label: '项目名称', minWidth: 180 },
+  { prop: 'categoryCode_dictText', label: '分类', width: 110 },
+  { prop: 'packageUnitCode_dictText', label: '单位', width: 88 },
+  { prop: 'retailPrice', label: '售价', width: 96, align: 'right' as const },
+  { prop: 'specification', label: '规格', width: 120 },
+];
+
+/** 耗材选品列（对齐合管配置 / 器材目录列表） */
+const devicePickColumns = [
+  { prop: 'busNo', label: '编码', width: 140 },
+  { prop: 'name', label: '项目名称', minWidth: 160 },
+  { prop: 'specification', label: '规格', width: 120 },
+  { prop: 'packageUnitCode_dictText', label: '包装单位', width: 96 },
+  { prop: 'splitUnitCode_dictText', label: '最小单位', width: 96 },
+  { prop: 'retailPrice', label: '售价', width: 96, align: 'right' as const },
+  { prop: 'manufacturerText', label: '厂家', minWidth: 140 },
+];
+
 /** 为行生成稳定 key，避免编辑态切换导致 DOM 复用错乱 */
 function ensureRowKey(row: EditableRow) {
   if (row.__rowKey) {
@@ -244,38 +271,207 @@ function setRowEl(row: EditableRow, el: unknown) {
   }
 }
 
-/** 按目标表解析绑定目标下拉 */
-function getTargetIdOptions(targetTable: string | undefined): SourceOptionItem[] {
-  const table = String(targetTable ?? '').trim();
-  if (table === SERVICE_DEVICE_TARGET_TABLE_ACTIVITY) {
-    return (initOptions.value.activitySourceOptions ?? []).map((o) => ({
-      label: String(o.label ?? ''),
-      value: String(o.value ?? ''),
-    }));
+/** 选品列表售价展示：空值不渲染，非法数字回落原文 */
+function formatPickRetailPrice(price: unknown): string {
+  if (price === null || price === undefined || price === '') {
+    return '';
   }
-  if (table === SERVICE_DEVICE_TARGET_TABLE_DEVICE) {
-    return (initOptions.value.deviceDefOptions ?? []).map((o) => ({
-      label: String(o.label ?? ''),
-      value: String(o.value ?? ''),
-    }));
+  const num = Number(price);
+  if (Number.isFinite(num)) {
+    return formatMoneyDisplay(num);
   }
-  return [];
+  return String(price);
 }
 
-/** 从服务端刷新耗材绑定目标下拉 */
-async function refreshDeviceDefOptions() {
+/** 诊疗目录是否启用态（含草稿/启用 code 兼容） */
+function isServicePublicationActive(row: ServiceCatalogItem): boolean {
+  const status = row.statusEnum;
+  // 停用/作废不得作为绑定目标
+  if (
+    status === PublicationStatusCode.INACTIVE ||
+    status === PublicationStatusCode.DISCARDED ||
+    status === 3 ||
+    status === '3'
+  ) {
+    return false;
+  }
+  return (
+    status === PublicationStatusCode.ACTIVE ||
+    status === 1 ||
+    status === '1' ||
+    status === 2 ||
+    status === '2'
+  );
+}
+
+/** 耗材目录是否启用态（含草稿/启用 code 兼容） */
+function isDevicePublicationActive(row: DeviceCatalogItem): boolean {
+  const status = row.statusEnum;
+  // 停用/作废不得作为绑定目标
+  if (
+    status === PublicationStatusCode.INACTIVE ||
+    status === PublicationStatusCode.DISCARDED ||
+    status === 3 ||
+    status === '3'
+  ) {
+    return false;
+  }
+  return (
+    status === PublicationStatusCode.ACTIVE ||
+    status === 1 ||
+    status === '1' ||
+    status === 2 ||
+    status === '2'
+  );
+}
+
+/**
+ * 按绑定目标类型返回 SelectTable 列；未选类型时空列，避免误开下拉。
+ *
+ * @param targetTable 目标表名
+ */
+function pickColumnsForTargetTable(targetTable: string | undefined) {
+  const table = String(targetTable ?? '').trim();
+  // 诊疗目标展示编码/名称/分类/单位/售价/规格
+  if (table === SERVICE_DEVICE_TARGET_TABLE_ACTIVITY) {
+    return activityPickColumns;
+  }
+  // 耗材目标展示编码/名称/规格/包装与最小单位/售价/厂家
+  if (table === SERVICE_DEVICE_TARGET_TABLE_DEVICE) {
+    return devicePickColumns;
+  }
+  return activityPickColumns;
+}
+
+/**
+ * 分页检索启用态诊疗目录，供绑定目标 SelectTable。
+ * 主键保持字符串，避免 Snowflake 精度丢失。
+ *
+ * @param params SelectTable 分页与关键字
+ */
+async function searchActivityPick(params: {
+  keyword?: string;
+  pageNo: number;
+  pageSize: number;
+}) {
+  const { pageNo, pageSize, keyword } = params;
   try {
-    const options = (await listDeviceDefOptionsApi()) ?? [];
-    initOptions.value = {
-      ...initOptions.value,
-      deviceDefOptions: options,
+    const response = await pageServiceCatalogApi({
+      pageNo,
+      pageSize,
+      keyword: keyword?.trim() || undefined,
+      includeReferencedPackageChildren: true,
+    });
+    const parsed = parsePagedRowsFromApiData<ServiceCatalogItem>(response?.data);
+    // 仅启用态进入选品；id 一律字符串，避免 Long 精度丢失
+    const content = parsed.content
+      .filter((row) => isServicePublicationActive(row))
+      .map((row) => ({
+        ...row,
+        id: row.id !== null && row.id !== undefined ? String(row.id) : '',
+        retailPrice: formatPickRetailPrice(row.retailPrice),
+      }));
+    return {
+      content,
+      totalCount: parsed.totalCount,
     };
   } catch {
-    initOptions.value = {
-      ...initOptions.value,
-      deviceDefOptions: [],
-    };
+    ElMessage.error('加载诊疗项目失败，请稍后重试');
+    return { content: [], totalCount: 0 };
   }
+}
+
+/**
+ * 分页检索启用态耗材目录，供绑定目标 SelectTable。
+ *
+ * @param params SelectTable 分页与关键字
+ */
+async function searchDevicePick(params: { keyword?: string; pageNo: number; pageSize: number }) {
+  const { pageNo, pageSize, keyword } = params;
+  try {
+    const response = await pageDeviceCatalogApi({
+      pageNo,
+      pageSize,
+      keyword: keyword?.trim() || undefined,
+    });
+    const parsed = parsePagedRowsFromApiData<DeviceCatalogItem>(response?.data);
+    // 仅启用态进入选品；id 一律字符串，避免 Long 精度丢失
+    const content = parsed.content
+      .filter((row) => isDevicePublicationActive(row))
+      .map((row) => ({
+        ...row,
+        id: row.id !== null && row.id !== undefined ? String(row.id) : '',
+        retailPrice: formatPickRetailPrice(row.retailPrice),
+      }));
+    return {
+      content,
+      totalCount: parsed.totalCount,
+    };
+  } catch {
+    ElMessage.error('加载耗材失败，请稍后重试');
+    return { content: [], totalCount: 0 };
+  }
+}
+
+/**
+ * 按当前行目标类型分发选品检索；未选类型时返回空页。
+ *
+ * @param row 正在编辑的绑定行
+ * @param params SelectTable 分页与关键字
+ */
+async function searchTargetPick(
+  row: EditableRow,
+  params: { keyword?: string; pageNo: number; pageSize: number },
+) {
+  const table = String(row.devActTable ?? '').trim();
+  // 诊疗绑定目标走诊疗目录分页
+  if (table === SERVICE_DEVICE_TARGET_TABLE_ACTIVITY) {
+    return searchActivityPick(params);
+  }
+  // 耗材绑定目标走器材目录分页
+  if (table === SERVICE_DEVICE_TARGET_TABLE_DEVICE) {
+    return searchDevicePick(params);
+  }
+  // 未选目标类型时不拉目录，避免误绑
+  return { content: [], totalCount: 0 };
+}
+
+/**
+ * 选品确认：回写展示名。主键由后续 modelValue 变更写入，避免与清空竞态。
+ *
+ * @param row 正在编辑的绑定行
+ * @param item SelectTable 选中行
+ */
+async function handleTargetPickClose(
+  row: EditableRow,
+  item: Record<string, unknown>,
+): Promise<boolean> {
+  const name = String(item.name ?? '').trim();
+  row.__selectedLabel = name;
+  row.devActName = name;
+  return true;
+}
+
+/**
+ * 选品值变更：清空时去掉目标与单位；选中后按目标刷新合法单位。
+ *
+ * @param row 正在编辑的绑定行
+ * @param value SelectTable 回写的主键（单选为 string）
+ */
+async function handleTargetIdChange(row: EditableRow, value: string | string[] | undefined) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const id = String(raw ?? '').trim();
+  // 清空选品时单位必须一并失效，否则会把旧单位带到新目标
+  if (!id) {
+    row.devActId = undefined;
+    row.devActName = undefined;
+    row.__selectedLabel = undefined;
+    row.unitCode = undefined;
+    row.__unitOptions = undefined;
+    return;
+  }
+  row.devActId = id;
+  await loadUnitOptionsForRow(row);
 }
 
 /** 加载页面初始化下拉 */
@@ -329,6 +525,8 @@ async function loadData() {
       if (row.quantity !== null && row.quantity !== undefined) {
         row.quantity = Math.trunc(row.quantity);
       }
+      const targetName = String(row.devActName ?? '').trim();
+      row.__selectedLabel = targetName || undefined;
       rowObjMap.set(row.__rowKey as string, row);
       return row;
     });
@@ -569,15 +767,23 @@ function handleEdit(row: EditableRow) {
   if (row.rangeCode !== null && row.rangeCode !== undefined) {
     row.rangeCode = String(row.rangeCode);
   }
+  // 列表回显名作为 SelectTable 关闭后的输入框文案
+  const existingName = String(row.devActName ?? '').trim();
+  if (!row.__selectedLabel && existingName) {
+    row.__selectedLabel = existingName;
+  }
   // 先备份原值，再把历史 HOSPITAL 等非法范围改成可选的门诊/住院供保存
   const originalRangeCode = row.rangeCode;
+  const originalSelectedLabel = row.__selectedLabel;
   row.__backup = {
     rangeCode: originalRangeCode,
     devActTable: row.devActTable,
     devActId: row.devActId,
+    devActName: row.devActName,
     quantity: row.quantity,
     unitCode: row.unitCode,
     statusEnum: row.statusEnum,
+    __selectedLabel: originalSelectedLabel,
   };
   const allowedRanges = new Set(rangeSelectOptions.value.map((o) => String(o.value)));
   if (!row.rangeCode || !allowedRanges.has(String(row.rangeCode))) {
@@ -626,14 +832,13 @@ async function handleDelete(row: EditableRow) {
   }
 }
 
-/** 目标表变更时清空目标与单位，并在选耗材时实时刷新候选 */
-async function handleTargetTableChange(row: EditableRow) {
+/** 目标表变更时清空已选目标、展示名与单位，避免跨类型残留主键 */
+function handleTargetTableChange(row: EditableRow) {
   row.devActId = undefined;
+  row.devActName = undefined;
+  row.__selectedLabel = undefined;
   row.unitCode = undefined;
   row.__unitOptions = undefined;
-  if (String(row.devActTable ?? '').trim() === SERVICE_DEVICE_TARGET_TABLE_DEVICE) {
-    await refreshDeviceDefOptions();
-  }
 }
 
 /** KeepAlive 切回时刷新下拉候选（耗材/诊疗目录可能在其他 Tab 已新增） */
@@ -682,6 +887,9 @@ onMounted(async () => {
           '.el-dialog',
           '.el-message-box',
           '[data-popper-placement]',
+          '.vxe-pulldown--panel',
+          '.vxe-pulldown--wrapper',
+          '.select-table-dropdown',
         ].join(', '),
       );
       if (popperEl) {
@@ -823,22 +1031,22 @@ onBeforeUnmount(() => {
 
           <template #targetId="{ row }">
             <template v-if="row.__editing">
-              <ElSelect
-                v-model="row.devActId"
-                placeholder="请选择"
-                clearable
-                filterable
-                class="w-full"
+              <SelectTable
+                :model-value="row.devActId"
+                :remote-method="(params) => searchTargetPick(row, params)"
+                :columns="pickColumnsForTargetTable(row.devActTable)"
+                value-key="id"
+                label-key="name"
+                :selected-label="row.__selectedLabel"
+                :placeholder="row.devActTable ? '请选择绑定目标' : '请先选择绑定目标类型'"
                 :disabled="!row.devActTable"
-                @change="() => loadUnitOptionsForRow(row)"
-              >
-                <ElOption
-                  v-for="opt in getTargetIdOptions(String(row.devActTable ?? ''))"
-                  :key="opt.value"
-                  :label="opt.label"
-                  :value="opt.value"
-                />
-              </ElSelect>
+                filterable
+                clearable
+                panel-width="920"
+                class="w-full"
+                :before-close="(item) => handleTargetPickClose(row, item)"
+                @update:model-value="(v) => handleTargetIdChange(row, v)"
+              />
             </template>
             <template v-else>
               <span>{{ row.devActName || row.devActId || '' }}</span>

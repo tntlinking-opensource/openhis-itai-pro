@@ -1,5 +1,5 @@
 {
-  "name": "@vben/preferences",
+  "name": "@zxplat/preferences",
   "version": "5.5.9",
   "homepage": "https://github.com/vbenjs/vue-vben-admin",
   "bugs": "https://github.com/vbenjs/vue-vben-admin/issues",
@@ -28,7 +28,7 @@
     }
   },
   "dependencies": {
-    "@vben-core/preferences": "workspace:*",
-    "@vben-core/typings": "workspace:*"
+    "@zxplat-core/preferences": "workspace:*",
+    "@zxplat-core/typings": "workspace:*"
   }
 }

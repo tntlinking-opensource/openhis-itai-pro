@@ -1,20 +1,20 @@
 /* 医保挂号等需用户手动关闭的错误弹窗 */
-.whale-persistent-error-messagebox {
+.zxplat-persistent-error-messagebox {
   min-width: 480px;
   max-width: 560px;
 }
 
-.whale-persistent-error-messagebox .el-message-box__header {
+.zxplat-persistent-error-messagebox .el-message-box__header {
   padding-bottom: 8px;
 }
 
-.whale-persistent-error-messagebox .el-message-box__title {
+.zxplat-persistent-error-messagebox .el-message-box__title {
   font-size: 16px;
   font-weight: 600;
   line-height: 1.4;
 }
 
-.whale-persistent-error-messagebox .el-message-box__message {
+.zxplat-persistent-error-messagebox .el-message-box__message {
   max-height: 55vh;
   overflow-y: auto;
   padding-right: 4px;
@@ -23,39 +23,39 @@
   text-align: left;
 }
 
-.whale-persistent-error-messagebox .el-message-box__btns .el-button--primary {
+.zxplat-persistent-error-messagebox .el-message-box__btns .el-button--primary {
   min-width: 96px;
 }
 
 /* 打印失败排查指引弹窗 */
-.whale-print-troubleshoot-messagebox {
+.zxplat-print-troubleshoot-messagebox {
   min-width: 520px;
   max-width: 640px;
 }
 
-.whale-print-troubleshoot-messagebox .el-message-box__header {
+.zxplat-print-troubleshoot-messagebox .el-message-box__header {
   padding-bottom: 10px;
 }
 
-.whale-print-troubleshoot-messagebox .el-message-box__title {
+.zxplat-print-troubleshoot-messagebox .el-message-box__title {
   font-size: 16px;
   font-weight: 600;
   line-height: 1.4;
 }
 
-.whale-print-troubleshoot-messagebox .el-message-box__content {
+.zxplat-print-troubleshoot-messagebox .el-message-box__content {
   padding-top: 4px;
 }
 
-.whale-print-troubleshoot-messagebox .el-message-box__message {
+.zxplat-print-troubleshoot-messagebox .el-message-box__message {
   width: 100%;
   padding-right: 0;
 }
 
-.whale-print-troubleshoot-messagebox .el-message-box__btns {
+.zxplat-print-troubleshoot-messagebox .el-message-box__btns {
   padding-top: 12px;
 }
 
-.whale-print-troubleshoot-messagebox .el-message-box__btns .el-button--primary {
+.zxplat-print-troubleshoot-messagebox .el-message-box__btns .el-button--primary {
   min-width: 96px;
 }

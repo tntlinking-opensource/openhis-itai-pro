@@ -1,5 +1,5 @@
 /**
- * 药房入库单 — 对接 Whale {@code POST /api/app/inventoryPharmacyStockIn/<method>}
+ * 药房入库单 — 对接 ZXPlat {@code POST /api/app/inventoryPharmacyStockIn/<method>}
  * 契约以 AS-INV-PHA-001-SDD 与领域枚举 {@code getCode()} 字符串为准；同意入库可选 {@code contractBusNo}（CHS 进销存）。
  */
 import type { ApiOptionItem, ApiResponse } from '#/types/api-response';
@@ -48,13 +48,13 @@ export interface LoadPharmacyStockInFormInitResponse {
   warehouseKeeperOptions?: StockInFormInitOptionDto[];
 }
 
-/** {@link com.openhis.health.domain.share.enums.SupplyType#PHARMACY_STOCK_IN} */
+/** {@link com.zxplat.domain.share.enums.SupplyType#PHARMACY_STOCK_IN} */
 export const PHA_STOCK_IN_TYPE_ENUM = 'PHARMACY_STOCK_IN';
-/** {@link com.openhis.health.domain.share.enums.SupplyRequestType#CABINET} */
+/** {@link com.zxplat.domain.share.enums.SupplyRequestType#CABINET} */
 export const PHA_STOCK_IN_SOURCE_TYPE_ENUM = 'CABINET';
-/** {@link com.openhis.health.domain.share.enums.SupplyRequestType#PHARMACY} */
+/** {@link com.zxplat.domain.share.enums.SupplyRequestType#PHARMACY} */
 export const PHA_STOCK_IN_PURPOSE_TYPE_ENUM = 'PHARMACY';
-/** {@link com.openhis.health.domain.share.enums.SupplyCategory#STOCK_SUPPLY} */
+/** {@link com.zxplat.domain.share.enums.SupplyCategory#STOCK_SUPPLY} */
 export const PHA_STOCK_IN_CATEGORY_ENUM = 'STOCK_SUPPLY';
 
 export interface PagePharmacyStockInsRequest {

@@ -1,0 +1,21 @@
+---
+doc_type: type_card
+---
+
+# EmrPdfRenderer
+
+| 项 | 值 |
+|----|-----|
+| 源码 | `com.zxplat.plugin.emr.domain.document.access.EmrPdfRenderer` |
+| 路径 | `zxplat-plugin/zxplat-module-emr/module-emr-domain/src/main/java/com/zxplat/plugin/emr/domain/document/access/EmrPdfRenderer.java` |
+| 分层 | access |
+
+## 说明
+
+PDF 渲染端口（实现在 application 适配器）。
+
+## 关联
+
+- **聚合说明**：[../说明.md](../说明.md)
+- **领域模型**：[DM-EMR-001-Document-电子病历文书.md](../DM-EMR-001-Document-电子病历文书.md)
+- **详细设计**：[DM-EMR-001-Document-电子病历文书-SDD.md](../../../DomainModel-SDD/document/DM-EMR-001-Document-电子病历文书-SDD.md)

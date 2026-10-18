@@ -1,9 +1,9 @@
 import type { RouteLocationPathRaw, Router } from 'vue-router';
 
-import { LOGIN_PATH } from '@vben/constants';
-import { preferences } from '@vben/preferences/es/preferences-manager';
-import { useAccessStore } from '@vben/stores';
-import { startProgress, stopProgress } from '@vben/utils';
+import { LOGIN_PATH } from '@zxplat/constants';
+import { preferences } from '@zxplat/preferences/es/preferences-manager';
+import { useAccessStore } from '@zxplat/stores';
+import { startProgress, stopProgress } from '@zxplat/utils';
 
 import { DEFAULT_HOME_PATH } from '#/constants/app';
 import { coreRouteNames } from '#/router/routes';

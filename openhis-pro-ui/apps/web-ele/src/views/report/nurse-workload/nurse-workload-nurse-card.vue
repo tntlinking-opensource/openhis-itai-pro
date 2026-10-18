@@ -3,7 +3,7 @@ import type { NurseConsumableItemChip, NurseExecutionItemChip } from './nurse-wo
 
 import { computed } from 'vue';
 
-import { IconifyIcon } from '@vben/icons';
+import { IconifyIcon } from '@zxplat/icons';
 
 import { fmtReportNumber } from '#/views/report/shared/report-format';
 
@@ -12,10 +12,13 @@ import { formatChipQuantity } from './nurse-workload-card-data';
 defineOptions({ name: 'NurseWorkloadNurseCard' });
 
 interface Props {
+  consumableDiscountAmountTotal?: number | string;
   consumableItemChips?: NurseConsumableItemChip[];
   consumableItemCount?: number;
   consumableSaleAmountTotal?: number | string;
+  discountFeatureEnabled?: boolean;
   executionChips?: NurseExecutionItemChip[];
+  executionDiscountAmountTotal?: number | string;
   executionSaleAmountTotal?: number | string;
   executionTotalCount?: number;
   loading?: boolean;
@@ -23,10 +26,13 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  consumableDiscountAmountTotal: 0,
   consumableItemChips: () => [],
   consumableItemCount: 0,
   consumableSaleAmountTotal: 0,
+  discountFeatureEnabled: false,
   executionChips: () => [],
+  executionDiscountAmountTotal: 0,
   executionSaleAmountTotal: 0,
   executionTotalCount: 0,
   loading: false,
@@ -42,6 +48,14 @@ const hasConsumable = computed(() => props.consumableItemChips.length > 0);
 const saleTotal = computed(
   () => Number(props.executionSaleAmountTotal ?? 0) + Number(props.consumableSaleAmountTotal ?? 0),
 );
+
+const discountTotal = computed(
+  () =>
+    Number(props.executionDiscountAmountTotal ?? 0) +
+    Number(props.consumableDiscountAmountTotal ?? 0),
+);
+
+const showDiscount = computed(() => Boolean(props.discountFeatureEnabled));
 </script>
 
 <template>
@@ -55,6 +69,10 @@ const saleTotal = computed(
           耗材 <strong>{{ consumableItemCount }}</strong> 项
           <span class="nurse-workload-card__summary-dot">·</span>
           售价合计 <strong>{{ fmtReportNumber(saleTotal, 2) }}</strong>
+          <template v-if="showDiscount">
+            <span class="nurse-workload-card__summary-dot">·</span>
+            优惠 <strong>{{ fmtReportNumber(discountTotal, 2) }}</strong>
+          </template>
         </span>
       </div>
 

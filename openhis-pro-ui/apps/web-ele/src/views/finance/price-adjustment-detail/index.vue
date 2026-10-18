@@ -1,5 +1,6 @@
 <!--
   调价明细：T2 只读查询列表，行展开展示批号盈亏明细。
+  筛选默认仅前端：生效时间当月（与财务审批一致）；init 只取 Tab/分页等选项。
   状态分层 — 业务：生效时间窗、项目类型筛选、列表行；视图：分页、展开行。
 -->
 <script setup lang="ts">
@@ -12,7 +13,7 @@ import type { ApiOptionItem } from '#/types/api-response';
 
 import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import { Refresh, Search } from '@element-plus/icons-vue';
 import {
@@ -62,6 +63,21 @@ interface QueryFormState {
   busNo?: string;
 }
 
+/** 当前自然月起止（与财务审批同口径，带时分秒）。 */
+function createCurrentMonthRange(): [string, string] {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = d.getMonth();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const lastDay = new Date(y, m + 1, 0).getDate();
+  return [
+    `${y}-${pad(m + 1)}-01 00:00:00`,
+    `${y}-${pad(m + 1)}-${pad(lastDay)} 23:59:59`,
+  ];
+}
+
+const [defaultFrom, defaultTo] = createCurrentMonthRange();
+
 const pageInit = ref<InitPriceAdjustmentDetailResponse | null>(null);
 const tableData = ref<PriceAdjustmentApprovedLineListRowDto[]>([]);
 const total = ref(0);
@@ -70,7 +86,7 @@ const tableScrollRef = ref<InstanceType<typeof ReportTableScroll> | null>(null);
 const queryParams = reactive<QueryFormState>({
   pageNo: 1,
   pageSize: 20,
-  approveTimeRange: ['', ''],
+  approveTimeRange: [defaultFrom, defaultTo],
   itemTable: ALL_ITEM_TABLE_TAB,
   itemNameKeyword: undefined,
   itemCodeKeyword: undefined,
@@ -81,9 +97,7 @@ const { run: runInit, loading: initLoading } = useRequest(initPriceAdjustmentDet
   manual: true,
   onSuccess: (data) => {
     pageInit.value = data ?? null;
-    if (data?.defaultApproveTimeFrom && data?.defaultApproveTimeTo) {
-      queryParams.approveTimeRange = [data.defaultApproveTimeFrom, data.defaultApproveTimeTo];
-    }
+    // 生效时间默认由前端自带，不吃 init.defaultApproveTime*
     if (data?.defaultPageSize) {
       queryParams.pageSize = data.defaultPageSize;
     }
@@ -173,13 +187,10 @@ function handleQuery() {
   void getList();
 }
 
-/** 重置筛选为 init 默认时间窗，保留分页大小。 */
+/** 重置为前端默认（生效时间当月），保留分页大小。 */
 function handleReset() {
-  const init = pageInit.value;
-  queryParams.approveTimeRange =
-    init?.defaultApproveTimeFrom && init?.defaultApproveTimeTo
-      ? [init.defaultApproveTimeFrom, init.defaultApproveTimeTo]
-      : queryParams.approveTimeRange;
+  const [from, to] = createCurrentMonthRange();
+  queryParams.approveTimeRange = [from, to];
   queryParams.itemNameKeyword = undefined;
   queryParams.itemCodeKeyword = undefined;
   queryParams.busNo = undefined;

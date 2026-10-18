@@ -27,7 +27,7 @@ export interface ProcedurePerformerItemDto {
   orgFromId?: string;
 }
 
-/** 与后端 `com.openhis.whale.core.application.dto.OptionDto` 及术语下拉 JSON 对齐 */
+/** 与后端 `com.zxplat.framework.core.application.dto.OptionDto` 及术语下拉 JSON 对齐 */
 export interface TerminologyOptionDto {
   label?: string;
   sortOrder?: number;
@@ -273,8 +273,15 @@ export interface PageDoctorStationAdviceCatalogRequest {
   productTableNames?: string[];
   /** 排除药品 medication_category_code（如开立西药医嘱传 ["4"] 排除中草药） */
   excludeMedicationCategoryCodes?: string[];
+  /**
+   * 额外排除诊疗 category_code（与服务端恒定排除合并）。
+   * 院点可传 ["21","22","23"] 使检验/检查/治疗仅能走申请单；申请单选品勿传。
+   */
+  excludeCategoryCodes?: string[];
   /** 申请单选品：检验 PROOF/22、检查 TEST/23、治疗 TREATMENT/21 */
   categoryEnum?: string;
+  /** 诊疗业务类型 type_enum（申请单分类 chips；空=不限） */
+  typeEnum?: string;
   keyword?: string;
   pageNo: number;
   pageSize: number;
@@ -314,6 +321,8 @@ export interface DoctorStationAdviceCatalogRowDto {
   productDefinitionId?: string;
   productTableName?: string;
   busNo?: string;
+  /** 目录展示排序号（诊疗 AD sort_order；可空） */
+  sortOrder?: number;
   name?: string;
   /** 商品名称（药品 merchandise_name；诊疗/耗材通常为空） */
   merchandiseName?: string;
@@ -327,6 +336,8 @@ export interface DoctorStationAdviceCatalogRowDto {
   /** 规格展示（如药品剂量规格） */
   totalVolume?: string;
   activityTypeCode?: string;
+  /** 业务类型展示名（术语 activity_type_code） */
+  activityTypeDictText?: string;
   defaultPerformOrgId?: string;
   defaultPerformOrgName?: string;
   defaultDispenseLocationId?: string;
@@ -376,6 +387,10 @@ export interface DoctorStationAdviceCatalogRowDto {
   dosageInstruction?: string;
   /** 中药特殊煎法展示名 */
   dosageInstructionDictText?: string;
+  /**
+   * 带子项诊疗目录子项（选品列表不展示；国基**检验**申请单打印展开）。
+   */
+  packageChildren?: AdvicePackageChildItemDto[];
 }
 
 export interface PageDoctorStationAdviceCatalogResponse {
@@ -414,6 +429,11 @@ export interface ResolveDoctorStationAdviceDraftBindsRequest {
   encounterId: string;
   patientId: string;
   lines: DoctorStationAdviceDraftLineRequest[];
+  /**
+   * true=跳过用法/诊疗/合管自动带出（组套套用签发，BR-ORD-038）；
+   * 缺省或 false 保持既有解析。
+   */
+  skipAutoBind?: boolean;
 }
 
 /** IF-DOR-23：暂存前绑定解析明细 */
@@ -439,6 +459,8 @@ export interface DoctorStationAdviceDraftBindItemDto {
   basedOnRequestId?: string;
   /** 合管检验设备主键（同批去重） */
   specimenTubeMergeDeviceId?: string;
+  /** 合管组序号（同设备多组去重） */
+  specimenTubeMergeGroupNo?: number | string;
 }
 
 export interface ResolveDoctorStationAdviceDraftBindsResponse {
@@ -712,14 +734,25 @@ export interface SaveDoctorStationServiceApplyFormRequest {
   executionCount?: number;
   /** 整单绑定就诊诊断有序 ids 串（有序；主诊第一；写入全部 ServiceRequest） */
   encounterDiagnosisIds?: string;
-  /** 编辑时待替换的旧 AR 申请单号 */
+  /** 编辑时待替换的旧 AR 申请单号（兼容单号；拆多张请用 previousPrescriptionNos） */
   previousPrescriptionNo?: string;
+  /**
+   * 编辑时待替换的全部旧 AR 申请单号。
+   * 按执行科室拆多张后再保存须传齐，避免兄弟 DRAFT 孤儿。
+   */
+  previousPrescriptionNos?: string[];
   lines: ServiceApplyFormLineRequest[];
 }
 
 export interface SaveDoctorStationServiceApplyFormResponse {
+  /** 首张申请单号（兼容）；拆多张时见 prescriptionNos */
   prescriptionNo?: string;
+  /** 本次生成的全部申请单号（按执行科室拆单） */
+  prescriptionNos?: string[];
+  /** 与入参 lines 对齐的 requestId（耗材绑定按行挂靠） */
   requestIds?: string[];
+  /** 与 requestIds 对齐的所属申请单号 */
+  requestPrescriptionNos?: string[];
 }
 
 /** 查询申请单列表 */

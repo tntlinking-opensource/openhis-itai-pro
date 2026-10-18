@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { Fullscreen, Minimize2 } from '@vben-core/icons';
+import { Fullscreen, Minimize2 } from '@zxplat-core/icons';
 
 const screen = defineModel<boolean>('screen');
 

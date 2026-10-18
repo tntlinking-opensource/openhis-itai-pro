@@ -1,5 +1,5 @@
 /**
- * 科室损益单 — 对接 Whale {@code POST /api/app/inventoryDepartmentGainLoss/<method>}
+ * 科室损益单 — 对接 ZXPlat {@code POST /api/app/inventoryDepartmentGainLoss/<method>}
  * 方法名与 {@code InventoryDepartmentGainLossAppService} 一致（无 Dept 前缀）。
  */
 import type { ApiOptionItem, ApiResponse } from '#/types/api-response';

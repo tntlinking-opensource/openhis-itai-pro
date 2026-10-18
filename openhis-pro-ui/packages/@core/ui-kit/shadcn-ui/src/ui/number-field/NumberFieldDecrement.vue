@@ -3,7 +3,7 @@ import type { NumberFieldDecrementProps } from 'reka-ui';
 
 import { computed } from 'vue';
 
-import { cn } from '@vben-core/shared/utils';
+import { cn } from '@zxplat-core/shared/utils';
 
 import { Minus } from 'lucide-vue-next';
 import { NumberFieldDecrement, useForwardProps } from 'reka-ui';

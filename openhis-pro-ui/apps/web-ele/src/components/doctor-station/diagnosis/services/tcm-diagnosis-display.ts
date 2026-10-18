@@ -70,11 +70,16 @@ export function resolveTcmCatalogKindFromRow(
   return 'disease';
 }
 
-/** 诊断目录医保编码展示：有值原样，无值显示「-」 */
+/** 是否已有有效医保诊断编码（用于无对照标红）。 */
+export function hasDiagnosisYbNo(ybNo?: null | string): boolean {
+  return Boolean((ybNo ?? '').trim());
+}
+
+/** 诊断目录医保编码展示：有值原样，无值显示「未对码」 */
 export function formatDiagnosisYbNoDisplay(ybNo?: null | string): string {
   const text = (ybNo ?? '').trim();
   if (text) return text;
-  return '-';
+  return '未对码';
 }
 
 /** 从已保存的合并名称中粗分解析疾病与证候（仅用于表单回显） */

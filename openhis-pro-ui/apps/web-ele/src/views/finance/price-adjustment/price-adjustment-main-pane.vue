@@ -9,8 +9,8 @@ import type { AdjustableItemRowDto } from '#/api/finance/price-adjustment';
 
 import { computed, nextTick, reactive, ref, watch } from 'vue';
 
-import { Trash2 } from '@vben/icons';
-import { formatDateTime } from '@vben/utils';
+import { Trash2 } from '@zxplat/icons';
+import { formatDateTime } from '@zxplat/utils';
 
 import { Delete, Plus } from '@element-plus/icons-vue';
 import InvDocActions from '@inventory/components/inv-doc-actions.vue';
@@ -66,7 +66,6 @@ defineOptions({ name: 'PriceAdjustmentMainPane' });
 
 interface Props {
   adjustmentDetailRows?: PriceAdjustmentLineRow[];
-  adjustmentReasonOptions?: ApiOptionItem[];
   auditForm?: Record<string, unknown>;
   busNo?: string;
   documentEditable?: boolean;
@@ -79,7 +78,6 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   adjustmentDetailRows: () => [],
-  adjustmentReasonOptions: () => [],
   auditForm: () => ({}),
   busNo: '',
   documentEditable: true,
@@ -300,9 +298,7 @@ function applyEmptyState() {
   headForm.value.busNo = props.busNo ?? '';
   headForm.value.adjustmentTime = formatDateTime(new Date());
   headForm.value.orgId = props.defaultOrgId;
-  if (props.adjustmentReasonOptions.length > 0) {
-    headForm.value.adjustmentReason = String(props.adjustmentReasonOptions[0]?.value ?? '');
-  }
+  headForm.value.adjustmentReason = '';
   if (!pickItemTable.value.trim() && props.itemTableTabOptions.length > 0) {
     pickItemTable.value = String(props.itemTableTabOptions[0]?.value ?? '');
   }
@@ -311,6 +307,15 @@ function applyEmptyState() {
     patchGridEditConfig();
     refreshDisplayLineCount();
   });
+}
+
+/** 已有明细时，项目类型跟明细 itemTable，避免默认成首项「药品」 */
+function resolvePickItemTableFromLines(lines: PriceAdjustmentLineRow[]): string {
+  for (const line of lines) {
+    const itemTable = String(line.itemTable ?? '').trim();
+    if (itemTable) return itemTable;
+  }
+  return '';
 }
 
 /** 从父级同步单头与表格 */
@@ -330,6 +335,12 @@ function syncFromParent() {
     itemPick:
       line.itemPick ?? (line.itemId ? { id: String(line.itemId), name: line.itemName } : undefined),
   }));
+  const itemTableFromLines = resolvePickItemTableFromLines(lines);
+  if (itemTableFromLines) {
+    pickItemTable.value = itemTableFromLines;
+  } else if (!pickItemTable.value.trim() && props.itemTableTabOptions.length > 0) {
+    pickItemTable.value = String(props.itemTableTabOptions[0]?.value ?? '');
+  }
   // 先按父级行数回填，避免网格 nextTick 加载前底部显示「共 0 行」
   displayLineCount.value = lines.length;
   void nextTick(() => {
@@ -380,7 +391,7 @@ async function validateLines(): Promise<boolean> {
     headForm.value.orgId = props.defaultOrgId;
   }
   if (!headForm.value.adjustmentReason?.trim()) {
-    ElMessage.warning('请选择调价原因');
+    ElMessage.warning('请填写调价原因');
     return false;
   }
   return true;
@@ -586,10 +597,7 @@ async function handlePrint(payload?: { preview?: boolean }) {
     return;
   }
 
-  const adjustmentReasonText = resolveOptionLabel(
-    props.adjustmentReasonOptions,
-    headForm.value.adjustmentReason,
-  );
+  const adjustmentReasonText = String(headForm.value.adjustmentReason ?? '').trim();
   const lineTypeTexts = [
     ...new Set(
       rows.map((row) => String(row.itemTableText ?? '').trim()).filter((text) => text !== ''),
@@ -812,7 +820,7 @@ const columns: VxeGridPropTypes.Columns<PriceAdjustmentLineRow> = [
   },
   {
     field: 'currentPurchasePrice',
-    title: '当前进价',
+    title: '调前进价',
     width: 92,
     align: 'right',
     headerAlign: 'center',
@@ -823,7 +831,7 @@ const columns: VxeGridPropTypes.Columns<PriceAdjustmentLineRow> = [
   },
   {
     field: 'currentSellingPrice',
-    title: '当前售价',
+    title: '调前售价',
     width: 92,
     align: 'right',
     headerAlign: 'center',
@@ -831,14 +839,14 @@ const columns: VxeGridPropTypes.Columns<PriceAdjustmentLineRow> = [
   },
   {
     field: 'quantity',
-    title: '库存数量',
+    title: '影响数量',
     width: 120,
     align: 'center',
     headerAlign: 'center',
     formatter: ({ cellValue, row }) => {
       const line = row as PriceAdjustmentLineRow;
       if (!isLogisticsRow(line)) return '—';
-      // 与其它库存单据一致：数量 + 单位拼一列，如「12 盒」
+      // 制单快照数量合计（非实时库存）+ 单位，如「12 盒」
       const qty = formatQuantity(cellValue, '');
       if (!qty) return '—';
       const unit = String(line.unitName ?? '').trim();
@@ -1019,20 +1027,13 @@ watch(
                 />
               </ElFormItem>
               <ElFormItem label="调价原因">
-                <ElSelect
+                <ElInput
                   v-model="headForm.adjustmentReason"
-                  placeholder="请选择"
-                  class="w-full"
-                  filterable
+                  placeholder="请填写调价原因"
+                  maxlength="200"
+                  clearable
                   :disabled="!documentEditable"
-                >
-                  <ElOption
-                    v-for="opt in adjustmentReasonOptions"
-                    :key="String(opt.value)"
-                    :label="String(opt.label ?? '')"
-                    :value="String(opt.value ?? '')"
-                  />
-                </ElSelect>
+                />
               </ElFormItem>
               <ElFormItem label="项目类型">
                 <ElSelect

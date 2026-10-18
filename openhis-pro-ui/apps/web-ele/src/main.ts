@@ -1,5 +1,5 @@
-import { initPreferences, updatePreferences } from '@vben/preferences/es/preferences-manager';
-import { unmountGlobalLoading } from '@vben/utils/es/helpers/unmount-global-loading';
+import { initPreferences, updatePreferences } from '@zxplat/preferences/es/preferences-manager';
+import { unmountGlobalLoading } from '@zxplat/utils/es/helpers/unmount-global-loading';
 
 import { overridesPreferences } from '#/preferences';
 

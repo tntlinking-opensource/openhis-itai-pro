@@ -18,6 +18,7 @@ import {
 import {
   formatHmToChineseTime,
   formatTemperatureSheetTimeSlotChinese,
+  parseChineseTimeToHm,
   parseDateTimeYmdHm,
   resolveDefaultEventTimeHm,
   resolveTemperatureSheetChartTimeSlotFromHm,
@@ -55,6 +56,26 @@ export interface TemperatureSheetChartTextMarker {
   slotIndex: number;
   source: 'manual';
   stackOrder: number;
+}
+
+/** 图表竖排事件顺序：入院 / 转科 / 手术 / 回室 / 分娩 / 出院 / 死亡 */
+const CHART_MARKER_TYPE_ORDER: Record<string, number> = {
+  [SPECIAL_EVENT_ITEM_CODE.ADMISSION]: 0,
+  [SPECIAL_EVENT_ITEM_CODE.TRANSFER]: 1,
+  [SPECIAL_EVENT_ITEM_CODE.SURGERY]: 2,
+  [SPECIAL_EVENT_ITEM_CODE.RETURN_ROOM]: 3,
+  [SPECIAL_EVENT_ITEM_CODE.DELIVERY]: 4,
+  [SPECIAL_EVENT_ITEM_CODE.DISCHARGE]: 5,
+  [SPECIAL_EVENT_ITEM_CODE.DEATH]: 6,
+};
+
+/** 合并前的竖排标记（含事件时刻，便于同槽排序） */
+interface TemperatureSheetRawChartMarker {
+  displayText: string;
+  eventHm: string;
+  key: string;
+  slotIndex: number;
+  typeOrder: number;
 }
 
 /** 物理降温图表数据点（原体温 + 30 分钟后降温后体温） */
@@ -224,6 +245,7 @@ export function formatSpecialEventDisplayText(
   timeSlot: TemperatureSheetTimeSlot,
   itemValue?: string,
   labelMap?: Record<string, string>,
+  deathDischarge?: boolean,
 ): string {
   const code = eventType.trim();
   if (!isSpecialEventTimeRequired(code)) {
@@ -236,12 +258,49 @@ export function formatSpecialEventDisplayText(
   if (code === SPECIAL_EVENT_ITEM_CODE.ADMISSION) {
     return `入院|时间${timeText}`;
   }
+  // 手术/回室与入院同口径：事件名|时间几时几分
+  if (
+    code === SPECIAL_EVENT_ITEM_CODE.SURGERY ||
+    code === SPECIAL_EVENT_ITEM_CODE.RETURN_ROOM
+  ) {
+    const label = resolveSpecialEventLabel(eventType, labelMap);
+    return `${label}|时间${timeText}`;
+  }
+  // 死亡出院或手录死亡：竖排写死亡，不写出院
+  if (
+    code === SPECIAL_EVENT_ITEM_CODE.DEATH ||
+    (deathDischarge && code === SPECIAL_EVENT_ITEM_CODE.DISCHARGE)
+  ) {
+    return `死亡|${timeText}`;
+  }
   // 纸质体温单出院竖排口径：今日出院|几时几分
   if (code === SPECIAL_EVENT_ITEM_CODE.DISCHARGE) {
     return `今日出院|${timeText}`;
   }
   const label = resolveSpecialEventLabel(eventType, labelMap);
   return `${label}|${timeText}`;
+}
+
+/**
+ * 从特殊事件存储收集手术日（与图表竖排「手术」同口径）。
+ *
+ * @param store 特殊事件存储
+ * @return 手术日 YYYY-MM-DD（去重）
+ */
+export function collectSurgeryDatesFromSpecialEventStore(
+  store: TemperatureSheetSpecialEventStore,
+): string[] {
+  const dates = new Set<string>();
+  for (const [slotKey, flag] of Object.entries(store.slotFlags)) {
+    if (!flag.eventTypes.includes(SPECIAL_EVENT_ITEM_CODE.SURGERY)) {
+      continue;
+    }
+    const recordDate = (slotKey.split('|')[0] ?? '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(recordDate)) {
+      dates.add(recordDate);
+    }
+  }
+  return [...dates];
 }
 
 /** 由接口网格行组装特殊事件存储（图表展示用） */
@@ -373,6 +432,70 @@ function hasSpecialEventTypeInStore(
   return countSpecialEventInStore(store, eventType) > 0;
 }
 
+function resolveChartMarkerTypeOrder(eventCode: string): number {
+  const order = CHART_MARKER_TYPE_ORDER[eventCode.trim()];
+  return order === undefined ? 99 : order;
+}
+
+/**
+ * 有事件时间则按 30 分界就近时次落格，避免手术/回室写在录入行却与入院叠在同一格。
+ * 无事件时间时回退到录入槽。
+ */
+function resolveTimedEventChartSlot(
+  recordDate: string,
+  fallbackTimeSlot: TemperatureSheetTimeSlot,
+  itemValue: string | undefined,
+  visiblePoints: TemperatureSheetChartPoint[],
+): { eventHm: string; slotIndex: number } {
+  const rawTime = (itemValue ?? '').trim();
+  const eventHm = rawTime
+    ? parseChineseTimeToHm(rawTime, fallbackTimeSlot)
+    : resolveDefaultEventTimeHm(fallbackTimeSlot);
+  const chartTimeSlot = rawTime
+    ? resolveTemperatureSheetChartTimeSlotFromHm(eventHm)
+    : fallbackTimeSlot;
+  const slotIndex = visiblePoints.findIndex(
+    (point) => point.fullDate === recordDate && point.timeSlot === chartTimeSlot,
+  );
+  return { eventHm, slotIndex };
+}
+
+/** 同槽多事件合成一条竖排（入院|时间…|回室|时间…），避免绝对定位互相覆盖 */
+function mergeChartTextMarkersBySlot(
+  rawMarkers: TemperatureSheetRawChartMarker[],
+): TemperatureSheetChartTextMarker[] {
+  const grouped = new Map<number, TemperatureSheetRawChartMarker[]>();
+  for (const marker of rawMarkers) {
+    const list = grouped.get(marker.slotIndex);
+    if (list) {
+      list.push(marker);
+    } else {
+      grouped.set(marker.slotIndex, [marker]);
+    }
+  }
+  const merged: TemperatureSheetChartTextMarker[] = [];
+  for (const [slotIndex, markers] of grouped) {
+    markers.sort((left, right) => {
+      if (left.eventHm !== right.eventHm) {
+        return left.eventHm < right.eventHm ? -1 : 1;
+      }
+      if (left.typeOrder !== right.typeOrder) {
+        return left.typeOrder - right.typeOrder;
+      }
+      return 0;
+    });
+    merged.push({
+      key: markers.map((item) => item.key).join('+'),
+      slotIndex,
+      displayText: markers.map((item) => item.displayText).join('|'),
+      source: 'manual',
+      stackOrder: 0,
+    });
+  }
+  merged.sort((left, right) => left.slotIndex - right.slotIndex);
+  return merged;
+}
+
 /**
  * 由患者入院/出院时间生成图表竖排标记；落格按 30 分界就近时次。
  * 当前窗口没有对应日列时不画（与手录标记同口径，需翻页才可见）。
@@ -383,7 +506,8 @@ function buildPatientDatetimeChartMarker(
   markerKeyPrefix: string,
   visiblePoints: TemperatureSheetChartPoint[],
   labelMap?: Record<string, string>,
-): TemperatureSheetChartTextMarker | null {
+  deathDischarge?: boolean,
+): TemperatureSheetRawChartMarker | null {
   const parsed = parseDateTimeYmdHm(eventAt);
   if (!parsed) {
     return null;
@@ -398,21 +522,28 @@ function buildPatientDatetimeChartMarker(
   return {
     key: `${markerKeyPrefix}-${parsed.dateYmd}|${timeSlot}`,
     slotIndex,
-    displayText: formatSpecialEventDisplayText(eventCode, timeSlot, parsed.hm, labelMap),
-    source: 'manual',
-    stackOrder: 0,
+    displayText: formatSpecialEventDisplayText(
+      eventCode,
+      timeSlot,
+      parsed.hm,
+      labelMap,
+      deathDischarge,
+    ),
+    eventHm: parsed.hm,
+    typeOrder: resolveChartMarkerTypeOrder(eventCode),
   };
 }
 
-/** 合并手录竖排文字标记，同槽位纵向堆叠；无手录入院/出院时由患者时间自动带入 */
+/** 合并手录竖排文字标记；有事件时间按时刻落格，同槽合成一条；无手录入院/出院时由患者时间自动带入 */
 export function buildChartTextMarkers(
   visiblePoints: TemperatureSheetChartPoint[],
   store: TemperatureSheetSpecialEventStore,
   labelMap?: Record<string, string>,
   patientAdmissionAt?: string,
   patientDischargeAt?: string,
+  deathDischarge?: boolean,
 ): TemperatureSheetChartTextMarker[] {
-  const rawMarkers: TemperatureSheetChartTextMarker[] = [];
+  const rawMarkers: TemperatureSheetRawChartMarker[] = [];
 
   if (!hasSpecialEventTypeInStore(store, SPECIAL_EVENT_ITEM_CODE.ADMISSION)) {
     const autoAdmission = buildPatientDatetimeChartMarker(
@@ -427,7 +558,24 @@ export function buildChartTextMarkers(
     }
   }
 
-  if (!hasSpecialEventTypeInStore(store, SPECIAL_EVENT_ITEM_CODE.DISCHARGE)) {
+  const hasManualDischarge = hasSpecialEventTypeInStore(store, SPECIAL_EVENT_ITEM_CODE.DISCHARGE);
+  const hasManualDeath = hasSpecialEventTypeInStore(store, SPECIAL_EVENT_ITEM_CODE.DEATH);
+  // 死亡出院：无手录死亡/出院时，按出院时间自动竖排「死亡」
+  if (deathDischarge) {
+    if (!hasManualDeath && !hasManualDischarge) {
+      const autoDeath = buildPatientDatetimeChartMarker(
+        patientDischargeAt,
+        SPECIAL_EVENT_ITEM_CODE.DEATH,
+        'auto-death',
+        visiblePoints,
+        labelMap,
+        true,
+      );
+      if (autoDeath) {
+        rawMarkers.push(autoDeath);
+      }
+    }
+  } else if (!hasManualDischarge) {
     const autoDischarge = buildPatientDatetimeChartMarker(
       patientDischargeAt,
       SPECIAL_EVENT_ITEM_CODE.DISCHARGE,
@@ -442,40 +590,45 @@ export function buildChartTextMarkers(
 
   for (const [slotKey, flag] of Object.entries(store.slotFlags)) {
     const [recordDate, timeSlot] = slotKey.split('|') as [string, TemperatureSheetTimeSlot];
-    const slotIndex = visiblePoints.findIndex(
-      (point) => point.fullDate === recordDate && point.timeSlot === timeSlot,
-    );
-    if (slotIndex < 0) {
-      continue;
-    }
     for (const eventType of flag.eventTypes) {
       if (!isSpecialEventChartMarkerCode(eventType)) {
         continue;
       }
+      // 已有手录死亡时，不再把出院快捷项再画成一条死亡
+      if (
+        deathDischarge &&
+        eventType === SPECIAL_EVENT_ITEM_CODE.DISCHARGE &&
+        hasManualDeath
+      ) {
+        continue;
+      }
+      const itemValue = flag.eventTimeByCode?.[eventType];
+      const located = resolveTimedEventChartSlot(
+        recordDate,
+        timeSlot,
+        itemValue,
+        visiblePoints,
+      );
+      if (located.slotIndex < 0) {
+        continue;
+      }
       rawMarkers.push({
         key: `${slotKey}-${eventType}`,
-        slotIndex,
+        slotIndex: located.slotIndex,
         displayText: formatSpecialEventDisplayText(
           eventType,
           timeSlot,
-          flag.eventTimeByCode?.[eventType],
+          itemValue,
           labelMap,
+          deathDischarge,
         ),
-        source: 'manual',
-        stackOrder: 0,
+        eventHm: located.eventHm,
+        typeOrder: resolveChartMarkerTypeOrder(eventType),
       });
     }
   }
 
-  const stackCounter = new Map<number, number>();
-  return rawMarkers.map((marker) => {
-    const order = stackCounter.get(marker.slotIndex) ?? 0;
-    stackCounter.set(marker.slotIndex, order + 1);
-    return {
-      ...marker,
-      stackOrder: order,
-    };
-  });
+  return mergeChartTextMarkersBySlot(rawMarkers);
 }
 
 /** 解析字符串为图表数字 */

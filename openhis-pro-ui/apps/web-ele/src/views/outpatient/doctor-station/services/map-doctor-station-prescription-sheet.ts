@@ -9,7 +9,7 @@ import type {
   DispenseQueuePatient,
 } from '#/views/outpatient/dispense/components/types';
 
-import { formatDateTime } from '@vben/utils';
+import { formatDateTime } from '@zxplat/utils';
 
 import { buildPrescriptionSheetData } from '#/views/outpatient/dispense/components/build-prescription-sheet-data';
 import { HERBAL_MEDICATION_CATEGORY_CODE } from '#/views/outpatient/doctor-station/advice/services/advice-tab.constants';

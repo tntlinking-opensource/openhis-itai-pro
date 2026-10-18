@@ -7,8 +7,8 @@ import type { ApiOptionItem } from '#/types/api-response';
 
 import { computed, nextTick, reactive, ref, watch, onBeforeUnmount, onDeactivated } from 'vue';
 
-import { Trash2 } from '@vben/icons';
-import { formatDateTime } from '@vben/utils';
+import { Trash2 } from '@zxplat/icons';
+import { formatDateTime } from '@zxplat/utils';
 
 import { QuestionFilled } from '@element-plus/icons-vue';
 import InvDocActions from '@inventory/components/inv-doc-actions.vue';
@@ -101,6 +101,7 @@ import {
 import {
   applyWarehouseNonInboundBandKindToRow,
   canConvertDisplayQtyToSplitForBands,
+  warehouseNonInboundResolveDisplayUnitPrice,
   convertInboundQtyBetweenBandKinds,
   persistDisplayQtyAsSplitForBands,
   resolveInboundLinePersistUnitCodeForBands,
@@ -136,7 +137,7 @@ import {
 } from '#/utils/inventory/inventory-workbench-list';
 import { buildInvDocumentTitle, printInvDocument } from '#/utils/print/print-inv-document';
 import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 defineOptions({ name: 'InventoryGainLossMainPane' });
 
@@ -1254,6 +1255,48 @@ function resolvePrintLocationName(value: unknown): string {
   return resolvePrintOptionLabel(props.locationOptions, value);
 }
 
+/**
+ * 打印单价取「当前计量单位」下的进价，并与金额、数量对齐。
+ * 落库价是每包装单价；画面按片等展示单位显示。包装价直接送打印会变成 6955，而金额仍是 69.55。
+ */
+function resolveGainLossPrintUnitPrice(row: GainLossPreviewRow): number | undefined {
+  const qty = Number(row.gainLossQuantity);
+  const amount = Number(String(row.gainLossAmount ?? '').replace(/[^\d.-]/g, ''));
+  const raw = Number(row.price);
+  const kind = String(row.selectedBandKind ?? '').trim();
+  const bands = row.unitBands ?? [];
+  const fromBand =
+    bands.length > 0 && kind && kind.toUpperCase() !== 'LEGACY'
+      ? warehouseNonInboundResolveDisplayUnitPrice({
+          bands,
+          displayBandKind: kind,
+          legacyUnitPrice: Number.isFinite(raw) ? raw : undefined,
+        })
+      : undefined;
+  const matchesLine = (price: number | undefined): boolean => {
+    if (price === undefined || !Number.isFinite(price)) {
+      return false;
+    }
+    if (!Number.isFinite(qty) || qty === 0 || !Number.isFinite(amount)) {
+      return false;
+    }
+    return Math.abs(price * qty - amount) <= 0.05;
+  };
+  if (matchesLine(raw)) {
+    return raw;
+  }
+  if (matchesLine(fromBand)) {
+    return fromBand;
+  }
+  if (Number.isFinite(qty) && qty !== 0 && Number.isFinite(amount)) {
+    return amount / qty;
+  }
+  if (Number.isFinite(raw)) {
+    return raw;
+  }
+  return fromBand;
+}
+
 /** 明细行当前计量单位展示文案 */
 function resolveGainLossPrintUnitLabel(row: GainLossPreviewRow): string {
   const kind = String(row.selectedBandKind ?? '').trim();
@@ -1296,7 +1339,7 @@ async function handlePrint(payload?: { preview?: boolean }) {
     lotNumber: String(row.lotNumber ?? '').trim(),
     diffQty: row.gainLossQuantity,
     unitLabel: resolveGainLossPrintUnitLabel(row),
-    unitPrice: row.price,
+    unitPrice: resolveGainLossPrintUnitPrice(row),
     diffAmount: row.gainLossAmount,
     reasonText: String(row.reason ?? '').trim(),
   }));

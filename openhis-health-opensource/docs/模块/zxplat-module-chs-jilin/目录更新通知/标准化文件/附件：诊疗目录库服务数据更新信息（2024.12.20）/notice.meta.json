@@ -1,0 +1,10 @@
+{
+  "doc_kind": "CATALOG_DELTA",
+  "category": "SERVICE",
+  "title": "诊疗目录库服务数据更新信息（2024.12.20）",
+  "source_filename": "附件：诊疗目录库服务数据更新信息（2024.12.20）.xlsx",
+  "notice_date": "2024-12-20",
+  "effective_date": null,
+  "wash_note": "引擎=openpyxl；目录更新洗数；服务ADD用project_code(01*)；STOP/MODIFY用hilist_code；限价等进ext_json",
+  "wash_tool": "cursor-ai"
+}

@@ -1,0 +1,10 @@
+{
+  "doc_kind": "CATALOG_DELTA",
+  "category": "SERVICE_F",
+  "title": "附件：1.F服务目录15号文本数据更新目录（2025.11.01）",
+  "source_filename": "附件：1.F服务目录15号文本数据更新目录（2025.11.01）.xlsx",
+  "notice_date": "2025-11-01",
+  "effective_date": "2025-11-01",
+  "wash_note": "F服务局发目录更新；Sheet=['新增177', '停用358']；服务ADD仅写project_code(01*)；价格/超限等进ext_json；；新增177R99:ADD缺项目代码，跳过; 新增177R104:ADD缺项目代码，跳过",
+  "wash_tool": "cursor-ai"
+}

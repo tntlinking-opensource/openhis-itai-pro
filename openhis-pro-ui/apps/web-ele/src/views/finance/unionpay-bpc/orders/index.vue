@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { BpcOrderListItemDto, PageBpcOrdersRequest } from '#/api/payment/union-pay-bpc';
 
 import { computed, onMounted, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import {
   ElButton,
@@ -19,7 +19,7 @@ import {
   ElTag,
 } from 'element-plus';
 
-import { isUnionPayWinReady } from '#/api/local/openhisWin';
+import { isUnionPayWinReady } from '#/api/local/zxplatWin';
 import { queryOrderApi, refundApi, toClientRefundResultDto } from '#/api/local/unionPayWin';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
 import {
@@ -310,7 +310,7 @@ async function openDetail(row: BpcOrderListItemDto) {
   }
 }
 
-async function refreshWhaleSnapshot() {
+async function refreshLocalSnapshot() {
   const row = drawerRow.value;
   if (!row) {
     return;
@@ -329,7 +329,7 @@ async function queryFromPos() {
     return;
   }
   if (!winReady.value) {
-    ElMessage.warning('本机未检测到 OpenHIS.Win 银联组件，无法 POS 查单');
+    ElMessage.warning('本机未检测到 Zxplat.Win 银联组件，无法 POS 查单');
     return;
   }
   posQueryLoading.value = true;
@@ -376,7 +376,7 @@ async function compensateOrphanRefund() {
     return;
   }
   if (!winReady.value) {
-    ElMessage.warning('本机未检测到 OpenHIS.Win 银联组件，无法补退');
+    ElMessage.warning('本机未检测到 Zxplat.Win 银联组件，无法补退');
     return;
   }
   // 银联 Win 按渠道患者实付；医院账仍是原下单金额，互不混用
@@ -587,7 +587,7 @@ onMounted(() => {
         >
           <div class="mb-1 font-medium">孤儿单：HIS 已退费，银联尚未退货</div>
           <p class="text-xs">
-            请在本机启动 OpenHIS.Win 后点击「银联补退」。只会向银联发起退货并更新 BPC
+            请在本机启动 Zxplat.Win 后点击「银联补退」。只会向银联发起退货并更新 BPC
             状态，不会再次冲 HIS 账。
           </p>
         </div>
@@ -610,14 +610,14 @@ onMounted(() => {
         </div>
 
         <div v-if="drawerSnapshot" class="mb-4 rounded border border-dashed p-3 text-sm">
-          <div class="mb-2 font-medium">Whale 本地快照</div>
+          <div class="mb-2 font-medium">本地快照</div>
           <div>状态：{{ statusLabel(drawerSnapshot.status) }}</div>
           <div>银联号：{{ drawerSnapshot.tradeNo ?? '-' }}</div>
           <div>金额(元)：{{ formatAmountYuan(drawerSnapshot.txnAmtFen) }}</div>
         </div>
 
         <div class="flex flex-wrap gap-2">
-          <ElButton :loading="snapshotLoading" @click="refreshWhaleSnapshot">刷新本地快照</ElButton>
+          <ElButton :loading="snapshotLoading" @click="refreshLocalSnapshot">刷新本地快照</ElButton>
           <ElButton :loading="posQueryLoading" type="primary" plain @click="queryFromPos">
             POS 查单（本机 Win）
           </ElButton>
@@ -631,7 +631,7 @@ onMounted(() => {
           </ElButton>
         </div>
         <p v-if="!winReady" class="mt-3 text-xs text-gray-500">
-          POS 查单 / 银联补退需在本机启动 OpenHIS.Win；财务 PC 未安装时可仅用上方列表与 Whale
+          POS 查单 / 银联补退需在本机启动 Zxplat.Win；财务 PC 未安装时可仅用上方列表与 ZXPlat
           快照对账。
         </p>
       </template>

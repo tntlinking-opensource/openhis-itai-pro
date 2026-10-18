@@ -2,7 +2,7 @@
 <script lang="ts" setup>
 import { ref, watch } from 'vue';
 
-import { formatDate } from '@vben/utils';
+import { formatDate } from '@zxplat/utils';
 
 import { ElMessage } from 'element-plus';
 

@@ -1,7 +1,7 @@
 /**
  * 药库 ElTable / VXE 明细（采购退货等）共用的日期展示。
  */
-import { formatDate, formatDateTime } from '@vben/utils';
+import { formatDate, formatDateTime } from '@zxplat/utils';
 
 export function formatPharmacyStockAuditTime(v: unknown): string {
   if (v === undefined || v === null || v === '') return '';

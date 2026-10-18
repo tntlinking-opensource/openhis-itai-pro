@@ -1,5 +1,5 @@
 /**
- * 基础数据 · 库存期初 — 对接 Whale {@code POST /api/app/basicInventoryOpening/<method>}
+ * 基础数据 · 库存期初 — 对接 ZXPlat {@code POST /api/app/basicInventoryOpening/<method>}
  * （AS-BAS-INV-001）
  */
 import type { ApiOptionItem, ApiResponse } from '#/types/api-response';

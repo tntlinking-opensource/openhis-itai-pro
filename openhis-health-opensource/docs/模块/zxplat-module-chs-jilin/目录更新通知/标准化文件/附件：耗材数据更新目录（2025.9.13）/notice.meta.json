@@ -1,0 +1,10 @@
+{
+  "doc_kind": "CATALOG_DELTA",
+  "category": "DEVICE",
+  "title": "附件：耗材数据更新目录（2025.9.13）",
+  "source_filename": "附件：耗材数据更新目录（2025.9.13）.xlsx",
+  "notice_date": "2025-09-13",
+  "effective_date": null,
+  "wash_note": "CATALOG_DELTA/DEVICE；行数=48；actions=ADD:42,STOP:6；hilist_code←国家目录编码；限价列进ext_json",
+  "wash_tool": "cursor-ai"
+}

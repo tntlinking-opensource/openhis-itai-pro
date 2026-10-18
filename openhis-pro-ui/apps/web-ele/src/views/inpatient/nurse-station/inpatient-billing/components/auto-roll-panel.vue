@@ -3,15 +3,13 @@ import type { NurseStationModulePatient } from '../../components/nurse-station-m
 import type {
   AutoRollConfigFormModel,
   AutoRollConfigTableRow,
+  AutoRollNursingTableRow,
   AutoRollPostedChargeTableRow,
   AutoRollSelectedCatalogItem,
 } from '../services/map-nurse-station-auto-roll';
 
-import type { NurseStationAutoRollNursingReadonlyDto } from '#/api/inpatient/nurse-station/inpatient-nurse-station-inpatient-billing.types';
-
 import { computed, ref, watch } from 'vue';
 
-import dayjs from 'dayjs';
 import { ElMessage, ElMessageBox } from 'element-plus';
 
 import {
@@ -32,6 +30,7 @@ import AutoRollConfigDialog from './auto-roll-config-dialog.vue';
 import AutoRollNursingReadonly from './auto-roll-nursing-readonly.vue';
 import {
   mapAutoRollConfigRows,
+  mapAutoRollNursingRows,
   mapAutoRollPostedChargeRows,
   buildDefaultAutoRollRuleName,
 } from '../services/map-nurse-station-auto-roll';
@@ -62,9 +61,10 @@ interface ConfigSavedPayload {
 /** 默认取消原因（复用取消执行写路径，不弹窗收集） */
 const AUTO_ROLL_CANCEL_EXECUTE_REASON = '取消自动计费';
 
-const billDate = ref(dayjs().format('YYYY-MM-DD'));
+/** 业务日：默认空=全住院期间；选日后展开只展示当天费用 */
+const billDate = ref('');
 const configRows = ref<AutoRollConfigTableRow[]>([]);
-const nursingReadonly = ref<NurseStationAutoRollNursingReadonlyDto | null>(null);
+const nursingRows = ref<AutoRollNursingTableRow[]>([]);
 /** 计费人护士下拉 */
 const nurseOptions = ref<{ label: string; value: string }[]>([]);
 const configDialogVisible = ref(false);
@@ -72,10 +72,16 @@ const editingRow = ref<AutoRollConfigTableRow | null>(null);
 const mutationLoading = ref(false);
 /** ruleId → 已滚费用子表行 */
 const postedChargesByRuleId = ref<Record<string, AutoRollPostedChargeTableRow[]>>({});
+/** 护理 serviceRequestId → 已滚费用子表行 */
+const postedChargesByServiceRequestId = ref<Record<string, AutoRollPostedChargeTableRow[]>>({});
 /** 正在加载展开记录的 ruleId 集合 */
 const postedLoadingRuleIds = ref<Record<string, boolean>>({});
+/** 正在加载展开记录的护理 serviceRequestId 集合 */
+const postedLoadingServiceRequestIds = ref<Record<string, boolean>>({});
 /** 受控展开行（切患者时清空，避免旧 ruleId 错绑新就诊） */
 const expandedRuleIds = ref<string[]>([]);
+/** 护理受控展开行 */
+const expandedNursingServiceRequestIds = ref<string[]>([]);
 /** 正在取消的 chargeItemId */
 const cancellingChargeItemId = ref<string | null>(null);
 /** 配置列表请求世代：切患者 / 重复 reload 时丢弃过期响应 */
@@ -111,11 +117,23 @@ function resolvePatientIds() {
   return { encounterId, patientId };
 }
 
+/** 解析业务日筛选区间（空=不限，查看全住院期间）。 */
+function resolvePostedChargeDateRange(): { dateFrom?: string; dateTo?: string } {
+  const day = String(billDate.value ?? '').trim();
+  if (!day) {
+    return {};
+  }
+  return { dateFrom: day, dateTo: day };
+}
+
 /** 清空展开缓存与展开态（患者切换 / 配置刷新后重新拉取）。 */
 function clearPostedChargeCache() {
   postedChargesByRuleId.value = {};
+  postedChargesByServiceRequestId.value = {};
   postedLoadingRuleIds.value = {};
+  postedLoadingServiceRequestIds.value = {};
   expandedRuleIds.value = [];
+  expandedNursingServiceRequestIds.value = [];
 }
 
 /** 丢弃在途配置/展开请求，并立刻清掉旧患者行，避免展开时 ruleId 与就诊错位。 */
@@ -123,14 +141,36 @@ function invalidateAutoRollPanelState() {
   configLoadGeneration += 1;
   postedLoadGeneration += 1;
   configRows.value = [];
-  nursingReadonly.value = null;
+  nursingRows.value = [];
   nurseOptions.value = [];
+  nurseOptionsReady = false;
   clearPostedChargeCache();
 }
 
 /** 当前表格是否仍包含该配置（防止旧行展开打到新就诊）。 */
 function isRuleInCurrentConfigRows(ruleId: string): boolean {
   return configRows.value.some((item) => item.ruleId === ruleId);
+}
+
+/** 当前护理表是否仍包含该医嘱。 */
+function isNursingInCurrentRows(serviceRequestId: string): boolean {
+  return nursingRows.value.some((item) => item.serviceRequestId === serviceRequestId);
+}
+
+/** 是否已缓存计费人护士下拉（避免每次查询全量拉护士）。 */
+let nurseOptionsReady = false;
+
+/** 将后端护士选项映射为下拉（ID 保持 string）。 */
+function mapNurseOptions(
+  options: { value?: string; label?: string }[] | undefined,
+): { label: string; value: string }[] {
+  return (options ?? [])
+    .map((opt) => {
+      const value = preserveApiIdForRequest(opt.value) ?? '';
+      const label = String(opt.label ?? '').trim() || value;
+      return { value, label };
+    })
+    .filter((opt) => opt.value.length > 0);
 }
 
 /** 加载自动计费配置与护理只读区。 */
@@ -140,8 +180,8 @@ async function loadAutoRollConfigs() {
   // 先清空旧行与展开态，避免 reload / 切患者竞态下用旧 ruleId 打新就诊
   clearPostedChargeCache();
   configRows.value = [];
-  nursingReadonly.value = null;
-  nurseOptions.value = [];
+  nursingRows.value = [];
+  // 护士下拉跨查询复用，不在此清空
 
   if (!props.canViewBilling || !props.patient) {
     return;
@@ -151,11 +191,14 @@ async function loadAutoRollConfigs() {
     return;
   }
   const requestedEncounterId = encounterId;
+  // 首屏装载护士下拉；后续查询/刷新跳过以减负
+  const needNurseOptions = !nurseOptionsReady;
   try {
     const res = await listConfigsRequest.run({
       encounterId,
       patientId,
       billDate: billDate.value || undefined,
+      includeNurseOptions: needNurseOptions,
     });
     if (generation !== configLoadGeneration) {
       return;
@@ -164,20 +207,21 @@ async function loadAutoRollConfigs() {
       return;
     }
     configRows.value = mapAutoRollConfigRows(res.configs);
-    nursingReadonly.value = res.nursingLevelReadonly ?? null;
-    // 计费人下拉：value 须原样 string，禁止 Number
-    nurseOptions.value = (res.nurseOptions ?? [])
-      .map((opt) => {
-        const value = preserveApiIdForRequest(opt.value) ?? '';
-        const label = String(opt.label ?? '').trim() || value;
-        return { value, label };
-      })
-      .filter((opt) => opt.value.length > 0);
+    // 优先 nursingLevels；兼容仅返回 nursingLevelReadonly 的旧包
+    let nursingSource = res.nursingLevels ?? [];
+    if (nursingSource.length === 0 && res.nursingLevelReadonly) {
+      nursingSource = [res.nursingLevelReadonly];
+    }
+    nursingRows.value = mapAutoRollNursingRows(nursingSource);
+    // 仅首屏或后端显式返回时更新护士下拉
+    if (needNurseOptions) {
+      nurseOptions.value = mapNurseOptions(res.nurseOptions);
+      nurseOptionsReady = nurseOptions.value.length > 0;
+    }
   } catch {
     if (generation === configLoadGeneration) {
       configRows.value = [];
-      nursingReadonly.value = null;
-      nurseOptions.value = [];
+      nursingRows.value = [];
     }
   }
 }
@@ -196,6 +240,7 @@ async function loadPostedChargesForRule(ruleId: string) {
   const generation = postedLoadGeneration;
   const requestedEncounterId = encounterId;
   const requestedPatientId = patientId;
+  const dateRange = resolvePostedChargeDateRange();
   postedLoadingRuleIds.value = {
     ...postedLoadingRuleIds.value,
     [ruleId]: true,
@@ -205,6 +250,7 @@ async function loadPostedChargesForRule(ruleId: string) {
       encounterId: requestedEncounterId,
       patientId: requestedPatientId,
       ruleId,
+      ...dateRange,
     });
     if (generation !== postedLoadGeneration) {
       return;
@@ -241,6 +287,64 @@ async function loadPostedChargesForRule(ruleId: string) {
   }
 }
 
+/** 加载指定护理医嘱的已滚费用记录。 */
+async function loadPostedChargesForNursing(serviceRequestId: string) {
+  const { encounterId, patientId } = resolvePatientIds();
+  if (!encounterId || !patientId || !serviceRequestId) {
+    return;
+  }
+  if (!isNursingInCurrentRows(serviceRequestId)) {
+    return;
+  }
+  const generation = postedLoadGeneration;
+  const requestedEncounterId = encounterId;
+  const dateRange = resolvePostedChargeDateRange();
+  postedLoadingServiceRequestIds.value = {
+    ...postedLoadingServiceRequestIds.value,
+    [serviceRequestId]: true,
+  };
+  try {
+    const res = await listPostedChargesRequest.run({
+      encounterId: requestedEncounterId,
+      patientId,
+      serviceRequestId,
+      ...dateRange,
+    });
+    if (generation !== postedLoadGeneration) {
+      return;
+    }
+    if (preserveApiIdForRequest(props.patient?.id) !== requestedEncounterId) {
+      return;
+    }
+    if (!isNursingInCurrentRows(serviceRequestId)) {
+      return;
+    }
+    postedChargesByServiceRequestId.value = {
+      ...postedChargesByServiceRequestId.value,
+      [serviceRequestId]: mapAutoRollPostedChargeRows(res.charges),
+    };
+  } catch (error) {
+    if (generation !== postedLoadGeneration) {
+      return;
+    }
+    if (preserveApiIdForRequest(props.patient?.id) !== requestedEncounterId) {
+      return;
+    }
+    const msg =
+      (error as { message?: string; msg?: string })?.message ||
+      (error as { message?: string; msg?: string })?.msg ||
+      '计费记录加载失败，请稍后重试';
+    ElMessage.error(msg);
+  } finally {
+    if (generation === postedLoadGeneration) {
+      postedLoadingServiceRequestIds.value = {
+        ...postedLoadingServiceRequestIds.value,
+        [serviceRequestId]: false,
+      };
+    }
+  }
+}
+
 /** 展开行变化时懒加载已滚费用。 */
 function handleConfigExpandChange(
   row: AutoRollConfigTableRow,
@@ -261,27 +365,59 @@ function handleConfigExpandChange(
   void loadPostedChargesForRule(row.ruleId);
 }
 
+/** 护理行展开时懒加载已滚费用。 */
+function handleNursingExpandChange(
+  row: AutoRollNursingTableRow,
+  expandedRows: AutoRollNursingTableRow[],
+) {
+  expandedNursingServiceRequestIds.value = expandedRows.map((item) => item.id);
+  const expanded = expandedRows.some(
+    (item) => item.serviceRequestId === row.serviceRequestId,
+  );
+  if (!expanded) {
+    return;
+  }
+  if (!isNursingInCurrentRows(row.serviceRequestId)) {
+    return;
+  }
+  if (postedChargesByServiceRequestId.value[row.serviceRequestId] !== undefined) {
+    return;
+  }
+  void loadPostedChargesForNursing(row.serviceRequestId);
+}
+
 /** 对外暴露刷新入口，供父页切换 Tab / 患者时调用。 */
 async function reload() {
   await loadAutoRollConfigs();
 }
 
+/** 弹窗打开前确保计费人护士下拉已装载。 */
+async function ensureNurseOptionsLoaded() {
+  if (nurseOptionsReady && nurseOptions.value.length > 0) {
+    return;
+  }
+  nurseOptionsReady = false;
+  await loadAutoRollConfigs();
+}
+
 /** 打开新增配置弹窗。 */
-function openCreateDialog() {
+async function openCreateDialog() {
   if (!props.canOperateBilling) {
     ElMessage.warning('住院记账仅支持单选患者，请在左侧只勾选 1 位患者');
     return;
   }
+  await ensureNurseOptionsLoaded();
   editingRow.value = null;
   configDialogVisible.value = true;
 }
 
 /** 打开编辑配置弹窗。 */
-function openEditDialog(row: AutoRollConfigTableRow) {
+async function openEditDialog(row: AutoRollConfigTableRow) {
   if (!props.canOperateBilling) {
     ElMessage.warning('住院记账仅支持单选患者，请在左侧只勾选 1 位患者');
     return;
   }
+  await ensureNurseOptionsLoaded();
   editingRow.value = row;
   configDialogVisible.value = true;
 }
@@ -420,8 +556,9 @@ async function handleDelete(row: AutoRollConfigTableRow) {
 
 /** 取消单笔已滚费用（复用取消执行 IF-IP-CXL-01）。 */
 async function handleCancelPostedCharge(
-  configRow: AutoRollConfigTableRow,
+  activityName: string,
   chargeRow: AutoRollPostedChargeTableRow,
+  reload: () => Promise<void>,
 ) {
   if (!props.canOperateBilling || !chargeRow.cancelable || !chargeRow.procedureId) {
     return;
@@ -432,7 +569,7 @@ async function handleCancelPostedCharge(
   }
   try {
     await ElMessageBox.confirm(
-      `确认取消「${configRow.activityName}」于 ${chargeRow.occurrenceTime} 的自动计费？取消后该日费用将删除，不影响配置与次日滚费。`,
+      `确认取消「${activityName}」于 ${chargeRow.occurrenceTime} 的自动计费？取消后该日费用将删除，不影响配置与次日滚费。`,
       '取消自动计费',
       { type: 'warning', confirmButtonText: '确定', cancelButtonText: '取消' },
     );
@@ -447,10 +584,37 @@ async function handleCancelPostedCharge(
       statusReasonText: AUTO_ROLL_CANCEL_EXECUTE_REASON,
     });
     ElMessage.success('已取消自动计费');
-    await loadPostedChargesForRule(configRow.ruleId);
+    await reload();
   } finally {
     cancellingChargeItemId.value = null;
   }
+}
+
+/** 取消床位配置已滚费用。 */
+async function handleCancelConfigPostedCharge(
+  configRow: AutoRollConfigTableRow,
+  chargeRow: AutoRollPostedChargeTableRow,
+) {
+  await handleCancelPostedCharge(configRow.activityName, chargeRow, async () => {
+    // 清缓存后强制重拉，避免取消后仍展示旧行
+    const next = { ...postedChargesByRuleId.value };
+    delete next[configRow.ruleId];
+    postedChargesByRuleId.value = next;
+    await loadPostedChargesForRule(configRow.ruleId);
+  });
+}
+
+/** 取消护理已滚费用。 */
+async function handleCancelNursingPostedCharge(
+  nursingRow: AutoRollNursingTableRow,
+  chargeRow: AutoRollPostedChargeTableRow,
+) {
+  await handleCancelPostedCharge(nursingRow.activityName, chargeRow, async () => {
+    const next = { ...postedChargesByServiceRequestId.value };
+    delete next[nursingRow.serviceRequestId];
+    postedChargesByServiceRequestId.value = next;
+    await loadPostedChargesForNursing(nursingRow.serviceRequestId);
+  });
 }
 
 /** 查询按钮：刷新配置与护理只读区。 */
@@ -505,7 +669,7 @@ defineExpose({ reload });
 <template>
   <div class="auto-roll-panel flex min-h-0 flex-1 flex-col">
     <ElAlert
-      title="下方配置的诊疗项目参与每日自动滚费；护理费取自医嘱校对（不可在此配置）。展开配置行可查看已滚费用，待结算记录可在此取消（不影响配置与次日滚费）。"
+      title="下方配置的诊疗项目参与每日自动滚费；护理费取自医嘱校对（不可在此配置）。展开护理/配置行可查看已滚费用，待结算记录可在此取消（不影响配置与次日滚费）。业务日为空查看全住院期间，选择日期后展开仅展示当天费用。"
       type="info"
       :closable="false"
       show-icon
@@ -513,9 +677,16 @@ defineExpose({ reload });
 
     <AutoRollNursingReadonly
       v-model:bill-date="billDate"
+      v-model:expanded-service-request-ids="expandedNursingServiceRequestIds"
       :loading="tableLoading"
-      :nursing="nursingReadonly"
+      :can-operate-billing="canOperateBilling"
+      :nursing-rows="nursingRows"
+      :posted-charges-by-service-request-id="postedChargesByServiceRequestId"
+      :posted-loading-service-request-ids="postedLoadingServiceRequestIds"
+      :cancelling-charge-item-id="cancellingChargeItemId"
       @on-query="handleQuery"
+      @expand-change="handleNursingExpandChange"
+      @cancel-posted-charge="handleCancelNursingPostedCharge"
     />
 
     <div class="billing-list-card flex min-h-0 flex-1 flex-col">
@@ -595,7 +766,7 @@ defineExpose({ reload });
                       type="danger"
                       :disabled="!canOperateBilling || !chargeRow.cancelable"
                       :loading="cancellingChargeItemId === chargeRow.chargeItemId"
-                      @click="handleCancelPostedCharge(row, chargeRow)"
+                      @click="handleCancelConfigPostedCharge(row, chargeRow)"
                     >
                       取消
                     </ElButton>

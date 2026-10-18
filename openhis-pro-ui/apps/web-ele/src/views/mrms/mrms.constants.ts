@@ -1,4 +1,4 @@
-import type { FormItemOption } from '@vben-core/table-layout-ui';
+import type { FormItemOption } from '@zxplat-core/table-layout-ui';
 
 import type { CaseRecordStatusCode } from '#/api/mrms/types';
 
@@ -44,6 +44,12 @@ export const HOMEPAGE_DIAG_GROUP_TYPES: Record<HomepageDiagGroup, HomepageDiagTy
 
 /** 是否上传医保（对齐老 needYbUp：1是 0否） */
 export const NEED_YB_UP_OPTIONS: FormItemOption[] = [
+  { label: '是', value: '1' },
+  { label: '否', value: '0' },
+];
+
+/** 主手术标志（4401 main_oprn：1是 0否；界面是/否，上报原样出站） */
+export const MAIN_OPRN_FLAG_OPTIONS: FormItemOption[] = [
   { label: '是', value: '1' },
   { label: '否', value: '0' },
 ];
@@ -223,14 +229,95 @@ export const MRG_STAS_OPTIONS: FormItemOption[] = [
   { label: '其他', value: '9' },
 ];
 
+/**
+ * 联系人/与患者关系（医保 patn_rlts / 4401 coner_rlts_code）。
+ * 代码值对齐「表 451 与患者关系」。
+ */
 export const CONER_RLTS_OPTIONS: FormItemOption[] = [
-  { label: '配偶', value: '1' },
-  { label: '子', value: '2' },
-  { label: '女', value: '3' },
-  { label: '父母', value: '4' },
-  { label: '兄弟姐妹', value: '5' },
-  { label: '同事', value: '6' },
-  { label: '其他', value: '9' },
+  { label: '本人', value: '01' },
+  { label: '户主', value: '02' },
+  { label: '配偶', value: '10' },
+  { label: '夫', value: '11' },
+  { label: '妻', value: '12' },
+  { label: '子', value: '20' },
+  { label: '独生子', value: '21' },
+  { label: '长子', value: '22' },
+  { label: '次子', value: '23' },
+  { label: '三子', value: '24' },
+  { label: '四子', value: '25' },
+  { label: '五子', value: '26' },
+  { label: '养子或继子', value: '27' },
+  { label: '女婿', value: '28' },
+  { label: '其他儿子', value: '29' },
+  { label: '女', value: '30' },
+  { label: '独生女', value: '31' },
+  { label: '长女', value: '32' },
+  { label: '次女', value: '33' },
+  { label: '三女', value: '34' },
+  { label: '四女', value: '35' },
+  { label: '五女', value: '36' },
+  { label: '养女或继女', value: '37' },
+  { label: '儿媳', value: '38' },
+  { label: '其他女儿', value: '39' },
+  { label: '孙子、孙女、外孙子、外孙女', value: '40' },
+  { label: '孙子', value: '41' },
+  { label: '孙女', value: '42' },
+  { label: '外孙子', value: '43' },
+  { label: '外孙女', value: '44' },
+  { label: '孙媳妇或外孙媳妇', value: '45' },
+  { label: '孙女婿或外孙女婿', value: '46' },
+  { label: '曾孙子或外曾孙子', value: '47' },
+  { label: '曾孙女或外曾孙女', value: '48' },
+  { label: '其他孙子、孙女、外孙子、外孙女', value: '49' },
+  { label: '父母', value: '50' },
+  { label: '父亲', value: '51' },
+  { label: '母亲', value: '52' },
+  { label: '公公', value: '53' },
+  { label: '婆婆', value: '54' },
+  { label: '岳父', value: '55' },
+  { label: '岳母', value: '56' },
+  { label: '继父或养父', value: '57' },
+  { label: '继母或养母', value: '58' },
+  { label: '其他父母关系', value: '59' },
+  { label: '祖父母、外祖父母', value: '60' },
+  { label: '祖父', value: '61' },
+  { label: '祖母', value: '62' },
+  { label: '外祖父', value: '63' },
+  { label: '外祖母', value: '64' },
+  { label: '配偶的祖父母、外祖父母', value: '65' },
+  { label: '曾祖父', value: '66' },
+  { label: '曾祖母', value: '67' },
+  { label: '配偶的曾祖父母、外曾祖父母', value: '68' },
+  { label: '其他祖父母和外祖父母关系', value: '69' },
+  { label: '兄、弟、姐、妹', value: '70' },
+  { label: '兄', value: '71' },
+  { label: '嫂', value: '72' },
+  { label: '弟', value: '73' },
+  { label: '弟媳', value: '74' },
+  { label: '姐姐', value: '75' },
+  { label: '姐夫', value: '76' },
+  { label: '妹妹', value: '77' },
+  { label: '妹夫', value: '78' },
+  { label: '其他兄弟姐妹', value: '79' },
+  { label: '其他', value: '80' },
+  { label: '伯父', value: '81' },
+  { label: '伯母', value: '82' },
+  { label: '叔父', value: '83' },
+  { label: '婶母', value: '84' },
+  { label: '舅父', value: '85' },
+  { label: '舅母', value: '86' },
+  { label: '姨父', value: '87' },
+  { label: '姨母', value: '88' },
+  { label: '姑父', value: '89' },
+  { label: '姑母', value: '90' },
+  { label: '堂兄弟、堂姐妹', value: '91' },
+  { label: '表兄弟、表姐妹', value: '92' },
+  { label: '侄子', value: '93' },
+  { label: '侄女', value: '94' },
+  { label: '外甥', value: '95' },
+  { label: '外甥女', value: '96' },
+  { label: '其他亲属', value: '97' },
+  { label: '非亲属', value: '99' },
 ];
 
 /** 是否类（1是 2否） */
@@ -287,8 +374,21 @@ export const MEDCAS_QLT_OPTIONS: FormItemOption[] = [
   { label: '丙', value: '3' },
 ];
 
-/** 医生可编辑状态（仅草稿；归档后走编辑申请） */
+/** 医生可编辑状态（仅草稿；已归档修改须重新提交归档） */
 export const DOCTOR_EDITABLE_STATUS: CaseRecordStatusCode[] = ['DRAFT'];
+
+/** 归档审批页签：门诊病历、住院病历、病案首页分开审 */
+export const ARCHIVE_APPROVAL_BIZ_CATEGORY_OPTIONS: FormItemOption[] = [
+  { label: '门诊病历', value: 'op_document' },
+  { label: '住院病历', value: 'ip_document' },
+  { label: '病案首页', value: 'case_homepage' },
+];
+
+export const ARCHIVE_APPROVAL_BIZ_CATEGORY_LABEL: Record<string, string> = {
+  op_document: '门诊病历',
+  ip_document: '住院病历',
+  case_homepage: '病案首页',
+};
 
 /** @deprecated 收案流已拆出；保留空数组避免旧引用编译失败 */
 export const RECORD_ROOM_RECEIVE_STATUS: CaseRecordStatusCode[] = [];

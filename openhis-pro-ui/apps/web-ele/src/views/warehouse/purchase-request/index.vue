@@ -5,8 +5,8 @@ import type { ApiOptionItem } from '#/types/api-response';
 import { nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
-import { useUserStore } from '@vben/stores';
-import { formatDateTime } from '@vben/utils';
+import { useUserStore } from '@zxplat/stores';
+import { formatDateTime } from '@zxplat/utils';
 
 import { Check, Delete, Plus, Search } from '@element-plus/icons-vue';
 import { ElButton, ElMessage, ElMessageBox } from 'element-plus';

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 
-import { ArrowLeft } from '@vben/icons';
-import { $t } from '@vben/locales';
+import { ArrowLeft } from '@zxplat/icons';
+import { $t } from '@zxplat/locales';
 
-import { Input, VbenButton } from '@vben-core/shadcn-ui';
+import { Input, VbenButton } from '@zxplat-core/shadcn-ui';
 
 interface Tenant {
   id: number | string;

@@ -13,7 +13,7 @@ import type { ApiOptionItem } from '#/types/api-response';
 
 import { computed, onMounted, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import {
   ElButton,
@@ -56,14 +56,15 @@ defineOptions({ name: 'BasicChargeDiscountConfigIndex' });
 
 /**
  * 主类型 T5 + 附加 T3。
- * 上：药品/诊疗/耗材大类定折 + 明细查询弹窗；
- * 下：单项目折扣配置列表（仅 productId 行），支持新增/启停/删除。
+ * 上：药品/诊疗/耗材大类勾选可打折范围 + 明细查询弹窗；
+ * 下：单项目折扣配置列表（仅 productId 行）；本页不定折，折扣率空=收银时选。
  */
 
 const PRODUCT_TABLE_MEDICATION = 'med_medication_definition';
 const PRODUCT_TABLE_ACTIVITY = 'wkf_activity_definition';
 const PRODUCT_TABLE_DEVICE = 'adm_device_definition';
-const DEFAULT_ZHE = 8.5;
+/** 配置页不填固定折，输入框只读置灰 */
+const DISCOUNT_RATE_INPUT_LOCKED = true;
 
 const CATALOG_DEFS = [
   {
@@ -159,7 +160,7 @@ const panels = reactive<CatalogPanel[]>(
     rows: [],
     loading: false,
     saving: false,
-    bulkZheText: String(DEFAULT_ZHE),
+    bulkZheText: '',
     configByCategoryCode: new Map(),
     configByProductId: new Map(),
   })),
@@ -219,19 +220,23 @@ function enabledCount(panel: CatalogPanel): number {
   return panel.rows.filter((row) => row.enabled).length;
 }
 
-/** 折文案 → 率 */
-function requireRateFromZheText(text: string): number {
-  const rate = zheToDiscountRate(text.trim());
+/** 折文案 → 率；空文案表示款员定率 */
+function optionalRateFromZheText(text: string): null | number {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const rate = zheToDiscountRate(trimmed);
   if (rate === null) {
-    throw new Error('折扣值须在 (0,10] 折内，例如 8.5');
+    throw new Error('折扣值须为空或在 (0,10] 折内');
   }
   return rate;
 }
 
-/** 率 → 折展示 */
+/** 率 → 折展示；空率展示空，不填默认折 */
 function toZheText(rate: null | number | string | undefined): string {
   const zhe = discountRateToZhe(rate);
-  return zhe === null ? String(DEFAULT_ZHE) : String(zhe);
+  return zhe === null ? '' : String(zhe);
 }
 
 /** 加载初始化 */
@@ -292,7 +297,7 @@ function buildCategoryRuleRow(
       categoryName,
       itemCount,
       enabled: false,
-      zheText: String(DEFAULT_ZHE),
+      zheText: '',
       saving: false,
     };
   }
@@ -353,7 +358,7 @@ function handleCategoryEnabledChange(
   void persistCategoryEnabled(panel, row, !!val);
 }
 
-/** 启停大类并写死折扣率 */
+/** 启停大类；折扣率固定传空（款员定率） */
 async function persistCategoryEnabled(panel: CatalogPanel, row: CategoryRuleRow, enabled: boolean) {
   if (row.saving || panel.saving) {
     return;
@@ -373,7 +378,6 @@ async function persistCategoryEnabled(panel: CatalogPanel, row: CategoryRuleRow,
       await refreshPanelAfterChange(panel);
       return;
     }
-    const rate = requireRateFromZheText(row.zheText);
     const id = preserveApiIdForRequest(row.configId);
     if (id) {
       await changeChargeDiscountConfigStatusApi({
@@ -385,14 +389,14 @@ async function persistCategoryEnabled(panel: CatalogPanel, row: CategoryRuleRow,
         productTable: panel.productTable,
         categoryCode: row.categoryCode,
         productId: null,
-        discountRate: rate,
+        discountRate: null,
       });
     } else {
       const created = await createChargeDiscountConfigApi({
         productTable: panel.productTable,
         categoryCode: row.categoryCode,
         productId: null,
-        discountRate: rate,
+        discountRate: null,
       });
       row.configId = preserveApiIdForRequest(created?.id);
     }
@@ -419,7 +423,7 @@ async function handleCategoryZheBlur(panel: CatalogPanel, row: CategoryRuleRow) 
   }
   row.saving = true;
   try {
-    const rate = requireRateFromZheText(row.zheText);
+    const rate = optionalRateFromZheText(row.zheText);
     row.zheText = toZheText(rate);
     await modifyChargeDiscountConfigApi({
       id,
@@ -446,9 +450,9 @@ async function handleApplyBulk(panel: CatalogPanel) {
     ElMessage.warning('请先勾选需要参与折扣的大类');
     return;
   }
-  let rate: number;
+  let rate: null | number;
   try {
-    rate = requireRateFromZheText(panel.bulkZheText);
+    rate = optionalRateFromZheText(panel.bulkZheText);
   } catch (error: unknown) {
     const err = error as { message?: string };
     ElMessage.error(err.message || '统一折扣值不合法');
@@ -896,8 +900,8 @@ function handleAddProductOverride() {
     productId: '',
     productName: '',
     selectedLabel: '',
-    discountRate: zheToDiscountRate(DEFAULT_ZHE),
-    zheText: String(DEFAULT_ZHE),
+    discountRate: null,
+    zheText: '',
     originalPrice: null,
     statusEnum: CHARGE_DISCOUNT_STATUS.ACTIVE,
     statusEnumText: '启用',
@@ -939,9 +943,9 @@ async function handleSaveOverrideRow(row: ProductOverrideRow) {
     ElMessage.warning('请选择项目');
     return;
   }
-  let rate: number;
+  let rate: null | number;
   try {
-    rate = requireRateFromZheText(row.zheText);
+    rate = optionalRateFromZheText(row.zheText);
   } catch (error: unknown) {
     const err = error as { message?: string };
     ElMessage.error(err.message || '折扣值不合法');
@@ -1143,9 +1147,11 @@ onMounted(async () => {
               </span>
               <div class="cdc-rule__ops">
                 <ElInput
-                  v-model="row.zheText"
-                  :disabled="!row.enabled || row.saving"
+                  :model-value="DISCOUNT_RATE_INPUT_LOCKED ? '' : row.zheText"
+                  :disabled="DISCOUNT_RATE_INPUT_LOCKED || !row.enabled || row.saving"
                   class="cdc-zhe-input"
+                  placeholder=""
+                  @update:model-value="(v) => (row.zheText = String(v ?? ''))"
                   @blur="() => handleCategoryZheBlur(panel, row)"
                   @keyup.enter="($event.target as HTMLInputElement)?.blur()"
                 />
@@ -1158,12 +1164,18 @@ onMounted(async () => {
 
           <footer class="cdc-card__ft">
             <span class="cdc-card__ft-label">统一设置</span>
-            <ElInput v-model="panel.bulkZheText" :disabled="panel.saving" class="cdc-zhe-input" />
+            <ElInput
+              :model-value="DISCOUNT_RATE_INPUT_LOCKED ? '' : panel.bulkZheText"
+              :disabled="DISCOUNT_RATE_INPUT_LOCKED || panel.saving"
+              class="cdc-zhe-input"
+              placeholder=""
+              @update:model-value="(v) => (panel.bulkZheText = String(v ?? ''))"
+            />
             <span class="cdc-rule__unit">折</span>
             <ElButton
               type="primary"
               :loading="panel.saving"
-              :disabled="!enabledCount(panel)"
+              :disabled="DISCOUNT_RATE_INPUT_LOCKED || !enabledCount(panel)"
               @click="handleApplyBulk(panel)"
             >
               应用
@@ -1178,13 +1190,15 @@ onMounted(async () => {
           <div>
             <h3 class="cdc-detail__title">单项目折扣配置</h3>
             <p class="cdc-detail__desc">
-              仅展示单独指定到项目的折扣；优先于大类规则。支持新增、启停与删除。
+              仅展示单独指定到项目的折扣；优先于大类规则。本页不填固定折，折扣由收银选择。
             </p>
           </div>
         </header>
 
         <div class="cdc-filter">
-          <ElButton type="primary" @click="handleAddProductOverride"> 新增单项 </ElButton>
+          <ElButton type="primary" disabled @click="handleAddProductOverride">
+            新增单项
+          </ElButton>
           <ElSelect
             v-model="overrideTableFilter"
             clearable
@@ -1276,7 +1290,13 @@ onMounted(async () => {
             <ElTableColumn label="折扣" width="120" align="center">
               <template #default="{ row }">
                 <div v-if="row.editing" class="cdc-inline-zhe">
-                  <ElInput v-model="row.zheText" class="cdc-zhe-input" />
+                  <ElInput
+                    :model-value="DISCOUNT_RATE_INPUT_LOCKED ? '' : row.zheText"
+                    :disabled="DISCOUNT_RATE_INPUT_LOCKED"
+                    class="cdc-zhe-input"
+                    placeholder=""
+                    @update:model-value="(v) => (row.zheText = String(v ?? ''))"
+                  />
                   <span class="cdc-rule__unit">折</span>
                 </div>
                 <span v-else class="cdc-hi">{{ formatOverrideDiscount(row) }}</span>
@@ -1302,7 +1322,7 @@ onMounted(async () => {
                   v-if="!row.isNew"
                   size="small"
                   effect="plain"
-                  :type="isChargeDiscountConfigActive(row.statusEnum) ? 'success' : 'info'"
+                  :type="isChargeDiscountConfigActive(row.statusEnum) ? 'success' : 'warning'"
                 >
                   {{ isChargeDiscountConfigActive(row.statusEnum) ? '启用' : '停用' }}
                 </ElTag>

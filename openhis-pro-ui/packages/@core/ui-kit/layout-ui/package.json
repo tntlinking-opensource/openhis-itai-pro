@@ -1,12 +1,12 @@
 {
-  "name": "@vben-core/layout-ui",
+  "name": "@zxplat-core/layout-ui",
   "version": "5.5.9",
   "homepage": "https://github.com/vbenjs/vue-vben-admin",
   "bugs": "https://github.com/vbenjs/vue-vben-admin/issues",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/vbenjs/vue-vben-admin.git",
-    "directory": "packages/@vben-core/uikit/layout-ui"
+    "directory": "packages/@zxplat-core/uikit/layout-ui"
   },
   "license": "LGPL-3.0",
   "type": "module",
@@ -37,11 +37,11 @@
     }
   },
   "dependencies": {
-    "@vben-core/composables": "workspace:*",
-    "@vben-core/icons": "workspace:*",
-    "@vben-core/shadcn-ui": "workspace:*",
-    "@vben-core/shared": "workspace:*",
-    "@vben-core/typings": "workspace:*",
+    "@zxplat-core/composables": "workspace:*",
+    "@zxplat-core/icons": "workspace:*",
+    "@zxplat-core/shadcn-ui": "workspace:*",
+    "@zxplat-core/shared": "workspace:*",
+    "@zxplat-core/typings": "workspace:*",
     "@vueuse/core": "catalog:",
     "vue": "catalog:"
   }

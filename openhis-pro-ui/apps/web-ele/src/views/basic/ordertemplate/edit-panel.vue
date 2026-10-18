@@ -16,7 +16,7 @@ import type { AdviceProductOption } from '#/views/outpatient/doctor-station/advi
 
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import {
   ElButton,

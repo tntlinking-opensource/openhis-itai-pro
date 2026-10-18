@@ -14,8 +14,8 @@ import type { ApiOptionItem } from '#/types/api-response';
 
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
-import { Page } from '@vben/common-ui';
-import { formatDateTime } from '@vben/utils';
+import { Page } from '@zxplat/common-ui';
+import { formatDateTime } from '@zxplat/utils';
 
 import dayjs from 'dayjs';
 import {

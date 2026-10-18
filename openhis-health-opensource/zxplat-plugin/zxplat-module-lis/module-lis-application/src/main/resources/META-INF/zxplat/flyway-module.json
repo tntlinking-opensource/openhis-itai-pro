@@ -1,0 +1,6 @@
+{
+  "moduleId": "lis",
+  "enabledProperty": "zxplat.modules.lis.enabled",
+  "locations": "classpath:db/migration/lis",
+  "historyTable": "flyway_schema_history_lis"
+}

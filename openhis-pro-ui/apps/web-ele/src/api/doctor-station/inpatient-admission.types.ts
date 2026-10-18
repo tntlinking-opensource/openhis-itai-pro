@@ -35,10 +35,33 @@ export interface RequestInpatientAdmissionRequest {
   priorityCode?: string;
   admissionDiagnoses: AdmissionDiagnosisSubmitDto[];
   operatorId: string;
+  /**
+   * 入院办理意向：INSURANCE=医保办 / SELF_PAY=自费办。
+   * 仅提示款台，非真实费用性质；登记合同仍以收费员选择为准。
+   */
+  chargeIntent?: 'INSURANCE' | 'SELF_PAY' | string;
+  /**
+   * 意向预交金总额（医生只填总额，不填支付方式）。
+   * >0 时后端落 HOSPITAL_DEPOSIT DRAFT；登记确认时由收费员补渠道。
+   */
+  advanceDepositAmount?: number | string;
 }
 
 export interface RequestInpatientAdmissionResponse {
   inpatientEncounterId?: string;
   inpatientEncounterBusNo?: string;
+  success: boolean;
+}
+
+/** 撤回待登记住院申请（直接软删，不迁取消态） */
+export interface WithdrawInpatientAdmissionRequest {
+  ambEncounterId: string;
+  operatorId: string;
+}
+
+export interface WithdrawInpatientAdmissionResponse {
+  inpatientEncounterId?: string;
+  /** 撤回前状态码（通常 PLANNED） */
+  statusEnum?: string;
   success: boolean;
 }

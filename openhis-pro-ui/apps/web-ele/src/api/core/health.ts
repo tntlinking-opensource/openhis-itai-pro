@@ -1,4 +1,4 @@
-import { useAppConfig } from '@vben/hooks';
+import { useAppConfig } from '@zxplat/hooks';
 
 export interface HealthInfo {
   status?: string;

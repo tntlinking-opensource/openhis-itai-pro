@@ -2,13 +2,13 @@ import type { VxeGridSlots, VxeGridSlotTypes } from 'vxe-table';
 
 import type { SlotsType } from 'vue';
 
-import type { BaseFormComponentType } from '@vben-core/form-ui';
+import type { BaseFormComponentType } from '@zxplat-core/form-ui';
 
 import type { ExtendedVxeGridApi, VxeGridProps } from './types';
 
 import { defineComponent, h, onBeforeUnmount } from 'vue';
 
-import { useStore } from '@vben-core/shared/store';
+import { useStore } from '@zxplat-core/shared/store';
 
 import { VxeGridApi } from './api';
 import VxeGrid from './use-vxe-grid.vue';

@@ -1,6 +1,8 @@
+import { PRINT_JSON_REWRITE_ENABLED } from '#/utils/print/print-json-rewrite.config';
+
 /**
  * 住院患者用药单：按患者分块画表；同方频次/总量用 rowspan 合并。
- * 打印前覆盖 longText formatter，避免库模板仍按逐行空单元格渲染。
+ * 仅国基打开 PRINT_JSON_REWRITE_ENABLED 后才覆盖 formatter；红旗沿用库模板。
  */
 
 interface PrintElementLike {
@@ -79,6 +81,9 @@ function isOralMedSheetBodyElement(element: PrintElementLike): boolean {
 export function normalizeOralMedSheetPrintJson(
   printJson: Record<string, unknown>,
 ): Record<string, unknown> {
+  if (PRINT_JSON_REWRITE_ENABLED !== true) {
+    return printJson;
+  }
   const panels = printJson.panels;
   if (!Array.isArray(panels)) {
     return printJson;

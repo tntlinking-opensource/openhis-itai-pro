@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { HiprintPrinterItem } from '../fetch-printer-list';
 import type { InvFormPaperKind, InvFormTripleSpec } from '../form-print-preference';
+import type { ServiceApplyPaperSize } from '../service-apply-paper-preference';
 
 import { onMounted, ref } from 'vue';
 
 import { INV_FORM_PAPER_KIND, INV_FORM_TRIPLE_SPEC } from '../form-print-preference';
+import { DEFAULT_SERVICE_APPLY_PAPER_SIZE } from '../service-apply-paper-preference';
 import PrinterSelectDialog from './printer-select-dialog.vue';
 
 defineOptions({ name: 'PrinterSelectDialogHost' });
@@ -20,6 +22,8 @@ interface Props {
   showPaperKind?: boolean;
   initialPaperKind?: InvFormPaperKind;
   initialTripleSpec?: InvFormTripleSpec;
+  showServiceApplyPaperSize?: boolean;
+  initialServiceApplyPaperSize?: ServiceApplyPaperSize;
   showSkipPrompt?: boolean;
 }
 
@@ -33,6 +37,8 @@ const props = withDefaults(defineProps<Props>(), {
   showPaperKind: false,
   initialPaperKind: INV_FORM_PAPER_KIND.triple,
   initialTripleSpec: INV_FORM_TRIPLE_SPEC.third,
+  showServiceApplyPaperSize: false,
+  initialServiceApplyPaperSize: DEFAULT_SERVICE_APPLY_PAPER_SIZE,
   showSkipPrompt: true,
 });
 
@@ -42,6 +48,7 @@ const emit = defineEmits<{
     payload: {
       paperKind?: InvFormPaperKind;
       printerName: string;
+      serviceApplyPaperSize?: ServiceApplyPaperSize;
       skipPrompt: boolean;
       tripleSpec?: InvFormTripleSpec;
     },
@@ -52,6 +59,8 @@ const visible = ref(true);
 const loading = ref(true);
 const loadError = ref('');
 const printers = ref<HiprintPrinterItem[]>([]);
+/** 防止确认后 close 再触发 cancel 双重 emit */
+let settled = false;
 
 /** 拉取本机打印机列表 */
 async function loadPrinterList(): Promise<void> {
@@ -74,15 +83,24 @@ async function loadPrinterList(): Promise<void> {
 function handleConfirm(payload: {
   paperKind?: InvFormPaperKind;
   printerName: string;
+  serviceApplyPaperSize?: ServiceApplyPaperSize;
   skipPrompt: boolean;
   tripleSpec?: InvFormTripleSpec;
 }): void {
+  if (settled) {
+    return;
+  }
+  settled = true;
   visible.value = false;
   emit('confirm', payload);
 }
 
 /** 用户取消 */
 function handleCancel(): void {
+  if (settled) {
+    return;
+  }
+  settled = true;
   visible.value = false;
   emit('cancel');
 }
@@ -107,6 +125,8 @@ onMounted(() => {
     :show-paper-kind="showPaperKind"
     :initial-paper-kind="initialPaperKind"
     :initial-triple-spec="initialTripleSpec"
+    :show-service-apply-paper-size="showServiceApplyPaperSize"
+    :initial-service-apply-paper-size="initialServiceApplyPaperSize"
     :show-skip-prompt="showSkipPrompt"
     @confirm="handleConfirm"
     @cancel="handleCancel"

@@ -7,7 +7,7 @@ import type {
 } from '#/components/outpatient/patient-card.types';
 import type { OptionDto } from '#/api/outpatient-registration';
 
-import { RotateCw, Search } from '@vben/icons';
+import { RotateCw, Search } from '@zxplat/icons';
 
 import { ElButton, ElCheckbox, ElDatePicker, ElInput, ElSelect, ElOption } from 'element-plus';
 

@@ -2,7 +2,7 @@ import type { ComputedRef, Ref } from 'vue';
 
 import type { PatientItem, SelectionPolicy } from './types';
 
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 interface UseNurseStationSelectionOptions {
   patients: Ref<PatientItem[]>;
@@ -22,8 +22,22 @@ export function useNurseStationSelection(options: UseNurseStationSelectionOption
   /** 最近一次交互患者 id（多选收敛到单选时作为兜底优先级）。 */
   const lastTouchedPatientId = ref<null | string>(null);
 
-  /** 将选中 id 集合同步回患者卡片 selected 展示态。 */
+  /**
+   * 将选中 id 集合同步回患者卡片 selected 展示态。
+   * 不在此剔除「当前列表没有」的选中 id：队列多页逐步回写时名单未齐，
+   * 误删会导致刷新丢选中并自动落到第一人。
+   */
   function syncPatientSelectedFlags() {
+    // 将 store 态映射为卡片态，避免模板层维护另一套真值来源。
+    for (const item of patients.value) {
+      item.selected = selectedPatientIds.value.has(item.id);
+    }
+  }
+
+  /**
+   * 队列完整加载后剔除已不在名单中的选中；主患者失效时清空，禁止回落到第一人。
+   */
+  function pruneStaleSelection() {
     const validIds = new Set(patients.value.map((item) => item.id));
     for (const id of [...selectedPatientIds.value]) {
       if (!validIds.has(id)) {
@@ -31,14 +45,9 @@ export function useNurseStationSelection(options: UseNurseStationSelectionOption
       }
     }
     if (activePatientId.value && !validIds.has(activePatientId.value)) {
-      activePatientId.value =
-        [...selectedPatientIds.value][0] ??
-        (selectionPolicy.value === 'single' ? firstFilteredPatientId() : null);
+      activePatientId.value = [...selectedPatientIds.value][0] ?? null;
     }
-    // 将 store 态映射为卡片态，避免模板层维护另一套真值来源。
-    for (const item of patients.value) {
-      item.selected = selectedPatientIds.value.has(item.id);
-    }
+    syncPatientSelectedFlags();
   }
 
   /** 队列重载（如入出转分床后）替换 patients 时，按 selectedPatientIds 恢复勾选展示。 */
@@ -49,20 +58,12 @@ export function useNurseStationSelection(options: UseNurseStationSelectionOption
     },
   );
 
-  /** 获取当前筛选结果中第一个患者 id，作为单选收敛兜底。 */
-  function firstFilteredPatientId() {
-    return filteredPatients.value[0]?.id ?? null;
-  }
-
-  /** 初始化默认选中与主患者。 */
+  /** 初始化选中：仅保留已有勾选，禁止默认落到列表第一人。 */
   function initSelectionState() {
-    // 兼容 mock 数据里预置的 selected 字段。
+    // 兼容 mock 数据里预置的 selected 字段；队列接口映射恒为 false。
     const preselectedIds = patients.value.filter((item) => item.selected).map((item) => item.id);
     selectedPatientIds.value = new Set(preselectedIds);
-    activePatientId.value = preselectedIds[0] ?? firstFilteredPatientId();
-    if (activePatientId.value) {
-      selectedPatientIds.value.add(activePatientId.value);
-    }
+    activePatientId.value = preselectedIds[0] ?? null;
     syncPatientSelectedFlags();
   }
 
@@ -99,6 +100,7 @@ export function useNurseStationSelection(options: UseNurseStationSelectionOption
       return;
     }
     const selectedIdList = [...selectedPatientIds.value];
+    // 仅在已有勾选内收敛；无人勾选时保持空，禁止补选第一人
     const keepId =
       (activePatientId.value && selectedPatientIds.value.has(activePatientId.value)
         ? activePatientId.value
@@ -107,7 +109,7 @@ export function useNurseStationSelection(options: UseNurseStationSelectionOption
         ? lastTouchedPatientId.value
         : null) ||
       selectedIdList[0] ||
-      firstFilteredPatientId();
+      null;
     selectedPatientIds.value = keepId ? new Set([keepId]) : new Set();
     activePatientId.value = keepId;
     syncPatientSelectedFlags();
@@ -130,7 +132,8 @@ export function useNurseStationSelection(options: UseNurseStationSelectionOption
     if (selectedPatientIds.value.has(id)) {
       selectedPatientIds.value.delete(id);
       if (activePatientId.value === id) {
-        activePatientId.value = [...selectedPatientIds.value][0] ?? firstFilteredPatientId();
+        // 取消主患者时改指剩余勾选；无人勾选则清空，禁止回落第一人
+        activePatientId.value = [...selectedPatientIds.value][0] ?? null;
       }
     } else {
       selectedPatientIds.value.add(id);
@@ -158,17 +161,11 @@ export function useNurseStationSelection(options: UseNurseStationSelectionOption
     } else {
       selectedPatientIds.value.delete(id);
       if (activePatientId.value === id) {
-        activePatientId.value = [...selectedPatientIds.value][0] ?? firstFilteredPatientId();
+        activePatientId.value = [...selectedPatientIds.value][0] ?? null;
       }
     }
     syncPatientSelectedFlags();
   }
-
-  /** 患者列表面板上下文中的选择动作。 */
-  const patientListPanelSelectionContext = {
-    togglePatientCardSelection,
-    togglePatientSelection,
-  };
 
   /** 多选收敛为只保留当前集合中的第一人（打印中心单人单据快捷纠正） */
   function keepFirstSelectedPatient() {
@@ -196,12 +193,69 @@ export function useNurseStationSelection(options: UseNurseStationSelectionOption
     syncPatientSelectedFlags();
   }
 
+  /** 当前筛选列表是否已全部勾选（全选复选框态；读卡片 selected 以保证响应式） */
+  const allFilteredPatientsSelected = computed(() => {
+    const list = filteredPatients.value;
+    if (list.length === 0) return false;
+    return list.every((item) => item.selected);
+  });
+
+  /** 当前筛选列表是否部分勾选（全选半选态） */
+  const filteredPatientsIndeterminate = computed(() => {
+    const list = filteredPatients.value;
+    if (list.length === 0) return false;
+    let selectedCount = 0;
+    for (const item of list) {
+      if (item.selected) {
+        selectedCount += 1;
+      }
+    }
+    return selectedCount > 0 && selectedCount < list.length;
+  });
+
+  /** 全选/取消全选当前筛选队列（多选页签）；单选页签忽略 */
+  function toggleSelectAllFilteredPatients(value: boolean) {
+    if (selectionPolicy.value === 'single') {
+      return;
+    }
+    if (!value) {
+      // 整表替换 Set，确保选中集合变化能触发右侧列表重拉
+      selectedPatientIds.value = new Set();
+      activePatientId.value = null;
+      syncPatientSelectedFlags();
+      return;
+    }
+    const nextIds = filteredPatients.value.map((item) => item.id);
+    selectedPatientIds.value = new Set(nextIds);
+    activePatientId.value =
+      (activePatientId.value && selectedPatientIds.value.has(activePatientId.value)
+        ? activePatientId.value
+        : null) ||
+      (lastTouchedPatientId.value && selectedPatientIds.value.has(lastTouchedPatientId.value)
+        ? lastTouchedPatientId.value
+        : null) ||
+      nextIds[0] ||
+      null;
+    syncPatientSelectedFlags();
+  }
+
+  /** 患者列表面板上下文中的选择动作。 */
+  const patientListPanelSelectionContext = {
+    allFilteredPatientsSelected,
+    filteredPatientsIndeterminate,
+    selectionPolicy,
+    togglePatientCardSelection,
+    togglePatientSelection,
+    toggleSelectAllFilteredPatients,
+  };
+
   return {
     activePatientId,
     clearSelectedPatients,
     initSelectionState,
     keepFirstSelectedPatient,
     patientListPanelSelectionContext,
+    pruneStaleSelection,
     selectedPatientIds,
     selectionPolicy,
     setActivePatient,
@@ -209,5 +263,6 @@ export function useNurseStationSelection(options: UseNurseStationSelectionOption
     syncPatientSelectedFlags,
     togglePatientCardSelection,
     togglePatientSelection,
+    toggleSelectAllFilteredPatients,
   };
 }

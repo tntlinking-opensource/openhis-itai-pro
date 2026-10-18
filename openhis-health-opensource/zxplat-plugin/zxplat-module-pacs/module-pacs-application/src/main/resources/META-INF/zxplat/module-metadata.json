@@ -1,0 +1,14 @@
+{
+  "moduleId": "pacs",
+  "displayName": "PACS RIS + Imaging",
+  "enabledProperty": "zxplat.modules.pacs.enabled",
+  "autoConfigurationClass": "com.zxplat.plugin.pacs.application.config.PacsAutoConfiguration",
+  "appServiceNames": [
+    "pacsRegistration",
+    "pacsExamExecution",
+    "pacsReport",
+    "pacsViewerUrlConfig",
+    "pacsImageCapture",
+    "pacsViewer"
+  ]
+}

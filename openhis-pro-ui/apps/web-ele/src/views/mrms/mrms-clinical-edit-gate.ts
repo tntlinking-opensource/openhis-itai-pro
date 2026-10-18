@@ -8,7 +8,7 @@
 
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
-/** 内置病案管理员角色 code（与后端 WhalePlatformRoleCodeConstants 一致） */
+/** 内置病案管理员角色 code（与后端 PlatformRoleCodeConstants 一致） */
 export const ROLE_MRMS_ADMIN = 'ROLE_MRMS_ADMIN';
 
 /** 门诊行上用于比对接诊医生与病例归档态的最小字段 */

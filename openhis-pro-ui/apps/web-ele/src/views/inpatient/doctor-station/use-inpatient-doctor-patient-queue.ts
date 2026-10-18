@@ -51,7 +51,7 @@ export function useInpatientDoctorPatientQueue() {
     },
   });
 
-  /** 加载队列并处理默认选中（刷新时保留当前选中行） */
+  /** 加载在院患者队列 */
   async function loadQueue(options?: { skipDefaultSelection?: boolean }) {
     const rows = await runLoadQueue();
     if (!rows) {

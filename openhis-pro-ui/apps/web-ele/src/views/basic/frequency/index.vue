@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type {
   FrequencyInitResponse,
@@ -11,9 +11,9 @@ import type { ApiResponse } from '#/types/api-response';
 
 import { computed, onActivated, onMounted, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { ElButton, ElMessage, ElMessageBox, ElSpace, ElTag } from 'element-plus';
 
@@ -159,8 +159,8 @@ function activeFlagLabel(v: unknown): string {
   return optionLabel(statusOptions.value, v);
 }
 
-function activeFlagTagType(v: FrequencyItem['activeFlag']): 'info' | 'success' {
-  return isFrequencyActive(v) ? 'success' : 'info';
+function activeFlagTagType(v: FrequencyItem['activeFlag']): 'success' | 'warning' {
+  return isFrequencyActive(v) ? 'success' : 'warning';
 }
 
 function allowCrossDayLabel(v: unknown): string {

@@ -1,3 +1,5 @@
+import type { AdvicePackageChildItemDto } from '#/api/doctor-station/advice.types';
+
 /** 医嘱校对 Tab：未校对 / 已校对（已停嘱校对并入已校对；无已停止/已作废 Tab） */
 export type NurseStationOrderAuditTab = 'pending' | 'passed';
 
@@ -16,6 +18,12 @@ export interface ListNurseStationOrderAuditRequest {
   auditTab: NurseStationOrderAuditTab;
   therapyType?: NurseStationOrderAuditTherapyFilter;
   medicineCategoryTab?: NurseStationOrderAuditMedicineCategoryTab;
+  /**
+   * 麻醉申请范围（与后端 BR-IP-NUR-003-ANES-001 对齐）：
+   * true=仅麻醉申请（申请单号 AA 前缀）；false/不传=排除麻醉申请。
+   * 无类目 25 / 同单号池兼容。
+   */
+  anesthesiaApplyOnly?: boolean;
 }
 
 /** 列表行（与后端 NurseStationOrderAuditRowDto 对齐） */
@@ -107,6 +115,10 @@ export interface NurseStationOrderAuditRowDto {
   plannedDischargeTime?: string;
   /** 出院/转科原因 */
   reasonText?: string;
+  /**
+   * 带子项诊疗目录子项（校对列表不展示；国基**检验**医嘱单打印展开）。
+   */
+  packageChildren?: AdvicePackageChildItemDto[];
 }
 
 /** 按就诊分组的医嘱列表 */

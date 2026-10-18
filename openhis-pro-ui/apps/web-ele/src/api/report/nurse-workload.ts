@@ -37,6 +37,8 @@ export interface LoadNurseWorkloadFormInitResponse {
   nurseOptions?: OptionDto[];
   /** 默认登录科室下拉（对应 Practitioner.org_id）。 */
   organizationOptions?: OptionDto[];
+  /** 是否已配置有效折扣内容。 */
+  discountFeatureEnabled?: boolean;
 }
 
 export interface NurseWorkloadQueryFilter {
@@ -60,12 +62,16 @@ export interface NurseExecutionSummaryRowDto {
 export interface SummarizeNurseExecutionWorkloadResponse {
   rows?: NurseExecutionSummaryRowDto[];
   totalSaleAmount?: number | string;
+  totalDiscountAmount?: number | string;
+  totalActualReceivedAmount?: number | string;
   totalPurchaseAmount?: number | string | null;
   totalExecutionCount?: number;
 }
 
 export interface NurseExecutionDetailRowDto {
   saleAmount?: number | string;
+  discountAmount?: number | string;
+  actualReceivedAmount?: number | string;
   purchaseAmount?: number | string | null;
   procedureId?: string;
   serviceRequestId?: string;
@@ -103,12 +109,16 @@ export interface NurseConsumableSummaryRowDto {
 export interface SummarizeNurseConsumableWorkloadResponse {
   rows?: NurseConsumableSummaryRowDto[];
   totalSaleAmount?: number | string;
+  totalDiscountAmount?: number | string;
+  totalActualReceivedAmount?: number | string;
   totalPurchaseAmount?: number | string | null;
   totalQuantity?: number | string;
 }
 
 export interface NurseConsumableDetailRowDto {
   saleAmount?: number | string;
+  discountAmount?: number | string;
+  actualReceivedAmount?: number | string;
   purchaseAmount?: number | string | null;
   dispenseId?: string;
   deviceDefId?: string;
@@ -166,10 +176,14 @@ export interface NurseWorkloadNurseCardDto {
   practitionerId?: string;
   executionTotalCount?: number;
   executionSaleAmountTotal?: number | string;
+  executionDiscountAmountTotal?: number | string;
+  executionActualReceivedAmountTotal?: number | string;
   executionPurchaseAmountTotal?: number | string | null;
   executionSummaryRows?: NurseExecutionSummaryRowDto[];
   consumableTotalQuantity?: number | string;
   consumableSaleAmountTotal?: number | string;
+  consumableDiscountAmountTotal?: number | string;
+  consumableActualReceivedAmountTotal?: number | string;
   consumablePurchaseAmountTotal?: number | string | null;
   consumableSummaryRows?: NurseConsumableSummaryRowDto[];
   consumableItemChips?: NurseConsumableItemChipDto[];
@@ -181,10 +195,14 @@ export interface ListNurseWorkloadNurseCardsResponse {
   totalExecutionCount?: number;
   /** 诊疗执行售价合计。 */
   totalExecutionSaleAmount?: number | string;
+  totalExecutionDiscountAmount?: number | string;
+  totalExecutionActualReceivedAmount?: number | string;
   /** 耗材总数量。 */
   totalConsumableQuantity?: number | string;
   /** 耗材售价合计。 */
   totalConsumableSaleAmount?: number | string;
+  totalConsumableDiscountAmount?: number | string;
+  totalConsumableActualReceivedAmount?: number | string;
   /** 耗材进价合计；全无进价时为 null。 */
   totalConsumablePurchaseAmount?: number | string | null;
 }

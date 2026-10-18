@@ -3,6 +3,8 @@ import type {
   CheckInpatientAdmissionExistsResponse,
   RequestInpatientAdmissionRequest,
   RequestInpatientAdmissionResponse,
+  WithdrawInpatientAdmissionRequest,
+  WithdrawInpatientAdmissionResponse,
 } from './inpatient-admission.types';
 
 import { publicRequestClient } from '#/api/request';
@@ -25,6 +27,16 @@ export async function httpRequestInpatientAdmission(
 ): Promise<RequestInpatientAdmissionResponse> {
   return publicRequestClient.post<RequestInpatientAdmissionResponse>(
     `${BASE}/requestInpatientAdmission`,
+    body,
+  );
+}
+
+/** 撤回待登记（PLANNED）住院申请；撤回后可再次办理住院 */
+export async function httpWithdrawInpatientAdmission(
+  body: WithdrawInpatientAdmissionRequest,
+): Promise<WithdrawInpatientAdmissionResponse> {
+  return publicRequestClient.post<WithdrawInpatientAdmissionResponse>(
+    `${BASE}/withdrawInpatientAdmission`,
     body,
   );
 }

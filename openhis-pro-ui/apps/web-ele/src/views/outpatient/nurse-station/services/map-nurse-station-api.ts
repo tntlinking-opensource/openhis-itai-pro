@@ -11,7 +11,7 @@ import type {
   OrderExecutionSheetItemDto,
 } from '#/api/outpatient-nurse-station/outpatient-nurse-station.types';
 
-import { formatDateTime } from '@vben/utils';
+import { formatDateTime } from '@zxplat/utils';
 
 import {
   mergeConsecutiveRowsByDrugGroup,
@@ -419,6 +419,7 @@ export function mapTreatmentLineToExecuteRow(
     executedCountDisplay: isMedication ? undefined : buildExecutedCountDisplay(row),
     performerDisplay: String(row.lastPerformerDisplay ?? '').trim() || '—',
     requestId: preserveApiIdForRequest(row.requestId) ?? undefined,
+    busNo: String(row.busNo ?? '').trim() || undefined,
     requestTable: normalizeNurseStationRequestTableForApi(table) || undefined,
     netPerformCount,
     canCancelExecute: !isMedication && netPerformCount > 0,
@@ -433,6 +434,10 @@ export function mapTreatmentLineToExecuteRow(
     serviceCategoryCode: (row.serviceCategoryCode ?? '').trim() || undefined,
     serviceCategoryCodeText: (row.serviceCategoryCodeText ?? '').trim() || undefined,
     specimenTubeMergeDeviceId: preserveApiIdForRequest(row.specimenTubeMergeDeviceId) ?? undefined,
+    specimenTubeMergeGroupNo:
+      row.specimenTubeMergeGroupNo === null || row.specimenTubeMergeGroupNo === undefined
+        ? undefined
+        : row.specimenTubeMergeGroupNo,
     priorityEnum: (row.priorityEnum ?? '').trim() || undefined,
   };
 }

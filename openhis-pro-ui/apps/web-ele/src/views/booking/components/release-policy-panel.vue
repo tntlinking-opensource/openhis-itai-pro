@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 import type { ReleasePolicyDto } from '#/api/booking/booking-policy';
 
 import { onMounted, reactive, ref } from 'vue';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import {
   deleteReleasePolicyApi,

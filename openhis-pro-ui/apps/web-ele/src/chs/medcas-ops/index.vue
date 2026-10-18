@@ -11,8 +11,8 @@ import type {
 
 import { computed, onMounted, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
-import { formatDateTime } from '@vben/utils';
+import { Page } from '@zxplat/common-ui';
+import { formatDateTime } from '@zxplat/utils';
 
 import {
   ElAlert,

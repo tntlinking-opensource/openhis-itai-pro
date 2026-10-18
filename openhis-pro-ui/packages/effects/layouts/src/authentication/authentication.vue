@@ -3,7 +3,7 @@ import type { ToolbarType } from './types';
 
 import { computed } from 'vue';
 
-import { preferences, usePreferences } from '@vben/preferences';
+import { preferences, usePreferences } from '@zxplat/preferences';
 
 import { Copyright } from '../basic/copyright';
 import AuthenticationFormView from './form.vue';

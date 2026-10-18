@@ -1,0 +1,41 @@
+{
+  "stats": {
+    "add": 779,
+    "insert_add": 779,
+    "stop": 1323,
+    "update_stop_SERVICE_F": 2646,
+    "update_stop_SERVICE": 10,
+    "modify": 1,
+    "update_mod_F": 1,
+    "add_T_suffix": 202
+  },
+  "catalog": {
+    "SERVICE:ACTIVE": 561,
+    "SERVICE_F:STOPPED": 3834,
+    "SERVICE_F:ACTIVE": 5357,
+    "SERVICE:STOPPED": 7
+  },
+  "total": 9759,
+  "ear": {
+    "catalog_kind": "SERVICE_F",
+    "status": "ACTIVE",
+    "project_code": "012404000010000",
+    "hilist_code": "",
+    "hilist_name": "耳内镜检查费",
+    "chrgitm_lv": "1",
+    "list_type": "201",
+    "begin_date": "2026-07-31",
+    "end_date": "",
+    "计价单位": "次",
+    "定价上限": "93",
+    "地方编码": "",
+    "限制使用标志": "0",
+    "限制使用范围": "",
+    "诊疗项目说明": "",
+    "诊疗除外内容": "",
+    "诊疗项目内涵": "通过耳内镜检查耳道、鼓膜及鼓室内形态、组织结构等。",
+    "last_pack": "15",
+    "last_action": "ADD",
+    "last_notice_date": "2026-07-28"
+  }
+}

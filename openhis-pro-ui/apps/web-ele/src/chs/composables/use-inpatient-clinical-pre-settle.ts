@@ -1,5 +1,7 @@
 /**
- * 住院医护站「完整预结算」：3101(trig=9) → 对话框 → 2303，仅展示金额不落账。
+ * 住院医护站「完整预结算」：3101(trig=9) 不阻断 → 2301 → 2303，仅展示金额不落账。
+ * 有事前提醒时并入预结算弹窗页签，不等待 3103 处置。
+ * 不读卡：人员编号与险种由后端按入院资料回填，2303 不传就诊凭证号。
  * 未护士出院传 MID_SETTLE（跳过 2402、放宽就诊态）；平台 mid_setl_flag 由后端写死为 0。
  */
 import type { Ref } from 'vue';
@@ -10,6 +12,7 @@ import type {
   PreSettleInpatientChargesResponse,
   UploadInpatientFeeDetailsBatchRequest,
 } from '#/api/inpatient-settle';
+import type { AuditViolation } from '#/chs/api/detail-audit-try';
 import type { InsuranceProgressReporter } from '#/chs/composables/use-insurance-progress-dialog';
 
 import { nextTick } from 'vue';
@@ -22,10 +25,8 @@ import {
   httpQueryInpatientSettleCharges,
   httpUploadInpatientFeeDetailsBatch,
 } from '#/api/inpatient-settle';
-import {
-  runIpDetailAuditGate,
-  type DetailAuditRemindDialogExpose,
-} from '#/chs/composables/use-detail-audit-gate';
+import { analyzeIpGateApi, gateHasViolations } from '#/chs/api/detail-audit-gate';
+import { type DetailAuditRemindDialogExpose } from '#/chs/composables/use-detail-audit-gate';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
@@ -40,13 +41,8 @@ import {
   SETTLE_QUEUE_TAB,
 } from '#/views/inpatient/charge/settle/inpatient-settle.constants';
 import {
-  chooseInpatientSettleInsuranceMedium,
-  inpatientSettleReadCredentialFailHint,
-  inpatientSettleReadCredentialHint,
-  inpatientSettleReadCredentialLabel,
   isInpatientInsuranceRegistration,
   isZeroAmountDischargeFullSettle,
-  resolveInpatientSettleInsuranceContext,
 } from '#/views/inpatient/charge/settle/use-inpatient-settle-insurance';
 
 export interface InpatientClinicalPreSettleParams {
@@ -54,12 +50,18 @@ export interface InpatientClinicalPreSettleParams {
   contractDisplay?: string;
   encounterBusNo?: string;
   encounterId: string;
+  /** 入院险种（310 职工 / 390 居民）；有值则必须走 2303 看报销 */
+  insutype?: string;
   patientId: string;
   /** 就诊状态；空则尝试从结算队列行读取 */
   statusEnum?: string;
 }
 
 export interface InpatientClinicalPreSettleResult {
+  /** 3101 失败说明；成功且无违规时为空 */
+  auditRemindNote: string;
+  /** 3101 违规提醒；无则空数组。不阻断后续预结算 */
+  auditViolations: AuditViolation[];
   chargeItemIds: string[];
   /** 本批试算费用行（弹窗「结算费用」表） */
   chargeLines: InpatientSettleChargeLineDto[];
@@ -88,6 +90,11 @@ async function resolvePendingSettleQueueRow(
     rows.find((r) => String(r.encounterBusNo ?? '').trim() === keyword) ??
     null
   );
+}
+
+/** 入院账户或读卡缓存已有险种时，完整预结算要看医保报销，不能按自费轧差。 */
+function hasAdmissionInsutype(insutype?: string): boolean {
+  return String(insutype ?? '').trim().length > 0;
 }
 
 /** 按费用性质展示名匹配合同主键（未入待结队列时的回落）。 */
@@ -224,32 +231,34 @@ export async function runInpatientClinicalPreSettle(options: {
   const contractRow = contractId
     ? ({ ...(queueRow ?? {}), contractId } as InpatientSettleQueueItemDto)
     : queueRow;
-  const isInsurance = isInpatientInsuranceRegistration(
+  const registrationInsurance = isInpatientInsuranceRegistration(
     contractRow,
     contractMeta.contractCategoryById,
   );
+  const admissionInsured = hasAdmissionInsutype(options.params.insutype);
+  // 名称反查到自费合同时不能带上，否则后端不会回落入院医保户
+  const insuranceContractId = registrationInsurance ? contractId : undefined;
+  const isInsurance = registrationInsurance || admissionInsured;
+  const insutype = String(options.params.insutype ?? '').trim();
+  const insurancePayload = isInsurance
+    ? {
+        ...(insuranceContractId ? { contractId: insuranceContractId } : {}),
+        cardlessTrial: true as const,
+        ...(insutype ? { insutype } : {}),
+      }
+    : {};
 
-  let insurancePayload: Record<string, string | undefined> = {};
   const progress = options.progress;
   let progressOpened = false;
+  let auditViolations: AuditViolation[] = [];
+  let auditRemindNote = '';
 
   try {
     if (isInsurance) {
-      if (!contractId) {
-        ElMessage.warning('医保患者缺少合同信息，请检查住院登记');
-        return null;
-      }
-      const medium = await chooseInpatientSettleInsuranceMedium();
-      if (!medium) {
-        return null;
-      }
-
-      const readCredentialLabel = inpatientSettleReadCredentialLabel(medium);
+      // 无卡试算：不选介质、不读卡、不调 1101。合同主键缺失时由后端按入院医保户回填。
       progress?.open(
         '完整预结算处理中',
         [
-          { key: 'read-card', label: readCredentialLabel },
-          { key: 'person-1101', label: '核验参保人员信息（1101）' },
           { key: 'detail-audit', label: '医保事前提醒（3101）' },
           { key: 'fee-upload', label: '费用明细上传（2301）' },
           { key: 'pre-settle', label: '医保预结算通信（2303）' },
@@ -260,60 +269,33 @@ export async function runInpatientClinicalPreSettle(options: {
       progressOpened = true;
       await nextTick();
 
-      try {
-        const insuranceCtx = await resolveInpatientSettleInsuranceContext(contractId, medium, {
-          onPhase: (phase) => {
-            if (phase === 'plugin' || phase === 'read-card') {
-              progress?.setStep(0, inpatientSettleReadCredentialHint(medium));
-              return;
-            }
-            progress?.setStep(1, '正在核验参保人员信息（1101）…');
-          },
-        });
-        if (insuranceCtx) {
-          insurancePayload = {
-            contractId: insuranceCtx.contractId,
-            insuplcAdmdvs: insuranceCtx.insuplcAdmdvs,
-            insutype: insuranceCtx.insutype,
-            psnNo: insuranceCtx.psnNo,
-            ybCardInfo: insuranceCtx.ybCardInfo,
-            ybMediumType: insuranceCtx.ybMediumType,
-          };
-        } else {
-          ElMessage.warning(inpatientSettleReadCredentialFailHint(medium));
-          return null;
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : '医保读卡失败';
-        ElMessage.error(message);
-        return null;
-      }
-
-      try {
-        progress?.setStep(2, '医保事前提醒分析中（3101），请稍候…');
-        const contractBusNo = getInpatientContractBusNo(contractId, contractMeta);
-        const { continued } = await runIpDetailAuditGate({
-          params: {
+      if (insuranceContractId) {
+        try {
+          progress?.setStep(0, '医保事前提醒分析中（3101），请稍候…');
+          const contractBusNo = getInpatientContractBusNo(insuranceContractId, contractMeta);
+          const gate = await analyzeIpGateApi({
             encounterId,
             chargeItemIds,
             settleMode,
-            contractId,
+            contractId: insuranceContractId,
             contractBusNo,
             trigScen: '9',
-            psnNo: insurancePayload.psnNo,
-            insuplcAdmdvs: insurancePayload.insuplcAdmdvs,
-            insutype: insurancePayload.insutype,
-          },
-          dialogRef: options.dialogRef,
-        });
-        if (!continued) {
-          ElMessage.info('已按事前提醒返回修改，未继续预结算');
-          return null;
+          });
+          if (gateHasViolations(gate)) {
+            auditViolations = gate.analyzeResult?.violations ?? [];
+          }
+          progress?.setStep(
+            0,
+            auditViolations.length > 0
+              ? `事前提醒 ${auditViolations.length} 条，继续预结算…`
+              : '事前提醒无违规，继续预结算…',
+          );
+        } catch (error) {
+          auditRemindNote = error instanceof Error ? error.message : '事前提醒失败';
+          progress?.setStep(0, '事前提醒未完成，继续预结算…');
         }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : '事前提醒失败';
-        ElMessage.error(message);
-        return null;
+      } else {
+        progress?.setStep(0, '入院险种已确认，按医保账户继续预结算…');
       }
 
       try {
@@ -326,7 +308,7 @@ export async function runInpatientClinicalPreSettle(options: {
             ...insurancePayload,
           },
           progress,
-          stepIndex: 3,
+          stepIndex: 1,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : '费用明细上传失败';
@@ -335,7 +317,7 @@ export async function runInpatientClinicalPreSettle(options: {
       }
 
       progress?.clearCount();
-      progress?.setStep(4, '医保预结算通信中（2303），请稍候…');
+      progress?.setStep(2, '医保预结算通信中（2303），请稍候…');
     } else {
       progress?.open(
         '完整预结算处理中',
@@ -356,8 +338,8 @@ export async function runInpatientClinicalPreSettle(options: {
       settleMode,
       ...insurancePayload,
     });
-    progress?.setStep(isInsurance ? 5 : 1, '预结算完成，即将打开结果窗口…');
-    return { chargeItemIds, chargeLines, snapshot };
+    progress?.setStep(isInsurance ? 3 : 1, '预结算完成，即将打开结果窗口…');
+    return { chargeItemIds, chargeLines, snapshot, auditViolations, auditRemindNote };
   } finally {
     if (progressOpened) {
       progress?.close();

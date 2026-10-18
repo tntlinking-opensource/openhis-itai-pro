@@ -13,8 +13,8 @@ import type { ApiOptionItem } from '#/types/api-response';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
-import { useUserStore } from '@vben/stores';
+import { Page } from '@zxplat/common-ui';
+import { useUserStore } from '@zxplat/stores';
 
 import {
   httpAdjustPhysicalExamChargePrices,

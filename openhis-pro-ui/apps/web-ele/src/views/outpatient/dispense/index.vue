@@ -41,6 +41,10 @@ import {
   writeDispenseTraceCache,
 } from '#/utils/medication/dispense-trace-cache';
 import {
+  readAutoPrintPrescriptionPreference,
+  writeAutoPrintPrescriptionPreference,
+} from '#/utils/medication/auto-print-prescription-preference';
+import {
   readAutoReviewPreference,
   writeAutoReviewPreference,
 } from '#/utils/medication/auto-review-preference';
@@ -78,6 +82,7 @@ import {
   computeRxKindSummaryFromSlips,
   filterSlipRowsByRxKind,
 } from './services/resolve-default-rx-kind';
+import { useOutpatientDispenseQueuePoll } from './use-outpatient-dispense-queue-poll';
 import {
   resolveDispenseOperationSplitQty,
   resolveDispenseRequiredTraceCount,
@@ -104,6 +109,8 @@ const selectedPrescriptionId = ref<null | string>(null);
 const selectedDispenserId = ref<string | undefined>(undefined);
 /** 发药核发成功后是否自动写入合理点评（按登录用户缓存在本机）。 */
 const autoReviewEnabled = ref(readAutoReviewPreference());
+/** 发药核发成功后是否自动打印本次处方（按登录用户缓存在本机）。 */
+const autoPrintPrescriptionEnabled = ref(readAutoPrintPrescriptionPreference());
 
 const rxCenterRef = ref<InstanceType<typeof DispenseRxCenter> | null>(null);
 
@@ -131,6 +138,10 @@ const allSlipRowsForEncounter = ref<EncounterMedicationDispenseSlipRowDto[]>([])
 const slipRows = ref<EncounterMedicationDispenseSlipRowDto[]>([]);
 
 const queueLoading = ref(false);
+/** 首次队列请求结束后才开始静默轮询 */
+const queueBootstrapped = ref(false);
+/** 队列请求序号：后发的手动刷新覆盖尚未返回的轮询 */
+let queueRequestSeq = 0;
 const slipLoading = ref(false);
 const batchSubmitting = ref(false);
 const printSubmitting = ref(false);
@@ -253,39 +264,96 @@ watch(autoReviewEnabled, (enabled) => {
   ElMessage.info('已关闭发药完成自动点评：核发成功后需到处方点评页手工点评');
 });
 
-/** 按时间范围、队列类型与关键字拉取就诊队列 */
-async function reloadQueue() {
-  queueLoading.value = true;
-  try {
-    const range = queueDateRange.value;
-    const startDay = normalizeQueueDay(range?.[0]);
-    const endDay = normalizeQueueDay(range?.[1]);
-    if (!startDay || !endDay) {
-      queuePatients.value = [];
-      return;
-    }
-    // 控件偶发回写 Date：写回规范字符串，避免请求拼出非法时间
-    if (range?.[0] !== startDay || range?.[1] !== endDay) {
-      queueDateRange.value = [startDay, endDay];
-    }
-    const dispenseStatusEnumIn =
-      queueScope.value === 'pending' ? [...PENDING_DISPENSE_STATUS_FILTER] : ['COMPLETED'];
-    const res = await httpPagePendingDispenseEncounterQueue({
+/** 自动打印处方开关变更：写入本机缓存，并提示开/关后的发药行为 */
+watch(autoPrintPrescriptionEnabled, (enabled) => {
+  writeAutoPrintPrescriptionPreference(enabled);
+  if (enabled) {
+    ElMessage.success('已开启发药后自动打印处方：单张或批量核发成功后将自动打印对应处方');
+    return;
+  }
+  ElMessage.info('已关闭发药后自动打印处方：核发成功后需手工打印');
+});
+
+/**
+ * 按当前筛选拉取就诊队列。
+ * @returns 日期无效时返回 null；成功返回患者列表
+ */
+async function fetchQueuePatients(options?: { silentPoll?: boolean }) {
+  const range = queueDateRange.value;
+  const startDay = normalizeQueueDay(range?.[0]);
+  const endDay = normalizeQueueDay(range?.[1]);
+  if (!startDay || !endDay) {
+    return null;
+  }
+  // 控件偶发回写 Date：仅手动刷新写回规范字符串，避免轮询触发日期 watch 再刷一遍
+  if (!options?.silentPoll && (range?.[0] !== startDay || range?.[1] !== endDay)) {
+    queueDateRange.value = [startDay, endDay];
+  }
+  const dispenseStatusEnumIn =
+    queueScope.value === 'pending' ? [...PENDING_DISPENSE_STATUS_FILTER] : ['COMPLETED'];
+  const res = await httpPagePendingDispenseEncounterQueue(
+    {
       startDate: `${startDay} 00:00:00`,
       endDate: `${endDay} 23:59:59`,
       keyword: keyword.value.trim() || undefined,
       dispenseStatusEnumIn,
       pageNo: 1,
       pageSize: 50,
-    });
-    const { content: rows } = parsePagedRowsFromApiData<PendingDispenseEncounterQueueRowDto>(res);
-    queuePatients.value = rows.map((r) => mapPendingQueueRowToPatient(r));
+    },
+    options?.silentPoll ? { silentPoll: true } : undefined,
+  );
+  const { content: rows } = parsePagedRowsFromApiData<PendingDispenseEncounterQueueRowDto>(res);
+  return rows.map((r) => mapPendingQueueRowToPatient(r));
+}
+
+/** 按时间范围、队列类型与关键字拉取就诊队列 */
+async function reloadQueue() {
+  const seq = ++queueRequestSeq;
+  queueLoading.value = true;
+  try {
+    const list = await fetchQueuePatients();
+    if (seq !== queueRequestSeq) {
+      return;
+    }
+    queuePatients.value = list ?? [];
   } catch {
+    if (seq !== queueRequestSeq) {
+      return;
+    }
     queuePatients.value = [];
   } finally {
-    queueLoading.value = false;
+    if (seq === queueRequestSeq) {
+      queueLoading.value = false;
+    }
+    queueBootstrapped.value = true;
   }
 }
+
+/**
+ * 静默重拉当前筛选下的患者队列（无 loading、失败保留上一帧）。
+ * 选中患者仍在列表中时不改 selectedPatientId。
+ */
+async function silentReloadQueue() {
+  if (queueLoading.value || batchSubmitting.value) {
+    return;
+  }
+  const seq = ++queueRequestSeq;
+  try {
+    const list = await fetchQueuePatients({ silentPoll: true });
+    if (seq !== queueRequestSeq || list == null) {
+      return;
+    }
+    queuePatients.value = list;
+  } catch {
+    // 轮询失败静默忽略，保留上一帧队列与选中
+  }
+}
+
+useOutpatientDispenseQueuePoll({
+  queueBootstrapped,
+  queueLoading,
+  silentReloadQueue,
+});
 
 const debouncedReloadQueue = useDebounceFn(() => {
   void reloadQueue();
@@ -792,47 +860,63 @@ function withPatientFeeNatureFallback(
 
 /**
  * 按 slip 组分中西药场景逐张静默打印。
- * @returns 是否至少找到可打印分组
+ * @param options.background 为 true 时单张失败不弹排查指引，由调用方汇总提示
+ * @returns printed 成功张数；total 处方分组数
  */
 async function printSlipGroups(
   selectedSlips: EncounterMedicationDispenseSlipRowDto[],
-): Promise<boolean> {
+  options?: { background?: boolean },
+): Promise<{ printed: number; total: number }> {
+  const background = options?.background === true;
   const groups = groupSlipRowsByPrescriptionNo(withPatientFeeNatureFallback(selectedSlips));
   if (groups.length === 0) {
-    ElMessage.warning('未找到可打印的处方数据');
-    return false;
+    if (!background) {
+      ElMessage.warning('未找到可打印的处方数据');
+    }
+    return { printed: 0, total: 0 };
   }
   const encounterId = selectedPatientId.value;
   const patientId = selectedPatient.value?.patientId ?? '';
   printSubmitting.value = true;
+  let printed = 0;
   try {
     for (const group of groups) {
       const prescriptionNo = group[0]?.prescriptionNo?.trim() ?? '';
       const scenarioCode = resolveOutpatientPrescriptionPrintScenario(group);
       if (scenarioCode === PRINT_SCENARIO.outpatientTcmRx) {
         if (!encounterId || !patientId) {
-          ElMessage.warning('缺少就诊或患者信息，无法打印中药处方诊断');
+          if (!background) {
+            ElMessage.warning('缺少就诊或患者信息，无法打印中药处方诊断');
+          }
           continue;
         }
-        await printOutpatientTcmPrescription({
+        const result = await printOutpatientTcmPrescription({
           slipRows: group,
           encounterId,
           patientId,
           prescriptionNo: prescriptionNo || undefined,
+          background,
         });
+        if (result.ok) {
+          printed += 1;
+        }
         continue;
       }
-      await print({
+      const result = await print({
         scenarioCode,
         source: group,
+        background,
         bizRef: {
           scenarioCode,
           encounterId: encounterId ?? undefined,
           prescriptionNo: prescriptionNo || undefined,
         },
       });
+      if (result.ok) {
+        printed += 1;
+      }
     }
-    return true;
+    return { printed, total: groups.length };
   } finally {
     printSubmitting.value = false;
   }
@@ -992,8 +1076,9 @@ async function executeDispenseForLineIds(
     } else {
       ElMessage.success(message);
     }
-    // 核发成功后再自动点评：失败只软提示，绝不影响已成功发药
+    // 核发成功后再自动点评、自动打印：失败只软提示，绝不影响已成功发药
     await tryAutoReviewAfterDispense(dispenseIds, slipById, preparerId);
+    await tryAutoPrintAfterDispense(dispenseIds, slipById);
     // 只清本批已发，保留同患者其余待发行的批量扫码
     clearTransientStateForDispensedLines(dispenseIds);
     await reloadEncounterSlipsFromServer(false);
@@ -1067,6 +1152,103 @@ async function tryAutoReviewAfterDispense(
   }
 }
 
+/**
+ * 按发放行主键拉已核发 slip，供自动打印回填发药人等核发后字段。
+ * 查询失败或未命中时由调用方回落核发前快照。
+ */
+async function loadCompletedSlipsByDispenseIds(
+  encounterId: string,
+  dispenseIds: string[],
+): Promise<EncounterMedicationDispenseSlipRowDto[]> {
+  const idSet = new Set(dispenseIds.map((id) => String(id)));
+  const res = await httpPageEncounterMedicationDispenseSlips({
+    encounterId,
+    dispenseStatusEnumIn: ['COMPLETED'],
+    pageNo: 1,
+    pageSize: 200,
+  });
+  const { content } = parsePagedRowsFromApiData<EncounterMedicationDispenseSlipRowDto>(res);
+  return content.filter((row) => idSet.has(String(row.dispenseId)));
+}
+
+/**
+ * 已核发行优先用核发后 slip，缺行回落核发前快照，保证批量每一张都能打。
+ */
+function mergeDispensedSlipsForPrint(
+  dispenseIds: string[],
+  snapshot: Map<string, EncounterMedicationDispenseSlipRowDto>,
+  refreshed: EncounterMedicationDispenseSlipRowDto[],
+): EncounterMedicationDispenseSlipRowDto[] {
+  const refreshedById = new Map<string, EncounterMedicationDispenseSlipRowDto>();
+  for (const row of refreshed) {
+    refreshedById.set(String(row.dispenseId), row);
+  }
+  const merged: EncounterMedicationDispenseSlipRowDto[] = [];
+  for (const id of dispenseIds) {
+    const row = refreshedById.get(String(id)) ?? snapshot.get(id);
+    if (row) {
+      merged.push(row);
+    }
+  }
+  return merged;
+}
+
+/**
+ * 发药成功后按开关自动打印本次处方（单张与批量共用）。
+ * 打印失败只软提示，不回滚已成功发药。
+ */
+async function tryAutoPrintAfterDispense(
+  dispenseIds: string[],
+  slipById: Map<string, EncounterMedicationDispenseSlipRowDto>,
+): Promise<void> {
+  if (!autoPrintPrescriptionEnabled.value) {
+    return;
+  }
+  const snapshot: EncounterMedicationDispenseSlipRowDto[] = [];
+  for (const id of dispenseIds) {
+    const row = slipById.get(id);
+    if (row) {
+      snapshot.push(row);
+    }
+  }
+  let slips = snapshot;
+  const encounterId = selectedPatientId.value;
+  if (encounterId) {
+    try {
+      const refreshed = await loadCompletedSlipsByDispenseIds(encounterId, dispenseIds);
+      if (refreshed.length > 0) {
+        slips = mergeDispensedSlipsForPrint(dispenseIds, slipById, refreshed);
+      }
+    } catch {
+      // 核发后明细刷新失败时仍用发药前快照打印
+    }
+  }
+  if (slips.length === 0) {
+    ElMessage.warning('发药成功，但未找到可自动打印的处方');
+    return;
+  }
+  try {
+    const { printed, total } = await printSlipGroups(slips, { background: true });
+    if (total === 0 || printed === 0) {
+      ElMessage.warning('发药成功，但处方未自动打印，请稍后手工打印');
+      return;
+    }
+    if (printed < total) {
+      ElMessage.warning(
+        `发药成功，已自动打印 ${printed} 张处方，其余 ${total - printed} 张请手工补打`,
+      );
+      return;
+    }
+    if (printed === 1) {
+      ElMessage.success('已自动打印处方');
+      return;
+    }
+    ElMessage.success(`已自动打印处方 ${printed} 张`);
+  } catch {
+    ElMessage.warning('发药成功，但处方未自动打印，请稍后手工打印');
+  }
+}
+
 /** 处方单视图：按单张处方块发药 */
 async function handleSinglePrescriptionDispense(rxId: string) {
   // 取该处方块在当前 tab 下列表中的全部发放行
@@ -1122,6 +1304,7 @@ onMounted(async () => {
           v-model:inventory-pick-by-line-id="inventoryPickByLineId"
           v-model:selected-dispenser-id="selectedDispenserId"
           v-model:auto-review-enabled="autoReviewEnabled"
+          v-model:auto-print-prescription-enabled="autoPrintPrescriptionEnabled"
           v-model:selected-prescription-id="selectedPrescriptionId"
           :batch-dispense-disabled="queueScope === 'completed' || batchSubmitting || slipLoading"
           :print-prescriptions-disabled="printSubmitting || slipLoading"
@@ -1137,6 +1320,7 @@ onMounted(async () => {
           :rx-kind-badge-counts="rxKindBadgeCounts"
           :msfx-his-scene="MSFX_HIS_SCENE.OP_DISPENSE"
           :show-auto-review-switch="true"
+          :show-auto-print-prescription-switch="true"
           @batch-dispense="handleBatchDispense"
           @batch-trace-scan="handleBatchTraceScan"
           @dispense-prescription="handleSinglePrescriptionDispense"

@@ -1,0 +1,1050 @@
+<!DOCTYPE html>
+<head>
+	<meta charset="gbk">
+	<title>MIS 程序 ocx 调用方式测试 demo</title>
+</head>
+
+<script type="text/javascript" src="js/gbk.js"></script>
+<script type="text/javascript" src="js/jquery.js"></script>
+<script type="text/javascript" src="js/jquery.qrcode.min.js"></script>
+
+<script>
+	<!-- 设置ocx相关系统设置 -->
+	function setOcxSystemParam(){
+	alert("部署时候，设置ocx一次即可");
+	var WshShell=new ActiveXObject("WScript.Shell");  
+	//添加信任站点ip编号100   地址192.168.0.1
+	  
+	WshShell.RegWrite("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\Ranges\\Range100\\","");  
+	  
+	WshShell.RegWrite("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\Ranges\\Range100\\http","2","REG_DWORD");  
+	  
+	WshShell.RegWrite("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\Ranges\\Range100\\:Range",document.getElementById("t2ip").value);  
+	 
+	//添加信任站点ip   192.168.0.3 
+	// WshShell.RegWrite("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\Ranges\\Range101\\","");  
+	//   
+	// WshShell.RegWrite("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\Ranges\\Range101\\http","2","REG_DWORD");  
+	//   
+	// WshShell.RegWrite("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\Ranges\\Range101\\:Range","192.168.0.3");  
+
+	//**********************************************
+	// 值    设置
+	//    ------------------------------
+	// 0        我的电脑
+	// 1        本地 Intranet 区域
+	// 2        受信任的站点区域
+	// 3        Internet 区域
+	// 4        受限制的站点区域
+	// 
+	// 注意：除非另外声明，否则每个 DWORD 值等于 0、1 或 3。通常，设置为 0 则将具体操作设置为允许；设置为 1 则导致出现提示；设置为 3 则禁止执行具体操作。
+	// *********************************************
+
+	//修改IE ActiveX安全设置  3 Internet 区域
+
+	//1001     ActiveX 控件和插件：下载已签署的 ActiveX 控件   
+	WshShell.RegWrite("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Zones\\3\\1001","0","REG_DWORD");  
+
+	//1004     ActiveX 控件和插件：下载未签署的 ActiveX 控件   
+	WshShell.RegWrite("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Zones\\3\\1004","0","REG_DWORD");  
+
+	 //1200     ActiveX 控件和插件：运行 ActiveX 控件和插件   
+	WshShell.RegWrite("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Zones\\3\\1200","0","REG_DWORD");  
+	  
+	 //1201     ActiveX 控件和插件：对没有标记为可安全执行脚本的 ActiveX 控件进行初始化和脚本运行 
+	WshShell.RegWrite("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Zones\\3\\1201","0","REG_DWORD");  
+	  
+	 //1405     ActiveX 控件和插件：对标记为可安全执行脚本的 ActiveX 控件执行脚本 
+	WshShell.RegWrite("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Zones\\3\\1405","0","REG_DWORD");  
+	  
+	 //2201     ActiveX 控件和插件：ActiveX 控件自动提示 ** ^ 
+	WshShell.RegWrite("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Zones\\3\\2201","0","REG_DWORD");  	
+	//修改IE ActiveX安全设置 1        本地 Intranet 区域
+
+	//1001     ActiveX 控件和插件：下载已签署的 ActiveX 控件   
+	WshShell.RegWrite("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Zones\\1\\1001","0","REG_DWORD");  
+
+	//1004     ActiveX 控件和插件：下载未签署的 ActiveX 控件   
+	WshShell.RegWrite("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Zones\\1\\1004","0","REG_DWORD");  
+
+	 //1200     ActiveX 控件和插件：运行 ActiveX 控件和插件   
+	WshShell.RegWrite("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Zones\\1\\1200","0","REG_DWORD");  
+	  
+	 //1201     ActiveX 控件和插件：对没有标记为可安全执行脚本的 ActiveX 控件进行初始化和脚本运行 
+	WshShell.RegWrite("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Zones\\1\\1201","0","REG_DWORD");  
+	  
+	 //1405     ActiveX 控件和插件：对标记为可安全执行脚本的 ActiveX 控件执行脚本 
+	WshShell.RegWrite("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Zones\\1\\1405","0","REG_DWORD");  
+	  
+	 //2201     ActiveX 控件和插件：ActiveX 控件自动提示 ** ^ 
+	WshShell.RegWrite("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Zones\\1\\2201","0","REG_DWORD");  
+
+	//修改IE ActiveX安全设置  0 我的电脑
+
+	//1201     ActiveX 控件和插件：对没有标记为可安全执行脚本的 ActiveX 控件进行初始化和脚本运行 
+	WshShell.RegWrite("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Zones\\0\\1201","0","REG_DWORD");  
+	  
+	//禁用xinxp弹出窗口阻止程序  
+	  
+	WshShell.RegWrite("HKCU\\Software\\Microsoft\\Internet Explorer\\New Windows\\PopupMgr","no");  
+	  
+	alert("active控件安全设置，弹出窗口设置，信任站点设置成功 重启电脑后生效。");
+	// alert("代码放置在tomcat服务器上时  codebase= c:\\umsips\\InterfaceOCX.ocx 改为 codebase=InterfaceOCX.ocx");    
+
+}
+	/**
+	 * 请求参数
+	 * 定义请求参数名称（label）及长度（length）
+	 *
+	 * 格式：'id': { 'label': '标签名', 'length': 长度值 }
+	 * 添加请求参数时直接按照格式在 requestInformation 中添加
+	 * 注意，id 名不能重复, 
+	 * *******************************************************
+	 * 【requestInformation与responseInformation中id【不能重复】】
+	 * *******************************************************
+	 */
+	var requestInformation = {
+		'appTYPE': 			{'label': '应用类型', 				'length': 2},
+		'posid': 			{'label': 'POS 机号', 				'length': 8},
+		'operid': 			{'label': 'POS 员工号', 				'length': 8},
+		'trans': 			{'label': '交易标志类型', 			'length': 2},
+		'amount': 			{'label': '金额', 					'length': 12},
+		'oldDate': 			{'label': '原交易日期', 				'length': 8},
+		'oldReference': 	{'label': '原交易参考号', 			'length': 12},
+		'oldTrace': 		{'label': '原凭证号', 				'length': 6},
+		'lrc1': 			{'label': 'LRC 校验', 				'length': 3},
+		'postCode': 		{'label': '串码', 					'length': 50},
+		'unionMerchant1':	{'label': '银商订单号', 				'length': 50},
+		'erpMerchant1': 	{'label': 'ERP 订单号', 				'length': 50},
+		'qrCodeId': 		{'label': '无硬件 C2B 二维码 ID', 	'length': 32},
+		'APPIDKEY': 		{'label': '无硬件 APPIDKEY', 		'length': 300}
+	};
+
+	/**
+	 * 返回参数
+	 * 定义返回参数名称（label）及长度（length）
+	 *
+	 * 格式：'id': { 'label': '标签名', 'length': 长度值 }
+	 * 添加但会参数时直接按照格式在 responseInformation 中添加
+	 * 注意，id 名不能重复 
+	 * 
+	 * *******************************************************
+	 * 【requestInformation与responseInformation中id【不能重复】】
+	 * *******************************************************
+	 */
+	var responseInformation = {
+		'respCode': 					{'label': '返回码', 					'length': 2},
+		'bankCode': 					{'label': '银行行号', 				'length': 4},
+		'cardNo': 						{'label': '卡号', 					'length': 20},
+		'trace': 						{'label': '凭证号', 					'length': 6},
+		'payAmount': 					{'label': '实付金额', 				'length': 12},
+		'respChin': 					{'label': '错误说明', 				'length': 40},
+		'merId': 						{'label': '商户号', 					'length': 15},
+		'terId': 						{'label': '终端号', 					'length': 8},
+		'batchNo': 						{'label': '批次号', 					'length': 6},
+		'txndate': 						{'label': '交易日期', 				'length': 4},
+		'txntime': 						{'label': '交易时间', 				'length': 6},
+		'refdata': 						{'label': '交易参考号', 				'length': 12},
+		'authcode ': 					{'label': '授权号', 					'length': 6},
+		'stdate': 						{'label': '清算日期', 				'length': 4},
+		'lrc2': 						{'label': 'LRC 校验', 				'length': 3},
+		'discountAmount':		 		{'label': '优惠金额', 				'length': 12},
+		'cardtype': 					{'label': '卡类型', 					'length': 2},
+		'thirdPartyDiscountInstrution': {'label': '第三方优惠说明', 			'length': 200},
+		'thirdPartyName': 				{'label': '第三方平台', 				'length': 50},
+		'unionMerchant2': 				{'label': '银商订单号', 				'length': 50},
+		'erpMerchant2': 				{'label': 'ERP 订单号', 				'length': 50},
+		'payType': 						{'label': '支付方式', 				'length': 1},
+		'queryResCode': 				{'label': '查询结果状态', 			'length': 1},
+		'queryResDesc': 				{'label': '查询结果描述', 			'length': 50},
+		'billQRCode':     				{'label': '无硬件 C2B 二维码', 		'length': 200},
+		'billDate': 					{'label': '无硬件 C2B 账单时间', 	'length': 8},
+		'status':  						{'label': '无硬件 C2B 订单状态', 	'length': 20}
+	};
+
+	/**
+	 * 应用类型
+	 * 定义应用类型具体名称及值
+	 *
+	 * 如果要加应用类型，对应的也要在交易标准类型添加相应的交易类型
+	 */
+	var appTYPE = {
+		'00-银行卡': '00',
+		'01-有硬件 POS 通': '01',
+		'02-无硬件 POS 通': '02'
+	};
+
+	/**
+	 * 交易标志类型
+	 * 按照应用类型的不同，定义交易标志类型具体名称及值
+	 */
+	var trans = [
+		// 00-银行卡
+		{
+			'00-消费': '00',
+			'01-撤销': '01',
+			'02-退货': '02',
+			'03-查余': '03',
+			'04-重打印': '04',
+			'05-签到': '05',
+			'06-结算': '06',
+			'07-重打印结算单': '07',
+			'21-预授权': '21',
+			'23-预授权完成': '23',
+			'25-预授权撤销': '25',
+			'26-预授权完成撤销': '26',
+			'30-营销联盟银行卡积分消费': '30',
+			'31-银联钱包优惠券消费': '31',
+			'32-银联钱包积分消费': '32',
+			'33-银联钱包积分撤销': '33',
+			'34-银联钱包优惠券撤销': '34',
+			'35-银联钱包优惠券退货': '35',
+			'36-银联钱包积分退货': '36'
+		},
+		// 01-有硬件 POS 通 B2C
+		{
+			'00-消费': '00',
+			'01-撤销': '01',
+			'02-退货': '02',
+			'03-结果查询': '03',
+			'04-重打印': '04',
+			'05-签到': '05',
+			'06-结算': '06',
+			'07-重打印结算单': '07'
+		},
+		// 02-无硬件 POS 通
+		{
+			'00-B2C 消费': '00',
+			'01-B2C 撤销': '01',
+			'02-B2C 退货': '02',
+			'04-B2C 结果查询': '04',
+			'05-B2C 签到': '05',
+			'06-B2C 结算': '06',
+			'31-B2C 担保': '31',
+			'32-B2C 快速担保撤销': '32',
+			'33-B2C 快速担保完成': '33',
+			'10-C2B 获取二维码': '10',
+			'11-C2B 交易查询': '11',
+			'12-C2B 关闭订单': '12',
+			'13-C2B 退货': '13',
+			'14-C2B 申请担保二维码': '14',
+			'15-C2B 查询担保交易状态': '15',
+			'16-C2B 担保撤销': '16',
+			'17-C2B 担保完成': '17'
+		}
+	];
+
+	// 定义传入函数请求参数
+	var DUmsocx1;
+	// 定义应用类型字段，便于判断交易类型是哪一种
+	var defaultappTYPE = 0;
+
+	/**
+	 * 页面加载时，根据 js 动态加载 html 页面
+	 */
+	onload = function() {
+		DUmsocx1 = document.getElementById("DUmsocx");
+
+		/**
+		 * 头部代码
+		 */
+		var header = document.createElement('header');
+		header.innerHTML = "—— —— —— MIS 程序 ocx 调用方式测试 demo —— —— ——";
+		document.body.appendChild(header);
+
+		/**
+		 * 中间的内容代码，重点部分
+		 */
+		var section = document.createElement("section");
+		section.className = "content";
+
+		/**
+		 * 设置请求参数表单
+		 */
+		var requestForm = document.createElement("form");
+		requestForm.className = "column";
+		var requestFieldset = document.createElement("fieldset");
+		var requestLegend = document.createElement("legend");
+		requestLegend.innerHTML = "请求参数";
+		requestFieldset.appendChild(requestLegend);
+
+		/**
+		 * 循环遍历请求参数（json 数据），将请求参数显示在页面上，核心部分
+		 */
+		for(var i in requestInformation) {
+			var label = document.createElement("label");
+			label.className = "requestLabel";
+			label.innerHTML = requestInformation[i].label + '[' + requestInformation[i].length + ']:';
+			requestFieldset.appendChild(label);
+
+			/**
+			 * 应用类型下拉框
+			 */
+			if(requestInformation[i].label === "应用类型") {
+				var applySelect = document.createElement("select");
+				applySelect.id = i;
+				for(var j in appTYPE) {
+					var option = document.createElement('option');
+					option.innerHTML = j;
+					option.value = appTYPE[j];
+					applySelect.appendChild(option);
+				}
+				requestFieldset.appendChild(applySelect);
+
+				// 为应用类型下拉框添加方法，当选择某个类型的时候，触发函数，显示交易类型下拉框
+				applySelect.onchange = showtrans;
+			}
+			/**
+			 * 交易标志类型下拉框
+			 */
+			else if(requestInformation[i].label === "交易标志类型") {
+				var chargeSelect = document.createElement("select");
+				chargeSelect.id = i;
+				for(var k in trans[defaultappTYPE]) {
+					var option = document.createElement('option');
+					option.innerHTML = k;
+					option.value = trans[defaultappTYPE][k];
+					chargeSelect.appendChild(option);
+				}
+				requestFieldset.appendChild(chargeSelect);
+			}
+			/**
+			 * 普通输入框
+			 */
+			else {
+				var input = document.createElement('input');
+				input.id = i;
+				// 编写默认值
+				if(requestInformation[i].label === "POS 机号") {
+					input.value = "12345678";
+				}
+				if(requestInformation[i].label === "POS 员工号") {
+					input.value = "23456789";
+				}
+				if(requestInformation[i].label === "金额") {
+					input.value = "000000000001";
+				}
+				if(requestInformation[i].label === "原交易日期") {
+					var date = new Date();
+					var month = (date.getMonth()+1) < 10 ? "0" + (date.getMonth()+1) : (date.getMonth()+1);
+					var day = date.getDate() < 10 ? "0" + date.getDate() : date.getDate();
+					input.value = "" + date.getFullYear() + month + day;
+				}
+				if(requestInformation[i].label === "原交易参考号") {
+					input.value = "111122223333";
+				}
+				if(requestInformation[i].label === "原凭证号") {
+					input.value = "123456";
+				}
+				if(requestInformation[i].label === "LRC 校验") {
+					input.value = "999";
+				}
+				requestFieldset.appendChild(input);
+			}
+			var br = document.createElement('br');
+			requestFieldset.appendChild(br);
+		}
+		requestForm.appendChild(requestFieldset);
+		section.appendChild(requestForm);
+
+
+		/**
+		 * 设置返回参数表单
+		 */
+		var responseForm = document.createElement("form");
+		responseForm.className = "column";
+		var responseFieldset = document.createElement("fieldset");
+		var responseLegend = document.createElement("legend");
+		responseLegend.innerHTML = "响应参数";
+		responseFieldset.appendChild(responseLegend);
+
+		/**
+		 * 循环遍历响应参数（json 数据），将响应参数显示在页面上
+		 */
+		// 获取响应信息的长度，分两列显示
+		var len = 0;
+		for(var i in responseInformation) {
+			len++;
+		}
+		var bodeSize = len % 2 === 0 ? len / 2 : Math.floor(len / 2) + 1;
+		var num = 0;
+		var table = document.createElement('table');
+		var td1 = document.createElement('td');
+		var form1 = document.createElement('form');
+		var td2 = document.createElement('td');
+		var form2 = document.createElement('form');
+		for(var i in responseInformation) {
+			/**
+			 * 响应参数的第一列
+			 */
+			if(num < bodeSize) {
+				// 标签
+				var label1 = document.createElement('label');
+				label1.className = "responseLabel1";
+				label1.innerHTML = responseInformation[i].label + '[' + responseInformation[i].length + ']:';
+				form1.appendChild(label1);
+
+				// 显示框
+				var input1 = document.createElement('input');
+				input1.id = i;
+				input1.className = "responseInput1";
+				form1.appendChild(input1);
+
+				var br = document.createElement('br');
+				form1.appendChild(br);
+			}
+
+			/**
+			 * 响应参数的第二列
+			 */
+			else {
+				// 标签
+				var label2 = document.createElement('label');
+				label2.className = "responseLabel2";
+				label2.innerHTML = responseInformation[i].label + '[' + responseInformation[i].length + ']:';
+				form2.appendChild(label2);
+
+				// 显示框
+				var input2 = document.createElement('input');
+				input2.id = i;
+				input2.className = "responseInput2";
+				form2.appendChild(input2);
+
+				var br = document.createElement('br');
+				form2.appendChild(br);
+			}
+			num++;
+		}
+
+		// td1.appendChild(form1);
+		// table.appendChild(td1);
+		// td2.appendChild(form2);
+		// table.appendChild(td2);
+		// 兼容IE7设置add ycy
+		table.insertRow(0);
+		var xxx=table.rows[0].insertCell(-1);
+		xxx.innerHTML=form1.innerHTML;
+		xxx=table.rows[0].insertCell(-1);
+		xxx.innerHTML=form2.innerHTML;
+		//end
+
+		responseFieldset.appendChild(table);
+		responseForm.appendChild(responseFieldset);
+		section.appendChild(responseForm);
+
+		document.body.appendChild(section);
+
+		/**
+		 * 尾部代码
+		 */
+		var footer = document.createElement('footer');
+		var button1 = document.createElement('button');
+		button1.innerHTML = "确认交易";
+		button1.className = "confirm";
+		button1.id = "btconfirm";
+		button1.onclick = confirm;
+		var button2 = document.createElement('button');
+		button2.innerHTML = "显示二维码";
+		button2.className = "confirm";
+		button2.id = "showQrcode";
+		button2.onclick = showQrcode;
+		//设置ocx 按钮 add ycy
+		var button3 = document.createElement('button');
+		button3.innerHTML = "设置ocx系统环境";
+		button3.className = "confirm";
+		button3.id = "setocx";
+		button3.onclick = setOcxSystemParam;
+
+		// var p = document.createElement('p');
+		// p.innerHTML = "银联商务有限公司技术开发中心";
+		footer.appendChild(button3);
+		footer.appendChild(button1);
+		footer.appendChild(button2);
+		// footer.appendChild(p);
+		document.body.appendChild(footer);
+	};
+
+	/**
+	 * 交易类型变动
+	 * 当应用类型改变，对应的交易类型也应该跟着改变
+	 */
+	function showtrans() {
+		var index = document.getElementById("appTYPE").value;
+		defaultappTYPE = Number(index[1]);
+		document.getElementById("trans").innerHTML = "";
+		for(var k in trans[defaultappTYPE]) {
+			var option = document.createElement('option');
+			option.innerHTML = k;
+			option.value = trans[defaultappTYPE][k];
+			document.getElementById("trans").appendChild(option);
+		}
+	}
+
+	/**
+	 * 显示二维码弹框
+	 * 注意每次显示前先将 div 的内容清空，否则内容会堆积
+	 * 能够显示二维码弹框的条件：无硬件 C2B 类型 & 获取二维码交易 & 交易返回成功
+	 */
+	function showQrcode() {
+		var appTYPE = document.getElementById("appTYPE").value;
+		var trans = document.getElementById("trans").value;
+		var respCode = document.getElementById("respCode").value;
+
+		if(appTYPE === '02' && trans === '10' && respCode === '00') {
+			document.getElementById("output").innerHTML = "";
+			document.getElementById('div-container').style.display = "block";
+			jQuery(function(){
+				jQuery('#output').qrcode(document.getElementById('billQRCode').value);
+			});
+		}
+	}
+
+	/**
+	 * 关闭二维码弹框
+	 */
+	function closeDialog() {
+		document.getElementById('div-container').style.display = "none";
+	}
+
+	/**
+	 * 字符串转字节组
+	 * 主要用于将中文字符转为字节
+	 * @param str
+	 * @returns arr
+	 */
+	function stringToByte(str) {
+		var string = $GBK.encode(str);
+		var byteArr = [];
+		for(var i = 0; i < string.length; i++){
+			var ch = string.charAt(i);
+			if(ch === '%') {
+				byteArr.push(string.slice(i + 1, i + 3));
+				i += 2;
+			} else {
+				byteArr.push(ch);
+			}
+		}
+		return byteArr;
+	}
+
+	/**
+	 * 字节组转字符串
+	 * 将解析出来的字节组按位截取后再转换为字符串显示在页面上
+	 * @param arr
+	 * @returns str
+	 */
+	function byteToString(arr) {
+		var str = '';
+		for(var i = 0; i < arr.length; i++) {
+			if(arr[i].length > 1) {
+				str += '%' + arr[i];
+			} else {
+				str += arr[i];
+			}
+		}
+		return $GBK.decode(str);
+	}
+
+	/**
+	 * 确认交易
+	 * 确认交易按钮执行的操作
+	 */
+	function confirm() {
+		/**
+		 * 补齐长字段空格
+		 * 请求参数
+		 */
+		DUmsocx1.bankrequest = "";
+		for(var i in requestInformation) {
+			if(document.getElementById(i).value.length > requestInformation[i].length) {
+				alert(requestInformation[i].label + "输入内容有误，请检查输入内容！");
+				return ;
+			} else {
+				while(document.getElementById(i).value.length < requestInformation[i].length) {
+					document.getElementById(i).value += ' ';
+				}
+				DUmsocx1.bankrequest += document.getElementById(i).value;
+			}
+		}
+
+		// 交易函数
+		DUmsocx1.trans();
+
+		/**
+		 * 响应参数
+		 * 如果有解析 gbk 编码的 js 文件，则解析响应参数，将其放在对应的位置
+		 * 如果没有，直接弹出 alert 提示框
+		 */
+		if("undefined" !== typeof $GBK) {
+			var response = stringToByte(DUmsocx1.BankResponse);
+			for(var i in responseInformation) {
+				document.getElementById(i).innerText = byteToString(response.splice(0, responseInformation[i].length));
+			}
+		} else {
+			alert(DUmsocx1.BankResponse);
+		}
+	}
+</script>
+
+<body>
+	<div style="display:none">
+		<OBJECT id="DUmsocx" classid=clsid:E083E848-B477-4F16-BCD5-72D74BC1E2AF>
+			<PARAM NAME="_ExtentX" VALUE="7000">
+			<PARAM NAME="_ExtentY" VALUE="4000">
+		</OBJECT>
+	</div>
+	<!-- 用于显示二维码的弹框 -->
+	<div class="div-container" id="div-container" style="display: none;">
+		<div class="div-child-container">
+			<div class="div-child">
+				<div id="output"></div>
+				<div class="my-btn">
+					<button onclick="closeDialog()">关闭</button>
+				</div>
+			</div>
+		</div>
+	</div>
+</body>
+
+
+<style>
+	@media (min-width: 800px) and (max-width: 1330px) {
+		/*头部样式*/
+		header {
+			text-align: center;
+			margin: 5px;
+			font-size: 14px;
+		}
+
+		/*主体内容样式*/
+		/*运用弹性盒子，将请求参数与返回参数等分成两列进行显示*/
+		.content {
+			display: flex;
+		}
+		.column {
+			flex-grow: 1;
+			padding-left: 10px;
+			box-sizing: border-box;
+		}
+
+		/*请求参数表单样式*/
+		/*请求参数表单表标签样式*/
+		.requestLabel {
+			display: inline-block;
+			width: 110px;
+			margin-left: 5px;
+			font-size: 8px;
+		}
+		/*应用类型选择下拉框样式*/
+		#appTYPE {
+			width: 134px;
+			height: 15px;
+			margin-top: 9px;
+			font-size: 8px;
+		}
+		/*交易类型选择下拉框样式*/
+		#trans {
+			width: 134px;
+			height: 15px;
+			margin-top: 5px;
+			font-size: 8px;
+		}
+		form input {
+			margin-top: 5px;
+			width: 130px;
+			height: 8px;
+			font-size: 8px;
+		}
+
+		/*响应参数表单样式*/
+		/*响应参数表单标签*/
+		.responseLabel1 {
+			display: inline-block;
+			width: 60px;
+			margin-left: 5px;
+			font-size: 8px;
+		}
+		.responseInput1 {
+			margin-top: 5px;
+			width: 130px;
+		}
+		.responseLabel2 {
+			display: inline-block;
+			width: 100px;
+			margin-left: 4px;
+			font-size: 8px;
+		}
+		.responseInput2 {
+			margin-top: 5px;
+			width: 130px;
+		}
+
+		/*footer样式*/
+		footer {
+			text-align: center;
+		}
+		footer p {
+			margin-top: 15px;
+			font-size: 8px;
+		}
+		/*按钮样式*/
+		.confirm {
+			margin-top: 10px;
+			height: 30px;
+			width: 120px;
+			font-size: 8px;
+		}
+		/*显示二维码样式*/
+		#showQrcode {
+			margin-left: 100px;
+		}
+				/*确认交易*/
+		#btconfirm {
+			margin-left: 100px;
+		}
+		/*表单下边距*/
+		fieldset {
+			padding-bottom: 8px;
+			font-size: 10px;
+			border: 1px solid #ccc;
+		}
+		/*弹框*/
+		.div-container{
+			position: fixed;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 100%;
+			z-index:200;
+			background: rgba(0,0,0,0.3) !important;
+			background: #000;
+			filter:Alpha(opacity=60);
+		}
+		/*
+            设置div-child的父元素主要是将要此元素的父元素透明特性继承过来，
+            故div-child不会半透明，而是不透明，解决了父元素透明，子元素也透明的bug
+        */
+		.div-child-container{
+			position: relative;
+			width: 256px;
+			height: auto;
+			margin: auto;
+			top: 10%;
+			background: #fff;
+			z-index: 250; /*z-index要放在父元素之上 */
+		}
+
+		.div-child{
+			width: 256px;
+			height: auto;
+			margin: auto;
+			background: #fff;
+			z-index: 300; /*z-index要放在父元素之上 */
+			text-align: center;
+		}
+		.div-child .my-btn button{
+			width: 256px;
+			height: 16px;
+			background: #cccccc;
+			border: none;
+			color: #666;
+			font-size: 10px;
+			outline: none;
+		}
+	}
+
+	@media (min-width: 1330px) and (max-width: 1869px) {
+		/*头部样式*/
+		header {
+			text-align: center;
+			margin: 10px;
+			font-size: 24px;
+		}
+
+		/*主体内容样式*/
+		/*运用弹性盒子，将请求参数与返回参数等分成两列进行显示*/
+		.content {
+			display: flex;
+		}
+		.column {
+			flex-grow: 1;
+			padding-left: 20px;
+			box-sizing: border-box;
+		}
+
+		/*请求参数表单样式*/
+		/*请求参数表单表标签样式*/
+		.requestLabel {
+			display: inline-block;
+			width: 180px;
+			margin-left: 20px;
+			font-size: 14px;
+		}
+		/*应用类型选择下拉框样式*/
+		#appTYPE {
+			width: 204px;
+			height: 20px;
+			margin-top: 14px;
+			font-size: 14px;
+		}
+		/*交易类型选择下拉框样式*/
+		#trans {
+			width: 204px;
+			height: 20px;
+			margin-top: 9px;
+			font-size: 14px;
+		}
+		form input {
+			margin-top: 9px;
+			width: 200px;
+			height: 14px;
+			font-size: 14px;
+
+		}
+
+		/*响应参数表单样式*/
+		/*响应参数表单标签*/
+		.responseLabel1 {
+			display: inline-block;
+			width: 120px;
+			margin-left: 20px;
+			font-size: 14px;
+		}
+		.responseInput1 {
+			margin-top: 9px;
+			width: 200px;
+		}
+		.responseLabel2 {
+			display: inline-block;
+			width: 200px;
+			margin-left: 20px;
+			font-size: 14px;
+		}
+		.responseInput2 {
+			margin-top: 9px;
+			width: 200px;
+		}
+
+		/*footer样式*/
+		footer {
+			text-align: center;
+		}
+		footer p {
+			margin-top: 20px;
+			font-size: 12px;
+		}
+		/*按钮样式*/
+		.confirm {
+			margin-top: 15px;
+			height: 50px;
+			width: 140px;
+			font-size: 14px;
+		}
+		/*显示二维码样式*/
+		#showQrcode {
+			margin-left: 200px;
+		}	
+		/*确认交易*/
+		#btconfirm {
+			margin-left: 200px;
+		}
+		/*表单下边距*/
+		fieldset {
+			padding-bottom: 15px;
+			font-size: 16px;
+			border: 1px solid #ccc;
+		}
+		/*弹框*/
+		.div-container{
+			position: fixed;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 100%;
+			z-index:200;
+			background: rgba(0,0,0,0.3) !important;
+			background: #000;
+			filter:Alpha(opacity=60);
+		}
+		/*
+            设置div-child的父元素主要是将要此元素的父元素透明特性继承过来，
+            故div-child不会半透明，而是不透明，解决了父元素透明，子元素也透明的bug
+        */
+		.div-child-container{
+			position: relative;
+			width: 256px;
+			height: auto;
+			margin: auto;
+			top: 30%;
+			background: #fff;
+			z-index: 250; /*z-index要放在父元素之上 */
+		}
+
+		.div-child{
+			width: 256px;
+			height: auto;
+			margin: auto;
+			background: #fff;
+			z-index: 300; /*z-index要放在父元素之上 */
+			text-align: center;
+		}
+		.div-child .my-btn button{
+			width: 256px;
+			height: 24px;
+			background: #cccccc;
+			border: none;
+			color: #666;
+			font-size: 16px;
+			outline: none;
+		}
+	}
+
+	@media(min-width: 1869px) {
+		/*头部样式*/
+		header {
+			text-align: center;
+			margin: 20px;
+			font-size: 36px;
+		}
+
+		/*主体内容样式*/
+		/*运用弹性盒子，将请求参数与返回参数等分成两列进行显示*/
+		.content {
+			display: flex;
+		}
+		.column {
+			flex-grow: 1;
+			padding-left: 30px;
+			box-sizing: border-box;
+		}
+
+		/*请求参数表单样式*/
+		/*请求参数表单表标签样式*/
+		.requestLabel {
+			display: inline-block;
+			width: 280px;
+			margin-left: 20px;
+			font-size: 22px;
+		}
+		/*应用类型选择下拉框样式*/
+		#appTYPE {
+			width: 294px;
+			height: 32px;
+			margin-top: 16px;
+			font-size: 22px;
+		}
+		/*交易类型选择下拉框样式*/
+		#trans {
+			width: 294px;
+			height: 32px;
+			margin-top: 15px;
+			font-size: 22px;
+		}
+		form input {
+			margin-top: 15px;
+			width: 290px;
+			height: 24px;
+			font-size: 22px;
+
+		}
+
+		/*响应参数表单样式*/
+		/*响应参数表单标签*/
+		.responseLabel1 {
+			display: inline-block;
+			width: 185px;
+			margin-left: 20px;
+			font-size: 22px;
+		}
+		.responseInput1 {
+			margin-top: 15px;
+			width: 290px;
+		}
+		.responseLabel2 {
+			display: inline-block;
+			width: 300px;
+			margin-left: 20px;
+			font-size: 22px;
+		}
+		.responseInput2 {
+			margin-top: 15px;
+			width: 290px;
+		}
+
+		/*footer样式*/
+		footer {
+			text-align: center;
+		}
+		footer p {
+			margin-top: 30px;
+			font-size: 20px;
+		}
+		/*按钮样式*/
+		.confirm {
+			margin-top: 30px;
+			height: 70px;
+			width: 160px;
+			font-size: 24px;
+		}
+		/*显示二维码样式*/
+		#showQrcode {
+			margin-left: 300px;
+		}
+		/*确认交易*/
+		#btconfirm {
+			margin-left: 300px;
+		}
+		/*表单下边距*/
+		fieldset {
+			padding-bottom: 20px;
+			font-size: 24px;
+			border: 1px solid #ccc;
+		}
+		/*弹框*/
+		.div-container{
+			position: fixed;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 100%;
+			z-index:200;
+			background: rgba(0,0,0,0.3) !important;
+			background: #000;
+			filter:Alpha(opacity=60);
+		}
+		/*
+            设置div-child的父元素主要是将要此元素的父元素透明特性继承过来，
+            故div-child不会半透明，而是不透明，解决了父元素透明，子元素也透明的bug
+        */
+		.div-child-container{
+			position: relative;
+			width: 256px;
+			height: auto;
+			margin: auto;
+			top: 30%;
+			background: #fff;
+			z-index: 250; /*z-index要放在父元素之上 */
+		}
+
+		.div-child{
+			width: 256px;
+			height: auto;
+			margin: auto;
+			background: #fff;
+			z-index: 300; /*z-index要放在父元素之上 */
+			text-align: center;
+		}
+		.div-child .my-btn button{
+			width: 256px;
+			height: 40px;
+			background: #cccccc;
+			border: none;
+			color: #666;
+			font-size: 26px;
+			outline: none;
+		}
+	}
+
+</style>
+
+</html>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type {
   ChargeSettlementInsuranceSummaryDto,
@@ -13,6 +13,7 @@ import { computed, ref, watch } from 'vue';
 import dayjs from 'dayjs';
 import { ElButton, ElDescriptions, ElDescriptionsItem, ElEmpty, ElTag } from 'element-plus';
 
+import { lookupPlatformDictLabelsApi } from '#/chs/api/platform-dict';
 import AppDialog from '#/components/app-dialog.vue';
 import RegisterStyleTableLayout from '#/components/layouts/register-style-table-layout.vue';
 import SectionTitle from '#/components/layouts/section-title.vue';
@@ -41,6 +42,9 @@ const visible = defineModel<boolean>({ required: true });
 const selectedPaymentId = defineModel<string>('paymentId', { default: '' });
 
 const dialogSelectedPaymentId = ref('');
+/** 1901 镜像命中的清算方式/清算类别名称；空串表示尚未命中 */
+const clrWayPlatformLabel = ref('');
+const clrTypePlatformLabel = ref('');
 /** 弹窗内表格分页占位（无服务端分页） */
 const paymentListQueryParams = ref({ pageNo: 1, pageSize: 50 });
 const paymentDetailQueryParams = ref({ pageNo: 1, pageSize: 50 });
@@ -113,6 +117,21 @@ const patientPayCompositionRows = computed(() => {
 
 const showPatientPayComposition = computed(() => patientPayCompositionRows.value.length > 0);
 
+/** 当前支付单支付方式文案（收费明细列共用；无后端字段时回落「本次谁付的」标签） */
+const selectedPayMethodText = computed(() => {
+  const fromApi = String(selectedPayment.value?.payMethodText ?? '').trim();
+  if (fromApi) {
+    return fromApi;
+  }
+  const labels = patientPayCompositionRows.value
+    .map((row) => String(row.label ?? '').trim())
+    .filter((label) => label.length > 0);
+  if (labels.length === 0) {
+    return '';
+  }
+  return labels.join('、');
+});
+
 const showSetlinfoDetail = computed(() => {
   const setlinfo = selectedSetlinfo.value;
   if (!setlinfo) {
@@ -144,6 +163,12 @@ const setlinfoDisplayRows = computed(() => {
     // 公务员标志按字典 0/1 转是/否，便于收银回看
     if (def.key === 'cvlservFlag') {
       display = formatCvlservFlagText(raw);
+    }
+    if (def.key === 'clrWay') {
+      display = formatClrDictText(raw, clrWayPlatformLabel.value, CLR_WAY_LABELS);
+    }
+    if (def.key === 'clrType') {
+      display = formatClrDictText(raw, clrTypePlatformLabel.value, CLR_TYPE_LABELS);
     }
     rows.push({
       key: def.key,
@@ -280,6 +305,15 @@ const paymentDetailColumns: TableColumn[] = [
     showOverflowTooltip: true,
   },
   {
+    prop: 'payMethodText',
+    label: '支付方式',
+    minWidth: 120,
+    align: 'center',
+    headerAlign: 'center',
+    slot: 'payMethod',
+    showOverflowTooltip: true,
+  },
+  {
     prop: 'statusText',
     label: '状态',
     width: 88,
@@ -332,6 +366,100 @@ function formatCvlservFlagText(value: null | number | string | undefined) {
   }
   return text || '—';
 }
+
+/**
+ * 清算方式（基线字典 clr_way）。
+ * 局点有时不补零，1 与 01 都视为按项目。
+ */
+const CLR_WAY_LABELS: Record<string, string> = {
+  '01': '按项目',
+  '1': '按项目',
+  '02': '单病种',
+  '2': '单病种',
+  '03': '按床日',
+  '3': '按床日',
+  '04': '按人头',
+  '4': '按人头',
+  '05': 'DRGs点数法',
+  '5': 'DRGs点数法',
+  '99': '其他',
+  '9': '其他',
+};
+
+/** 清算类别（基线字典 clr_type） */
+const CLR_TYPE_LABELS: Record<string, string> = {
+  '11': '门诊',
+  '21': '住院',
+  '41': '药店购药',
+  '99': '其他',
+};
+
+/** 编码转「名称（编码）」；平台镜像优先，其次基线字典，未识别则保留原码 */
+function formatClrDictText(
+  value: null | number | string | undefined,
+  platformLabel: string,
+  fallback: Record<string, string>,
+) {
+  const code = String(value ?? '').trim();
+  if (!code) {
+    return '—';
+  }
+  const padded = /^\d$/.test(code) ? code.padStart(2, '0') : '';
+  const label = platformLabel || fallback[code] || (padded ? fallback[padded] : '') || '';
+  if (!label || label === code) {
+    return code;
+  }
+  return `${label}（${code}）`;
+}
+
+/** 用 1901 本地镜像补基线字典没有的局点编码 */
+async function loadClrPlatformLabel(
+  dictType: 'clr_type' | 'clr_way',
+  code: string,
+  target: typeof clrWayPlatformLabel,
+  tokenRef: { current: number },
+) {
+  const token = tokenRef.current + 1;
+  tokenRef.current = token;
+  target.value = '';
+  if (!code) {
+    return;
+  }
+  const dictValues = /^\d$/.test(code) ? [code, code.padStart(2, '0')] : [code];
+  try {
+    const result = await lookupPlatformDictLabelsApi({ dictType, dictValues });
+    if (token !== tokenRef.current) {
+      return;
+    }
+    const labels = result.labelsByValue ?? {};
+    const padded = dictValues.length > 1 ? dictValues[1] : '';
+    target.value = String(labels[code] ?? (padded ? labels[padded] : '') ?? '').trim();
+  } catch {
+    if (token !== tokenRef.current) {
+      return;
+    }
+    target.value = '';
+  }
+}
+
+const clrWayTokenBox = { current: 0 };
+const clrTypeTokenBox = { current: 0 };
+
+watch(
+  () =>
+    [
+      visible.value,
+      String(selectedSetlinfo.value?.clrWay ?? '').trim(),
+      String(selectedSetlinfo.value?.clrType ?? '').trim(),
+    ] as const,
+  ([open, clrWay, clrType]) => {
+    if (!open) {
+      return;
+    }
+    void loadClrPlatformLabel('clr_way', clrWay, clrWayPlatformLabel, clrWayTokenBox);
+    void loadClrPlatformLabel('clr_type', clrType, clrTypePlatformLabel, clrTypeTokenBox);
+  },
+);
 
 /** 列表金额：displayAmount 为 0 时回落医保医疗费总额 */
 function resolvePaymentListAmount(row: ChargeSettlementInsuranceSummaryDto) {
@@ -449,7 +577,7 @@ function handleClose() {
             <span class="payment-dialog__summary-label">医保个人账户</span>
             <span>¥{{ formatMoney(selectedPayment.acctPay) }}</span>
           </div>
-          <div class="payment-dialog__summary-item">
+          <div class="payment-dialog__summary-item payment-dialog__summary-item--cash">
             <span class="payment-dialog__summary-label">个人现金（微信/扫码实收）</span>
             <span>¥{{ formatMoney(selectedPayment.psnCashPay) }}</span>
           </div>
@@ -466,6 +594,8 @@ function handleClose() {
             :class="{
               'payment-dialog__summary-item--fund':
                 row.key !== 'psnCashPay' && row.key !== 'channelCollect',
+              'payment-dialog__summary-item--cash':
+                row.key === 'psnCashPay' || row.key === 'channelCollect',
             }"
           >
             <span class="payment-dialog__summary-label">{{ row.label }}</span>
@@ -504,6 +634,9 @@ function handleClose() {
         >
           <template #quantity="{ row }">
             {{ [row.quantityDisplay, row.quantityUnit].filter(Boolean).join('') || '—' }}
+          </template>
+          <template #payMethod>
+            {{ selectedPayMethodText || '—' }}
           </template>
           <template #status="{ row }">
             <ElTag size="small" effect="plain">
@@ -557,6 +690,10 @@ function handleClose() {
 
 .payment-dialog__summary-item--fund {
   color: #2563eb;
+}
+
+.payment-dialog__summary-item--cash {
+  color: #ea580c;
 }
 
 .payment-dialog__summary-label {

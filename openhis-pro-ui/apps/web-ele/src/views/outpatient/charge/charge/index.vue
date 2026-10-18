@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type {
   ChargeQueueRowDto,
@@ -7,12 +7,13 @@ import type {
   PendingChargeItemRowDto,
   PreSettleChargeLinePreviewDto,
   PreSettleOutpatientChargesResponse,
+  PreviewOutpatientChargeDiscountLineDto,
 } from '#/api/outpatient-charge/outpatient-charge.types';
 import type { BillingPatientCardPatient } from '#/components/charge/billing-patient-card.types';
 
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
-import { RotateCw } from '@vben/icons';
+import { RotateCw } from '@zxplat/icons';
 
 import { useDebounceFn } from '@vueuse/core';
 import {
@@ -29,12 +30,18 @@ import {
   ElDatePicker,
   ElMessage,
   ElMessageBox,
+  ElOption,
   ElPagination,
   ElRadio,
   ElRadioGroup,
+  ElSelect,
   ElTag,
 } from 'element-plus';
 
+import {
+  normalizeZheInput,
+  zheToDiscountRate,
+} from '#/api/basic/charge-discount-config';
 import {
   httpCompensateInsuranceSettlementsByPayment,
   httpConfirmOutpatientChargeSettlement,
@@ -44,6 +51,7 @@ import {
   httpPageOutpatientChargeQueue,
   httpPrepareUnionPayMakeupCollect,
   httpPreSettleOutpatientCharges,
+  httpPreviewOutpatientChargeDiscounts,
   httpSwitchEncounterChargeItemsToSelfPay,
 } from '#/api/outpatient-charge/outpatient-charge.http';
 import BillingPatientCard from '#/components/charge/billing-patient-card.vue';
@@ -62,6 +70,7 @@ import {
   getLocalDayRangeDateTimeStrings,
 } from '#/utils/format/date-range-quick';
 import { sumMoneyThenSettle } from '#/utils/format/money-scale';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
   FALLBACK_DEFAULT_PAY_CHANNEL,
   optionDtosToPayChannelOptions,
@@ -79,15 +88,21 @@ import {
 } from '#/utils/payment/scan-settle-recovery';
 import { submitScanPayment } from '#/utils/payment/submit-scan-payment';
 import { httpGetBpcOrdersByPayment } from '#/api/payment/union-pay-bpc';
+import { printChargeFeeList } from '#/utils/print/print-charge-fee-list';
+import { printChargeInvoice } from '#/utils/print/print-charge-invoice';
 import { printChargeReceipt, schedulePrintChargeReceipt } from '#/utils/print/print-charge-receipt';
 
 import {
   formatPatientFeeMoney,
+  seedPersistedDiscountedAmountOnRow,
+  seedPersistedDiscountedAmounts,
   summarizeOutpatientChargeFeeAmounts,
 } from '../services/patient-fee-summary.service';
 import '../charge-workbench-panel.css';
 import {
   CHARGE_ITEM_STATUS_LABEL_TAG,
+  OUTPATIENT_CHARGE_DEFAULT_SELECT_ALL_PENDING,
+  OUTPATIENT_CHARGE_DISCOUNT_QUICK_OPTIONS,
   OUTPATIENT_CHARGE_PAY_CHANNEL_OPTIONS,
   OUTPATIENT_CHARGE_SETTLE_OUTCOME_COMPLETED,
   resolveOutpatientChargeSwitchAccountMessage,
@@ -99,8 +114,13 @@ import {
   outpatientChargeReadCredentialLabel,
   resolveInsuranceContractId,
   resolveOutpatientChargeInsuranceContext,
+  buildPerDiseaseSettleHint,
+  collectInsuranceDiseaseLabels,
+  countInsuranceSettleGroups,
+  keepSingleInsuranceDiseaseRows,
   selectionIncludesInsuranceItems,
   selectionIncludesWorkInjuryItems,
+  singleSelectedInsuranceGroupKey,
 } from './use-outpatient-charge-insurance';
 import { isStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
 import { isUnmappedYbNoComplianceError } from '#/utils/http/format-catalog-unmapped-yb-error';
@@ -215,27 +235,44 @@ const settlementInsuranceBreakdown = computed(() => {
   if (!snap?.insurancePreSettled) {
     return [];
   }
+  const isCvlserv = String(snap.ybCvlservFlag ?? '').trim() === '1';
   // 基金合计 ≠ 统筹：统筹用 hifp，其他支出（含电子钱包）用 oth
-  return [
+  const acctPay = Number(snap.ybAcctPay ?? 0);
+  const mulaidPay = Number(snap.ybAcctMulaidPay ?? 0);
+  // 有共济时个账文案标明「含家庭共济」，避免与本人个账余额对照时误判
+  const accountPayLabel =
+    Number.isFinite(mulaidPay) && mulaidPay > 0.001
+      ? '医保个人账户（含家庭共济）'
+      : '医保个人账户';
+  const rows = [
     { key: 'fundPay', label: '基金支付合计', value: Number(snap.ybFundPaySumamt ?? 0) },
     { key: 'poolingPay', label: '基本医保统筹', value: Number(snap.ybHifpPay ?? 0) },
     { key: 'otherPay', label: '其他支出', value: Number(snap.ybOthPay ?? 0) },
-    { key: 'accountPay', label: '医保个人账户', value: Number(snap.ybAcctPay ?? 0) },
+    { key: 'accountPay', label: accountPayLabel, value: acctPay },
+    { key: 'mulaidPay', label: '家庭共济', value: mulaidPay },
     { key: 'deductibleLine', label: '起付线', value: Number(snap.ybActPayDedc ?? 0) },
-    { key: 'cvlservPay', label: '公务员医疗补助', value: Number(snap.ybCvlservPay ?? 0) },
     { key: 'cashPay', label: '个人现金（医保口径）', value: Number(snap.ybPsnCashPay ?? 0) },
     { key: 'finalReceivable', label: '个人现金（待收）', value: Number(snap.displayAmount ?? 0) },
   ];
+  // 仅公务员回显公务员医疗补助（插在共济行之后、起付线之前）
+  if (isCvlserv) {
+    rows.splice(6, 0, {
+      key: 'cvlservPay',
+      label: '公务员医疗补助',
+      value: Number(snap.ybCvlservPay ?? 0),
+    });
+  }
+  return rows;
 });
 
-/** 预结算透传的公务员标志（账户信息区展示） */
+/** 预结算透传的公务员标志（仅 cvlserv_flag=1 才回显） */
 const settlementCvlservFlag = computed(() => {
   const flag = preSettleSnapshot.value?.ybCvlservFlag;
   if (flag === undefined || flag === null) {
     return undefined;
   }
   const text = String(flag).trim();
-  if (!text) {
+  if (text !== '1') {
     return undefined;
   }
   return text;
@@ -247,11 +284,26 @@ const settlementSummarySelfPay = computed(() =>
   Number(preSettleSnapshot.value?.selfPayRollup?.totalAmount ?? 0),
 );
 const settlementInsuranceGroups = computed(() => preSettleSnapshot.value?.insuranceGroups ?? []);
+/** 待收里有多个慢特病时，列表上方写明每个病种要单独结一笔 */
+const multiDiseaseSettleHint = computed(() =>
+  buildPerDiseaseSettleHint(
+    collectInsuranceDiseaseLabels(
+      pendingItems.value.filter((row) => isPendingChargeItemSelectable(row)),
+    ),
+  ),
+);
 const settlementVisible = ref(false);
 const preSettleLoading = ref(false);
 /** 银联补收：复用已确认 2207，禁止扫码失败/落账失败时误冲正医保 */
 const unionPayMakeupCollectMode = ref(false);
 const makeupCollectLoading = ref(false);
+
+/** 已配置 ACTIVE 打折内容时展示折扣控件；未配置则隐藏 */
+const discountFeatureEnabled = ref(false);
+/** 款员折扣录入（折）；空=不传 cashierDiscountRate */
+const cashierDiscountZheText = ref('');
+/** 最近一次预结算实际提交的折扣率，正式结算须原样带回 */
+const lockedCashierDiscountRate = ref<null | number>(null);
 
 /** 确认收费过程进度（读卡 / 预结算 / 正式结算） */
 const chargeProgressVisible = ref(false);
@@ -282,6 +334,10 @@ function closeChargeProgress() {
 const confirmSettleLoading = ref(false);
 /** 补打收费小票 loading */
 const reprintLoading = ref(false);
+/** 打印针式发票 loading */
+const invoicePrintLoading = ref(false);
+/** 打印门诊患者费用清单 loading */
+const feeListPrintLoading = ref(false);
 
 const paymentForm = reactive({
   payChannelCode: FALLBACK_DEFAULT_PAY_CHANNEL,
@@ -484,8 +540,184 @@ async function resetSettlementAfterAdviceChanged() {
   preSettleSnapshot.value = null;
   settlementInsuranceBalc.value = null;
   lockedChargeItemIds.value = [];
+  lockedCashierDiscountRate.value = null;
   await loadPendingForSelectedEncounter();
 }
+
+/** 解析款员折扣率入参；空=不传；非法抛错供调用方提示 */
+function resolveCashierDiscountRateForRequest(): number | undefined {
+  if (!discountFeatureEnabled.value) {
+    return undefined;
+  }
+  const text = normalizeZheInput(String(cashierDiscountZheText.value ?? ''));
+  if (!text) {
+    return undefined;
+  }
+  const rate = zheToDiscountRate(text);
+  if (rate === null) {
+    throw new Error('折扣值须在 (0,10] 折内，例如 8.5');
+  }
+  return rate;
+}
+
+/**
+ * 折扣下拉变更：把「9折」收成纯折值，再防抖请求后端试算。
+ *
+ * @param val 选项 value 或手输文案；可空表示不打折
+ */
+function handleCashierDiscountChange(val: string | number | null | undefined) {
+  const raw = val === null || val === undefined ? '' : String(val);
+  const normalized = normalizeZheInput(raw);
+  if (normalized !== String(cashierDiscountZheText.value ?? '').trim()) {
+    cashierDiscountZheText.value = normalized;
+  }
+  debouncedDiscountPreview();
+}
+
+/** 忽略过期折后价试算回包的序号 */
+let discountPreviewSeq = 0;
+
+/**
+ * 对待收行按当前折扣请求后端折后价并回填列表。
+ *
+ * 已结算行不参与试算，列上回落金额；折扣录入非法时跳过请求。
+ */
+async function refreshPendingDiscountedAmounts() {
+  const eid = selectedEncounterId.value;
+  if (!eid || !discountFeatureEnabled.value) {
+    return;
+  }
+  const plannedIds: string[] = [];
+  for (const row of pendingItems.value) {
+    // 只试算待收行；已结算金额已是落账结果
+    if (isOutpatientChargeItemSettled(row)) {
+      continue;
+    }
+    const id = preserveApiIdForRequest(row.chargeItemId);
+    if (id) {
+      plannedIds.push(id);
+    }
+  }
+  if (plannedIds.length === 0) {
+    return;
+  }
+  let cashierDiscountRate: number | undefined;
+  try {
+    cashierDiscountRate = resolveCashierDiscountRateForRequest();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '折扣值不合法';
+    ElMessage.warning(message);
+    return;
+  }
+  const seq = ++discountPreviewSeq;
+  try {
+    const res = await httpPreviewOutpatientChargeDiscounts({
+      encounterId: eid,
+      chargeItemIds: plannedIds,
+      ...(cashierDiscountRate === undefined ? {} : { cashierDiscountRate }),
+    });
+    if (seq !== discountPreviewSeq) {
+      return;
+    }
+    const payload = unwrapDiscountPreviewResponse(res);
+    applyDiscountPreviewLines(payload.lines, plannedIds);
+    const anyDiscounted = (payload.lines ?? []).some((line) => line.discounted === true);
+    // 款员已选折但无一命中可打折配置：折后等于原价，提示勿当成试算失败
+    if (cashierDiscountRate !== undefined && !anyDiscounted) {
+      ElMessage.warning('当前待收项目未命中可打折配置，折后价与原价相同');
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '折后价试算失败';
+    ElMessage.warning(message);
+  }
+}
+
+/**
+ * 兼容拦截器已解包 / 仍包在 data 里的试算回包。
+ *
+ * @param res 接口返回
+ */
+function unwrapDiscountPreviewResponse(
+  res: PreviewOutpatientChargeDiscountsResponse | { data?: PreviewOutpatientChargeDiscountsResponse },
+): PreviewOutpatientChargeDiscountsResponse {
+  if (res && Array.isArray((res as PreviewOutpatientChargeDiscountsResponse).lines)) {
+    return res as PreviewOutpatientChargeDiscountsResponse;
+  }
+  const nested = (res as { data?: PreviewOutpatientChargeDiscountsResponse }).data;
+  if (nested && Array.isArray(nested.lines)) {
+    return nested;
+  }
+  return { lines: [] };
+}
+
+/**
+ * 把试算折后价写回待收列表，并同步已勾选行，保证折后合计跟着变。
+ *
+ * @param lines 后端返回的折后价行
+ * @param plannedIds 本次请求的待收主键顺序；主键对不上时按该顺序回填
+ */
+function applyDiscountPreviewLines(
+  lines: PreviewOutpatientChargeDiscountLineDto[] | undefined,
+  plannedIds: string[],
+) {
+  const safeLines = lines ?? [];
+  const amountById = new Map<string, number | string>();
+  for (const line of safeLines) {
+    const id = preserveApiIdForRequest(line.chargeItemId);
+    if (!id || line.discountedAmount === null || line.discountedAmount === undefined) {
+      continue;
+    }
+    amountById.set(id, line.discountedAmount);
+  }
+  const amountByPlannedIndex = new Map<number, number | string>();
+  safeLines.forEach((line, index) => {
+    if (line.discountedAmount === null || line.discountedAmount === undefined) {
+      return;
+    }
+    amountByPlannedIndex.set(index, line.discountedAmount);
+  });
+  const plannedIndexById = new Map<string, number>();
+  plannedIds.forEach((id, index) => {
+    plannedIndexById.set(id, index);
+  });
+  pendingItems.value = pendingItems.value.map((row) => {
+    if (isOutpatientChargeItemSettled(row)) {
+      // 已结算不覆盖落库折后应收
+      return seedPersistedDiscountedAmountOnRow(row);
+    }
+    const id = preserveApiIdForRequest(row.chargeItemId);
+    let discountedAmount = id ? amountById.get(id) : undefined;
+    if (discountedAmount === undefined && id) {
+      const plannedIndex = plannedIndexById.get(id);
+      if (plannedIndex !== undefined) {
+        discountedAmount = amountByPlannedIndex.get(plannedIndex);
+      }
+    }
+    if (discountedAmount === undefined) {
+      return { ...row };
+    }
+    return { ...row, discountedAmount };
+  });
+  const amountOnPending = new Map<string, number | string | undefined>();
+  for (const row of pendingItems.value) {
+    const id = preserveApiIdForRequest(row.chargeItemId);
+    if (id) {
+      amountOnPending.set(id, row.discountedAmount);
+    }
+  }
+  selectedChargeRows.value = selectedChargeRows.value.map((row) => {
+    const id = preserveApiIdForRequest(row.chargeItemId);
+    if (!id || !amountOnPending.has(id)) {
+      return row;
+    }
+    return { ...row, discountedAmount: amountOnPending.get(id) };
+  });
+}
+
+/** 折扣下拉变更后短延迟再试算，避免连续点选打多次接口 */
+const debouncedDiscountPreview = useDebounceFn(() => {
+  void refreshPendingDiscountedAmounts();
+}, 300);
 
 /**
  * vxe 列 `checkMethod` 签名为 `({ row })`，TableColumn 的 `selectable` 类型为 `(row, index)`。
@@ -576,43 +808,35 @@ function applyChargeGridCheckboxSelection(
 }
 
 /**
- * 选中患者并加载明细后：默认勾选全部待收整单。
- * Table.vue 在 tableData 变更后会 post-flush → clearSelection（再 await nextTick），
- * 必须等清空完成后再勾，否则会被冲掉。
+ * 选中患者并加载明细后：默认勾选待收。多个慢特病时只勾选列表中的第一个病种。
+ * 本表已关闭 tableData 变更自动 clearSelection，避免勾选被冲掉。
  */
 async function selectAllPendingRowsInGrid(items: ChargeDetailTableRow[]) {
+  if (!OUTPATIENT_CHARGE_DEFAULT_SELECT_ALL_PENDING) {
+    return;
+  }
   const selectable = items.filter(
     (r) => r.isFirstLineInBillGroup === true && isPendingChargeItemSelectable(r),
   );
   const expanded = expandSelectionToWholeBillGroups(selectable);
+  const kept = keepSingleInsuranceDiseaseRows(expanded, '');
+  const diseaseHint = buildPerDiseaseSettleHint(collectInsuranceDiseaseLabels(expanded));
+  // 多个慢特病不能一次全选：只留下列表中的第一个病种，普通门诊多诊断可全选
+  if (diseaseHint) {
+    ElMessage.warning(diseaseHint);
+  }
   syncingChargeSelection.value = true;
-  applyExpandedChargeSelection(expanded);
-
-  // 对齐 Table.clearSelection：flush post + 其内部 nextTick；再 macro task 兜底
-  await nextTick();
-  await nextTick();
-  await new Promise<void>((resolve) => {
-    setTimeout(resolve, 0);
-  });
-
-  let grid = getChargeVxeGrid();
-  if (!grid) {
+  try {
+    applyExpandedChargeSelection(kept);
     await nextTick();
-    grid = getChargeVxeGrid();
-  }
-
-  if (grid) {
-    if (typeof grid.clearCheckboxRow === 'function') {
-      grid.clearCheckboxRow();
+    const grid = getChargeVxeGrid();
+    if (grid && kept.length > 0) {
+      applyChargeGridCheckboxSelection(kept, grid);
     }
-    if (expanded.length > 0) {
-      applyChargeGridCheckboxSelection(expanded, grid);
-    }
+    applyExpandedChargeSelection(kept);
+  } finally {
+    syncingChargeSelection.value = false;
   }
-
-  await nextTick();
-  applyExpandedChargeSelection(expanded);
-  syncingChargeSelection.value = false;
 }
 
 /** 将金额安全格式化为两位小数字符串 */
@@ -805,9 +1029,16 @@ function chargeQueueGenderDisplay(row: ChargeQueueRowDto | null | undefined): st
   return code || '—';
 }
 
-/** 已选明细金额合计（展示用，以预结算返回为准收费） */
+/** 已选明细原价合计（展示用，以预结算返回为准收费） */
 const selectedChargeSum = computed(() =>
   sumMoneyThenSettle(selectedChargeRows.value.map((row) => row.totalPrice ?? 0)),
+);
+
+/** 已选明细折后合计：有试算折后价用后端值，否则回落原价 */
+const selectedDiscountedSum = computed(() =>
+  sumMoneyThenSettle(
+    selectedChargeRows.value.map((row) => row.discountedAmount ?? row.totalPrice ?? 0),
+  ),
 );
 
 /** 患者信息栏费用摘要：与待收明细同源，避免队列行空金额 */
@@ -815,7 +1046,9 @@ const chargePatientFeeSummary = computed(() => {
   if (!selectedEncounterId.value) {
     return null;
   }
-  return summarizeOutpatientChargeFeeAmounts(pendingItems.value, isOutpatientChargeItemSettled);
+  return summarizeOutpatientChargeFeeAmounts(pendingItems.value, isOutpatientChargeItemSettled, {
+    discountFeatureEnabled: discountFeatureEnabled.value,
+  });
 });
 
 /** 主区收费明细：按收费单分组后全量展示 */
@@ -869,14 +1102,16 @@ const { run: runLoadPending, loading: tableLoading } = useRequest(httpLoadPendin
   manual: true,
   onSuccess: (data) => {
     const items = data.items ?? [];
-    pendingItems.value = items;
+    // 已结算行用库内折后应收填折后价，收费后患者信息栏已收才能对上实收
+    pendingItems.value = seedPersistedDiscountedAmounts(items);
     accountSwitchEnabled.value = Boolean(data.accountSwitchEnabled);
     const options = data.settlementInsuranceOptions ?? [];
     settlementInsuranceOptions.value = options;
     selectedSettlementPaymentId.value = String(
       data.settlementInsuranceSummary?.paymentId ?? options[0]?.paymentId ?? '',
     );
-    selectAllPendingRowsInGrid(displayedPendingItems.value);
+    void selectAllPendingRowsInGrid(displayedPendingItems.value);
+    void refreshPendingDiscountedAmounts();
   },
 });
 
@@ -950,6 +1185,20 @@ watch(dateRange, () => {
   debouncedQueueReload();
 });
 
+watch(cashierDiscountZheText, () => {
+  debouncedDiscountPreview();
+});
+
+watch(discountFeatureEnabled, (enabled) => {
+  if (!enabled) {
+    return;
+  }
+  void nextTick(async () => {
+    await selectAllPendingRowsInGrid(displayedPendingItems.value);
+    await refreshPendingDiscountedAmounts();
+  });
+});
+
 watch(queueTabCode, () => {
   resetQueuePageAndLoad();
 });
@@ -961,6 +1210,7 @@ watch(selectedEncounterId, () => {
   selectedSettlementPaymentId.value = '';
   paymentRecordsVisible.value = false;
   lockedChargeItemIds.value = [];
+  lockedCashierDiscountRate.value = null;
   selectedChargeRows.value = [];
   selectedSettledPaymentIds.value = [];
   void loadPendingForSelectedEncounter();
@@ -990,6 +1240,7 @@ const handleChoosePatient = (patient: BillingPatientCardPatient) => {
     preSettleSnapshot.value = null;
     settlementInsuranceBalc.value = null;
     lockedChargeItemIds.value = [];
+    lockedCashierDiscountRate.value = null;
     selectedChargeRows.value = [];
     selectedSettledPaymentIds.value = [];
     void loadPendingForSelectedEncounter();
@@ -1008,27 +1259,28 @@ const handleQueuePageChange = () => {
   void loadChargeQueue();
 };
 
-/** 每页条数变化时回到第一页 */
-const handleQueueSizeChange = () => {
-  queuePager.pageNo = 1;
-  void loadChargeQueue();
-};
-
 /** 表格勾选变更：按收费单整单展开；待收供收费，已结算支付单供补打 */
 const handleChargeSelectionChange = (selection: ChargeDetailTableRow[]) => {
   if (syncingChargeSelection.value) {
     return;
   }
   const expanded = expandSelectionToWholeBillGroups(selection);
-  applyExpandedChargeSelection(expanded);
+  const preferredKey = singleSelectedInsuranceGroupKey(selectedChargeRows.value);
+  const kept = keepSingleInsuranceDiseaseRows(expanded, preferredKey);
+  const diseaseHint = buildPerDiseaseSettleHint(collectInsuranceDiseaseLabels(expanded));
+  // 勾选跨了多个慢特病：收回多出来的病种；普通门诊多诊断不收回
+  if (kept.length !== expanded.length && diseaseHint) {
+    ElMessage.warning(diseaseHint);
+  }
+  applyExpandedChargeSelection(kept);
 
-  const expandedIds = new Set(expanded.map((row) => row.chargeItemId));
+  const keptIds = new Set(kept.map((row) => row.chargeItemId));
   const rawIds = new Set(selection.map((row) => row.chargeItemId));
   const needsSync =
-    expandedIds.size !== rawIds.size || [...expandedIds].some((id) => !rawIds.has(id));
+    keptIds.size !== rawIds.size || [...keptIds].some((id) => !rawIds.has(id));
   if (needsSync) {
     syncingChargeSelection.value = true;
-    applyChargeGridCheckboxSelection(expanded, getChargeVxeGrid());
+    applyChargeGridCheckboxSelection(kept, getChargeVxeGrid());
     void nextTick(() => {
       syncingChargeSelection.value = false;
     });
@@ -1070,7 +1322,7 @@ const chargeItemStatusTag = (row: PendingChargeItemRowDto) => {
   return { label: '—', tagType: 'info' as const };
 };
 
-const chargeTableColumns: TableColumn[] = [
+const chargeTableColumnDefs: TableColumn[] = [
   {
     type: 'selection',
     width: 52,
@@ -1160,6 +1412,15 @@ const chargeTableColumns: TableColumn[] = [
     showOverflowTooltip: true,
   },
   {
+    prop: 'diseName',
+    label: '病种',
+    minWidth: 120,
+    align: 'center',
+    headerAlign: 'center',
+    formatter: chargeItemDashFormatter,
+    showOverflowTooltip: true,
+  },
+  {
     prop: 'statusCode',
     label: '收费状态',
     minWidth: 100,
@@ -1186,6 +1447,14 @@ const chargeTableColumns: TableColumn[] = [
     headerAlign: 'center',
   },
   {
+    prop: 'discountedAmount',
+    label: '折后价',
+    minWidth: 100,
+    slot: 'discountedAmount',
+    align: 'right',
+    headerAlign: 'center',
+  },
+  {
     prop: 'cashierName',
     label: '收款人',
     minWidth: 96,
@@ -1204,6 +1473,14 @@ const chargeTableColumns: TableColumn[] = [
     showOverflowTooltip: true,
   },
 ];
+
+/** 收费列表列：未配置打折内容时去掉折后价 */
+const chargeTableColumns = computed(() => {
+  if (discountFeatureEnabled.value) {
+    return chargeTableColumnDefs;
+  }
+  return chargeTableColumnDefs.filter((col) => col.prop !== 'discountedAmount');
+});
 
 const switchAccountLoading = ref(false);
 
@@ -1255,7 +1532,21 @@ const handleOpenSettlement = async () => {
     ElMessage.warning('请选择待收费用项');
     return;
   }
+  let cashierDiscountRate: number | undefined;
+  try {
+    cashierDiscountRate = resolveCashierDiscountRateForRequest();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '折扣值不合法';
+    ElMessage.warning(message);
+    return;
+  }
   const rows = selectedChargeRows.value;
+  // 多个慢特病须分次 2206/2207；普通门诊多诊断已并成一组
+  const diseaseHint = buildPerDiseaseSettleHint(collectInsuranceDiseaseLabels(rows));
+  if (countInsuranceSettleGroups(rows) > 1) {
+    ElMessage.warning(diseaseHint || '不同慢特病须分开结算，请每次只勾选同一慢特病的明细');
+    return;
+  }
   // 工伤与省/市医保隔离：工伤走 Win 2201→2206，不读省医保卡、不跑 3101
   const isWorkInjury = selectionIncludesWorkInjuryItems(rows);
   const needChsInsurance = selectionIncludesInsuranceItems(rows) && !isWorkInjury;
@@ -1299,6 +1590,11 @@ const handleOpenSettlement = async () => {
     if (needChsInsurance && insuranceMedium) {
       insuranceCtx = await resolveOutpatientChargeInsuranceContext(rows, {
         medium: insuranceMedium,
+        // Gate：把当前队列患者传给读卡核验（BR-OPC-035）
+        patient: {
+          idCard: currentQueueRow.value?.idCard,
+          patientName: currentQueueRow.value?.patientName,
+        },
         onPhase: (phase) => {
           if (phase === 'plugin' || phase === 'read-card') {
             setChargeProgressStep(0, outpatientChargeReadCredentialHint(insuranceMedium));
@@ -1365,9 +1661,12 @@ const handleOpenSettlement = async () => {
     const res = await httpPreSettleOutpatientCharges({
       chargeItemIds: rows.map((r) => r.chargeItemId),
       encounterId: eid,
+      ...(cashierDiscountRate === undefined ? {} : { cashierDiscountRate }),
       ...(insuranceCtx
         ? {
             psnNo: insuranceCtx.psnNo,
+            payerCertno: insuranceCtx.payerCertno,
+            payerPsnName: insuranceCtx.payerPsnName,
             ybMediumType: insuranceCtx.ybMediumType,
             ybCardInfo: insuranceCtx.ybCardInfo,
             insuplcAdmdvs: insuranceCtx.insuplcAdmdvs,
@@ -1392,6 +1691,8 @@ const handleOpenSettlement = async () => {
         : res;
     setChargeProgressStep(openDialogStepIndex, '预结算完成，即将打开确认窗口…');
     lockedChargeItemIds.value = selectedChargeRows.value.map((r) => r.chargeItemId);
+    lockedCashierDiscountRate.value =
+      cashierDiscountRate === undefined ? null : cashierDiscountRate;
     unionPayMakeupCollectMode.value = false;
     const cashPay = Number(preSettleSnapshot.value?.displayAmount ?? 0);
     paymentForm.payChannelCode = resolveCollectPayChannelCode(
@@ -1450,7 +1751,7 @@ const handleOpenUnionPayMakeupCollect = async () => {
   }
   await refreshUnionPayCapabilities();
   if (!scanPayEnabled.value) {
-    ElMessage.error('请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
+    ElMessage.error('请启动本地客户端（Zxplat.Win）并确认银联组件已安装');
     return;
   }
   makeupCollectLoading.value = true;
@@ -1470,6 +1771,7 @@ const handleOpenUnionPayMakeupCollect = async () => {
     });
     preSettleSnapshot.value = res;
     lockedChargeItemIds.value = chargeItemIds;
+    lockedCashierDiscountRate.value = null;
     unionPayMakeupCollectMode.value = true;
     settlementInsuranceBalc.value = null;
     paymentForm.payChannelCode = 'SCAN_PAY';
@@ -1620,7 +1922,7 @@ const handleConfirmSettlement = async () => {
     if (needScanPay && payableCash > 0.001) {
       await refreshUnionPayCapabilities();
       if (!scanPayEnabled.value) {
-        ElMessage.error('请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
+        ElMessage.error('请启动本地客户端（Zxplat.Win）并确认银联组件已安装');
         return;
       }
       setChargeProgressStep(step, halfSuccessLocked ? '使用已成功银联凭证…' : '等待银联支付结果…');
@@ -1674,6 +1976,9 @@ const handleConfirmSettlement = async () => {
       outcomeEnum: OUTPATIENT_CHARGE_SETTLE_OUTCOME_COMPLETED,
       paymentDetails,
       paymentDraftId: snap.paymentDraftId,
+      ...(lockedCashierDiscountRate.value == null
+        ? {}
+        : { cashierDiscountRate: lockedCashierDiscountRate.value }),
       ...(insuranceGroupBchnos.length > 0
         ? { ybChrgBchnos: insuranceGroupBchnos }
         : snap.ybChrgBchno
@@ -1702,6 +2007,7 @@ const handleConfirmSettlement = async () => {
     preSettleSnapshot.value = null;
     settlementInsuranceBalc.value = null;
     lockedChargeItemIds.value = [];
+    lockedCashierDiscountRate.value = null;
     unionPayMakeupCollectMode.value = false;
     void loadChargeQueue().then(() => loadPendingForSelectedEncounter());
     schedulePrintChargeReceipt({
@@ -1748,33 +2054,40 @@ const handleConfirmSettlement = async () => {
   }
 };
 
+/** 已结算支付单：勾选优先，仅一笔时直接用，否则回落队列上的支付流水 */
+function resolveSettledPaymentIdsForPrint(): string[] {
+  let paymentIds = selectedSettledPaymentIds.value
+    .map((id) => String(id ?? '').trim())
+    .filter(Boolean);
+  if (paymentIds.length > 0) {
+    return paymentIds;
+  }
+  const available = [
+    ...new Set(
+      displayedPendingItems.value
+        .map((row) => String(row.paymentId ?? '').trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (available.length === 1) {
+    return available;
+  }
+  if (available.length === 0) {
+    const fallback = String(currentQueueRow.value?.paymentId ?? '').trim();
+    if (fallback) {
+      return [fallback];
+    }
+  }
+  return [];
+}
+
 /** 补打收费小票：按主列表勾选的已结算支付单打印 */
 async function handleReprintChargeReceipt() {
   const eid = selectedEncounterId.value;
   if (!eid) {
     return;
   }
-  let paymentIds = selectedSettledPaymentIds.value
-    .map((id) => String(id ?? '').trim())
-    .filter(Boolean);
-  // 未勾选已结算单时，若仅有一笔可补打支付单则直接打，避免无摘要时完全不可用
-  if (paymentIds.length === 0) {
-    const available = [
-      ...new Set(
-        displayedPendingItems.value
-          .map((row) => String(row.paymentId ?? '').trim())
-          .filter(Boolean),
-      ),
-    ];
-    if (available.length === 1) {
-      paymentIds = available;
-    } else if (available.length === 0) {
-      const fallback = String(currentQueueRow.value?.paymentId ?? '').trim();
-      if (fallback) {
-        paymentIds = [fallback];
-      }
-    }
-  }
+  const paymentIds = resolveSettledPaymentIdsForPrint();
   if (paymentIds.length === 0) {
     ElMessage.warning('请勾选要补打的已结算收费单');
     return;
@@ -1795,13 +2108,66 @@ async function handleReprintChargeReceipt() {
   }
 }
 
+/** 打印针式发票：与补打小票同一批已结算支付单 */
+async function handlePrintChargeInvoice() {
+  const eid = selectedEncounterId.value;
+  if (!eid) {
+    return;
+  }
+  const paymentIds = resolveSettledPaymentIdsForPrint();
+  if (paymentIds.length === 0) {
+    ElMessage.warning('请勾选要打印发票的已结算收费单');
+    return;
+  }
+  invoicePrintLoading.value = true;
+  try {
+    for (const paymentId of paymentIds) {
+      selectedSettlementPaymentId.value = paymentId;
+      await printChargeInvoice({
+        encounterId: eid,
+        paymentId,
+        jobName: '门诊收费发票',
+      });
+    }
+  } finally {
+    invoicePrintLoading.value = false;
+  }
+}
+
+/** 打印门诊患者费用清单：与补打小票同一批已结算支付单；慢病标题由后端 documentTitle 切换 */
+async function handlePrintChargeFeeList() {
+  const eid = selectedEncounterId.value;
+  if (!eid) {
+    return;
+  }
+  const paymentIds = resolveSettledPaymentIdsForPrint();
+  if (paymentIds.length === 0) {
+    ElMessage.warning('请勾选要打印费用清单的已结算收费单');
+    return;
+  }
+  feeListPrintLoading.value = true;
+  try {
+    for (const paymentId of paymentIds) {
+      selectedSettlementPaymentId.value = paymentId;
+      await printChargeFeeList({
+        encounterId: eid,
+        paymentId,
+      });
+    }
+  } finally {
+    feeListPrintLoading.value = false;
+  }
+}
+
 onMounted(() => {
   void (async () => {
     try {
       const init = await httpLoadChargePageInit({});
       payChannelOptions.value = optionDtosToPayChannelOptions(init.paymentChannelOptions);
+      discountFeatureEnabled.value = Boolean(init.discountFeatureEnabled);
     } catch {
       payChannelOptions.value = [...OUTPATIENT_CHARGE_PAY_CHANNEL_OPTIONS];
+      discountFeatureEnabled.value = false;
     }
     await refreshUnionPayCapabilities();
   })();
@@ -1869,18 +2235,16 @@ onMounted(() => {
               @select="handleChoosePatient"
             />
           </div>
-          <div class="shrink-0 pt-1">
+          <div class="charge-queue-pager shrink-0 pt-1">
             <ElPagination
               v-model:current-page="queuePager.pageNo"
               v-model:page-size="queuePager.pageSize"
               :disabled="queueLoading"
-              :page-sizes="[10, 20, 50]"
+              :pager-count="5"
               :total="queueTotal"
-              background
-              layout="total, sizes, prev, pager, next"
-              small
+              layout="total, prev, pager, next"
+              size="small"
               @current-change="handleQueuePageChange"
-              @size-change="handleQueueSizeChange"
             />
           </div>
         </div>
@@ -1942,6 +2306,9 @@ onMounted(() => {
                     <template v-if="chargePatientFeeSummary">
                       待收 ¥{{ formatMoney(chargePatientFeeSummary.pendingCollectionAmount) }} ·
                       已收 ¥{{ formatMoney(chargePatientFeeSummary.collectedAmount) }}
+                      <template v-if="discountFeatureEnabled">
+                        · 折扣 ¥{{ formatMoney(chargePatientFeeSummary.discountGapAmount) }}
+                      </template>
                     </template>
                     <template v-else-if="tableLoading && selectedEncounterId">加载中…</template>
                     <template v-else>—</template>
@@ -1953,6 +2320,31 @@ onMounted(() => {
               <div class="mb-2 flex flex-wrap items-center gap-2">
                 <SectionTitle title="收费项目列表" />
                 <div class="flex-1"></div>
+                <div
+                  v-if="discountFeatureEnabled"
+                  class="mr-2 flex shrink-0 items-center gap-1.5"
+                  title="同批可打折项目须统一折扣；不同折扣请分次勾选结算"
+                >
+                  <span class="text-sm text-[var(--el-text-color-regular)]">折扣</span>
+                  <ElSelect
+                    v-model="cashierDiscountZheText"
+                    class="!w-[112px]"
+                    size="small"
+                    clearable
+                    filterable
+                    allow-create
+                    default-first-option
+                    placeholder="不打折"
+                    @change="handleCashierDiscountChange"
+                  >
+                    <ElOption
+                      v-for="opt in OUTPATIENT_CHARGE_DISCOUNT_QUICK_OPTIONS"
+                      :key="opt.key"
+                      :label="opt.label"
+                      :value="opt.zhe === null ? '' : String(opt.zhe)"
+                    />
+                  </ElSelect>
+                </div>
                 <ElButton
                   type="warning"
                   plain
@@ -2003,11 +2395,33 @@ onMounted(() => {
                 >
                   补打小票
                 </ElButton>
+                <ElButton
+                  class="mr-1"
+                  :disabled="!canReprintChargeReceipt"
+                  :loading="invoicePrintLoading"
+                  @click="handlePrintChargeInvoice"
+                >
+                  发票
+                </ElButton>
+                <ElButton
+                  class="mr-1"
+                  :disabled="!canReprintChargeReceipt"
+                  :loading="feeListPrintLoading"
+                  @click="handlePrintChargeFeeList"
+                >
+                  费用清单
+                </ElButton>
               </div>
+              <p
+                v-if="multiDiseaseSettleHint"
+                class="mb-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+              >
+                {{ multiDiseaseSettleHint }}
+              </p>
               <div class="charge-detail-wrapper">
                 <RegisterStyleTableLayout
                   ref="chargeTableLayoutRef"
-                  :key="selectedEncounterId || 'no-encounter'"
+                  :key="`${selectedEncounterId || 'no-encounter'}-${discountFeatureEnabled ? 'discount' : 'plain'}`"
                   class="!p-0"
                   :table-data="displayedPendingItems"
                   :loading="tableLoading"
@@ -2018,6 +2432,7 @@ onMounted(() => {
                   :show-top-query="false"
                   :max-height="600"
                   row-key="chargeItemId"
+                  :clear-selection-on-data-change="false"
                   :span-method="handleChargeDetailSpanMethod"
                   @selection-change="handleChargeSelectionChange"
                 >
@@ -2030,11 +2445,16 @@ onMounted(() => {
                     </template>
                   </template>
                   <template #totalPrice="{ row }">¥{{ formatMoney(row.totalPrice) }}</template>
+                  <template #discountedAmount="{ row }">
+                    ¥{{ formatMoney(row.discountedAmount ?? row.totalPrice) }}
+                  </template>
                 </RegisterStyleTableLayout>
                 <div class="ml-4 mt-2 text-sm text-[var(--el-text-color-regular)]">
                   已选待收 {{ selectedChargeRows.length }} 项，合计 ¥{{
                     formatMoney(selectedChargeSum)
-                  }}
+                  }}<template v-if="discountFeatureEnabled">
+                    ，折后合计 ¥{{ formatMoney(selectedDiscountedSum) }}
+                  </template>
                   <template v-if="selectedSettledPaymentIds.length > 0">
                     ；已选补打 {{ selectedSettledPaymentIds.length }} 笔
                   </template>
@@ -2061,6 +2481,9 @@ onMounted(() => {
       :primary-button-text="unionPayMakeupCollectMode ? '确认补收' : '确认收费'"
       :loading="confirmSettleLoading"
       :display-amount="preSettleSnapshot?.displayAmount ?? 0"
+      :discount-amount-total="
+        discountFeatureEnabled ? (preSettleSnapshot?.discountAmountTotal ?? 0) : 0
+      "
       :insurance-account-balance="settlementInsuranceBalc"
       :insurance-cvlserv-flag="settlementCvlservFlag"
       :insurance-breakdown-items="settlementInsuranceBreakdown"

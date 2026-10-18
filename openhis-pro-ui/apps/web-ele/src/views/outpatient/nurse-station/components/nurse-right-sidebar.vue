@@ -2,10 +2,11 @@
 import type { ActionRecord, SupplyItem, SupplyRoomOption } from './types';
 import { NURSE_ACTION_RECORD_TYPE_LABEL } from './types';
 
-import { ElButton, ElEmpty, ElOption, ElSelect, ElTag } from 'element-plus';
+import { ElBadge, ElButton, ElEmpty, ElOption, ElSelect, ElTag } from 'element-plus';
 
 import SectionTitle from '#/components/layouts/section-title.vue';
 import SupplyItemCard from '#/components/outpatient/supply-item-card.vue';
+import { OUTPATIENT_NURSE_SERVICE_APPLY_PRINT_ENABLED } from '#/views/outpatient/nurse-station/constants/nurse-print-apply.config';
 import { NURSE_PRINT_ACTION, type NursePrintActionCode } from '../constants/nurse-print-action';
 
 defineOptions({
@@ -15,6 +16,9 @@ defineOptions({
 const props = withDefaults(defineProps<Props>(), {
   showSupplySection: true,
   supplyRoomRequired: false,
+  printableExamApply: false,
+  printableLabApply: false,
+  printableTreatmentApply: false,
 });
 
 const emit = defineEmits<{
@@ -35,6 +39,12 @@ interface Props {
   canPrint: boolean;
   /** 皮试 Tab 下隐藏耗材区 */
   showSupplySection?: boolean;
+  /** 当前患者有可打印检查申请单时，检查按钮冒红点 */
+  printableExamApply?: boolean;
+  /** 当前患者有可打印检验申请单时，检验按钮冒红点 */
+  printableLabApply?: boolean;
+  /** 当前患者有可打印治疗申请单时，治疗按钮冒红点 */
+  printableTreatmentApply?: boolean;
 }
 
 const selectedSupplyRoomId = defineModel<string | undefined>('supplyRoomId');
@@ -162,13 +172,47 @@ const onPrint = (actionCode: NursePrintActionCode) => {
       >
         雾化标签
       </ElButton>
-      <ElButton
-        size="small"
-        :disabled="!canPrint"
-        @click="onPrint(NURSE_PRINT_ACTION.PROCEDURE_APPLY)"
-      >
-        处置申请单
-      </ElButton>
+      <template v-if="OUTPATIENT_NURSE_SERVICE_APPLY_PRINT_ENABLED">
+        <ElBadge
+          is-dot
+          :hidden="!props.printableExamApply"
+          class="print-action-badge"
+        >
+          <ElButton
+            size="small"
+            :disabled="!canPrint"
+            @click="onPrint(NURSE_PRINT_ACTION.EXAM_APPLY)"
+          >
+            检查申请单
+          </ElButton>
+        </ElBadge>
+        <ElBadge
+          is-dot
+          :hidden="!props.printableLabApply"
+          class="print-action-badge"
+        >
+          <ElButton
+            size="small"
+            :disabled="!canPrint"
+            @click="onPrint(NURSE_PRINT_ACTION.LAB_APPLY)"
+          >
+            检验申请单
+          </ElButton>
+        </ElBadge>
+        <ElBadge
+          is-dot
+          :hidden="!props.printableTreatmentApply"
+          class="print-action-badge"
+        >
+          <ElButton
+            size="small"
+            :disabled="!canPrint"
+            @click="onPrint(NURSE_PRINT_ACTION.TREATMENT_APPLY)"
+          >
+            治疗申请单
+          </ElButton>
+        </ElBadge>
+      </template>
     </div>
 
     <div class="bg-background flex min-h-0 flex-1 flex-col px-2 py-1.5">
@@ -240,5 +284,16 @@ const onPrint = (actionCode: NursePrintActionCode) => {
   line-height: 1.25;
   white-space: normal;
   overflow-wrap: break-word;
+}
+
+.print-action-badge {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.print-action-badge :deep(.el-badge__content.is-dot) {
+  top: 4px;
+  right: 8px;
 }
 </style>

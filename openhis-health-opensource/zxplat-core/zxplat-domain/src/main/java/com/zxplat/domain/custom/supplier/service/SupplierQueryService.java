@@ -1,0 +1,286 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.zxplat.domain.custom.supplier.service;
+
+import com.zxplat.domain.share.constants.FieldNameConstants;
+import com.zxplat.domain.share.constants.GeneralSharedConstants;
+import com.zxplat.domain.custom.supplier.entity.Supplier;
+import com.zxplat.domain.custom.supplier.queries.model.SupplierDetailQueryModel;
+import com.zxplat.domain.custom.supplier.queries.model.SupplierListItemQueryModel;
+import com.zxplat.domain.custom.supplier.repository.SupplierRepository;
+import com.zxplat.domain.share.constants.ErrorCodeConstants;
+import com.zxplat.domain.share.enums.SupplierStatus;
+import com.zxplat.domain.share.enums.SupplierType;
+import com.zxplat.framework.core.application.exception.BusinessException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
+import com.zxplat.domain.share.utils.IdInQueryChunkSupport;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+
+/**
+ * 供应商主数据读侧查询服务。
+ *
+ * <p>职责：为采购、库存与主数据维护提供供应商列表与详情只读能力；过滤与分页下推到仓储。</p>
+ *
+ * <p>聚合边界：仅本聚合 {@link SupplierRepository}。</p>
+ */
+@Service
+@RequiredArgsConstructor
+public class SupplierQueryService {
+
+    private final SupplierRepository repository;
+
+
+    /**
+     * 按主键查询供应商详情。
+     *
+     * @param supplierId 供应商标识
+     * @return 详情读模型
+     * @throws BusinessException 供应商不存在
+     */
+    public SupplierDetailQueryModel findSupplierById(Long supplierId) {
+        Supplier supplier = repository.findById(supplierId)
+            .orElseThrow(() -> new BusinessException(ErrorCodeConstants.SUPPLIER_NOT_FOUND, "供应商不存在"));
+        return this.toDetailModel(supplier);
+    }
+
+    /**
+     * 按主键解析供应商名称（不存在时不抛错），用于主数据写入侧回填生产厂家文本等场景。
+     *
+     * @param supplierId 供应商标识，可为 {@code null}
+     * @return 名称；无主键或未命中时为空
+     */
+    public Optional<String> findSupplierNameIfPresent(Long supplierId) {
+        if (supplierId == null) {
+            return Optional.empty();
+        }
+        return repository.findById(supplierId).map(Supplier::getName);
+    }
+
+    /**
+     * 批量解析供应商名称，供产品目录/发药等按 {@code manufacturerId} 回填展示名（A.9.1 IN 分批）。
+     *
+     * @param supplierIds 供应商标识集合；空或全 null 返回空 Map
+     * @return id → name；未命中的 id 不出现在结果中
+     */
+    public Map<Long, String> mapNamesByIds(Collection<Long> supplierIds) {
+        Map<Long, String> nameById = new HashMap<>();
+        if (supplierIds == null || supplierIds.isEmpty()) {
+            return nameById;
+        }
+        Set<Long> distinctIds = new LinkedHashSet<>();
+        for (Long supplierId : supplierIds) {
+            if (supplierId != null) {
+                distinctIds.add(supplierId);
+            }
+        }
+        if (distinctIds.isEmpty()) {
+            return nameById;
+        }
+        // Pre：主键 IN 分批，避免超长 IN 拖垮库
+        List<Supplier> suppliers = IdInQueryChunkSupport.loadByIdInChunks(
+            distinctIds,
+            chunkIds -> repository.findAllByIdIn(chunkIds));
+        for (Supplier supplier : suppliers) {
+            if (supplier.getId() != null && supplier.getName() != null) {
+                nameById.put(supplier.getId(), supplier.getName());
+            }
+        }
+        return nameById;
+    }
+
+    /**
+     * 按精确名称查找生产厂家（{@code SupplierType.MANUFACTURER}），供目录导入文案对齐主数据。
+     *
+     * @param name 厂家名称（须与落库 name 一致，调用方先 trim）
+     * @return 供应商标识；未命中为空
+     */
+    public Optional<Long> findManufacturerIdByExactName(String name) {
+        if (name == null || name.isBlank()) {
+            return Optional.empty();
+        }
+        return repository.findFirstByNameAndTypeEnum(name.trim(), SupplierType.MANUFACTURER.getCode())
+            .map(Supplier::getId);
+    }
+
+    /**
+     * 按精确名称批量解析生产厂家主键，供药品目录导入把 Excel 厂家文案对齐 {@code manufacturerId} 后再判重。
+     *
+     * @param names 厂家名称；空白项忽略；调用方无需先去重
+     * @return 名称 → 厂家主键；同名多条时保留先出现的一条；无命中返回空 Map
+     */
+    public Map<String, Long> findManufacturerIdsByExactNames(Collection<String> names) {
+        if (names == null || names.isEmpty()) {
+            return new HashMap<>();
+        }
+        LinkedHashSet<String> distinct = new LinkedHashSet<>();
+        for (String name : names) {
+            if (name == null) {
+                continue;
+            }
+            String trimmed = name.trim();
+            if (!trimmed.isEmpty()) {
+                distinct.add(trimmed);
+            }
+        }
+        if (distinct.isEmpty()) {
+            return new HashMap<>();
+        }
+        List<String> nameList = new ArrayList<>(distinct);
+        Map<String, Long> result = new HashMap<>();
+        int chunkSize = GeneralSharedConstants.ID_IN_QUERY_CHUNK_SIZE;
+        int from = 0;
+        while (from < nameList.size()) {
+            int to = from + chunkSize;
+            if (to > nameList.size()) {
+                to = nameList.size();
+            }
+            List<String> slice = new ArrayList<>(nameList.subList(from, to));
+            List<Supplier> rows = repository.findAllByNameInAndTypeEnum(
+                slice, SupplierType.MANUFACTURER.getCode());
+            for (Supplier supplier : rows) {
+                if (supplier == null || supplier.getId() == null || supplier.getName() == null) {
+                    continue;
+                }
+                // 同名多条时保留先出现的主键，与单条 findFirst 只取一条一致
+                if (!result.containsKey(supplier.getName())) {
+                    result.put(supplier.getName(), supplier.getId());
+                }
+            }
+            from = to;
+        }
+        return result;
+    }
+
+    /**
+     * 查询当前租户下全部有效供应商简表（软删由仓储/底座口径排除）。
+     *
+     * @return 列表项集合
+     */
+    public List<SupplierListItemQueryModel> listSuppliers() {
+        List<Supplier> suppliers = repository.findAllBy();
+        List<SupplierListItemQueryModel> result = new ArrayList<>();
+        // 转为列表行，供下拉或表格只读展示
+        for (Supplier supplier : suppliers) {
+            result.add(this.toListItemModel(supplier));
+        }
+        return result;
+    }
+
+    /**
+     * 按类型与「启用」状态筛选供应商，用于业务单据选择有效供货方。
+     *
+     * @param typeEnum 供应商类型编码
+     * @return 列表项集合
+     */
+    public List<SupplierListItemQueryModel> listSuppliersByTypeAndActive(String typeEnum) {
+        List<Supplier> suppliers = repository.findAllByTypeEnumAndStatusEnum(
+            typeEnum,
+            SupplierStatus.ACTIVE.getCode()
+        );
+        List<SupplierListItemQueryModel> result = new ArrayList<>();
+        for (Supplier supplier : suppliers) {
+            result.add(this.toListItemModel(supplier));
+        }
+        return result;
+    }
+
+    /**
+     * 按名称模糊匹配分页查询供应商，支持管理端检索；分页由数据库完成。
+     *
+     * @param name 名称关键字，null 视为空串即不按名称收窄
+     * @param pageNo 页码（0 基），null 时默认首页
+     * @param pageSize 每页条数，null 时使用批量上限常量
+     * @return 分页列表项
+     */
+    public Page<SupplierListItemQueryModel> pageSuppliers(String name, Integer pageNo, Integer pageSize) {
+        int normalizedPageNo;
+        // 未传页码时从第一页查起，避免调用方 NPE
+        if (pageNo == null) {
+            normalizedPageNo = 0;
+        } else {
+            normalizedPageNo = pageNo;
+        }
+        int normalizedPageSize;
+        // 未传页大小时用统一批量上限，防止一次拉取过大拖垮接口
+        if (pageSize == null) {
+            normalizedPageSize = GeneralSharedConstants.BATCH_LIMIT;
+        } else {
+            normalizedPageSize = pageSize;
+        }
+        Pageable pageable = PageRequest.of(normalizedPageNo, normalizedPageSize, Sort.by(Sort.Direction.DESC, FieldNameConstants.CREATED_AT));
+        String normalizedName;
+        // null 名称按空串处理，语义为「不按名称过滤」由仓储 like 实现
+        if (name == null) {
+            normalizedName = "";
+        } else {
+            normalizedName = name;
+        }
+        Page<Supplier> page = repository.findAllByNameContaining(normalizedName, pageable);
+        return page.map(this::toListItemModel);
+    }
+
+    /**
+     * 列表行映射：仅暴露检索与选择所需字段。
+     *
+     * @param supplier 实体
+     * @return 列表项模型
+     */
+    private SupplierListItemQueryModel toListItemModel(Supplier supplier) {
+        SupplierListItemQueryModel model = new SupplierListItemQueryModel();
+        model.setId(supplier.getId());
+        model.setBusNo(supplier.getBusNo());
+        model.setName(supplier.getName());
+        model.setTypeEnum(supplier.getTypeEnum());
+        model.setStatusEnum(supplier.getStatusEnum());
+        model.setPyStr(supplier.getPyStr());
+        model.setWbStr(supplier.getWbStr());
+        model.setAddress(supplier.getAddress());
+        model.setPhone(supplier.getPhone());
+        model.setEmail(supplier.getEmail());
+        return model;
+    }
+
+    /**
+     * 详情映射：包含联系方式与账户等维护字段。
+     *
+     * @param supplier 实体
+     * @return 详情模型
+     */
+    private SupplierDetailQueryModel toDetailModel(Supplier supplier) {
+        SupplierDetailQueryModel model = new SupplierDetailQueryModel();
+        model.setId(supplier.getId());
+        model.setBusNo(supplier.getBusNo());
+        model.setName(supplier.getName());
+        model.setTypeEnum(supplier.getTypeEnum());
+        model.setCreditCode(supplier.getCreditCode());
+        model.setLegalRepresentative(supplier.getLegalRepresentative());
+        model.setAddress(supplier.getAddress());
+        model.setPyStr(supplier.getPyStr());
+        model.setWbStr(supplier.getWbStr());
+        model.setPhone(supplier.getPhone());
+        model.setEmail(supplier.getEmail());
+        model.setBankName(supplier.getBankName());
+        model.setBankAccount(supplier.getBankAccount());
+        model.setOrgId(supplier.getOrgId());
+        model.setDisplayOrder(supplier.getDisplayOrder());
+        model.setStatusEnum(supplier.getStatusEnum());
+        model.setNote(supplier.getNote());
+        return model;
+    }
+}

@@ -19,7 +19,9 @@ import {
   computed,
   getCurrentInstance,
   nextTick,
+  onActivated,
   onBeforeUnmount,
+  onDeactivated,
   onMounted,
   provide,
   ref,
@@ -451,6 +453,103 @@ function syncPageChromeToEditor(ed?: Editor | null) {
   requestEmrPaginationRelayout(target);
 }
 
+const editorContentRef = ref<HTMLElement | null>(null);
+
+type EditorScrollPos = { left: number; top: number };
+
+function resolveEditorScrollEl(): HTMLElement | null {
+  const fromRef = editorContentRef.value;
+  if (fromRef instanceof HTMLElement) return fromRef;
+  const ed = editor.value;
+  if (!ed || ed.isDestroyed) return null;
+  const fromDom = ed.view.dom.closest('.simple-editor__content');
+  return fromDom instanceof HTMLElement ? fromDom : null;
+}
+
+/** KeepAlive 会把节点挪到游离容器，此时 scrollTop 已被清 0，不能当有效视口 */
+function isEditorScrollElLive(el: HTMLElement): boolean {
+  if (!el.isConnected) return false;
+  if (el.clientHeight < 8) return false;
+  const pane = el.closest('.medical-record-form__editor-pane');
+  if (pane && !pane.classList.contains('medical-record-form__editor-pane--active')) {
+    return false;
+  }
+  const style = getComputedStyle(el);
+  return style.display !== 'none' && style.visibility !== 'hidden';
+}
+
+let rememberedEditorScroll: EditorScrollPos = { left: 0, top: 0 };
+let restoringEditorScroll = false;
+let editorScrollTarget: HTMLElement | null = null;
+let editorScrollPollTimer: number | undefined;
+let editorScrollRestoreTimers: number[] = [];
+
+function snapshotEditorScroll() {
+  if (restoringEditorScroll) return;
+  const el = resolveEditorScrollEl();
+  if (!el || !isEditorScrollElLive(el)) return;
+  rememberedEditorScroll = { left: el.scrollLeft, top: el.scrollTop };
+}
+
+function onEditorScrollElScroll() {
+  snapshotEditorScroll();
+}
+
+function unbindEditorScrollMemory() {
+  if (editorScrollTarget) {
+    editorScrollTarget.removeEventListener('scroll', onEditorScrollElScroll);
+    editorScrollTarget = null;
+  }
+  if (editorScrollPollTimer != null) {
+    window.clearInterval(editorScrollPollTimer);
+    editorScrollPollTimer = undefined;
+  }
+}
+
+function bindEditorScrollMemory() {
+  const el = resolveEditorScrollEl();
+  if (!el) return;
+  if (el === editorScrollTarget) return;
+  unbindEditorScrollMemory();
+  editorScrollTarget = el;
+  el.addEventListener('scroll', onEditorScrollElScroll, { passive: true });
+  editorScrollPollTimer = window.setInterval(snapshotEditorScroll, 250);
+}
+
+function captureEditorScroll(): EditorScrollPos {
+  snapshotEditorScroll();
+  return { ...rememberedEditorScroll };
+}
+
+function restoreEditorScroll(pos?: EditorScrollPos | null) {
+  const target = pos ?? rememberedEditorScroll;
+  rememberedEditorScroll = { left: target.left, top: target.top };
+  const apply = () => {
+    bindEditorScrollMemory();
+    const el = resolveEditorScrollEl();
+    if (!el) return;
+    restoringEditorScroll = true;
+    el.scrollTop = target.top;
+    el.scrollLeft = target.left;
+    window.requestAnimationFrame(() => {
+      restoringEditorScroll = false;
+    });
+  };
+  for (const t of editorScrollRestoreTimers) window.clearTimeout(t);
+  editorScrollRestoreTimers = [];
+  apply();
+  void nextTick(apply);
+  requestAnimationFrame(() => {
+    apply();
+    editorScrollRestoreTimers.push(
+      window.setTimeout(apply, 80),
+      window.setTimeout(apply, 260),
+      window.setTimeout(apply, 620),
+      window.setTimeout(apply, 1200),
+    );
+  });
+}
+
 /** 冷加载/只读查看：内容与 NodeView 落稳后再排，避免查看页页眉重叠 */
 let settledRelayoutTimers: number[] = [];
 function scheduleSettledPaginationRelayout() {
@@ -462,6 +561,7 @@ function scheduleSettledPaginationRelayout() {
     const cur = editor.value;
     if (!cur || cur.isDestroyed) return;
     requestEmrPaginationRelayout(cur);
+    restoreEditorScroll(rememberedEditorScroll);
   };
   run();
   void nextTick(() => {
@@ -2126,6 +2226,7 @@ const editor = useEditor({
     editorRefForDrop = ed;
     syncPageChromeToEditor(ed);
     ed.view.dom.addEventListener('contextmenu', onEditorContextMenu);
+    void nextTick(() => bindEditorScrollMemory());
   },
   onDestroy: () => {
     editorRefForDrop?.view.dom.removeEventListener('contextmenu', onEditorContextMenu);
@@ -2304,6 +2405,7 @@ watch(
     const sel = ed.state.selection;
     const prevFrom = sel.from;
     const prevTo = sel.to;
+    const scrollToKeep = captureEditorScroll();
     ed.chain()
       .setMeta(EMR_FIXED_TEXT_ALLOW_MUTATE_META, true)
       .setMeta(EMR_CONTENT_LOCK_BYPASS_META, true)
@@ -2325,6 +2427,7 @@ watch(
     }
     // 换稿常复用 NodeView；v-once 岛可能仍停在打开历史时的 contenteditable=false
     syncEditorIslandEditable(ed);
+    restoreEditorScroll(scrollToKeep);
     scheduleSettledPaginationRelayout();
   },
 );
@@ -2382,12 +2485,26 @@ onMounted(() => {
   document.addEventListener('click', closeCtxMenu);
   document.addEventListener('keydown', onChromeEditDismiss);
   document.addEventListener('keydown', onRibbonKeydown);
+  void nextTick(() => bindEditorScrollMemory());
   scheduleSettledPaginationRelayout();
+});
+
+onActivated(() => {
+  bindEditorScrollMemory();
+  restoreEditorScroll(rememberedEditorScroll);
+});
+
+onDeactivated(() => {
+  snapshotEditorScroll();
+  unbindEditorScrollMemory();
 });
 
 onBeforeUnmount(() => {
   for (const t of settledRelayoutTimers) window.clearTimeout(t);
   settledRelayoutTimers = [];
+  for (const t of editorScrollRestoreTimers) window.clearTimeout(t);
+  editorScrollRestoreTimers = [];
+  unbindEditorScrollMemory();
   if (chromeEditingBand.value) {
     exitChromeEdit();
   }
@@ -3355,6 +3472,8 @@ defineExpose({
       onlyKeys: new Set(EMR_DIAGNOSIS_METADATA_FIELD_KEYS),
     });
   },
+  captureScrollPosition: captureEditorScroll,
+  restoreScrollPosition: restoreEditorScroll,
 });
 </script>
 
@@ -4856,7 +4975,11 @@ defineExpose({
           :layout-locked="false"
         />
 
-        <div class="simple-editor__content" @dblclick="onChromeBandDblClick">
+        <div
+          ref="editorContentRef"
+          class="simple-editor__content"
+          @dblclick="onChromeBandDblClick"
+        >
           <div
             v-if="surface === 'document' && !readOnly"
             class="simple-editor__fillable-rail-anchor"

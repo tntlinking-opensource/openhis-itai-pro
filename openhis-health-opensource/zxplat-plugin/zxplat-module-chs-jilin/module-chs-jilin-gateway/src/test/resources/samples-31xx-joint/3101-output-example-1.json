@@ -1,0 +1,160 @@
+{
+  "output": {
+    "result": [
+      {
+        "judge_result_detail_dtos": [
+          {
+            "vola_item_type": "1",
+            "mdtrt_id": "149402417",
+            "jrd_id": "5112185d-59b2-4d35-a0f2-09998da19582",
+            "patn_id": "149402417",
+            "rx_id": "YZ250708000361",
+            "vola_amt": 21.0
+          }
+        ],
+        "rule_id": "220000202507091522001000054004",
+        "vola_evid": "2",
+        "mdtrt_id": "149402417",
+        "rule_name": "药品限制性规则_事前提醒",
+        "vola_amt_stas": "1",
+        "jr_id": "d83e4a1f-03ab-4345-b172-1be96c3abf80",
+        "patn_id": "149402417",
+        "sev_deg": "1",
+        "vola_amt": 21.0,
+        "vola_bhvr_type": "2",
+        "vola_cont": "根据《国家基本医疗保险、工伤保险和生育保险药品目录》，血塞通注射液限限二级及以上医药机构。，现开具的药品超出医保限定支付范围。"
+      },
+      {
+        "judge_result_detail_dtos": [
+          {
+            "vola_item_type": "1",
+            "mdtrt_id": "149402417",
+            "jrd_id": "099c3594-c297-4365-880d-dbf5a45ad720",
+            "patn_id": "149402417",
+            "rx_id": "",
+            "vola_amt": 224.21
+          }
+        ],
+        "rule_id": "220000202508151458441000056002",
+        "vola_evid": "基本临床诊疗规范",
+        "mdtrt_id": "149402417",
+        "rule_name": "男性患者就诊妇产科_事前提醒",
+        "vola_amt_stas": "1",
+        "jr_id": "9795982f-5e12-447e-b169-469a7a15d504",
+        "patn_id": "149402417",
+        "sev_deg": "2",
+        "vola_amt": 224.21,
+        "vola_bhvr_type": "1",
+        "vola_cont": "根据参保人信息显示为【男】，但挂了【普通妇一科】"
+      },
+      {
+        "judge_result_detail_dtos": [
+          {
+            "vola_item_type": "1",
+            "mdtrt_id": "149402417",
+            "jrd_id": "27014d67-9e10-4a54-a15d-a3e5f338362d",
+            "patn_id": "149402417",
+            "rx_id": "",
+            "vola_amt": 224.21
+          }
+        ],
+        "rule_id": "220000202505211735481000055008",
+        "vola_evid": "诊断学",
+        "mdtrt_id": "149402417",
+        "rule_name": "单次就诊诊断与患者性别不符_事前提醒",
+        "vola_amt_stas": "1",
+        "jr_id": "d9eb5991-b663-4e21-b9b0-85b84dffd761",
+        "patn_id": "149402417",
+        "sev_deg": "2",
+        "vola_amt": 224.21,
+        "vola_bhvr_type": "1",
+        "vola_cont": "N80.809/胸腔子宫内膜异位症与患者性别不符，患者性别为男性，却给患者下了女性专有的诊断"
+      },
+      {
+        "judge_result_detail_dtos": [
+          {
+            "vola_item_type": "2",
+            "mdtrt_id": "149402417",
+            "jrd_id": "1d18d8ae-7f8b-475b-9898-fc02b2e95fff",
+            "patn_id": "149402417",
+            "rx_id": "28667186",
+            "vola_amt": 0.0
+          },
+          {
+            "vola_item_type": "1",
+            "mdtrt_id": "149402417",
+            "jrd_id": "5108b8cc-27dc-4819-9472-91f5716e2e2b",
+            "patn_id": "149402417",
+            "rx_id": "28667187",
+            "vola_amt": 6.0
+          }
+        ],
+        "rule_id": "220000202404231632051000041006",
+        "vola_evid": "根据本地《医保诊疗项目收费标准》中的项目内涵及其含义解读，两个项目同时收费属于重复收费",
+        "mdtrt_id": "149402417",
+        "rule_name": "单次就诊诊疗项目重复收费_事前提醒",
+        "vola_amt_stas": "1",
+        "jr_id": "e380ea90-9844-4bb0-b12b-599c43ef2eac",
+        "patn_id": "149402417",
+        "sev_deg": "2",
+        "vola_amt": 6.0,
+        "vola_bhvr_type": "2",
+        "vola_cont": "〖普通二维超声心动图/普通二维超声心动图〗与〖普通心脏M型超声检查/普通心脏M型超声检查〗属同类型项目，已构成项目重复使用"
+      },
+      {
+        "judge_result_detail_dtos": [
+          {
+            "vola_item_type": "1",
+            "mdtrt_id": "149402417",
+            "jrd_id": "f3e36b43-0240-4faa-b06a-59d0f5c0bff9",
+            "patn_id": "149402417",
+            "rx_id": "1054440262",
+            "vola_amt": 0.0
+          }
+        ],
+        "rule_id": "220000202507021536571000055010",
+        "vola_evid": "为女性使用药品",
+        "mdtrt_id": "149402417",
+        "rule_name": "单次就诊性别用药禁忌_事前提醒",
+        "vola_amt_stas": "1",
+        "jr_id": "be0fba54-c816-4b80-b6ed-47a30b75d434",
+        "patn_id": "149402417",
+        "sev_deg": "2",
+        "vola_amt": 0.0,
+        "vola_bhvr_type": "2",
+        "vola_cont": "[抗妇炎胶囊0.35g*48粒/抗妇炎胶囊0.35g*48粒]为女性使用药物，参保人当前信息显示性别为：男"
+      },
+      {
+        "judge_result_detail_dtos": [
+          {
+            "vola_item_type": "1",
+            "mdtrt_id": "149402417",
+            "jrd_id": "41519ddd-13a5-4051-a91d-5bcce9c08885",
+            "patn_id": "149402417",
+            "rx_id": "1054440263",
+            "vola_amt": 0.0
+          }
+        ],
+        "rule_id": "220000202507021536571000055010",
+        "vola_evid": "为女性使用药品",
+        "mdtrt_id": "149402417",
+        "rule_name": "单次就诊性别用药禁忌_事前提醒",
+        "vola_amt_stas": "1",
+        "jr_id": "a8e98078-922d-4eff-878b-cd079f5eed49",
+        "patn_id": "149402417",
+        "sev_deg": "2",
+        "vola_amt": 0.0,
+        "vola_bhvr_type": "2",
+        "vola_cont": "[盐酸特比萘芬阴道泡腾片50mg*7片/盐酸特比萘芬阴道泡腾片50mg*7片]为女性使用药物，参保人当前信息显示性别为：男"
+      }
+    ]
+  },
+  "infcode": 0,
+  "warn_msg": null,
+  "cainfo": null,
+  "err_msg": "成功",
+  "refmsg_time": "20250815150314648",
+  "signtype": null,
+  "respond_time": "20250815150314955",
+  "inf_refmsgid": "220000202508151503140000095029"
+}

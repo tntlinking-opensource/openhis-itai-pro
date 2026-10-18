@@ -12,6 +12,10 @@ import type {
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-temperature-sheet.types';
 
 import {
+  TEMPERATURE_SHEET_FOOTER_SUPPLEMENT_ROWS,
+  TEMPERATURE_SHEET_PREVIOUS_DAY_SUPPLEMENT_FIELDS,
+} from '#/views/inpatient/nurse-station/temperature-sheet/temperature-sheet-footer.config';
+import {
   applyDetailItemsToFillRow,
   buildDetailItemsFromFillRow,
   hasDetailItemsContent,
@@ -26,6 +30,11 @@ import {
   resolveAdmissionDateYmd as resolveAdmissionDateYmdFromAt,
   resolveTemperatureSheetChartTimeSlotFromHm,
 } from './temperature-sheet-time-format';
+
+export {
+  TEMPERATURE_SHEET_FOOTER_SUPPLEMENT_ROWS,
+  TEMPERATURE_SHEET_PREVIOUS_DAY_SUPPLEMENT_FIELDS,
+};
 
 export const TEMPERATURE_SHEET_TIME_SLOTS: TemperatureSheetTimeSlot[] = [
   '02',
@@ -75,9 +84,12 @@ export interface TemperatureSheetFillRowDraft {
 
 export interface TemperatureSheetExtraRecordDraft {
   abdominalCircumference: string;
+  allergyDrug: string;
+  drainage: string;
   height: string;
   intake: string;
   other: string;
+  remark: string;
   stoolCount: string;
   urine: string;
   urineCount: string;
@@ -86,30 +98,19 @@ export interface TemperatureSheetExtraRecordDraft {
 
 /** 底部网格：按日合并的汇总展示（对应 dailySupplement） */
 export interface TemperatureSheetFooterDayCell {
+  allergyDrug: string;
   bloodPressureFirst: string;
   bloodPressureSecond: string;
+  drainage: string;
   height: string;
   intake: string;
   other: string;
+  remark: string;
   stoolCount: string;
   urine: string;
   urineCount: string;
   weight: string;
 }
-
-/** 前一日统计归属的补充项：录入日 D 的 22:00 槽保存，底部展示在 D-1 列 */
-export const TEMPERATURE_SHEET_PREVIOUS_DAY_SUPPLEMENT_FIELDS = [
-  'stoolCount',
-  'urineCount',
-  'intake',
-  'other',
-  'urine',
-] as const satisfies ReadonlyArray<
-  keyof Pick<
-    TemperatureSheetExtraRecordDraft,
-    'intake' | 'other' | 'stoolCount' | 'urine' | 'urineCount'
-  >
->;
 
 /** 录入日是否为入院日（入院日不填前一日入出量/大便等统计项） */
 export function isTemperatureSheetAdmissionRecordDate(
@@ -134,20 +135,6 @@ export function clearTemperatureSheetPreviousDaySupplementFields(
   }
   return next;
 }
-
-/** 底部补充指标行（除呼吸、血压外），顺序与纸质体温单一致 */
-export const TEMPERATURE_SHEET_FOOTER_SUPPLEMENT_ROWS = [
-  { field: 'stoolCount', label: '大便次数' },
-  { field: 'urineCount', label: '小便次数' },
-  { field: 'intake', label: '总入量(ml)' },
-  { field: 'other', label: '其他(ml)' },
-  { field: 'urine', label: '尿量(ml)' },
-  { field: 'weight', label: '体重(kg)' },
-  { field: 'height', label: '身高(cm)' },
-] as const satisfies ReadonlyArray<{
-  field: keyof Omit<TemperatureSheetFooterDayCell, 'bloodPressureFirst' | 'bloodPressureSecond'>;
-  label: string;
-}>;
 
 /** 录入日偏移自然日（YYYY-MM-DD） */
 export function shiftTemperatureSheetRecordDateYmd(dateYmd: string, days: number): string {
@@ -560,6 +547,45 @@ export function extendDerivedMetaForWindow(
   };
 }
 
+/**
+ * 按手术日列表重算窗口内术后天数（手术当日为 0，次日起为 1、2…）。
+ *
+ * @param surgeryDateYmds 手术日 YYYY-MM-DD
+ * @param startDateYmd 窗口起始日
+ * @param dayCount 窗口天数
+ */
+export function buildPostoperativeDaysByDateForWindow(
+  surgeryDateYmds: string[],
+  startDateYmd: string,
+  dayCount: number,
+): Record<string, number> {
+  const surgeryDates = [
+    ...new Set(
+      surgeryDateYmds
+        .map((date) => date.trim())
+        .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date)),
+    ),
+  ].sort();
+  const result: Record<string, number> = {};
+  if (surgeryDates.length === 0 || !startDateYmd.trim() || dayCount < 1) {
+    return result;
+  }
+  for (let dayIndex = 0; dayIndex < dayCount; dayIndex += 1) {
+    const fullDate = addDaysToYmd(startDateYmd, dayIndex);
+    let latestSurgery = '';
+    for (const surgeryDate of surgeryDates) {
+      if (surgeryDate <= fullDate) {
+        latestSurgery = surgeryDate;
+      }
+    }
+    if (!latestSurgery) {
+      continue;
+    }
+    result[fullDate] = diffDaysBetweenYmd(latestSurgery, fullDate);
+  }
+  return result;
+}
+
 /** 字符串体征值转图表数字 */
 function parseChartNumber(value?: null | string): number | undefined {
   const text = (value ?? '').trim();
@@ -779,6 +805,8 @@ export function buildFooterDayCellsFromGridRows(
     );
     // 身高/体重：优先 22:00，兼容入院体征写在入科时点的数据
     const heightWeightItems = resolveDayHeightWeightDetailItems(gridRow.slotCells);
+    // 过敏药物/备注：当日 22:00 补充槽
+    const sameDayDetailItems22 = resolveSlot22DetailItems(gridRow.slotCells);
     // 前一日统计项：展示列 S 读录入日 S+1 的 22:00 槽
     const previousDayEntryRow = recordDate
       ? gridRowByDate.get(addDaysToYmd(recordDate, 1))
@@ -809,7 +837,10 @@ export function buildFooterDayCellsFromGridRows(
       ),
       intake: readVitalValueFromDetailItems(previousDayDetailItems22, VITAL_ITEM_CODE.INTAKE),
       other: readVitalValueFromDetailItems(previousDayDetailItems22, VITAL_ITEM_CODE.OTHER),
+      drainage: readVitalValueFromDetailItems(previousDayDetailItems22, VITAL_ITEM_CODE.DRAIN_VOL),
       urine: readVitalValueFromDetailItems(previousDayDetailItems22, VITAL_ITEM_CODE.URINE_VOL),
+      allergyDrug: readVitalValueFromDetailItems(sameDayDetailItems22, VITAL_ITEM_CODE.ALLERGY_DRUG),
+      remark: readVitalValueFromDetailItems(sameDayDetailItems22, VITAL_ITEM_CODE.REMARK),
       weight: readVitalValueFromDetailItems(heightWeightItems, VITAL_ITEM_CODE.WEIGHT),
       height: readVitalValueFromDetailItems(heightWeightItems, VITAL_ITEM_CODE.HEIGHT),
     };
@@ -932,6 +963,9 @@ export function createEmptyExtraRecord(): TemperatureSheetExtraRecordDraft {
     abdominalCircumference: '',
     urineCount: '',
     other: '',
+    drainage: '',
+    allergyDrug: '',
+    remark: '',
   };
 }
 
@@ -1044,7 +1078,10 @@ export function collectTemperatureSheetSaveRequests(
     return chartSlot === '22';
   });
   if (hasExtraContent && !hasChartSlot22Request) {
-    const slot22Row = rows.find((row) => row.timeSlot === '22') ?? createEmptyFillRow('22');
+    const slot22Row =
+      rows.find((row) => row.timeSlot === '22' && row.vitalSignId?.trim()) ??
+      rows.find((row) => row.timeSlot === '22') ??
+      createEmptyFillRow('22');
     const extraRequest = mapFillRowToSaveRequest(
       slot22Row,
       extraRecord,
@@ -1058,6 +1095,30 @@ export function collectTemperatureSheetSaveRequests(
   }
 
   return requests;
+}
+
+/**
+ * 已落库但本次明细被清空的主表 id。
+ * 空请求会被保存收集跳过，不走覆盖写软删，大便次数 0 等值会留在格子里。
+ */
+export function collectTemperatureSheetClearedVitalSignIds(
+  rows: TemperatureSheetFillRowDraft[],
+  extraRecord: TemperatureSheetExtraRecordDraft,
+): string[] {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const vitalSignId = row.vitalSignId?.trim();
+    if (!vitalSignId || seen.has(vitalSignId)) {
+      continue;
+    }
+    if (hasFillRowSaveContent(row, extraRecord)) {
+      continue;
+    }
+    seen.add(vitalSignId);
+    ids.push(vitalSignId);
+  }
+  return ids;
 }
 
 /** 批量保存后回写各槽 vitalSignId */

@@ -1,28 +1,20 @@
 <script setup lang="ts">
-import type { AdviceDraftBindDialogSourceGroup } from '../services/advice-draft-bind.types';
-
 import { computed } from 'vue';
 
 import {
   ElButton,
-  ElCheckbox,
-  ElCheckboxGroup,
   ElDialog,
   ElInputNumber,
   ElTable,
   ElTableColumn,
 } from 'element-plus';
-import type { CheckboxGroupValueType } from 'element-plus';
 
 import {
   adviceDraftBindDialogOpen,
   adviceDraftBindDialogRows,
-  adviceDraftBindDialogSkipSourceKeys,
-  adviceDraftBindDialogSourceGroups,
   cancelAdviceDraftBindDialog,
   confirmAdviceDraftBindDialog,
   replaceAdviceDraftBindDialogRows,
-  replaceAdviceDraftBindDialogSkipSourceKeys,
 } from '../services/advice-draft-bind-dialog.controller';
 
 defineOptions({ name: 'AdviceDraftBindDialog' });
@@ -33,19 +25,6 @@ const hasInvalidQuantity = computed(() =>
     (row) => !Number.isFinite(row.quantity) || row.quantity <= 0,
   ),
 );
-
-/** 是否至少保留一条带出项 */
-const hasRows = computed(() => adviceDraftBindDialogRows.value.length > 0);
-
-/** 当前仍有带出行的来源（用于展示「不再提示」勾选） */
-const activeSourceGroups = computed(() => {
-  const keys = new Set(
-    adviceDraftBindDialogRows.value
-      .map((row) => String(row.sourceCacheKey ?? '').trim())
-      .filter(Boolean),
-  );
-  return adviceDraftBindDialogSourceGroups.value.filter((group) => keys.has(group.sourceCacheKey));
-});
 
 /** 更新某一行的数量 */
 function handleQuantityChange(index: number, value: number | undefined) {
@@ -61,24 +40,9 @@ function handleQuantityChange(index: number, value: number | undefined) {
   replaceAdviceDraftBindDialogRows(next);
 }
 
-/** 删除行：仅本次不带出，不影响缓存 */
+/** 删除行：仅本次不带出 */
 function handleRemoveRow(index: number) {
   replaceAdviceDraftBindDialogRows(adviceDraftBindDialogRows.value.filter((_, i) => i !== index));
-}
-
-/** 更新「不再提示」勾选 */
-function handleSkipSourceChange(val: CheckboxGroupValueType) {
-  const keys = Array.isArray(val) ? val.map((item) => String(item)) : [];
-  replaceAdviceDraftBindDialogSkipSourceKeys(keys);
-}
-
-function sourceGroupLabel(group: AdviceDraftBindDialogSourceGroup): string {
-  const label = String(group.sourceLabel ?? '').trim();
-  const kind = String(group.sourceKindLabel ?? '').trim();
-  const nameWithKind = label && kind ? `${label}（${kind}）` : label || kind;
-  return nameWithKind
-    ? `${nameWithKind} 的绑定项以后自动带出，不再提示`
-    : '该来源的绑定项以后自动带出，不再提示';
 }
 
 function formatSourceDisplay(row: { sourceItemName: string; sourceKindLabel: string }): string {
@@ -100,17 +64,8 @@ function handleConfirm() {
   if (hasInvalidQuantity.value) {
     return;
   }
-  const remainingSourceKeys = new Set(
-    adviceDraftBindDialogRows.value
-      .map((row) => String(row.sourceCacheKey ?? '').trim())
-      .filter(Boolean),
-  );
-  const skipSourceKeys = adviceDraftBindDialogSkipSourceKeys.value.filter((key) =>
-    remainingSourceKeys.has(key),
-  );
   confirmAdviceDraftBindDialog({
     rows: adviceDraftBindDialogRows.value,
-    skipSourceKeys,
   });
 }
 </script>
@@ -119,22 +74,31 @@ function handleConfirm() {
   <ElDialog
     v-model="adviceDraftBindDialogOpen"
     title="绑定带出项目确认"
-    width="760px"
+    width="980px"
     append-to-body
     destroy-on-close
     :close-on-click-modal="false"
     @close="handleCancel"
   >
     <p class="advice-draft-bind-dialog__hint">
-      以下诊疗/耗材由用法或诊疗绑定规则带出，请确认数量后继续保存（将与当前编辑医嘱一并暂存）。删除行仅对本次保存生效。
+      以下诊疗/耗材由用法或诊疗绑定规则带出，请确认数量后继续保存（将与当前编辑医嘱一并暂存）。同用法多组：诊疗（如输液费）只带一份，耗材按组各带一份。删除行仅对本次保存生效。
     </p>
     <ElTable :data="adviceDraftBindDialogRows" border stripe max-height="360">
-      <ElTableColumn label="来源" min-width="140" show-overflow-tooltip>
+      <ElTableColumn
+        label="来源"
+        min-width="180"
+        class-name="advice-draft-bind-dialog__wrap"
+      >
         <template #default="{ row }">
           {{ formatSourceDisplay(row) }}
         </template>
       </ElTableColumn>
-      <ElTableColumn prop="targetItemName" label="带出项目" min-width="160" show-overflow-tooltip />
+      <ElTableColumn
+        prop="targetItemName"
+        label="带出项目"
+        min-width="280"
+        class-name="advice-draft-bind-dialog__wrap"
+      />
       <ElTableColumn prop="targetKindLabel" label="类型" width="72" align="center" />
       <ElTableColumn label="数量" width="140" align="center">
         <template #default="{ row, $index }">
@@ -161,21 +125,6 @@ function handleConfirm() {
       </ElTableColumn>
     </ElTable>
 
-    <div v-if="activeSourceGroups.length > 0 && hasRows" class="advice-draft-bind-dialog__skip">
-      <ElCheckboxGroup
-        :model-value="adviceDraftBindDialogSkipSourceKeys"
-        @update:model-value="handleSkipSourceChange"
-      >
-        <ElCheckbox
-          v-for="group in activeSourceGroups"
-          :key="group.sourceCacheKey"
-          :value="group.sourceCacheKey"
-        >
-          {{ sourceGroupLabel(group) }}
-        </ElCheckbox>
-      </ElCheckboxGroup>
-    </div>
-
     <template #footer>
       <ElButton @click="handleCancel">取消</ElButton>
       <ElButton type="primary" :disabled="hasInvalidQuantity" @click="handleConfirm">
@@ -193,17 +142,10 @@ function handleConfirm() {
   line-height: 1.5;
 }
 
-.advice-draft-bind-dialog__skip {
-  margin-top: 12px;
-  padding-top: 8px;
-  border-top: 1px solid var(--el-border-color-lighter);
-}
-
-.advice-draft-bind-dialog__skip :deep(.el-checkbox) {
-  display: flex;
-  height: auto;
-  margin-right: 0;
+:deep(.advice-draft-bind-dialog__wrap .cell) {
   white-space: normal;
+  word-break: break-all;
+  line-height: 1.4;
 }
 
 .advice-draft-bind-dialog__qty {

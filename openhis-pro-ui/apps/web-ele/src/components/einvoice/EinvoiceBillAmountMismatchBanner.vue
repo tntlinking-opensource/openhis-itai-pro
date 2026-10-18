@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { useAccess } from '@vben/access';
+import { useAccess } from '@zxplat/access';
 
 import { ElAlert, ElButton, ElMessage } from 'element-plus';
 

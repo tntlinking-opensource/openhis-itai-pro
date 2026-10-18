@@ -3,7 +3,7 @@ import type { CreateTenantParams, TenantInfo, UpdateTenantParams } from '#/api/c
 
 import { computed, reactive, ref, watch } from 'vue';
 
-import { useVbenModal } from '@vben/common-ui';
+import { useVbenModal } from '@zxplat/common-ui';
 
 import { ElMessage } from 'element-plus';
 

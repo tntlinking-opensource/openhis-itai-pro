@@ -1,0 +1,1210 @@
+{
+  "generated_at": "2026-10-06T23:41:07",
+  "root": "D:\\0.product\\03.ZXPlat\\zxplat\\docs\\模块\\zxplat-module-chs-jilin\\目录更新通知",
+  "summary": {
+    "packs_ok": 63,
+    "packs_warn": 7,
+    "packs_fail": 5,
+    "coverage_missing_packs": 2,
+    "coverage_orphan_packs": 1,
+    "root_pending": 0,
+    "unconverted": 2
+  },
+  "coverage": {
+    "archived_source_count": 76,
+    "standard_pack_count": 75,
+    "missing_standard_pack": [
+      "附件：F服务目录10号文数据更新目录（2026.8.20）_",
+      "附件：F服务目录数据更新目录（2026.3.24） (1)"
+    ],
+    "orphan_standard_pack": [
+      "00.所有文件按日期排序20261006"
+    ],
+    "unconverted": [
+      "_无法转换\\耗材数据更新（H2024.7.1）\\耗材数据更新（H2024.7.1）.xlsx",
+      "_无法转换\\诊疗目录新增(2024.7.8).et\\诊疗目录新增(2024.7.8).et"
+    ],
+    "root_pending": []
+  },
+  "packs": [
+    {
+      "stem": "00.所有文件按日期排序20261006",
+      "doc_kind": null,
+      "category": null,
+      "rows": 0,
+      "actions": {},
+      "error_count": 1,
+      "warn_count": 1,
+      "status": "FAIL",
+      "issues": [
+        {
+          "level": "WARNING",
+          "code": "EXTRA_FILES",
+          "msg": "标准包内多余文件: ['_阅读索引.md']",
+          "count": 1
+        },
+        {
+          "level": "ERROR",
+          "code": "META_MISSING",
+          "msg": "缺少 notice.meta.json",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "stem": "2024.10.25中药饮片（林下山参）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "HERBAL",
+      "rows": 1,
+      "actions": {
+        "MODIFY": 1
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "20260424-医疗服务价格项目规范",
+      "doc_kind": "PAYMENT_MAP",
+      "category": "SERVICE",
+      "rows": 496,
+      "actions": {
+        "SET_PAY_CLASS": 496
+      },
+      "error_count": 0,
+      "warn_count": 1,
+      "status": "WARN",
+      "issues": [
+        {
+          "level": "WARNING",
+          "code": "DIRTY_CODE",
+          "msg": "编码含未赋码或汉字，扫描将跳行",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "stem": "_附件：药品数据更新目录（2025.10.30、11.10、11.14）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 1158,
+      "actions": {
+        "ADD": 1087,
+        "STOP": 67,
+        "MODIFY": 4
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "F服务目录5类工程师版（2026.7.28）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "SERVICE_F",
+      "rows": 2103,
+      "actions": {
+        "ADD": 779,
+        "STOP": 1323,
+        "MODIFY": 1
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "中药配方颗粒更新目录（2024.8.23）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "FORMULA",
+      "rows": 4078,
+      "actions": {
+        "ADD": 4060,
+        "STOP": 18
+      },
+      "error_count": 0,
+      "warn_count": 1,
+      "status": "WARN",
+      "issues": [
+        {
+          "level": "WARNING",
+          "code": "STOP_NO_END",
+          "msg": "STOP 无 end_date",
+          "count": 18
+        }
+      ]
+    },
+    {
+      "stem": "中药配方颗粒（2024.11.15）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "FORMULA",
+      "rows": 2995,
+      "actions": {
+        "STOP": 409,
+        "ADD": 2586
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "医疗服务价格项目规范新医保码(2025年25号文件)",
+      "doc_kind": "PAYMENT_MAP",
+      "category": "SERVICE",
+      "rows": 496,
+      "actions": {
+        "SET_PAY_CLASS": 496
+      },
+      "error_count": 1,
+      "warn_count": 1,
+      "status": "FAIL",
+      "issues": [
+        {
+          "level": "ERROR",
+          "code": "META_NO_BUSINESS_DATE",
+          "msg": "notice_date 与 effective_date 均为空（禁止应用）",
+          "count": 1
+        },
+        {
+          "level": "WARNING",
+          "code": "DIRTY_CODE",
+          "msg": "编码含未赋码或汉字，扫描将跳行",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "stem": "医疗服务数据更新目录(Z2024.7.1)",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "SERVICE",
+      "rows": 8,
+      "actions": {
+        "MODIFY": 8
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "耗材数据更新（H2024.7.1）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DEVICE",
+      "rows": 119,
+      "actions": {
+        "STOP": 36,
+        "ADD": 83
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "药品数据更新目录（2024.8.23）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 26493,
+      "actions": {
+        "ADD": 1820,
+        "MODIFY": 24494,
+        "STOP": 162,
+        "PROVINCE_MODIFY": 17
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "诊疗目录新增(2024.7.8)",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "SERVICE",
+      "rows": 5,
+      "actions": {
+        "ADD": 5
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件1：F服务目录29-33号文数据更新目录",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "SERVICE_F",
+      "rows": 513,
+      "actions": {
+        "STOP": 318,
+        "ADD": 188,
+        "MODIFY": 7
+      },
+      "error_count": 1,
+      "warn_count": 1,
+      "status": "FAIL",
+      "issues": [
+        {
+          "level": "WARNING",
+          "code": "EXTRA_FILES",
+          "msg": "标准包内多余文件: ['notice.lines.csv.bak_multiline']",
+          "count": 1
+        },
+        {
+          "level": "ERROR",
+          "code": "META_NO_BUSINESS_DATE",
+          "msg": "notice_date 与 effective_date 均为空（禁止应用）",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "stem": "附件2对应的附件（血管介入支架等7类医用耗材医保通用名医保支付政策）",
+      "doc_kind": "PAYMENT_MAP",
+      "category": "DEVICE",
+      "rows": 161,
+      "actions": {
+        "SET_PAY_CLASS": 161
+      },
+      "error_count": 1,
+      "warn_count": 1,
+      "status": "FAIL",
+      "issues": [
+        {
+          "level": "ERROR",
+          "code": "META_NO_BUSINESS_DATE",
+          "msg": "notice_date 与 effective_date 均为空（禁止应用）",
+          "count": 1
+        },
+        {
+          "level": "WARNING",
+          "code": "HILIST_01",
+          "msg": "hilist_code 疑为物价码 01*/37*（解析会挪列，洗数应直接写 project_code）",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "stem": "附件： 药品数据更新目录（2025.5.20）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 351,
+      "actions": {
+        "ADD": 341,
+        "STOP": 9,
+        "MODIFY": 1
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：1.F服务目录15号文本数据更新目录（2025.11.01）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "SERVICE_F",
+      "rows": 533,
+      "actions": {
+        "ADD": 175,
+        "STOP": 358
+      },
+      "error_count": 0,
+      "warn_count": 1,
+      "status": "WARN",
+      "issues": [
+        {
+          "level": "WARNING",
+          "code": "NAME_IN_EXT",
+          "msg": "名称只在 ext_json.医疗服务项目名称，应落到 hilist_name",
+          "count": 175
+        }
+      ]
+    },
+    {
+      "stem": "附件：1.耗材目录更新目录（2025.10.13）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DEVICE",
+      "rows": 311,
+      "actions": {
+        "MODIFY": 303,
+        "STOP": 8
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：1.药品数据更新目录（2026.1.9）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 810,
+      "actions": {
+        "MODIFY": 810
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：2.关于明确医疗服务价格项目规范医保支付对照的函附件中对照结果表",
+      "doc_kind": "PAYMENT_MAP",
+      "category": "SERVICE",
+      "rows": 177,
+      "actions": {
+        "SET_PAY_CLASS": 177
+      },
+      "error_count": 1,
+      "warn_count": 0,
+      "status": "FAIL",
+      "issues": [
+        {
+          "level": "ERROR",
+          "code": "META_NO_BUSINESS_DATE",
+          "msg": "notice_date 与 effective_date 均为空（禁止应用）",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "stem": "附件：F服务目录15号文数据更新目录（2025.09.01）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "SERVICE_F",
+      "rows": 38,
+      "actions": {
+        "STOP": 15,
+        "ADD": 23
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：F服务目录15号文数据更新目录（2025.11.17）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "SERVICE_F",
+      "rows": 177,
+      "actions": {
+        "MODIFY": 177
+      },
+      "error_count": 0,
+      "warn_count": 2,
+      "status": "WARN",
+      "issues": [
+        {
+          "level": "WARNING",
+          "code": "HILIST_01",
+          "msg": "hilist_code 疑为物价码 01*/37*（解析会挪列，洗数应直接写 project_code）",
+          "count": 2
+        },
+        {
+          "level": "WARNING",
+          "code": "NAME_IN_EXT",
+          "msg": "名称只在 ext_json.医疗服务项目名称，应落到 hilist_name",
+          "count": 177
+        }
+      ]
+    },
+    {
+      "stem": "附件：F服务目录17号文数据更新目录（2026.2.4）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "SERVICE_F",
+      "rows": 4,
+      "actions": {
+        "MODIFY": 3,
+        "STOP": 1
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：F服务目录数据更新目录（2025.12.15）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "SERVICE_F",
+      "rows": 229,
+      "actions": {
+        "MODIFY": 229
+      },
+      "error_count": 0,
+      "warn_count": 1,
+      "status": "WARN",
+      "issues": [
+        {
+          "level": "WARNING",
+          "code": "NAME_IN_EXT",
+          "msg": "名称只在 ext_json.医疗服务项目名称，应落到 hilist_name",
+          "count": 229
+        }
+      ]
+    },
+    {
+      "stem": "附件：F服务目录数据更新目录（2026.3.24）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "SERVICE_F",
+      "rows": 7178,
+      "actions": {
+        "MODIFY": 7178
+      },
+      "error_count": 0,
+      "warn_count": 1,
+      "status": "WARN",
+      "issues": [
+        {
+          "level": "WARNING",
+          "code": "EXTRA_FILES",
+          "msg": "标准包内多余文件: ['notice.lines.csv.bak_multiline']",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "stem": "附件：F服务目录数据更新目录（2026.4.30）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "SERVICE_F",
+      "rows": 1343,
+      "actions": {
+        "ADD": 495,
+        "STOP": 844,
+        "MODIFY": 4
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：Y2024.10.17",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 2690,
+      "actions": {
+        "ADD": 2406,
+        "PROVINCE_MODIFY": 66,
+        "STOP": 218
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：中药配方颗粒(2025.3.7)",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "FORMULA",
+      "rows": 4440,
+      "actions": {
+        "ADD": 3724,
+        "STOP": 716
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：中药配方颗粒（2025.08.11）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "FORMULA",
+      "rows": 5971,
+      "actions": {
+        "ADD": 4416,
+        "STOP": 1555
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：中药饮片数据更新目录（2025.5.21）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "HERBAL",
+      "rows": 2,
+      "actions": {
+        "STOP": 1,
+        "ADD": 1
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：服务目录数据更新目录（2026.4.7）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "SERVICE",
+      "rows": 21,
+      "actions": {
+        "MODIFY": 21
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：服务目录数据更新目录（2026.4.7） (1)",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "SERVICE",
+      "rows": 21,
+      "actions": {
+        "MODIFY": 21
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：服务目录数据更新目录（2026.5.19）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "SERVICE",
+      "rows": 1830,
+      "actions": {
+        "ADD": 533,
+        "STOP": 1295,
+        "MODIFY": 2
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：耗材数据更新目录（2025.4.24）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DEVICE",
+      "rows": 101,
+      "actions": {
+        "ADD": 73,
+        "STOP": 28
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：耗材数据更新目录（2025.6.28）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DEVICE",
+      "rows": 713,
+      "actions": {
+        "ADD": 298,
+        "STOP": 415
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：耗材数据更新目录（2025.9.13）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DEVICE",
+      "rows": 48,
+      "actions": {
+        "ADD": 42,
+        "STOP": 6
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：耗材数据更新目录（2026.5.9）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DEVICE",
+      "rows": 11,
+      "actions": {
+        "MODIFY": 11
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：耗材数据更新目录（2026.5.9） (1)",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DEVICE",
+      "rows": 11,
+      "actions": {
+        "MODIFY": 11
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：耗材数据更新（2025.7.23、2025.8.7）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DEVICE",
+      "rows": 24,
+      "actions": {
+        "ADD": 23,
+        "STOP": 1
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2024.12.17）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 6321,
+      "actions": {
+        "PROVINCE_MODIFY": 24,
+        "ADD": 2214,
+        "STOP": 4083
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2024.12.30）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 1287,
+      "actions": {
+        "ADD": 1133,
+        "PROVINCE_MODIFY": 104,
+        "STOP": 50
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.01.01）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 17572,
+      "actions": {
+        "ADD": 3291,
+        "MODIFY": 13980,
+        "STOP": 301
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.1.13）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 2542,
+      "actions": {
+        "ADD": 347,
+        "PROVINCE_MODIFY": 2040,
+        "STOP": 155
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.1.22）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 497,
+      "actions": {
+        "ADD": 464,
+        "MODIFY": 15,
+        "STOP": 18
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.1.26)",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 1796,
+      "actions": {
+        "ADD": 233,
+        "MODIFY": 1552,
+        "STOP": 11
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.1.2）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 143,
+      "actions": {
+        "ADD": 65,
+        "MODIFY": 78
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.11.24、12.01、12.10、12.17、12.19）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 2732,
+      "actions": {
+        "ADD": 2618,
+        "STOP": 114
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.2.13)",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 480,
+      "actions": {
+        "ADD": 424,
+        "STOP": 56
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.3.21、4.2）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 1089,
+      "actions": {
+        "ADD": 950,
+        "STOP": 139
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.3.7)",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 1717,
+      "actions": {
+        "MODIFY": 176,
+        "ADD": 841,
+        "STOP": 700
+      },
+      "error_count": 0,
+      "warn_count": 1,
+      "status": "WARN",
+      "issues": [
+        {
+          "level": "WARNING",
+          "code": "STOP_NO_END",
+          "msg": "STOP 无 end_date",
+          "count": 350
+        }
+      ]
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.4.10）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 516,
+      "actions": {
+        "ADD": 443,
+        "MODIFY": 18,
+        "STOP": 55
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.4.15）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 553,
+      "actions": {
+        "ADD": 427,
+        "STOP": 40,
+        "MODIFY": 86
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.4.21）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 471,
+      "actions": {
+        "ADD": 401,
+        "STOP": 29,
+        "MODIFY": 41
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.5.16）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 660,
+      "actions": {
+        "ADD": 434,
+        "STOP": 16,
+        "MODIFY": 210
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.5.28）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 518,
+      "actions": {
+        "ADD": 470,
+        "STOP": 48
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.5.30）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 383,
+      "actions": {
+        "ADD": 351,
+        "STOP": 32
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.5.7）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 465,
+      "actions": {
+        "ADD": 418,
+        "MODIFY": 3,
+        "STOP": 44
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.6.11）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 471,
+      "actions": {
+        "ADD": 444,
+        "STOP": 27
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.6.17）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 420,
+      "actions": {
+        "ADD": 407,
+        "STOP": 12,
+        "MODIFY": 1
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.6.20）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 642,
+      "actions": {
+        "ADD": 618,
+        "STOP": 23,
+        "MODIFY": 1
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.6.30）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 582,
+      "actions": {
+        "ADD": 550,
+        "STOP": 30,
+        "MODIFY": 2
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.7.16）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 599,
+      "actions": {
+        "ADD": 575,
+        "STOP": 23,
+        "MODIFY": 1
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.7.24、7.30、8.4、8.8）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 2184,
+      "actions": {
+        "ADD": 2074,
+        "STOP": 108,
+        "MODIFY": 2
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.7.7）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 693,
+      "actions": {
+        "ADD": 671,
+        "STOP": 21,
+        "MODIFY": 1
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.8.20、8.28、9.02）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 1238,
+      "actions": {
+        "ADD": 1102,
+        "STOP": 136
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.9.26、9.30、10.14、10.21）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 1941,
+      "actions": {
+        "ADD": 1868,
+        "STOP": 65,
+        "MODIFY": 8
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2025.9.5、9.19）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 1117,
+      "actions": {
+        "ADD": 1048,
+        "STOP": 64,
+        "MODIFY": 5
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2026.1.26、2.4）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 1003,
+      "actions": {
+        "ADD": 954,
+        "STOP": 47,
+        "MODIFY": 2
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2026.1.4、1.12、1.15）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 1474,
+      "actions": {
+        "ADD": 1384,
+        "STOP": 71,
+        "MODIFY": 19
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2026.2.10、2.12、2.28）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 1450,
+      "actions": {
+        "ADD": 1366,
+        "MODIFY": 5,
+        "STOP": 79
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2026.3.19、3.27、4.2、4.10）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 1275,
+      "actions": {
+        "ADD": 1155,
+        "MODIFY": 9,
+        "STOP": 111
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（2026.3.6、3.16）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 420,
+      "actions": {
+        "ADD": 379,
+        "STOP": 41
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（X001_20251224000000_A）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 4746,
+      "actions": {
+        "MODIFY": 4275,
+        "ADD": 428,
+        "STOP": 43
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：药品数据更新目录（Y2025.5.13）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "DRUG",
+      "rows": 2308,
+      "actions": {
+        "ADD": 1263,
+        "MODIFY": 1,
+        "STOP": 1044
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：诊疗目录库服务数据更新信息（2024.12.20）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "SERVICE",
+      "rows": 1,
+      "actions": {
+        "MODIFY": 1
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    },
+    {
+      "stem": "附件：院内制剂目录更新（2025.12.30）",
+      "doc_kind": "CATALOG_DELTA",
+      "category": "PREP",
+      "rows": 342,
+      "actions": {
+        "MODIFY": 342
+      },
+      "error_count": 0,
+      "warn_count": 0,
+      "status": "OK",
+      "issues": []
+    }
+  ]
+}

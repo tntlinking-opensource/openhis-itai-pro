@@ -21,6 +21,8 @@ import type { AdviceProductOption } from '#/views/outpatient/doctor-station/advi
 
 import { computed, h, nextTick, onActivated, onDeactivated, reactive, ref, watch } from 'vue';
 
+import { notifyEncounterFeeRefresh } from '#/components/outpatient/encounter-fee-summary';
+
 import {
   ElButton,
   ElDatePicker,
@@ -722,6 +724,7 @@ async function refreshPrescriptionsFromServer() {
     }
   }
   loadActivePrescriptionForm();
+  notifyEncounterFeeRefresh();
 }
 
 /** 校验指定草稿方是否可暂存；非当前页失败时切到该页签并提示 */

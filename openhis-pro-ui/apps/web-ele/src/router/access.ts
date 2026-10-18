@@ -1,7 +1,7 @@
-import type { ComponentRecordType, GenerateMenuAndRoutesOptions } from '@vben/types';
+import type { ComponentRecordType, GenerateMenuAndRoutesOptions } from '@zxplat/types';
 
-import { generateAccessible } from '@vben/access';
-import { preferences } from '@vben/preferences';
+import { generateAccessible } from '@zxplat/access';
+import { preferences } from '@zxplat/preferences';
 
 import { BasicLayout, IFrameView } from '#/layouts';
 

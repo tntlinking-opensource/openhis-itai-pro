@@ -1,4 +1,4 @@
-/** 银联 Win / Whale 共享 DTO */
+/** 银联 Win / ZXPlat 共享 DTO */
 export interface ClientScanResultDto {
   merTradeNo: string;
   tradeNo: string;

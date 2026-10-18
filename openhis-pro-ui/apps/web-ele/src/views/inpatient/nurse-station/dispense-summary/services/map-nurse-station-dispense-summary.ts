@@ -8,7 +8,7 @@ import type {
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-dispense-summary.types';
 import type { NurseStationModulePatient } from '../../components/nurse-station-module-patient.types';
 
-import { formatDateTime } from '@vben/utils';
+import { formatDateTime } from '@zxplat/utils';
 import dayjs from 'dayjs';
 
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
@@ -191,7 +191,7 @@ export function formatQuantityWithUnit(quantity?: number | string, unitCodeText?
   return q || unit || '—';
 }
 
-/** 汇总单明细行数量展示（优先后端 displayQuantityText，如 1盒1片） */
+/** 汇总单明细行数量展示（优先后端 displayQuantityText：输液拆零；非输液整包装凑整） */
 export function formatSummarySlipLineQuantity(row: {
   displayQuantityText?: string;
   itemQuantity?: number | string;

@@ -3,6 +3,7 @@ import type { DeviceCatalogItem, ServiceCatalogItem } from '#/api';
 import type { LabDeviceItem } from '#/api/basic/lab-device';
 import type {
   PageSpecimenTubeMergeDevicesParams,
+  SpecimenTubeMergeBindingGroup,
   SpecimenTubeMergeConsumableLine,
 } from '#/api/basic/specimen-tube-merge';
 import type { ApiOptionItem } from '#/types/api-response';
@@ -10,7 +11,7 @@ import type { BatchActivityPickRow } from '#/views/config/specimentubemerge/batc
 
 import { computed, onActivated, onMounted, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import {
   ElButton,
@@ -21,6 +22,8 @@ import {
   ElMessage,
   ElOption,
   ElSelect,
+  ElTabPane,
+  ElTabs,
   ElTable,
   ElTableColumn,
 } from 'element-plus';
@@ -67,6 +70,14 @@ type EditableConsumableRow = {
   unitCode?: string;
 };
 
+type EditableGroup = {
+  groupNo: number;
+  groupName: string;
+  activityRows: EditableActivityRow[];
+  bindBloodCollectionFee: boolean;
+  consumableRows: EditableConsumableRow[];
+};
+
 /** KeepAlive 首次进入时 onMounted 已加载，跳过紧随其后的 onActivated */
 let skipActivatedOnce = false;
 let unitOptionsRequestSeq = 0;
@@ -76,9 +87,8 @@ const selectedDeviceId = ref('');
 const deviceOptions = ref<DeviceOptionItem[]>([]);
 const deviceLoading = ref(false);
 
-const activityRows = ref<EditableActivityRow[]>([]);
-const bindBloodCollectionFee = ref(false);
-const consumableRows = ref<EditableConsumableRow[]>([]);
+const groups = ref<EditableGroup[]>([]);
+const activeGroupIndex = ref(0);
 const bindingsLoading = ref(false);
 /** 检验项目批量添加弹窗 */
 const batchActivityDialogVisible = ref(false);
@@ -142,13 +152,52 @@ const selectedDeviceLabel = computed(() => {
   return found?.label ?? '';
 });
 
-/** 已维护检验项目 id（含未保存草稿），供批量选品排除 */
+/** 合管组展示名（组1、组2…） */
+function defaultGroupName(groupNo: number): string {
+  return `组${groupNo}`;
+}
+
+/** 新建空合管组 */
+function createEmptyGroup(groupNo: number): EditableGroup {
+  return {
+    groupNo,
+    groupName: defaultGroupName(groupNo),
+    activityRows: [],
+    bindBloodCollectionFee: false,
+    consumableRows: [],
+  };
+}
+
+/** 当前正在编辑的合管组（无数据时回落一组空组1） */
+function activeGroup(): EditableGroup {
+  const current = groups.value[activeGroupIndex.value];
+  if (current) {
+    return current;
+  }
+  const fallback = createEmptyGroup(1);
+  groups.value = [fallback];
+  activeGroupIndex.value = 0;
+  return fallback;
+}
+
+/** 本地将组序号重排为 1..n 并同步展示名 */
+function renumberGroupsLocally() {
+  groups.value.forEach((group, index) => {
+    const no = index + 1;
+    group.groupNo = no;
+    group.groupName = defaultGroupName(no);
+  });
+}
+
+/** 已维护检验项目 id（全组、含未保存草稿），供批量选品排除 */
 const boundActivityIdsForExclude = computed(() => {
   const ids: string[] = [];
-  for (const row of activityRows.value) {
-    const id = String(row.targetId ?? '').trim();
-    if (id) {
-      ids.push(id);
+  for (const group of groups.value) {
+    for (const row of group.activityRows) {
+      const id = String(row.targetId ?? '').trim();
+      if (id) {
+        ids.push(id);
+      }
     }
   }
   return ids;
@@ -251,13 +300,15 @@ function mapDeviceOptions(list: LabDeviceItem[]): DeviceOptionItem[] {
  */
 function collectActivityExcludeIds(excludeRow?: EditableActivityRow): Set<string> {
   const set = new Set<string>();
-  for (const row of activityRows.value) {
-    if (row === excludeRow) {
-      continue;
-    }
-    const id = String(row.targetId ?? '').trim();
-    if (id) {
-      set.add(id);
+  for (const group of groups.value) {
+    for (const row of group.activityRows) {
+      if (row === excludeRow) {
+        continue;
+      }
+      const id = String(row.targetId ?? '').trim();
+      if (id) {
+        set.add(id);
+      }
     }
   }
   return set;
@@ -355,53 +406,80 @@ async function loadDevices() {
   }
 }
 
-/** 回填已选检验项目的展示名 */
+/** 回填已选检验项目的展示名（全组） */
 async function enrichActivityRowLabels() {
-  for (const row of activityRows.value) {
-    if (!row.targetId || row.selectedLabel) {
-      continue;
-    }
-    try {
-      const response = await getServiceCatalogApi({ id: row.targetId });
-      const name = String(response?.data?.name ?? '').trim();
-      row.selectedLabel = name || row.targetId;
-    } catch {
-      row.selectedLabel = row.targetId;
+  for (const group of groups.value) {
+    for (const row of group.activityRows) {
+      if (!row.targetId || row.selectedLabel) {
+        continue;
+      }
+      try {
+        const response = await getServiceCatalogApi({ id: row.targetId });
+        const name = String(response?.data?.name ?? '').trim();
+        row.selectedLabel = name || row.targetId;
+      } catch {
+        row.selectedLabel = row.targetId;
+      }
     }
   }
 }
 
-/** 将绑定详情写入右侧表单 */
+/** 将单组 API 绑定投影为可编辑组 */
+function mapBindingGroupToEditable(group: SpecimenTubeMergeBindingGroup): EditableGroup {
+  const groupNo = group.groupNo >= 1 ? group.groupNo : 1;
+  return {
+    groupNo,
+    groupName: String(group.groupName ?? '').trim() || defaultGroupName(groupNo),
+    activityRows: (group.activityIds ?? []).map((id) => {
+      const row: EditableActivityRow = { targetId: String(id) };
+      ensureActivityRowKey(row);
+      return row;
+    }),
+    bindBloodCollectionFee: Boolean(group.bindBloodCollectionFee),
+    consumableRows: (group.consumableLines ?? []).map((line) => {
+      const row: EditableConsumableRow = {
+        targetId: line.targetId ? String(line.targetId) : undefined,
+        selectedLabel: line.targetName ? String(line.targetName) : undefined,
+        quantity: line.quantity,
+        unitCode: line.unitCode ? String(line.unitCode) : undefined,
+        __unitOptions: line.unitCode
+          ? [{ label: line.unitName || line.unitCode, value: String(line.unitCode) }]
+          : undefined,
+      };
+      ensureConsumableRowKey(row);
+      return row;
+    }),
+  };
+}
+
+/** 将绑定详情写入右侧表单（无组时默认一组空组1） */
 function applyBindings(
-  bindings: {
-    activityIds?: string[];
-    bindBloodCollectionFee?: boolean;
-    consumableLines?: SpecimenTubeMergeConsumableLine[];
-  } | null,
+  apiGroups: SpecimenTubeMergeBindingGroup[] | null | undefined,
+  preferredGroupIndex?: number,
 ) {
-  activityRows.value = (bindings?.activityIds ?? []).map((id) => {
-    const row: EditableActivityRow = { targetId: String(id) };
-    ensureActivityRowKey(row);
-    return row;
-  });
-  bindBloodCollectionFee.value = Boolean(bindings?.bindBloodCollectionFee);
-  consumableRows.value = (bindings?.consumableLines ?? []).map((line) => {
-    const row: EditableConsumableRow = {
-      targetId: line.targetId ? String(line.targetId) : undefined,
-      selectedLabel: line.targetName ? String(line.targetName) : undefined,
-      quantity: line.quantity,
-      unitCode: line.unitCode ? String(line.unitCode) : undefined,
-      __unitOptions: line.unitCode
-        ? [{ label: line.unitName || line.unitCode, value: String(line.unitCode) }]
-        : undefined,
-    };
-    ensureConsumableRowKey(row);
-    return row;
-  });
+  const list = apiGroups ?? [];
+  if (list.length === 0) {
+    groups.value = [createEmptyGroup(1)];
+    activeGroupIndex.value = 0;
+    return;
+  }
+  groups.value = list.map((group) => mapBindingGroupToEditable(group));
+  // 保存后回读时保留当前组；切设备仍落到组1
+  let nextIndex = 0;
+  if (preferredGroupIndex !== undefined && preferredGroupIndex !== null) {
+    nextIndex = preferredGroupIndex;
+  }
+  if (nextIndex < 0) {
+    nextIndex = 0;
+  }
+  if (nextIndex >= groups.value.length) {
+    nextIndex = groups.value.length - 1;
+  }
+  activeGroupIndex.value = nextIndex;
 }
 
 /** 加载当前设备的合管绑定 */
-async function loadBindings() {
+async function loadBindings(preferredGroupIndex?: number) {
   if (!selectedDeviceId.value) {
     applyBindings(null);
     return;
@@ -409,11 +487,13 @@ async function loadBindings() {
   bindingsLoading.value = true;
   try {
     const bindings = await runGetBindings(selectedDeviceId.value);
-    applyBindings(bindings ?? null);
+    applyBindings(bindings?.groups, preferredGroupIndex);
     await enrichActivityRowLabels();
-    for (const row of consumableRows.value) {
-      if (row.targetId) {
-        loadUnitOptionsForRow(row);
+    for (const group of groups.value) {
+      for (const row of group.consumableRows) {
+        if (row.targetId) {
+          loadUnitOptionsForRow(row);
+        }
       }
     }
   } catch {
@@ -457,11 +537,31 @@ function handleDeviceSearch() {
   });
 }
 
-/** 新增一行检验项目绑定 */
+/** 新增合管组（组号取当前最大 +1） */
+function addGroup() {
+  const maxNo = groups.value.reduce((max, group) => Math.max(max, group.groupNo), 0);
+  groups.value.push(createEmptyGroup(maxNo + 1));
+  activeGroupIndex.value = groups.value.length - 1;
+}
+
+/** 删除当前合管组并重排组号 */
+function removeCurrentGroup() {
+  if (groups.value.length <= 1) {
+    ElMessage.warning('至少保留一个合管组');
+    return;
+  }
+  groups.value.splice(activeGroupIndex.value, 1);
+  renumberGroupsLocally();
+  if (activeGroupIndex.value >= groups.value.length) {
+    activeGroupIndex.value = groups.value.length - 1;
+  }
+}
+
+/** 新增一行检验项目绑定（当前组） */
 function addActivityRow() {
   const row: EditableActivityRow = {};
   ensureActivityRowKey(row);
-  activityRows.value.push(row);
+  activeGroup().activityRows.push(row);
 }
 
 /** 打开检验项目批量添加弹窗 */
@@ -491,7 +591,7 @@ function handleBatchActivityConfirm(items: BatchActivityPickRow[]) {
     }
     existingIds.add(id);
     // 优先占用尚未选品的空行，避免「添加行 + 批量」并存产生多余空行
-    const emptyRow = activityRows.value.find((row) => !String(row.targetId ?? '').trim());
+    const emptyRow = activeGroup().activityRows.find((row) => !String(row.targetId ?? '').trim());
     if (emptyRow) {
       emptyRow.targetId = id;
       emptyRow.selectedLabel = String(item.name ?? '').trim() || id;
@@ -503,7 +603,7 @@ function handleBatchActivityConfirm(items: BatchActivityPickRow[]) {
       selectedLabel: String(item.name ?? '').trim() || id,
     };
     ensureActivityRowKey(row);
-    activityRows.value.push(row);
+    activeGroup().activityRows.push(row);
     filled++;
   }
   if (filled === 0) {
@@ -513,16 +613,21 @@ function handleBatchActivityConfirm(items: BatchActivityPickRow[]) {
   ElMessage.success(`已添加 ${filled} 条检验项目`);
 }
 
-/** 删除检验项目绑定行 */
+/** 删除检验项目绑定行（当前组） */
 function removeActivityRow(index: number) {
-  activityRows.value.splice(index, 1);
+  activeGroup().activityRows.splice(index, 1);
 }
 
-/** 检验项目是否与其他行重复 */
+/** 检验项目是否在任意合管组中已存在 */
 function isDuplicateActivityId(targetId: string, excludeRow?: EditableActivityRow): boolean {
-  return activityRows.value.some(
-    (row) => row !== excludeRow && String(row.targetId ?? '') === targetId,
-  );
+  for (const group of groups.value) {
+    for (const row of group.activityRows) {
+      if (row !== excludeRow && String(row.targetId ?? '') === targetId) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 /** 检验项目选品确认：写展示名并校验重复 */
@@ -532,7 +637,7 @@ async function handleActivityPickClose(
 ): Promise<boolean> {
   const id = String(item.id ?? '').trim();
   if (id && isDuplicateActivityId(id, row)) {
-    ElMessage.warning('该检验项目已添加');
+    ElMessage.warning('该检验项目已在其它合管组或本组中添加');
     return false;
   }
   row.selectedLabel = String(item.name ?? '');
@@ -556,12 +661,12 @@ function addConsumableRow() {
     __unitOptions: undefined,
   };
   ensureConsumableRowKey(row);
-  consumableRows.value.push(row);
+  activeGroup().consumableRows.push(row);
 }
 
-/** 删除耗材绑定行 */
+/** 删除耗材绑定行（当前组） */
 function removeConsumableRow(index: number) {
-  consumableRows.value.splice(index, 1);
+  activeGroup().consumableRows.splice(index, 1);
 }
 
 /** 耗材目标变更后联动单位下拉 */
@@ -596,9 +701,9 @@ async function loadUnitOptionsForRow(row: EditableConsumableRow) {
   }
 }
 
-/** 耗材是否与其他行重复 */
+/** 耗材是否与本组其它行重复 */
 function isDuplicateConsumableId(targetId: string, excludeRow?: EditableConsumableRow): boolean {
-  return consumableRows.value.some(
+  return activeGroup().consumableRows.some(
     (row) => row !== excludeRow && String(row.targetId ?? '') === targetId,
   );
 }
@@ -637,57 +742,86 @@ async function handleConsumableIdChange(row: EditableConsumableRow, value: strin
   await handleConsumableTargetChange(row);
 }
 
-/** 全量保存当前设备合管绑定 */
+/** 全量保存当前设备合管绑定（多组） */
 async function handleSaveBindings() {
   if (!selectedDeviceId.value) {
     ElMessage.warning('请先在左侧选择检验设备');
     return;
   }
 
-  const activityIds: string[] = [];
-  for (const row of activityRows.value) {
-    if (!row.targetId) {
-      continue;
-    }
-    const id = String(row.targetId);
-    if (activityIds.includes(id)) {
-      ElMessage.warning('检验项目不能重复');
-      return;
-    }
-    activityIds.push(id);
-  }
+  renumberGroupsLocally();
+  const globalActivityIds = new Set<string>();
+  const payloadGroups: Array<{
+    groupNo: number;
+    groupName: string;
+    activityIds: string[];
+    bindBloodCollectionFee: boolean;
+    consumableLines: Array<{
+      targetId: string;
+      quantity: number;
+      unitCode: string;
+      displayOrder: number;
+    }>;
+  }> = [];
 
-  for (const row of consumableRows.value) {
-    if (!row.targetId) {
-      ElMessage.warning('请选择耗材');
-      return;
+  for (let groupIndex = 0; groupIndex < groups.value.length; groupIndex += 1) {
+    const group = groups.value[groupIndex] as EditableGroup;
+    const groupNo = groupIndex + 1;
+    const activityIds: string[] = [];
+    for (const row of group.activityRows) {
+      if (!row.targetId) {
+        continue;
+      }
+      const id = String(row.targetId);
+      if (activityIds.includes(id)) {
+        ElMessage.warning(`「${group.groupName}」内检验项目不能重复`);
+        return;
+      }
+      if (globalActivityIds.has(id)) {
+        ElMessage.warning('同一检验项目不能出现在多个合管组');
+        return;
+      }
+      activityIds.push(id);
+      globalActivityIds.add(id);
     }
-    if (!row.quantity || row.quantity <= 0 || !Number.isInteger(row.quantity)) {
-      ElMessage.warning('耗材数量必须为正整数');
-      return;
-    }
-    if (!row.unitCode) {
-      ElMessage.warning('请选择耗材单位');
-      return;
-    }
-  }
 
-  const payload = {
-    deviceId: selectedDeviceId.value,
-    activityIds,
-    bindBloodCollectionFee: bindBloodCollectionFee.value,
-    consumableLines: consumableRows.value.map((row, index) => ({
-      targetId: preserveApiIdForRequest(row.targetId) ?? String(row.targetId),
-      quantity: row.quantity as number,
-      unitCode: String(row.unitCode),
-      displayOrder: index + 1,
-    })),
-  };
+    for (const row of group.consumableRows) {
+      if (!row.targetId) {
+        ElMessage.warning(`「${group.groupName}」请选择耗材`);
+        return;
+      }
+      if (!row.quantity || row.quantity <= 0 || !Number.isInteger(row.quantity)) {
+        ElMessage.warning(`「${group.groupName}」耗材数量必须为正整数`);
+        return;
+      }
+      if (!row.unitCode) {
+        ElMessage.warning(`「${group.groupName}」请选择耗材单位`);
+        return;
+      }
+    }
+
+    payloadGroups.push({
+      groupNo,
+      groupName: group.groupName || defaultGroupName(groupNo),
+      activityIds,
+      bindBloodCollectionFee: group.bindBloodCollectionFee,
+      consumableLines: group.consumableRows.map((row, index) => ({
+        targetId: preserveApiIdForRequest(row.targetId) ?? String(row.targetId),
+        quantity: row.quantity as number,
+        unitCode: String(row.unitCode),
+        displayOrder: index + 1,
+      })),
+    });
+  }
 
   try {
-    await runSaveBindings(payload);
+    await runSaveBindings({
+      deviceId: selectedDeviceId.value,
+      groups: payloadGroups,
+    });
     ElMessage.success('保存成功');
-    await loadBindings();
+    // 回读后仍停在当前组，不跳回组1
+    await loadBindings(activeGroupIndex.value);
   } catch {
     // useRequest 已提示
   }
@@ -756,20 +890,33 @@ onMounted(async () => {
 
       <div v-loading="bindingsLoading" class="min-w-0 flex-1">
         <template v-if="selectedDeviceId">
-          <div class="mb-4 flex items-center justify-between gap-3">
+          <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div class="text-sm text-[var(--el-text-color-primary)]">
               当前设备：{{ selectedDeviceLabel }}
             </div>
-            <ElButton type="primary" :loading="saveLoading" @click="handleSaveBindings">
-              保存配置
-            </ElButton>
+            <div class="flex flex-wrap items-center gap-2">
+              <ElButton @click="addGroup">新增分组</ElButton>
+              <ElButton type="danger" plain @click="removeCurrentGroup">删除本组</ElButton>
+              <ElButton type="primary" :loading="saveLoading" @click="handleSaveBindings">
+                保存配置
+              </ElButton>
+            </div>
           </div>
 
-          <section class="mb-5">
+          <ElTabs v-model="activeGroupIndex" type="card" class="mb-4">
+            <ElTabPane
+              v-for="(group, groupIdx) in groups"
+              :key="`${group.groupNo}-${groupIdx}`"
+              :label="group.groupName"
+              :name="groupIdx"
+            />
+          </ElTabs>
+
+          <section v-if="groups[activeGroupIndex]" class="mb-5">
             <div class="mb-2 flex items-center justify-between gap-2">
               <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
                 <span class="text-sm text-[var(--el-text-color-regular)]">绑定检验项目</span>
-                <ElCheckbox v-model="bindBloodCollectionFee">
+                <ElCheckbox v-model="groups[activeGroupIndex].bindBloodCollectionFee">
                   {{ BLOOD_COLLECTION_FEE_LABEL }}
                 </ElCheckbox>
               </div>
@@ -779,7 +926,12 @@ onMounted(async () => {
               </div>
             </div>
 
-            <ElTable :data="activityRows" border stripe empty-text="暂无检验项目绑定">
+            <ElTable
+              :data="groups[activeGroupIndex].activityRows"
+              border
+              stripe
+              empty-text="暂无检验项目绑定"
+            >
               <ElTableColumn type="index" label="序号" width="58" align="center" />
               <ElTableColumn label="检验项目" min-width="280">
                 <template #default="{ row }">
@@ -808,13 +960,18 @@ onMounted(async () => {
             </ElTable>
           </section>
 
-          <section>
+          <section v-if="groups[activeGroupIndex]">
             <div class="mb-2 flex items-center justify-between gap-2">
               <span class="text-sm text-[var(--el-text-color-regular)]">绑定耗材</span>
               <ElButton type="primary" link @click="addConsumableRow">添加耗材</ElButton>
             </div>
 
-            <ElTable :data="consumableRows" border stripe empty-text="暂无耗材绑定">
+            <ElTable
+              :data="groups[activeGroupIndex].consumableRows"
+              border
+              stripe
+              empty-text="暂无耗材绑定"
+            >
               <ElTableColumn type="index" label="序号" width="58" align="center" />
               <ElTableColumn label="耗材" min-width="220">
                 <template #default="{ row }">

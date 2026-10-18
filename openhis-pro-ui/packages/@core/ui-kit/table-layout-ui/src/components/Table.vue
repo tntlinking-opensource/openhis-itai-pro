@@ -30,6 +30,7 @@ defineOptions({
 
 const props = withDefaults(defineProps<TableProps>(), {
   tableData: () => [],
+  clearSelectionOnDataChange: true,
   loading: false,
   border: true,
   stripe: false,
@@ -317,6 +318,9 @@ watch(
   async () => {
     if (props.isAllData && internalPageNo.value !== 1 && props.tableData.length > 0) {
       internalPageNo.value = 1;
+    }
+    if (!props.clearSelectionOnDataChange) {
+      return;
     }
     // 列表数据刷新后同步清空勾选，避免业务侧 selectedRows 已空但 UI 仍勾选
     await clearSelection();

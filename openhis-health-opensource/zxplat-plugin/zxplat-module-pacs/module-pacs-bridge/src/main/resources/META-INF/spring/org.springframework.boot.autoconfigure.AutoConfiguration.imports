@@ -1,0 +1,2 @@
+com.zxplat.plugin.pacs.bridge.config.PacsBridgeAutoConfiguration
+com.zxplat.plugin.pacs.bridge.adapter.config.PacsAdapterAutoConfiguration

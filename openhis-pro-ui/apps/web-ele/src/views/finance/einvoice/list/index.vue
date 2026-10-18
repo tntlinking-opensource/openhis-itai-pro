@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type {
   BossDocumentDetailDto,
@@ -10,10 +10,10 @@ import type {
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
-import { useAccess } from '@vben/access';
+import { Page } from '@zxplat/common-ui';
+import { useAccess } from '@zxplat/access';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import {
   ElButton,

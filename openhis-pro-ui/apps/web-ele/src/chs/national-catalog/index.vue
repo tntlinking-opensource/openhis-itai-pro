@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { Catalog1312FilterParams } from '#/chs/constants/catalog-1312-filter';
 import type { CatalogDownloadCursor, NationalCatalogItem } from '#/chs/api';
@@ -9,9 +9,9 @@ import type { PageParams } from '#/types/api-response';
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import {
   ElAlert,

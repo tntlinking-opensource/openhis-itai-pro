@@ -1,10 +1,20 @@
 <script setup lang="ts">
 import type { HiprintPrinterItem } from '../fetch-printer-list';
 import type { InvFormPaperKind, InvFormTripleSpec } from '../form-print-preference';
+import type { ServiceApplyPaperSize } from '../service-apply-paper-preference';
 
 import { computed, onMounted, ref, watch } from 'vue';
 
-import { ElAlert, ElButton, ElCheckbox, ElDialog, ElOption, ElSelect } from 'element-plus';
+import {
+  ElAlert,
+  ElButton,
+  ElCheckbox,
+  ElDialog,
+  ElOption,
+  ElRadio,
+  ElRadioGroup,
+  ElSelect,
+} from 'element-plus';
 
 import {
   INV_FORM_PAPER_KIND,
@@ -13,6 +23,12 @@ import {
   normalizeInvFormTripleSpec,
 } from '../form-print-preference';
 import { PRINT_PLUGIN_INSTALL_MESSAGE } from '../runtime/print-user-error';
+import {
+  DEFAULT_SERVICE_APPLY_PAPER_SIZE,
+  normalizeServiceApplyPaperSize,
+  SERVICE_APPLY_PAPER_SIZE,
+  SERVICE_APPLY_PAPER_SIZE_LABELS,
+} from '../service-apply-paper-preference';
 import InvFormPaperKindCards from './inv-form-paper-kind-cards.vue';
 import PrintChromeFlagShortcut from './print-chrome-flag-shortcut.vue';
 
@@ -33,6 +49,9 @@ interface Props {
   showPaperKind?: boolean;
   initialPaperKind?: InvFormPaperKind;
   initialTripleSpec?: InvFormTripleSpec;
+  /** 门诊申请单：同窗选择 A4 / A5 */
+  showServiceApplyPaperSize?: boolean;
+  initialServiceApplyPaperSize?: ServiceApplyPaperSize;
   /** 是否展示「记住本次选择，下次不再提示」 */
   showSkipPrompt?: boolean;
 }
@@ -51,6 +70,8 @@ const props = withDefaults(defineProps<Props>(), {
   showPaperKind: false,
   initialPaperKind: INV_FORM_PAPER_KIND.triple,
   initialTripleSpec: INV_FORM_TRIPLE_SPEC.third,
+  showServiceApplyPaperSize: false,
+  initialServiceApplyPaperSize: DEFAULT_SERVICE_APPLY_PAPER_SIZE,
   showSkipPrompt: true,
 });
 
@@ -60,6 +81,7 @@ const emit = defineEmits<{
     payload: {
       paperKind?: InvFormPaperKind;
       printerName: string;
+      serviceApplyPaperSize?: ServiceApplyPaperSize;
       skipPrompt: boolean;
       tripleSpec?: InvFormTripleSpec;
     },
@@ -72,6 +94,11 @@ const selectedPrinter = ref('');
 const skipPrompt = ref(true);
 const paperKind = ref<InvFormPaperKind>(normalizeInvFormPaperKind(props.initialPaperKind));
 const tripleSpec = ref<InvFormTripleSpec>(normalizeInvFormTripleSpec(props.initialTripleSpec));
+const serviceApplyPaperSize = ref<ServiceApplyPaperSize>(
+  normalizeServiceApplyPaperSize(props.initialServiceApplyPaperSize),
+);
+/** 确认/取消只结算一次，避免关窗时 @close 再触发 cancel */
+let settled = false;
 
 const dialogTitle = computed(() => {
   const label = props.bindingLabel?.trim();
@@ -82,7 +109,11 @@ const dialogTitle = computed(() => {
   return base;
 });
 
-const dialogWidth = computed(() => (props.showPaperKind ? '560px' : '480px'));
+const showAnyPaper = computed(
+  () => props.showPaperKind || props.showServiceApplyPaperSize,
+);
+
+const dialogWidth = computed(() => (showAnyPaper.value ? '560px' : '480px'));
 
 const troubleshootingMessage = PRINT_PLUGIN_INSTALL_MESSAGE;
 
@@ -92,6 +123,7 @@ function syncFormFromProps(): void {
   skipPrompt.value = props.initialSkipPrompt !== false;
   paperKind.value = normalizeInvFormPaperKind(props.initialPaperKind);
   tripleSpec.value = normalizeInvFormTripleSpec(props.initialTripleSpec);
+  serviceApplyPaperSize.value = normalizeServiceApplyPaperSize(props.initialServiceApplyPaperSize);
 }
 
 /** 打印机列表变化时补全默认选中项（优先沿用已保存的打印机） */
@@ -114,6 +146,7 @@ watch(
   (value) => {
     dialogVisible.value = value;
     if (value) {
+      settled = false;
       syncFormFromProps();
       ensureSelectedPrinter();
     }
@@ -135,6 +168,7 @@ watch(
       props.initialSkipPrompt,
       props.initialPaperKind,
       props.initialTripleSpec,
+      props.initialServiceApplyPaperSize,
     ] as const,
   () => {
     if (dialogVisible.value) {
@@ -146,22 +180,30 @@ watch(
 
 /** 关闭弹窗并通知取消 */
 function handleCancel(): void {
+  if (settled) {
+    return;
+  }
+  settled = true;
   dialogVisible.value = false;
   emit('cancel');
 }
 
-/** 校验后提交所选打印机（及库房纸张） */
+/** 校验后提交所选打印机（及纸张） */
 function handleConfirm(): void {
   const printerName = selectedPrinter.value.trim();
-  if (!printerName) {
+  if (!printerName || settled) {
     return;
   }
+  settled = true;
   dialogVisible.value = false;
   emit('confirm', {
     printerName,
     skipPrompt: props.showSkipPrompt ? skipPrompt.value : props.initialSkipPrompt !== false,
     paperKind: props.showPaperKind ? paperKind.value : undefined,
     tripleSpec: props.showPaperKind ? tripleSpec.value : undefined,
+    serviceApplyPaperSize: props.showServiceApplyPaperSize
+      ? serviceApplyPaperSize.value
+      : undefined,
   });
 }
 
@@ -210,6 +252,19 @@ onMounted(() => {
         <div class="mb-2 text-sm text-[var(--el-text-color-regular)]">纸张</div>
         <InvFormPaperKindCards v-model="paperKind" v-model:triple-spec="tripleSpec" class="mb-4" />
       </template>
+      <template v-else-if="showServiceApplyPaperSize">
+        <div class="mb-2 text-sm text-[var(--el-text-color-regular)]">纸张</div>
+        <ElRadioGroup v-model="serviceApplyPaperSize" class="service-apply-paper-options mb-4">
+          <ElRadio :value="SERVICE_APPLY_PAPER_SIZE.a4" border>
+            {{ SERVICE_APPLY_PAPER_SIZE_LABELS[SERVICE_APPLY_PAPER_SIZE.a4] }}
+            <span class="service-apply-paper-hint">210×297mm 竖版</span>
+          </ElRadio>
+          <ElRadio :value="SERVICE_APPLY_PAPER_SIZE.a5" border>
+            {{ SERVICE_APPLY_PAPER_SIZE_LABELS[SERVICE_APPLY_PAPER_SIZE.a5] }}
+            <span class="service-apply-paper-hint">148×210mm 竖版</span>
+          </ElRadio>
+        </ElRadioGroup>
+      </template>
       <div class="mb-4">
         <div class="mb-2 text-sm text-[var(--el-text-color-regular)]">打印机</div>
         <ElSelect
@@ -245,3 +300,25 @@ onMounted(() => {
     </template>
   </ElDialog>
 </template>
+
+<style scoped>
+.service-apply-paper-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.service-apply-paper-options :deep(.el-radio) {
+  width: 100%;
+  margin-right: 0;
+  height: auto;
+  padding: 12px 16px;
+}
+
+.service-apply-paper-hint {
+  margin-left: 8px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+</style>

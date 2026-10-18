@@ -1,9 +1,9 @@
-import type { VbenFormSchema as FormSchema, VbenFormProps } from '@vben/common-ui';
+import type { VbenFormSchema as FormSchema, VbenFormProps } from '@zxplat/common-ui';
 
 import type { ComponentType } from './component';
 
-import { setupVbenForm, useVbenForm as useForm, z } from '@vben/common-ui';
-import { $t } from '@vben/locales';
+import { setupVbenForm, useVbenForm as useForm, z } from '@zxplat/common-ui';
+import { $t } from '@zxplat/locales';
 
 async function initSetupVbenForm() {
   setupVbenForm<ComponentType>({

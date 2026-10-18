@@ -1,5 +1,5 @@
 /**
- * 科室领用单 — 对接 Whale {@code POST /api/app/inventoryDepartmentDeptIssue/<method>}
+ * 科室领用单 — 对接 ZXPlat {@code POST /api/app/inventoryDepartmentDeptIssue/<method>}
  */
 import type { ApiOptionItem, ApiResponse } from '#/types/api-response';
 
@@ -15,7 +15,7 @@ import {
 
 const BASE = '/inventoryDepartmentDeptIssue';
 
-/** {@link com.openhis.health.domain.share.enums.SupplyType#DEPT_ISSUE} */
+/** {@link com.zxplat.domain.share.enums.SupplyType#DEPT_ISSUE} */
 export const DEPT_ISSUE_TYPE_ENUM = 'DEPT_ISSUE';
 
 export interface DeptPharmacyOptionDto {

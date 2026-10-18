@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { ref } from 'vue';
 
-import { useElementPlusDesignTokens } from '@vben/hooks/es/use-design-tokens';
+import { useElementPlusDesignTokens } from '@zxplat/hooks/es/use-design-tokens';
 
 import { ElConfigProvider } from 'element-plus';
 import defaultLocale from 'element-plus/es/locale/lang/zh-cn';

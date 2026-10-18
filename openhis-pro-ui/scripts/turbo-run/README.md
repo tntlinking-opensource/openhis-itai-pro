@@ -1,4 +1,4 @@
-# @vben/turbo-run
+# @zxplat/turbo-run
 
 `turbo-run` 是一个命令行工具，允许你在多个包中并行运行命令。它提供了一个交互式的界面，让你可以选择要运行命令的包。
 
@@ -12,7 +12,7 @@
 ## 安装
 
 ```bash
-pnpm add -D @vben/turbo-run
+pnpm add -D @zxplat/turbo-run
 ```
 
 ## 使用方法
@@ -35,9 +35,9 @@ turbo-run dev
 
 假设你的项目中有以下包：
 
-- `@vben/app`
-- `@vben/admin`
-- `@vben/website`
+- `@zxplat/app`
+- `@zxplat/admin`
+- `@zxplat/website`
 
 当你运行：
 

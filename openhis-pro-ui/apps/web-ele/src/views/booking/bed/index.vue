@@ -5,7 +5,7 @@ import { toBookingId } from '#/api/booking/booking-id';
 
 import { computed, onMounted, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import { addDaysIso } from '#/api/booking/booking-constants';
 import {

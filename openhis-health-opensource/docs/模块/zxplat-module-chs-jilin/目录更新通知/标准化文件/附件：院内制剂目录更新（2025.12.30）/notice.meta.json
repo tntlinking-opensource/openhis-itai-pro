@@ -1,0 +1,10 @@
+{
+  "doc_kind": "CATALOG_DELTA",
+  "category": "PREP",
+  "title": "附件：院内制剂目录更新（2025.12.30）",
+  "source_filename": "附件：院内制剂目录更新（2025.12.30）.xlsx",
+  "notice_date": "2025-12-30",
+  "effective_date": null,
+  "wash_note": "CATALOG_DELTA/PREP；行数=342；actions=MODIFY:342；hilist_code←制剂代码；Sheet名含变更→MODIFY",
+  "wash_tool": "cursor-ai"
+}

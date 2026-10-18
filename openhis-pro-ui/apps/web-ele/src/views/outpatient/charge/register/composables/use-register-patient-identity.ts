@@ -20,7 +20,7 @@ import type { YbEcVoucherQueryInput } from '#/chs/utils/yb-plugin';
 
 import { ref } from 'vue';
 
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 import { ElMessage } from 'element-plus';
 
@@ -267,15 +267,18 @@ export function useRegisterPatientIdentity(options: UseRegisterPatientIdentityOp
       const area = options.registerFormAreaRef.value;
       if (area && addressText) {
         const current = await area.getSubmitValues();
-        area.applyPatientRecord({
-          patientAge: String(current.medicalInsuranceNo ?? ''),
-          patientAddress: addressText,
-          patientBirthday: String(current.patientBirthday ?? ''),
-          patientGender: String(current.patientGender ?? ''),
-          patientIdCard: String(current.patientIdCard ?? ''),
-          patientName: String(current.patientName ?? ''),
-          patientPhone: String(current.patientPhone ?? ''),
-        });
+        area.applyPatientRecord(
+          {
+            patientAge: String(current.medicalInsuranceNo ?? ''),
+            patientAddress: addressText,
+            patientBirthday: String(current.patientBirthday ?? ''),
+            patientGender: String(current.patientGender ?? ''),
+            patientIdCard: String(current.patientIdCard ?? ''),
+            patientName: String(current.patientName ?? ''),
+            patientPhone: String(current.patientPhone ?? ''),
+          },
+          { rebind: false },
+        );
       }
       if (snapshotHasInsuranceCredential(snapshot)) {
         await options.onBootstrapBenefit();

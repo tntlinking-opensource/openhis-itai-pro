@@ -10,9 +10,9 @@ import type {
 import type { EnsureClinicalReceptionFn } from '#/components/doctor-station';
 import type { PatientInfoBarPayload } from '#/components/outpatient/patient-card.types';
 
-import { computed, nextTick, onMounted, provide, ref } from 'vue';
+import { computed, nextTick, onMounted, provide, ref, watch } from 'vue';
 
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 import { ElButton, ElMessage, ElMessageBox } from 'element-plus';
 import { storeToRefs } from 'pinia';
@@ -38,6 +38,7 @@ import DoctorHeader from '#/components/outpatient/doctor-header.vue';
 import EmrTemplateMaintainDialog from '#/components/outpatient/emr-template-maintain-dialog.vue';
 import MedicalRecordForm from '#/components/outpatient/medical-record-form.vue';
 import PatientInfoBar from '#/components/outpatient/patient-info-bar.vue';
+import { useEncounterFeeSummary } from '#/components/outpatient/use-encounter-fee-summary';
 import { EMR_TEMPLATE_STATION_KIND } from '#/views/basic/emr-template/emr-template-scope.constants';
 import { confirmEmrDiscardUnsaved } from '#/emrEditor';
 import { clearEncounterDiagnosisSession } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-session';
@@ -64,6 +65,7 @@ import {
   readDoctorOrderTabPreference,
   writeDoctorOrderTabPreference,
 } from './services/order-tab-preference.service';
+import { tryCrbSsoOnDoctorStationEnter } from '#/utils/crb/try-crb-sso-on-doctor-station';
 
 defineOptions({
   name: 'Doctor',
@@ -161,6 +163,13 @@ const authStore = useAuthStore();
 const userStore = useUserStore();
 const doctorPatientStore = useDoctorPatientStore();
 const { selectedPatient, currentPatientInfo } = storeToRefs(doctorPatientStore);
+const feeEncounterId = computed(() => String(selectedPatient.value?.encounterId ?? '').trim());
+const feePatientId = computed(() => String(selectedPatient.value?.patientId ?? '').trim());
+const { feeSummary, refreshEncounterFee } = useEncounterFeeSummary({
+  encounterId: feeEncounterId,
+  patientId: feePatientId,
+  scope: 'outpatient',
+});
 
 /** 医生站列表/接诊写库用：当前登录医师主键（须与挂号/接诊参与者 practitionerId 一致，禁用 number 防雪花精度丢失） */
 function resolveStaffPractitionerIdForInProgressQueue(): string | undefined {
@@ -319,7 +328,13 @@ const doctorStationContextBindings = computed(() => {
     };
   }
   if (activeTab.value === DOCTOR_TABS.MEDICAL_RECORD) {
-    return { encounterId, patientId, stationKind: 'OUTPATIENT' as const };
+    // 门诊提交归档暂不露出；医生站仅书写/保存
+    return {
+      encounterId,
+      patientId,
+      stationKind: 'OUTPATIENT' as const,
+      archiveEnabled: false,
+    };
   }
   return {};
 });
@@ -472,6 +487,8 @@ const handleRefresh = () => {
 
 onMounted(() => {
   loadDoctorStationLists();
+  // 进入门诊医生站后静默本机传染病前置 SSO（失败不挡）
+  void tryCrbSsoOnDoctorStationEnter();
 });
 
 const handleAction = (_action: string) => {
@@ -688,11 +705,16 @@ const ensurePatientSelected = () => {
 const tabPanelRef = ref<null | { reload?: () => Promise<void> | void }>(null);
 
 async function handleToolbarRefresh() {
+  void refreshEncounterFee();
   const inst = tabPanelRef.value;
   if (inst && typeof inst.reload === 'function') {
     await inst.reload();
   }
 }
+
+watch(activeTab, () => {
+  void refreshEncounterFee();
+});
 
 /** 完诊：校验状态、确认后调用 IF-DOR-04 并刷新患者队列 */
 async function handleCompleteVisit(): Promise<void> {
@@ -939,7 +961,7 @@ const handleAdmission = async () => {
 </script>
 
 <template>
-  <div class="flex h-full flex-row pt-2">
+  <div class="flex h-full flex-row">
     <DoctorPatientList
       v-model:filter-date="listDateStr"
       v-model:queue-status-filter="queueStatusFilter"
@@ -962,7 +984,11 @@ const handleAdmission = async () => {
 
     <!-- 主内容区 -->
     <div class="bg-background-page ml-[2px] flex min-h-0 flex-1 flex-col overflow-hidden">
-      <PatientInfoBar :patient="currentPatientInfo" :doctor-name="doctorDisplayName" />
+      <PatientInfoBar
+        :patient="currentPatientInfo"
+        :doctor-name="doctorDisplayName"
+        :fee-total-text="feeSummary?.totalText ?? ''"
+      />
       <div class="flex min-h-0 flex-1 flex-col">
         <DoctorHeader
           :patient="currentPatientInfo"

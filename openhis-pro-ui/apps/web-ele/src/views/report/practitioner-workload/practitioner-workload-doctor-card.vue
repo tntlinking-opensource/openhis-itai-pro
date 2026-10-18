@@ -3,19 +3,21 @@ import type { PractitionerWorkloadSummaryTotalsDto } from '#/api/report/practiti
 
 import { computed } from 'vue';
 
-import { IconifyIcon } from '@vben/icons';
+import { IconifyIcon } from '@zxplat/icons';
 
 import { fmtReportNumber } from '#/views/report/shared/report-format';
 
 defineOptions({ name: 'PractitionerWorkloadDoctorCard' });
 
 interface Props {
+  discountFeatureEnabled?: boolean;
   loading?: boolean;
   practitionerName: string;
   summaryTotals: PractitionerWorkloadSummaryTotalsDto;
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  discountFeatureEnabled: false,
   loading: false,
 });
 
@@ -32,12 +34,32 @@ const metrics = computed(() => [
   },
   { label: '处方数量', value: String(props.summaryTotals.prescriptionCountTotal ?? 0) },
   { label: '诊疗项目', value: String(props.summaryTotals.activityItemCountTotal ?? 0) },
-  {
-    label: '售价合计',
-    value: fmtReportNumber(props.summaryTotals.saleAmountTotal),
-    highlight: true,
-  },
 ]);
+
+const showDiscount = computed(() => Boolean(props.discountFeatureEnabled));
+
+const amountMetrics = computed(() => {
+  const rows = [
+    {
+      label: '售价合计',
+      value: fmtReportNumber(props.summaryTotals.saleAmountTotal),
+      highlight: true,
+    },
+  ];
+  if (showDiscount.value) {
+    rows.push({
+      label: '优惠合计',
+      value: fmtReportNumber(props.summaryTotals.discountAmountTotal),
+      highlight: true,
+    });
+    rows.push({
+      label: '实收合计',
+      value: fmtReportNumber(props.summaryTotals.actualReceivedAmountTotal),
+      highlight: true,
+    });
+  }
+  return rows;
+});
 </script>
 
 <template>
@@ -59,7 +81,7 @@ const metrics = computed(() => [
 
     <div class="practitioner-workload-doctor-card__metrics">
       <div
-        v-for="metric in metrics"
+        v-for="metric in [...metrics, ...amountMetrics]"
         :key="metric.label"
         class="practitioner-workload-doctor-card__metric"
       >

@@ -1,6 +1,10 @@
 import type { NurseStationTreatmentLineDto } from '#/api/outpatient-nurse-station/outpatient-nurse-station.types';
 import { resolveAdviceQuantityUnitLabel } from '#/utils/doctor-station/advice-quantity-unit-display';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
+import {
+  expandActivityDefinitionChildrenForPrint,
+  isLabServiceCategoryForPrint,
+} from '#/utils/print/expand-activity-definition-children-for-print';
 
 /** 处置单表格行（与 op-treatment-print 模板 treatmentLines 列一致） */
 export interface OutpatientTreatmentSheetLine {
@@ -121,7 +125,19 @@ function mapTreatmentLine(row: NurseStationTreatmentLineDto): OutpatientTreatmen
 export function buildOutpatientTreatmentSheetPrintData(
   source: OutpatientTreatmentSheetPrintSource,
 ): OutpatientTreatmentSheetPrintData {
-  const lines = [...(source.serviceLines ?? []), ...(source.deviceLines ?? [])].map((line) =>
+  const serviceLines = expandActivityDefinitionChildrenForPrint(
+    source.serviceLines ?? [],
+    (line) => line.packageChildren,
+    (line, child) => {
+      const childName = str(child.childrenName);
+      return {
+        ...line,
+        itemName: childName || str(line.itemName),
+      };
+    },
+    (line) => isLabServiceCategoryForPrint(line.serviceCategoryCode),
+  );
+  const lines = [...serviceLines, ...(source.deviceLines ?? [])].map((line) =>
     mapTreatmentLine(line),
   );
   return {

@@ -9,7 +9,10 @@ import dayjs from 'dayjs';
 
 import { formatMoneyYuan } from '#/utils/format/money-scale';
 
-import { encounterStatusToNurseStationLabel } from '../services/map-inpatient-nurse-station-api';
+import {
+  encounterStatusToNurseStationLabel,
+  isPatientAdmittedToday,
+} from '../services/map-inpatient-nurse-station-api';
 import { doesNurseStationTabRequireBed, OPERATION_TAB } from '../workbench-tab.config';
 import {
   formatNurseStationAccountBalance,
@@ -494,6 +497,7 @@ onUnmounted(() => {
               'is-unassigned': isNurseStationBedUnassigned(row.bedNo),
               'is-low-balance': row.lowBalanceWarning,
               'is-pending-execute': row.pendingExecute > 0,
+              'is-today-admission': isPatientAdmittedToday(row),
               'is-recall': recallListMode,
               [`is-tone-${resolveStatusTone(row)}`]: true,
             }"
@@ -534,8 +538,17 @@ onUnmounted(() => {
                     </span>
                   </span>
                 </div>
-                <span class="nurse-ls-card__status" :class="`is-${resolveStatusTone(row)}`">
-                  {{ formatStatusLabel(row) }}
+                <span class="nurse-ls-card__status-group">
+                  <span class="nurse-ls-card__status" :class="`is-${resolveStatusTone(row)}`">
+                    {{ formatStatusLabel(row) }}
+                  </span>
+                  <span
+                    v-if="isPatientAdmittedToday(row)"
+                    class="nurse-ls-card__today-badge"
+                    title="今日入院"
+                  >
+                    今日入院
+                  </span>
                 </span>
               </div>
             </div>
@@ -801,7 +814,7 @@ onUnmounted(() => {
 }
 
 .nurse-ls-stat--execute .nurse-ls-stat__value {
-  color: var(--el-color-danger);
+  color: #0284c7;
 }
 
 .nurse-ls__actions {
@@ -878,25 +891,47 @@ onUnmounted(() => {
 }
 
 .nurse-ls-card.is-pending-execute {
-  background: #fff7f7;
-  border-color: #f3a3a3;
+  background: #f0f9ff;
+  border-color: #7dd3fc;
 }
 
 .nurse-ls-card.is-pending-execute .nurse-ls-card__rail {
-  background: var(--el-color-danger);
+  background: #0284c7;
 }
 
 .nurse-ls-card.is-pending-execute .nurse-ls-card__head {
-  background: linear-gradient(180deg, #fff1f1 0%, #fff7f7 100%);
-  border-bottom-color: #f5c2c2;
+  background: linear-gradient(180deg, #e0f2fe 0%, #f0f9ff 100%);
+  border-bottom-color: #bae6fd;
 }
 
 .nurse-ls-card.is-pending-execute.is-selected {
-  background: #fff1f1;
-  border-color: var(--el-color-danger);
+  background: #e0f2fe;
+  border-color: #0284c7;
   box-shadow:
-    0 0 0 1px var(--el-color-danger),
-    0 4px 14px rgb(245 108 108 / 16%);
+    0 0 0 1px #0284c7,
+    0 4px 14px rgb(2 132 199 / 16%);
+}
+
+.nurse-ls-card.is-today-admission:not(.is-pending-execute) {
+  background: #ecfdf5;
+  border-color: #6ee7b7;
+}
+
+.nurse-ls-card.is-today-admission:not(.is-pending-execute) .nurse-ls-card__rail {
+  background: #10b981;
+}
+
+.nurse-ls-card.is-today-admission:not(.is-pending-execute) .nurse-ls-card__head {
+  background: linear-gradient(180deg, #d1fae5 0%, #ecfdf5 100%);
+  border-bottom-color: #a7f3d0;
+}
+
+.nurse-ls-card.is-today-admission:not(.is-pending-execute).is-selected {
+  background: #d1fae5;
+  border-color: #10b981;
+  box-shadow:
+    0 0 0 1px #10b981,
+    0 4px 14px rgb(16 185 129 / 16%);
 }
 
 .nurse-ls-card.is-recall {
@@ -974,6 +1009,23 @@ onUnmounted(() => {
   line-height: 1.15;
 }
 
+.nurse-ls-card__today-badge {
+  background: #d1fae5;
+  border-radius: 4px;
+  color: #047857;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  padding: 3px 6px;
+}
+
+.nurse-ls-card.is-today-admission:not(.is-pending-execute) .nurse-ls-card__today-badge {
+  background: #047857;
+  color: #fff;
+}
+
 .nurse-ls-card__ward {
   align-items: baseline;
   color: var(--el-text-color-primary);
@@ -1001,6 +1053,13 @@ onUnmounted(() => {
   color: var(--el-color-primary);
   font-variant-numeric: tabular-nums;
   font-weight: 800;
+}
+
+.nurse-ls-card__status-group {
+  align-items: center;
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 6px;
 }
 
 .nurse-ls-card__status {
@@ -1238,7 +1297,7 @@ onUnmounted(() => {
 }
 
 .nurse-ls-card__task.is-execute b {
-  color: var(--el-color-danger);
+  color: #0284c7;
 }
 
 .nurse-ls-card__task.is-on {
@@ -1247,8 +1306,8 @@ onUnmounted(() => {
 }
 
 .nurse-ls-card__task.is-execute.is-on {
-  background: #fef2f2;
-  color: #991b1b;
+  background: #0284c7;
+  color: #fff;
 }
 
 .nurse-ls-card__shortcuts {

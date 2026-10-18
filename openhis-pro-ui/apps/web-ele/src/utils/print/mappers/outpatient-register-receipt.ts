@@ -13,6 +13,8 @@ export interface OutpatientRegisterReceiptPrintData {
   ageText: string;
   feeNatureText: string;
   registerDepartmentName: string;
+  /** 挂号医生 */
+  doctorName: string;
   chargeItemLines: OutpatientRegisterReceiptChargeLine[];
   totalAmountText: string;
   poolingPayText: string;
@@ -40,6 +42,8 @@ export interface RegistrationSlipPrintSource {
   feeNatureText?: string;
   registerDepartmentName?: string;
   organizationName?: string;
+  /** 挂号医生 */
+  doctorName?: string;
   chargeItemLines?: OutpatientRegisterReceiptChargeLine[];
   totalAmountText?: string;
   poolingPayText?: string;
@@ -90,6 +94,7 @@ export function buildOutpatientRegisterReceiptPrintData(
     ageText: str(source.ageText),
     feeNatureText: str(source.feeNatureText),
     registerDepartmentName: str(source.registerDepartmentName) || str(source.organizationName),
+    doctorName: str(source.doctorName),
     chargeItemLines: mapChargeLines(source.chargeItemLines),
     totalAmountText: str(source.totalAmountText),
     poolingPayText: str(source.poolingPayText),

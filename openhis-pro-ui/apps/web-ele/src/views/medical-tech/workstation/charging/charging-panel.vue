@@ -4,6 +4,7 @@ import type {
   MedicalTechDeviceCatalogRowDto,
   MedicalTechDevicePricingWriteItemDto,
   MedicalTechPricedDeviceRowDto,
+  MedicalTechServicePricingWriteItemDto,
 } from '#/api/medical-tech/medical-tech-charging.types';
 
 import { computed, inject, reactive, ref, watch } from 'vue';
@@ -16,6 +17,8 @@ import {
   ElMessageBox,
   ElOption,
   ElPagination,
+  ElRadioButton,
+  ElRadioGroup,
   ElSelect,
   ElTable,
   ElTableColumn,
@@ -24,9 +27,11 @@ import {
 import {
   httpCancelMedicalTechDevicePricing,
   httpConfirmMedicalTechDevicePricing,
+  httpConfirmMedicalTechServicePricing,
   httpListMedicalTechPricedDevices,
   httpLoadMedicalTechChargingInit,
   httpPageMedicalTechDeviceCatalog,
+  httpPageMedicalTechServiceCatalog,
 } from '#/api/medical-tech/medical-tech-charging.http';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import { useRequest } from '#/hooks/use-request';
@@ -52,6 +57,9 @@ import {
 
 defineOptions({ name: 'MedicalTechChargingPanel' });
 
+/** 选品类型：耗材 / 诊疗项目（确认划价分轨，来源均为医技划价） */
+type MedicalTechPricingProjectType = 'device' | 'service';
+
 /** 待划价草稿行：保留目录快照供换单位 */
 interface DraftPricingRow {
   catalog: MedicalTechDeviceCatalogRowDto;
@@ -63,6 +71,8 @@ interface DraftPricingRow {
   itemName?: string;
   locationId: string;
   lotNumber?: null | string;
+  /** device | service */
+  projectType: MedicalTechPricingProjectType;
   quantity: number;
   rowKey: string;
   selectedBandKind: string;
@@ -74,18 +84,23 @@ if (!ctx) {
   throw new Error('MedicalTechChargingPanel 须在 MedicalTechWorkstation 壳内使用');
 }
 
-const { encounterScope, selectedEncounterId, reloadPatientQueue } = ctx;
+const { encounterScope, selectedEncounterId, reloadPatientQueue, contentReloadToken } = ctx;
 
 const locationOptions = ref<ApiOptionItem[]>([]);
 const defaultLocationId = ref('');
 const catalogKeyword = ref('');
 const catalogLocationId = ref('');
+/** 选品类型：默认耗材，可切诊疗项目 */
+const projectType = ref<MedicalTechPricingProjectType>('device');
 const catalogPage = reactive({ pageNo: 1, pageSize: 20 });
 const catalogRows = ref<MedicalTechDeviceCatalogRowDto[]>([]);
 const catalogTotal = ref(0);
 const draftItems = ref<DraftPricingRow[]>([]);
 const pricedRows = ref<MedicalTechPricedDeviceRowDto[]>([]);
 let draftSeq = 0;
+
+/** 当前为诊疗选品 */
+const isServiceProject = computed(() => projectType.value === 'service');
 
 /** 待划价金额合计：行金额按计算刻度加总后再按结算刻度展示 */
 const draftAmountLabel = computed(() => {
@@ -109,7 +124,7 @@ const { run: runInit, loading: initLoading } = useRequest(httpLoadMedicalTechCha
   },
 });
 
-const { run: runPageCatalog, loading: catalogLoading } = useRequest(
+const { run: runPageDeviceCatalog, loading: deviceCatalogLoading } = useRequest(
   httpPageMedicalTechDeviceCatalog,
   {
     manual: true,
@@ -121,7 +136,31 @@ const { run: runPageCatalog, loading: catalogLoading } = useRequest(
   },
 );
 
-const { run: runConfirm, loading: confirmLoading } = useRequest(
+const { run: runPageServiceCatalog, loading: serviceCatalogLoading } = useRequest(
+  httpPageMedicalTechServiceCatalog,
+  {
+    manual: true,
+    showErrorMessage: false,
+    onSuccess: (data) => {
+      catalogRows.value = data.content ?? [];
+      catalogTotal.value = data.totalCount ?? 0;
+    },
+  },
+);
+
+const catalogLoading = computed(
+  () => deviceCatalogLoading.value || serviceCatalogLoading.value,
+);
+
+/** 划价成功后的统一收尾：清草稿、刷已划价与队列余额 */
+function onPricingSucceeded(message?: null | string) {
+  ElMessage.success(message || '划价成功');
+  draftItems.value = [];
+  void loadPricedList();
+  void reloadPatientQueue();
+}
+
+const { run: runConfirmDevice, loading: confirmDeviceLoading } = useRequest(
   httpConfirmMedicalTechDevicePricing,
   {
     manual: true,
@@ -131,13 +170,28 @@ const { run: runConfirm, loading: confirmLoading } = useRequest(
         ElMessage.warning(data.message || '划价未成功');
         return;
       }
-      ElMessage.success(data.message || '划价成功');
-      draftItems.value = [];
-      void loadPricedList();
-      // 划价挂待结算费用：刷新队列余额（库内余额 − 待结算）
-      void reloadPatientQueue();
+      onPricingSucceeded(data.message);
     },
   },
+);
+
+const { run: runConfirmService, loading: confirmServiceLoading } = useRequest(
+  httpConfirmMedicalTechServicePricing,
+  {
+    manual: true,
+    showErrorMessage: false,
+    onSuccess: (data) => {
+      if (data.succeeded === false) {
+        ElMessage.warning(data.message || '划价未成功');
+        return;
+      }
+      onPricingSucceeded(data.message);
+    },
+  },
+);
+
+const confirmLoading = computed(
+  () => confirmDeviceLoading.value || confirmServiceLoading.value,
 );
 
 const { run: runListPriced, loading: pricedLoading } = useRequest(
@@ -185,7 +239,7 @@ async function loadInit() {
   }
 }
 
-/** 分页查询选品目录；失败静默清空 */
+/** 分页查询选品目录（按 projectType 分轨）；失败静默清空 */
 async function loadCatalog() {
   const encounterId = preserveApiIdForRequest(selectedEncounterId.value);
   if (!encounterId) {
@@ -194,7 +248,17 @@ async function loadCatalog() {
     return;
   }
   try {
-    await runPageCatalog({
+    // 诊疗选品：不按耗材房过滤
+    if (projectType.value === 'service') {
+      await runPageServiceCatalog({
+        pageNo: catalogPage.pageNo,
+        pageSize: catalogPage.pageSize,
+        encounterId,
+        keyword: catalogKeyword.value.trim() || undefined,
+      });
+      return;
+    }
+    await runPageDeviceCatalog({
       pageNo: catalogPage.pageNo,
       pageSize: catalogPage.pageSize,
       encounterId,
@@ -205,6 +269,21 @@ async function loadCatalog() {
     catalogRows.value = [];
     catalogTotal.value = 0;
   }
+}
+
+/** 切换耗材/诊疗选品：清草稿并重查目录 */
+function handleProjectTypeChange(next: string | number | boolean | undefined) {
+  const normalized = String(next ?? '').trim();
+  if (normalized !== 'device' && normalized !== 'service') {
+    return;
+  }
+  if (projectType.value === normalized) {
+    return;
+  }
+  projectType.value = normalized;
+  draftItems.value = [];
+  catalogPage.pageNo = 1;
+  void loadCatalog();
 }
 
 /** 加载已划价列表；失败静默清空 */
@@ -256,7 +335,7 @@ function handleCatalogPageChange(page: number) {
   void loadCatalog();
 }
 
-/** 目录行是否已在待划价（同定义、同批号） */
+/** 目录行是否已在待划价（同类型、同定义、同批号） */
 function isCatalogRowInDraft(row: MedicalTechDeviceCatalogRowDto): boolean {
   const definitionId = preserveApiIdForRequest(row.definitionId);
   if (!definitionId) {
@@ -264,7 +343,10 @@ function isCatalogRowInDraft(row: MedicalTechDeviceCatalogRowDto): boolean {
   }
   const lot = String(row.lotNumber ?? '').trim();
   return draftItems.value.some(
-    (item) => item.definitionId === definitionId && String(item.lotNumber ?? '').trim() === lot,
+    (item) =>
+      item.projectType === projectType.value &&
+      item.definitionId === definitionId &&
+      String(item.lotNumber ?? '').trim() === lot,
   );
 }
 
@@ -296,13 +378,22 @@ function buildDraftMergeKey(
 /** 点击目录行加入待划价；同键重复点击数量 +1 */
 function handleCatalogRowClick(row: MedicalTechDeviceCatalogRowDto) {
   const definitionId = preserveApiIdForRequest(row.definitionId);
-  const locationId =
-    preserveApiIdForRequest(row.locationId) ||
-    preserveApiIdForRequest(catalogLocationId.value) ||
-    preserveApiIdForRequest(defaultLocationId.value);
-  if (!definitionId || !locationId) {
-    ElMessage.warning('该行缺少定义或库房，无法加入');
+  if (!definitionId) {
+    ElMessage.warning('该行缺少定义，无法加入');
     return;
+  }
+  // 耗材须有库房；诊疗无库房维，占位空串参与合并键
+  let locationId = '';
+  if (projectType.value === 'device') {
+    locationId =
+      preserveApiIdForRequest(row.locationId) ||
+      preserveApiIdForRequest(catalogLocationId.value) ||
+      preserveApiIdForRequest(defaultLocationId.value) ||
+      '';
+    if (!locationId) {
+      ElMessage.warning('该行缺少定义或库房，无法加入');
+      return;
+    }
   }
   const selectedBandKind = resolveMedicalTechDefaultBandKind(row);
   const unitCode = resolveMedicalTechUnitCodeByBand(row, selectedBandKind);
@@ -314,6 +405,7 @@ function handleCatalogRowClick(row: MedicalTechDeviceCatalogRowDto) {
   // 同品同批同单位：数量累加，避免草稿表重复堆行
   const existing = draftItems.value.find(
     (item) =>
+      item.projectType === projectType.value &&
       buildDraftMergeKey(
         item.definitionId,
         item.locationId,
@@ -330,6 +422,7 @@ function handleCatalogRowClick(row: MedicalTechDeviceCatalogRowDto) {
     rowKey: `draft-${draftSeq}`,
     catalog: row,
     definitionId,
+    projectType: projectType.value,
     quantity: 1,
     selectedBandKind,
     displayUnitCode: unitCode,
@@ -384,7 +477,7 @@ function handleClearDraft() {
   draftItems.value = [];
 }
 
-/** 确认划价 */
+/** 确认划价：按草稿 projectType 分轨提交（不可混批） */
 async function handleConfirmPricing() {
   const encounterId = preserveApiIdForRequest(selectedEncounterId.value);
   if (!encounterId) {
@@ -392,11 +485,42 @@ async function handleConfirmPricing() {
     return;
   }
   if (draftItems.value.length === 0) {
-    ElMessage.warning('请先从目录点击加入耗材');
+    ElMessage.warning(isServiceProject.value ? '请先从目录点击加入诊疗项目' : '请先从目录点击加入耗材');
     return;
+  }
+  const draftType = draftItems.value[0]?.projectType ?? projectType.value;
+  for (const draft of draftItems.value) {
+    if (draft.projectType !== draftType) {
+      ElMessage.warning('待划价不可混杂诊疗与耗材，请清空后重选');
+      return;
+    }
   }
 
   // 组装写行：数量须 > 0，ID 一律 preserve
+  if (draftType === 'service') {
+    const items: MedicalTechServicePricingWriteItemDto[] = [];
+    for (const draft of draftItems.value) {
+      const qty = Number(draft.quantity);
+      if (!Number.isFinite(qty) || qty <= 0) {
+        ElMessage.warning(`「${draft.itemName || draft.definitionId}」数量须大于 0`);
+        return;
+      }
+      const activityId = preserveApiIdForRequest(draft.definitionId);
+      const unitCode = String(draft.displayUnitCode ?? '').trim();
+      if (!activityId || !unitCode) {
+        ElMessage.warning('草稿行主键或单位无效');
+        return;
+      }
+      items.push({
+        activityId,
+        quantity: draft.quantity,
+        unitCode,
+      });
+    }
+    await runConfirmService({ encounterId, items });
+    return;
+  }
+
   const items: MedicalTechDevicePricingWriteItemDto[] = [];
   for (const draft of draftItems.value) {
     const qty = Number(draft.quantity);
@@ -420,10 +544,10 @@ async function handleConfirmPricing() {
     });
   }
 
-  await runConfirm({ encounterId, items });
+  await runConfirmDevice({ encounterId, items });
 }
 
-/** 冲销单条可取消划价 */
+/** 冲销单条可取消划价（按 orderType 分轨） */
 async function handleCancelPriced(row: MedicalTechPricedDeviceRowDto) {
   if (row.cancellable !== true) {
     ElMessage.warning('该行不可冲销');
@@ -442,14 +566,18 @@ async function handleCancelPriced(row: MedicalTechPricedDeviceRowDto) {
   } catch {
     return;
   }
+  const orderType =
+    String(row.orderType ?? '').trim() === 'SERVICE_REQUEST'
+      ? 'SERVICE_REQUEST'
+      : 'DEVICE_REQUEST';
   await runCancelPricing({
     encounterId,
-    items: [{ requestId }],
+    items: [{ requestId, orderType }],
   });
 }
 
 watch(
-  selectedEncounterId,
+  [selectedEncounterId, contentReloadToken],
   () => {
     void bootstrapForEncounter();
   },
@@ -470,8 +598,12 @@ watch(
       <!-- 选品：点行或「加入」进入待划价 -->
       <div class="flex min-h-0 min-w-0 flex-1 flex-col">
         <div class="flex shrink-0 flex-nowrap items-center gap-2 px-3 pb-2 pt-2">
-          <SectionTitle class="shrink-0" title="耗材选品" />
-          <div class="w-[148px] shrink-0">
+          <SectionTitle class="shrink-0" title="选品" />
+          <ElRadioGroup :model-value="projectType" @change="handleProjectTypeChange">
+            <ElRadioButton label="device">耗材</ElRadioButton>
+            <ElRadioButton label="service">诊疗项目</ElRadioButton>
+          </ElRadioGroup>
+          <div v-if="!isServiceProject" class="w-[148px] shrink-0">
             <ElSelect
               v-model="catalogLocationId"
               clearable
@@ -533,13 +665,20 @@ watch(
               width="64"
             />
             <ElTableColumn
+              v-if="!isServiceProject"
               align="center"
               label="批号"
               prop="lotNumber"
               show-overflow-tooltip
               width="88"
             />
-            <ElTableColumn align="center" label="库存" prop="availableQty" width="64" />
+            <ElTableColumn
+              v-if="!isServiceProject"
+              align="center"
+              label="库存"
+              prop="availableQty"
+              width="64"
+            />
             <ElTableColumn align="right" label="单价" width="80">
               <template #default="{ row }">
                 {{ formatMedicalTechUnitPrice(row.unitPrice) }}
@@ -601,7 +740,11 @@ watch(
           v-if="draftItems.length === 0"
           class="shrink-0 px-3 pb-2 text-xs leading-snug text-[var(--el-text-color-regular)]"
         >
-          点左侧耗材或「加入」，改数量后确认划价
+          {{
+            isServiceProject
+              ? '点左侧诊疗项目或「加入」，改数量后确认划价'
+              : '点左侧耗材或「加入」，改数量后确认划价'
+          }}
         </p>
         <div v-else class="min-w-0 shrink-0 px-3 pb-2">
           <ElTable :data="draftItems" border class="mt-charging-table" :max-height="280" stripe>
@@ -682,6 +825,13 @@ watch(
               stripe
             >
               <ElTableColumn label="品名" min-width="100" prop="itemName" show-overflow-tooltip />
+              <ElTableColumn align="center" label="类型" width="64">
+                <template #default="{ row }">
+                  {{
+                    String(row.orderType ?? '').trim() === 'SERVICE_REQUEST' ? '诊疗' : '耗材'
+                  }}
+                </template>
+              </ElTableColumn>
               <ElTableColumn align="right" label="数量" prop="quantity" width="64" />
               <ElTableColumn align="right" label="金额" prop="totalPrice" width="72" />
               <ElTableColumn align="center" label="确费人" min-width="72" show-overflow-tooltip>

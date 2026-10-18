@@ -2,7 +2,10 @@
  * 门诊护士站应用服务请求/响应类型（与后端 camelCase、Long→JSON 字符串约定一致）。
  */
 
-import type { ServiceRequestDetailSummaryDto } from '#/api/doctor-station/advice.types';
+import type {
+  AdvicePackageChildItemDto,
+  ServiceRequestDetailSummaryDto,
+} from '#/api/doctor-station/advice.types';
 
 /** 分页查询护士站患者队列 */
 export interface PageNurseStationPatientQueueRequest {
@@ -94,6 +97,8 @@ export interface NurseStationTreatmentLineDto {
   performCount?: null | number;
   plannedPerformCount?: null | number;
   prescriptionNo?: null | string;
+  /** 申请业务号（采血贴/LIS applyNo；缺省前端回落 requestId） */
+  busNo?: null | string;
   pyStr?: null | string;
   quantity?: null | number | string;
   rateCode?: null | string;
@@ -103,8 +108,17 @@ export interface NurseStationTreatmentLineDto {
   remark?: null | string;
   requestId: string;
   requestTable: string;
+  /**
+   * 执行科室主键（导诊按科室拆申请单）。
+   * Long 以字符串传输，禁止 Number()。
+   */
+  performOrgId?: null | string;
+  /** 执行科室名称（申请单执行科室栏） */
+  performOrgName?: null | string;
   /** 申请单部位/样本明细摘要（AR 前缀申请单） */
   serviceRequestDetails?: ServiceRequestDetailSummaryDto[] | null;
+  /** 诊疗活动定义主键（检验申请单子项展开等） */
+  activityDefinitionId?: null | string;
   serviceCategoryCode?: null | string;
   serviceCategoryCodeText?: null | string;
   sortNumber?: null | number;
@@ -119,8 +133,13 @@ export interface NurseStationTreatmentLineDto {
   wbStr?: null | string;
   /** 合管检验设备主键（采血贴分组） */
   specimenTubeMergeDeviceId?: null | string;
+  specimenTubeMergeGroupNo?: null | number | string;
   /** 医嘱优先级 code（加急=EM） */
   priorityEnum?: null | string;
+  /**
+   * 带子项诊疗目录子项（列表不展示；国基处置单中**检验**行打印展开）。
+   */
+  packageChildren?: AdvicePackageChildItemDto[];
 }
 
 export interface QueryEncounterTreatmentSheetResponse {

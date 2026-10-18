@@ -3,7 +3,7 @@ import type { CreateWardBedParams, WardBed, WardBedInitResponse } from '#/api/ba
 
 import { computed, nextTick, reactive, ref, watch } from 'vue';
 
-import { useVbenModal } from '@vben/common-ui';
+import { useVbenModal } from '@zxplat/common-ui';
 
 import { ElMessage } from 'element-plus';
 
@@ -79,11 +79,26 @@ function buildOrganizationSelectOptions(currentOrgId?: string) {
   return options;
 }
 
-const organizationSelectOptions = computed(() =>
-  buildOrganizationSelectOptions(
-    normalizeOrganizationId(originalData.value.organizationId ?? props.formData?.organizationId),
-  ),
-);
+const organizationSelectOptions = computed(() => {
+  // 多科挂靠回显：确保已选科室（含不在当前下拉快照中的）仍可选中展示
+  const currentIds = resolveOrganizationIdsForForm({
+    organizationId: originalData.value.organizationId ?? props.formData?.organizationId,
+    organizationIds: originalData.value.organizationIds ?? props.formData?.organizationIds,
+  });
+  const options = buildOrganizationSelectOptions(currentIds[0]);
+  for (const id of currentIds) {
+    if (!options.some((item) => item.value === id)) {
+      const matched = (initOptions.value?.organizationOptions || []).find(
+        (item) => String(item.value) === id,
+      );
+      options.unshift({
+        label: matched?.label || id,
+        value: id,
+      });
+    }
+  }
+  return options;
+});
 
 async function loadInitOptions(force = false) {
   if (initOptionsLoaded.value && !force) {
@@ -186,6 +201,61 @@ function resolveOrganizationId(submitData: Record<string, unknown>): string | un
   return undefined;
 }
 
+/**
+ * 规范化病区多选挂靠科室：去重保序，首项写入 organizationId。
+ *
+ * @param submitData 待提交表单
+ */
+function applyWardOrganizationIds(submitData: Record<string, any>) {
+  const rawList = submitData.organizationIds;
+  const ordered: string[] = [];
+  if (Array.isArray(rawList)) {
+    for (const raw of rawList) {
+      const id = normalizeOrganizationId(raw);
+      if (id && !ordered.includes(id)) {
+        ordered.push(id);
+      }
+    }
+  }
+  if (ordered.length === 0) {
+    const single = normalizeOrganizationId(submitData.organizationId);
+    if (single) {
+      ordered.push(single);
+    }
+  }
+  if (ordered.length === 0) {
+    return;
+  }
+  submitData.organizationIds = ordered;
+  submitData.organizationId = ordered[0];
+}
+
+/**
+ * 详情/草稿回填病区挂靠科室多选值。
+ *
+ * @param data 接口或上下文行
+ */
+function resolveOrganizationIdsForForm(data: Record<string, any>): string[] {
+  const fromList = data.organizationIds;
+  if (Array.isArray(fromList) && fromList.length > 0) {
+    const ordered: string[] = [];
+    for (const raw of fromList) {
+      const id = normalizeOrganizationId(raw);
+      if (id && !ordered.includes(id)) {
+        ordered.push(id);
+      }
+    }
+    if (ordered.length > 0) {
+      return ordered;
+    }
+  }
+  const single = normalizeOrganizationId(data.organizationId);
+  if (single) {
+    return [single];
+  }
+  return [];
+}
+
 async function handleSubmit() {
   const { valid } = await formApi.validate();
   if (!valid) return;
@@ -203,7 +273,14 @@ async function handleSubmit() {
       delete submitData.roomParentId;
     }
     delete submitData.bedCount;
-    if (!isEditMode.value) {
+    // 病区：多选挂靠科室；病房/床位：从所属病区继承主挂靠
+    if (submitData.formEnum === WARD_BED_FORM_CODE.WARD) {
+      applyWardOrganizationIds(submitData);
+      if (!submitData.organizationId) {
+        ElMessage.warning('请至少选择一个关联科室');
+        return;
+      }
+    } else if (!isEditMode.value) {
       const organizationId = resolveOrganizationId(submitData);
       if (organizationId === undefined) {
         ElMessage.warning('机构不能为空，请确认所属病区已关联机构');
@@ -243,6 +320,9 @@ async function loadFormData() {
         const formData: Record<string, any> = { ...data };
         if (formData.organizationId != null) {
           formData.organizationId = normalizeOrganizationId(formData.organizationId);
+        }
+        if (data.formEnum === WARD_BED_FORM_CODE.WARD) {
+          formData.organizationIds = resolveOrganizationIdsForForm(formData);
         }
         if (data.formEnum === WARD_BED_FORM_CODE.BED) {
           formData.roomParentId = data.parent?.id;
@@ -285,6 +365,9 @@ async function loadFormData() {
       const formData: Record<string, any> = { ...originalData.value };
       if (formData.organizationId != null) {
         formData.organizationId = normalizeOrganizationId(formData.organizationId);
+      }
+      if (formData.formEnum === WARD_BED_FORM_CODE.WARD) {
+        formData.organizationIds = resolveOrganizationIdsForForm(formData);
       }
       if (props.formData.formEnum === WARD_BED_FORM_CODE.BED && props.formData.roomParentId)
         formData.roomParentId = props.formData.roomParentId;
@@ -390,8 +473,9 @@ const formConfig = reactive({
     },
     {
       component: 'Select',
-      fieldName: 'organizationId',
+      fieldName: 'organizationIds',
       label: '关联科室',
+      rules: 'required',
       dependencies: {
         triggerFields: ['formEnum'],
         show: (values: Record<string, any>) => values.formEnum === WARD_BED_FORM_CODE.WARD,
@@ -399,7 +483,11 @@ const formConfig = reactive({
           options: organizationSelectOptions.value,
           filterable: true,
           clearable: true,
+          multiple: true,
+          collapseTags: true,
+          collapseTagsTooltip: true,
           loading: initLoading.value,
+          placeholder: '可多选；多科共用同一病区',
         }),
       },
     },

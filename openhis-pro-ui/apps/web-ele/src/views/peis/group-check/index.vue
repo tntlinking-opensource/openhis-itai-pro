@@ -15,8 +15,8 @@ import type { PeisPackageDto } from '#/api/peis/catalog-config';
 
 import { computed, onMounted, ref, watch } from 'vue';
 
-import { Page } from '@vben/common-ui';
-import { useUserStore } from '@vben/stores';
+import { Page } from '@zxplat/common-ui';
+import { useUserStore } from '@zxplat/stores';
 
 import { searchPackageApi, searchActivityApi } from '#/api/peis/catalog-config';
 import type { PeisActivityDto } from '#/api/peis/catalog-config';

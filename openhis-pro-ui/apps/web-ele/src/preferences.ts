@@ -1,4 +1,4 @@
-import { defineOverridesPreferences } from '@vben/preferences/es/define-overrides';
+import { defineOverridesPreferences } from '@zxplat/preferences/es/define-overrides';
 
 /**
  * @description 项目配置文件

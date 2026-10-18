@@ -6,7 +6,12 @@ export const NURSE_PRINT_ACTION = {
   SPECIMEN_BARCODE: 'SPECIMEN_BARCODE',
   SKIN_TEST_LABEL: 'SKIN_TEST_LABEL',
   NEBULIZATION_LABEL: 'NEBULIZATION_LABEL',
-  PROCEDURE_APPLY: 'PROCEDURE_APPLY',
+  /** 检查申请单（categoryEnum=23，当前患者全打） */
+  EXAM_APPLY: 'EXAM_APPLY',
+  /** 检验申请单（categoryEnum=22，当前患者全打） */
+  LAB_APPLY: 'LAB_APPLY',
+  /** 治疗申请单（categoryEnum=21，当前患者全打） */
+  TREATMENT_APPLY: 'TREATMENT_APPLY',
 } as const;
 
 export type NursePrintActionCode = (typeof NURSE_PRINT_ACTION)[keyof typeof NURSE_PRINT_ACTION];
@@ -18,5 +23,7 @@ export const NURSE_PRINT_ACTION_LABEL: Record<NursePrintActionCode, string> = {
   [NURSE_PRINT_ACTION.SPECIMEN_BARCODE]: '打印采血码',
   [NURSE_PRINT_ACTION.SKIN_TEST_LABEL]: '打印皮试标签',
   [NURSE_PRINT_ACTION.NEBULIZATION_LABEL]: '打印雾化标签',
-  [NURSE_PRINT_ACTION.PROCEDURE_APPLY]: '打印处置申请单',
+  [NURSE_PRINT_ACTION.EXAM_APPLY]: '打印检查申请单',
+  [NURSE_PRINT_ACTION.LAB_APPLY]: '打印检验申请单',
+  [NURSE_PRINT_ACTION.TREATMENT_APPLY]: '打印治疗申请单',
 };

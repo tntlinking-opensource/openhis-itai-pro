@@ -40,7 +40,7 @@ const defaultPreferences: Preferences = {
     styleType: 'normal',
   },
   copyright: {
-    companyName: 'openhis',
+    companyName: 'zxplat',
     companySiteLink: '',
     date: '2018-2026',
     enable: true,

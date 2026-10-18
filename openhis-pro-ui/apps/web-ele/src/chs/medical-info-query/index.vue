@@ -4,7 +4,7 @@ import type { Setl5203Result } from '#/chs/api';
 
 import { computed, onMounted, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import {
   ElAlert,

@@ -30,6 +30,8 @@ export interface LoadWardTreeResponse {
 /** 在院患者队列分页请求 */
 export interface PagePatientQueueRequest extends PageParams {
   houseId?: string;
+  /** 强制计算待执行计数（全部任务默认不算；页签气泡/静默轮询可传 true） */
+  includePendingExecuteCount?: boolean;
   keyword?: string;
   nurseStationExecutionDate?: string;
   nurseStationTaskFilter?: string;
@@ -186,6 +188,12 @@ export interface LoadAdmissionParticipantInitResponse {
   admCondCodeOptions?: OptionDto[];
   doctorOptions?: OptionDto[];
   primaryNurseOptions?: OptionDto[];
+  /** 院点策略默认主任医生主键；空则不自动带出 */
+  defaultChiefDoctorId?: string;
+  /** 院点策略默认主治医生主键；空则不自动带出 */
+  defaultAttendingDoctorId?: string;
+  /** 院点策略默认住院医生主键；空则不自动带出 */
+  defaultInpatientDoctorId?: string;
 }
 
 /** 通用下拉选项（与后端 OptionDto 一致） */

@@ -188,6 +188,29 @@ function resolveCatalogCategory(catalog: NurseStationPricingCatalogRowDto): Pric
   return isPricingDeviceCatalogRow(catalog) ? 'device' : 'service';
 }
 
+/**
+ * 组套行单位对齐划价目录槽：能对上 unitCode 就用该槽，否则回落护士站默认槽。
+ */
+function resolveBandKindFromTemplateUnit(
+  catalog: NurseStationPricingCatalogRowDto,
+  category: PricingCatalogCategory,
+  defaultUnitCode: string | undefined,
+): string {
+  const unitCode = String(defaultUnitCode ?? '').trim();
+  if (unitCode) {
+    const matched = (catalog.unitBands ?? []).find(
+      (band) => String(band.unitCode ?? '').trim() === unitCode,
+    );
+    const bandKind = String(matched?.bandKind ?? '')
+      .trim()
+      .toUpperCase();
+    if (bandKind) {
+      return bandKind;
+    }
+  }
+  return resolvePricingDefaultBandKind(catalog, category);
+}
+
 /** 组套/已选行补齐默认单位槽与展示单价。 */
 function withPricingBandFields(
   item: Omit<
@@ -315,6 +338,11 @@ export async function applyPricingOrderTemplateToSelectedItems(
           catalog,
           category,
           quantity,
+          selectedBandKind: resolveBandKindFromTemplateUnit(
+            catalog,
+            category,
+            line.defaultUnitCode,
+          ),
         }),
       );
     }

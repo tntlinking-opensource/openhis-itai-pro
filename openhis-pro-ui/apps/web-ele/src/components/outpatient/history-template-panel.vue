@@ -38,6 +38,7 @@ const emit = defineEmits<{
   selectDocument: [row: DocumentSummaryDto];
   openDocumentInNewTab: [row: DocumentSummaryDto];
   deleteDocument: [row: DocumentSummaryDto];
+  renameDocument: [row: DocumentSummaryDto];
   reuseDocument: [row: DocumentSummaryDto];
   renameTemplate: [tpl: TemplateDto];
   updateTemplateContent: [tpl: TemplateDto];
@@ -260,6 +261,7 @@ defineExpose({
         @select-document="(row) => emit('selectDocument', row)"
         @open-document-in-new-tab="(row) => emit('openDocumentInNewTab', row)"
         @delete-document="(row) => emit('deleteDocument', row)"
+        @rename-document="(row) => emit('renameDocument', row)"
         @reuse-document="(row) => emit('reuseDocument', row)"
         @rename-template="(tpl) => emit('renameTemplate', tpl)"
         @update-template-content="(tpl) => emit('updateTemplateContent', tpl)"

@@ -1,5 +1,5 @@
 /**
- * 药库调拨入库（药房入库）— 对接 Whale {@code POST /api/app/inventoryWarehouseTransferIn/<method>}
+ * 药库调拨入库（药房入库）— 对接 ZXPlat {@code POST /api/app/inventoryWarehouseTransferIn/<method>}
  */
 import type { ApiResponse } from '#/types/api-response';
 

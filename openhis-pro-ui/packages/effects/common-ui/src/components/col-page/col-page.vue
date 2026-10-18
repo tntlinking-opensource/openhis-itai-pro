@@ -3,7 +3,7 @@ import type { ColPageProps } from './types';
 
 import { computed, ref, useSlots } from 'vue';
 
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@vben-core/shadcn-ui';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@zxplat-core/shadcn-ui';
 
 import Page from '../page/page.vue';
 

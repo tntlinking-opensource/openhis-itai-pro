@@ -1,5 +1,5 @@
 /**
- * 科室采购申请单 — 对接 Whale
+ * 科室采购申请单 — 对接 ZXPlat
  * {@code POST /api/app/inventoryDepartmentPurchaseRequest/<method>}
  * 契约见 AS-INV-DEP-007-SDD；选品同构订货（产品定义级，无批号/无供应商）。
  */
@@ -17,10 +17,10 @@ import {
 
 const BASE = '/inventoryDepartmentPurchaseRequest';
 
-/** {@link com.openhis.health.domain.share.enums.SupplyType#DEPT_PURCHASE_REQUEST} */
+/** {@link com.zxplat.domain.share.enums.SupplyType#DEPT_PURCHASE_REQUEST} */
 export const DEPT_PURCHASE_REQUEST_TYPE_ENUM = 'DEPT_PURCHASE_REQUEST';
 
-/** {@link com.openhis.health.domain.share.enums.SupplyCategory#STOCK_SUPPLY} */
+/** {@link com.zxplat.domain.share.enums.SupplyCategory#STOCK_SUPPLY} */
 export const DEPT_CPR_CATEGORY_STOCK = 'STOCK_SUPPLY';
 
 /** 列表「全部科室药房」占位 purposeLocationId（与 init OptionDto.value 一致，字符串） */

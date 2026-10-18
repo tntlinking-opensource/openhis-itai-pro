@@ -3,10 +3,15 @@ import type { NurseStationTreatmentLineDto } from '#/api/outpatient-nurse-statio
 import { pageFrequencyApi } from '#/api/basic/frequency';
 import { decimalDiv } from '#/utils/format/decimal-util';
 
-/** 输液瓶签药品行（与 op-infusionLabel-print 模板 medicationLines 列一致） */
+/** 输液瓶签药品行（与 op/ip-infusionLabel-print 模板 medicationLines 列一致） */
 export interface OutpatientInfusionLabelMedicationLine {
   drugName: string;
   specText: string;
+  /**
+   * 单次剂量：医生开立的计量（如 `2ml`、`1mg`）。
+   * 取 dosageDisplay 括号内计量段；无括号时用整段。不印拆零单位（瓶/支）。
+   */
+  doseText: string;
   totalQuantityText: string;
   usageText: string;
 }
@@ -21,8 +26,10 @@ export interface OutpatientInfusionLabelPrintData {
    * 值由各入口传入（门诊挂号时间 / 住院入院时间）。
    */
   registerTimeText: string;
-  /** 病房床位（住院瓶签；门诊可空） */
+  /** 床位（住院瓶签仅床号如「6床」；门诊可空） */
   wardBedText: string;
+  /** 频次展示（住院瓶签；组级，优先显式 freqText，否则取药品行 rateName） */
+  freqText: string;
   medicationLines: OutpatientInfusionLabelMedicationLine[];
   /** 滴速（模板 field=speedCode；值为展示文案，优先 speedDisplay） */
   speedCode: string;
@@ -36,8 +43,10 @@ export interface OutpatientInfusionLabelPrintSource {
   genderEnumText?: string;
   ageText?: string;
   registerTimeText?: string;
-  /** 病房床位展示（如「301-6床」；住院瓶签） */
+  /** 床位展示（住院仅床号如「6床」） */
   wardBedText?: string;
+  /** 频次展示（如「每日两次」；住院瓶签；也可由药品行 rateName 回落） */
+  freqText?: string;
   medicationLines?: NurseStationTreatmentLineDto[];
   /** 滴速（组级；住院瓶签模板 field=speedCode，传展示名） */
   speedCode?: string;
@@ -100,21 +109,60 @@ function formatQuantityDisplay(qty: number): string {
   return String(qty).replace(/(\.\d*?[1-9])0+$|\.0+$/, '$1');
 }
 
+/** 计量单位展示名收成瓶签短写（与开立展示「毫升→ml」同口径，并覆盖毫克/克） */
+const ORDERED_DOSE_UNIT_REPLACEMENTS: ReadonlyArray<readonly [string, string]> = [
+  ['毫升', 'ml'],
+  ['毫克', 'mg'],
+  ['微克', 'μg'],
+  ['国际单位', 'IU'],
+  ['单位', 'U'],
+  ['克', 'g'],
+];
+
 /**
- * 瓶贴总量用 dosageDisplay 时：只保留最小单位段，去掉括号内计量单位与「/次」。
- * 例：`2支(2.000毫升)/次` → `2支`；`1片/次` → `1片`。
+ * 瓶贴总量用 dosageDisplay 时：只保留最小（拆零）单位段，去掉括号内计量与「/次」。
+ * 例：`1瓶(100.000ml)/次` → `1瓶`；`1片/次` → `1片`。
  */
 function formatDosageDisplayAsMinUnit(dosageDisplay: null | string | undefined): string {
   const raw = str(dosageDisplay);
   if (!raw) {
     return '';
   }
-  const withoutPerDose = raw.replace(/\/次$/u, '').trim();
-  const parenIdx = withoutPerDose.indexOf('(');
+  const withoutPerDose = raw.replace(/[/／]次$/u, '').trim();
+  const parenIdx = withoutPerDose.search(/[(（]/u);
   if (parenIdx > 0) {
     return withoutPerDose.slice(0, parenIdx).trim();
   }
   return withoutPerDose;
+}
+
+/** 剂量数字去尾零：`100.000` → `100`，`2.500` → `2.5`，`35.625` 保持 */
+function stripTrailingZerosInDoseQuantity(text: string): string {
+  return text.replace(/(\d+)\.(\d*?)0+(?=[^\d]|$)/g, (_match, intPart: string, frac: string) => {
+    if (!frac) {
+      return intPart;
+    }
+    return `${intPart}.${frac}`;
+  });
+}
+
+/**
+ * 瓶签剂量列：医生开的计量单位，不印拆零单位。
+ * `1瓶(100.000ml)/次` → `100ml`；`1支(1.000毫克)/次` → `1mg`；`10ml/次` → `10ml`。
+ */
+function formatInfusionLabelOrderedDose(dosageDisplay: null | string | undefined): string {
+  const raw = str(dosageDisplay).replace(/[/／]次$/u, '').trim();
+  if (!raw) {
+    return '';
+  }
+  const wrapped = raw.match(/[(（]([^)）]+)[)）]/u);
+  let dose = wrapped?.[1]?.trim() || raw;
+  for (const [fromUnit, toUnit] of ORDERED_DOSE_UNIT_REPLACEMENTS) {
+    dose = dose.replaceAll(fromUnit, toUnit);
+  }
+  dose = dose.replaceAll(/\s+/g, '');
+  dose = dose.replaceAll(/mL|ML/g, 'ml');
+  return stripTrailingZerosInDoseQuantity(dose);
 }
 
 function formatTotalQuantityText(
@@ -140,13 +188,35 @@ function formatTotalQuantityText(
   return unit ? `${qtyText}${unit}` : qtyText;
 }
 
+/**
+ * 规格压成一行：去掉空格与括号备注，过长再截断。
+ * `100 ml: 0.9g` → `100ml:0.9g`，避免规格列折成三行把第三支药挤出贴面。
+ */
+export function truncateInfusionLabelSpecText(
+  raw: null | string | undefined,
+  maxChars = 16,
+): string {
+  const text = str(raw)
+    .replaceAll(/（[^）]*）/gu, '')
+    .replaceAll(/\([^)]*\)/g, '')
+    .replaceAll(/\s+/g, '');
+  if (!text) {
+    return '';
+  }
+  if (text.length <= maxChars) {
+    return text;
+  }
+  return text.slice(0, maxChars);
+}
+
 function mapMedicationLine(
   row: NurseStationTreatmentLineDto,
   quantitySplitCount: number,
 ): OutpatientInfusionLabelMedicationLine {
   return {
     drugName: str(row.itemName),
-    specText: str(row.specText),
+    specText: truncateInfusionLabelSpecText(row.specText),
+    doseText: formatInfusionLabelOrderedDose(row.dosageDisplay),
     totalQuantityText: formatTotalQuantityText(row, quantitySplitCount),
     usageText: buildUsageText(row),
   };
@@ -229,6 +299,17 @@ function resolveGroupRateCode(medicationLines: NurseStationTreatmentLineDto[]): 
     const rateCode = str(row.rateCode);
     if (rateCode) {
       return rateCode;
+    }
+  }
+  return '';
+}
+
+/** 取组内频次展示（同组一致，取首条非空 rateName） */
+function resolveGroupFreqText(medicationLines: NurseStationTreatmentLineDto[]): string {
+  for (const row of medicationLines) {
+    const rateName = str(row.rateName);
+    if (rateName) {
+      return rateName;
     }
   }
   return '';
@@ -365,7 +446,7 @@ export function groupInfusionMedicationLinesForPrint(
   }));
 }
 
-/** 判断是否为输液类药品行（由后端 infusionFlag 判定，含药品定义 inject_flag 回落） */
+/** 判断是否为输液类药品行（仅看后端 infusionFlag；目录 inject_flag 已在后端回落，不按用法限制） */
 export function isInfusionMedicationLine(row: NurseStationTreatmentLineDto): boolean {
   return row.infusionFlag === true;
 }
@@ -382,6 +463,7 @@ export function buildOutpatientInfusionLabelPrintData(
     ageText: str(source.ageText),
     registerTimeText: str(source.registerTimeText),
     wardBedText: str(source.wardBedText),
+    freqText: str(source.freqText) || resolveGroupFreqText(rows),
     medicationLines: rows.map((line) => mapMedicationLine(line, quantitySplitCount)),
     speedCode: str(source.speedCode),
     executorName: str(source.executorName),

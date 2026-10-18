@@ -5,10 +5,17 @@ import type {
 } from '#/views/outpatient/doctor-station/service-apply/service-apply.types';
 
 import { appendRehabTreatmentCourseRemark } from '#/utils/service-apply-display';
+import { SERVICE_APPLY_KIND_LABEL } from '#/views/outpatient/doctor-station/service-apply/service-apply.constants';
 import { detailTargetIds } from '#/views/outpatient/doctor-station/service-apply/service-apply.service';
 
-/** 检查申请单 PrintData（与 examination-print 模板 field 一致） */
+import {
+  type ServiceApplyPrintItemLine,
+  toServiceApplyItemLine,
+} from '../service-apply-print-items';
+
+/** 检查/治疗申请单 PrintData（与 examination-print A5 共用模板 field 一致） */
 export interface ExaminationPrintData {
+  documentTitle: string;
   hospitalName: string;
   patientName: string;
   genderEnumText: string;
@@ -19,12 +26,19 @@ export interface ExaminationPrintData {
   orderingPractitionerName: string;
   orderDateText: string;
   diagnosisText: string;
+  /** 项目区：每项名称 + 部位，纵向排列，一列排满再向右开列 */
+  applyItemLines: ServiceApplyPrintItemLine[];
   serviceItemNameText: string;
-  examSiteText: string;
+  /** 部位/标本（检查=部位，治疗=部位，共用模板字段） */
+  detailText: string;
   precautionText: string;
+  resultText: string;
+  performDepartmentName: string;
+  practitionerSignName: string;
+  /** 兼容旧字段名（模板已改用 detailText / performDepartmentName） */
+  examSiteText: string;
   examResultText: string;
   examDepartmentName: string;
-  practitionerSignName: string;
 }
 
 /** 检查申请单 mapper 入参（P：门诊医生站申请弹窗签发后） */
@@ -142,12 +156,25 @@ function joinUniqueNonEmpty(parts: string[], separator = '\n'): string {
   return ordered.join(separator);
 }
 
-/** 检查申请单行 → PrintData（支持同一申请单多项目合并一张） */
+function resolveDocumentTitle(applyKind: ServiceApplyKind): string {
+  return `${SERVICE_APPLY_KIND_LABEL[applyKind] || '检查'}申请单`;
+}
+
+/** 检查/治疗申请单行 → PrintData（支持同一申请单多项目合并一张） */
 export function buildExaminationPrintData(source: ExaminationPrintSource): ExaminationPrintData {
   const orderingPractitionerName = str(source.orderingPractitionerName);
   const lines = resolveSourceLines(source);
+  const applyItemLines = lines
+    .map((line, index) =>
+      toServiceApplyItemLine(
+        source.applyKind,
+        str(line.activityName),
+        buildLineExamSiteText(source, line, index),
+      ),
+    )
+    .filter((line): line is ServiceApplyPrintItemLine => line !== null);
   const serviceItemNameText = joinUniqueNonEmpty(lines.map((line) => line.activityName));
-  const examSiteText = joinUniqueNonEmpty(
+  const detailText = joinUniqueNonEmpty(
     lines.map((line, index) => buildLineExamSiteText(source, line, index)),
   );
   const lineRemarkText = joinUniqueNonEmpty(lines.map((line) => line.remark));
@@ -157,7 +184,9 @@ export function buildExaminationPrintData(source: ExaminationPrintSource): Exami
     source.applyKind,
     source.performOrgName,
   );
+  const performDepartmentName = str(source.performOrgName);
   return {
+    documentTitle: resolveDocumentTitle(source.applyKind),
     hospitalName: str(source.hospitalName),
     patientName: str(source.patientName),
     genderEnumText: str(source.genderEnumText),
@@ -168,11 +197,15 @@ export function buildExaminationPrintData(source: ExaminationPrintSource): Exami
     orderingPractitionerName,
     orderDateText: str(source.orderDateText),
     diagnosisText: str(source.diagnosisText),
+    applyItemLines,
     serviceItemNameText,
-    examSiteText,
+    detailText,
     precautionText,
-    examResultText: '',
-    examDepartmentName: str(source.performOrgName),
+    resultText: '',
+    performDepartmentName,
     practitionerSignName: orderingPractitionerName,
+    examSiteText: detailText,
+    examResultText: '',
+    examDepartmentName: performDepartmentName,
   };
 }

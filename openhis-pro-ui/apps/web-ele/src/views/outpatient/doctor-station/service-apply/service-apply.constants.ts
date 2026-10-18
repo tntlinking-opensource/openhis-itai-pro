@@ -29,7 +29,7 @@ export const SERVICE_APPLY_KIND_LABEL: Record<ServiceApplyKind, string> = {
 /** 目录分页默认页大小 */
 export const SERVICE_APPLY_CATALOG_PAGE_SIZE = 50;
 
-/** 检查须填部位；检验样本与治疗部位可选（BR-REQ-005） */
-export function isServiceApplyDetailRequired(kind: ServiceApplyKind): boolean {
-  return kind === 'exam';
+/** 检查部位 / 检验样本 / 治疗部位均选填 */
+export function isServiceApplyDetailRequired(_kind: ServiceApplyKind): boolean {
+  return false;
 }

@@ -1,0 +1,10 @@
+{
+  "doc_kind": "PAYMENT_MAP",
+  "category": "DEVICE",
+  "title": "附件2对应的附件（血管介入支架等7类医用耗材医保通用名医保支付政策）",
+  "source_filename": "附件2对应的附件（血管介入支架等7类医用耗材医保通用名医保支付政策）.xlsx",
+  "notice_date": null,
+  "effective_date": null,
+  "wash_note": "引擎=openpyxl；支付对照洗数；跳过空编码与分组标题；甲乙丙→1/2/3；耗材通用名编号写入 project_code/hilist_code，list_type=301",
+  "wash_tool": "cursor-ai"
+}

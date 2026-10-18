@@ -1,0 +1,308 @@
+{
+  "code": "IP_WORD_410",
+  "name": "诊疗知情同意书 最终版！！！",
+  "category": "知情告知书",
+  "sourceTemplateId": "410",
+  "typeCode": "INPATIENT_知情告知书",
+  "summary": "Word原样迁移v1 · 段15/表0 · 元0/日1/勾1/单0 · 约2页",
+  "estimatedPages": 2,
+  "structure": {
+    "paraCount": 15,
+    "tableCount": 0,
+    "meta": 0,
+    "date": 1,
+    "plainFill": 0,
+    "fill": 1,
+    "checkbox": 1,
+    "radio": 0
+  },
+  "data": {
+    "header": [
+      {
+        "id": "emrHospitalTitle",
+        "value": "医院名称",
+        "font": "SimHei",
+        "size": 29,
+        "bold": true,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center",
+        "rowMargin": 1
+      },
+      {
+        "id": "emrDocumentTitle",
+        "value": "诊疗知情同意书 最终版！！！",
+        "font": "SimSun",
+        "size": 21,
+        "rowFlex": "center",
+        "rowMargin": 1.05
+      },
+      {
+        "type": "separator",
+        "value": "",
+        "lineWidth": 1.15
+      }
+    ],
+    "main": [
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "诊疗知情同意书",
+        "bold": true,
+        "rowFlex": "center"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "center"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "临床诊断：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "拟采取的诊疗措施：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "患者在明确表示接受该检查(治疗)方案之前，医师已经将检查(治疗)的方法和检查(治疗)中、检查(治疗)后的并发症及其他风险、可能的后果及诊疗费用等情况对患方进行了告知，患方对医师告知的内容已经清楚并理解，",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "包含但不仅限于如下内容：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": " 1、患者对药物发生过敏、高敏、中毒等不良反应，严重者导致休克、呼吸抑制、血压下降、心律失常和精神异常，甚至心跳呼吸骤停等。 2、因治疗加重己有的疾病或诱发隐匿性疾病。 3、椎管内治疗后发生服痛、头痛、神经损伤、感染，硬膜外血肿、瘫疾、导管或穿刺针折断在体内，治疗药物入血或意外注入至蛛网膜下腔，引起药物中毒或全脊髓麻醉意外。 4、治疗部位发生出",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "血、血肿、感染及瘢痕可能：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "损伤邻近血管、神经、脊髓、椎",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "板及脏器后出现相关并发症：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "出现气胸和血胸：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "误入硬膜外腔和蛛网脚下腔，以及由上述情况引起的相关并发症。银质针治疗后出现皮肤质伤或术后局部瘢痕。 5、治疗后局部不适。如疼痛或麻术，一过性感觉运动异常、屎滞留或大小便功能障碍等。 6、治疗药物的副反应，如与激素应用相关的并发症. 7、治疗后短期内症状加重或病情反复，不排除治疗效果不佳或无效，甚至加重可能。 8、可能因疾病导致解剖变异或患者本",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "身解剖异常而导致治疗失败：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "治疗中可能伴较剧烈疼痛，患者可能因疼痛而无法调整体位和沟通配台，因此而影响治疗效果，甚至因不能耐受而放弃治疗。 9、治疗结束后需征得经治医师同意，方可离开。 10、其他难以预料及需特殊提及意外或并发症。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　我们在认真检查分析患者病情的基础上，提出上述诊疗措施，并严格按照有关规定实施，医师已向患方详细交持和解释了以上所有检查(治疗)风险，这些并发症发生后可能导致患者身体器官严重功能障碍，甚至留下终身残疾，严重的还可能危及患者生命。 意外情况知情同意:由于现有医疗科技水平所限，除了医师告知的危险以外，检查(治疗)中仍有可能出现不能预见、不能避免并不能克服的其他危险，从考虑患者利益角度出发，应按照医学常规予以处置，尤其是发生紧急、危险情况时，患方 同意",
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "checkbox",
+          "value": null,
+          "code": null,
+          "conceptId": "chk_001",
+          "flexDirection": "row",
+          "prefix": "",
+          "postfix": "",
+          "valueSets": [
+            {
+              "value": "不同意 医师可以即时处置。",
+              "code": "chk_001"
+            }
+          ]
+        },
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　医患双方共识: 1、患方已充分了解出现医疗风险情况的后果及可供选择的治疗方法及利弊，对其中的疑问，已得到告知医师的解答。 2、本同意书经医患双方慎重考虑并签字后生效。其内容为双方真实意思的表示，并确认医方己履行了告知义务，患方享有知情、选择及同意的权利，将受我国有关法律的保护。",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　　　　　",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "（签名或盖章）",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "患者意见：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "患者签名：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "委托人意见：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "委托人签名（与患者关系）：",
+        "bold": true,
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　　　　　",
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　",
+        "rowFlex": "left"
+      },
+      {
+        "type": "control",
+        "value": "",
+        "control": {
+          "type": "date",
+          "value": null,
+          "placeholder": "记录时间",
+          "conceptId": "date_002",
+          "dateFormat": "yyyy-MM-dd HH:mm",
+          "prefix": "[",
+          "postfix": "]",
+          "highlight": "#eff6ff",
+          "underline": false,
+          "border": false
+        },
+        "rowFlex": "left"
+      },
+      {
+        "value": "\n",
+        "rowFlex": "left"
+      },
+      {
+        "font": "SimSun",
+        "size": 16,
+        "value": "　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　南关国基医院",
+        "rowFlex": "left"
+      }
+    ],
+    "footer": []
+  }
+}

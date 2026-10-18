@@ -104,6 +104,11 @@ export interface TableLayoutProps {
   stripe?: boolean;
   /** 表格列配置 */
   tableColumns?: TableColumn[];
+  /**
+   * 表格数据变化时是否自动清空勾选。
+   * 默认 true；加载后默认全选的页面应设为 false。
+   */
+  clearSelectionOnDataChange?: boolean;
   /** 表格数据 */
   tableData: Record<string, any>[];
   /** 表格高度 */

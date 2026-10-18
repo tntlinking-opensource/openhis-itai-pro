@@ -2,7 +2,7 @@ import type { PatientIdentitySnapshot } from './register-patient-identity.servic
 
 import type { YbEcVoucherQueryInput } from '#/chs/utils/yb-plugin';
 
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 import { ElMessage } from 'element-plus';
 

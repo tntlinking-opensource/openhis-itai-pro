@@ -5,7 +5,7 @@ import type {
   ReturnPatientRowDto,
 } from '#/api/outpatient-pharmacy-return-medicine/outpatient-pharmacy-return-medicine.types';
 
-import { formatDateTime } from '@vben/utils';
+import { formatDateTime } from '@zxplat/utils';
 
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
 

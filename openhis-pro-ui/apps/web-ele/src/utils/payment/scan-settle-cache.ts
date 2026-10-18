@@ -1,6 +1,6 @@
 import type { ClientScanResultDto } from '#/api/payment/payment.types';
 
-const CLIENT_SCAN_CACHE_PREFIX = 'whale.scanSettle.clientResult:';
+const CLIENT_SCAN_CACHE_PREFIX = 'zxplat.scanSettle.clientResult:';
 
 /**
  * 半成功扫码凭证缓存键（按支付草稿）。

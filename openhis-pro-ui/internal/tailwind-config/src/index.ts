@@ -16,7 +16,7 @@ const { packages } = getPackagesSync(process.cwd());
 const tailwindPackages: string[] = [];
 
 packages.forEach((pkg) => {
-  // apps目录下和 @vben-core/tailwind-ui 包需要使用到 tailwindcss ui
+  // apps目录下和 @zxplat-core/tailwind-ui 包需要使用到 tailwindcss ui
   // if (fs.existsSync(path.join(pkg.dir, 'tailwind.config.mjs'))) {
   tailwindPackages.push(pkg.dir);
   // }
@@ -134,9 +134,8 @@ export default {
     ...tailwindPackages.map((item) =>
       path.join(item, 'src/**/*.{vue,js,ts,jsx,tsx,svelte,astro,html}'),
     ),
-    // 院点 overrides 在 workspace 包外，必须显式纳入，否则其中用到的 Tailwind 类生产构建会被 purge
-    path.join(process.cwd(), 'projects/*/overrides/**/*.{vue,js,ts,jsx,tsx}'),
-    path.join(process.cwd(), '../../projects/*/overrides/**/*.{vue,js,ts,jsx,tsx}'),
+    // 院点 overrides：本仓 projects/<id>/overrides（cwd 多为 apps/web-ele）
+    path.join(process.cwd(), '../../../projects/*/overrides/**/*.{vue,js,ts,jsx,tsx}'),
   ],
   darkMode: 'selector',
   plugins: [animate, typographyPlugin, addDynamicIconSelectors(), enterAnimationPlugin],

@@ -4,7 +4,7 @@ import type {
 } from '#/api/inpatient-pharmacy-dispense/inpatient-pharmacy-summary-dispense.types';
 import type { DispensePrescriptionItemRow } from '#/views/outpatient/dispense/components/types';
 
-import { formatDateTime } from '@vben/utils';
+import { formatDateTime } from '@zxplat/utils';
 
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
@@ -33,7 +33,7 @@ export function formatSummaryQuantityWithUnit(
   return q || unit || '—';
 }
 
-/** 汇总合并行数量展示（优先后端 displayQuantityText） */
+/** 汇总合并行数量展示（优先后端 displayQuantityText：输液拆零；非输液整包装凑整） */
 export function formatSummaryMergedLineQuantity(row: {
   displayQuantityText?: string;
   itemQuantity?: number | string;
@@ -123,7 +123,8 @@ export function mapSummaryMergedLinesToTraceLines(
       .split('、')[0]
       ?.trim();
     const batchNo = lotFromMaster || lotFromDisplay || '—';
-    const quantityValue = parseOptionalPositiveNumber(line.itemQuantity);
+    // item_quantity 为拆零持久量；待扫=ceil(操作量) 须与 unit_code 同阶（开 1 盒→1，勿把 18 袋当 18 盒）
+    const quantityValue = resolveSummaryOperationQuantityForTrace(line);
     return {
       id,
       // 与门诊 map-api 同：string 化药品 id，避免锁定行品项比对失败
@@ -174,6 +175,40 @@ function parseOptionalPositiveNumber(raw: null | number | string | undefined): n
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return undefined;
   return n;
+}
+
+/**
+ * 汇总供应行拆零持久量 → 与 unit_code 同阶的操作量（发药待扫/盖住换算用）。
+ *
+ * <p>供应行 {@code item_quantity} 恒为拆零；{@code unit_code} 仅为开立/展示单位。
+ * 直接把拆零量当操作量会导致「界面 1盒、待扫 18」（规格 18 袋/盒）。</p>
+ */
+function resolveSummaryOperationQuantityForTrace(line: {
+  itemQuantity?: null | number | string;
+  unitCode?: null | string;
+  packageUnitCode?: null | string;
+  packageUnitRatio?: null | number | string;
+  splitUnitCode?: null | string;
+}): number | undefined {
+  const splitQty = parseOptionalPositiveNumber(line.itemQuantity);
+  if (splitQty === undefined) return undefined;
+
+  const unitCode = String(line.unitCode ?? '').trim();
+  const packageUnit = String(line.packageUnitCode ?? '').trim();
+  const splitUnit = String(line.splitUnitCode ?? '').trim();
+  const packageRatio = Number(line.packageUnitRatio);
+  const hasPackageRatio = Number.isFinite(packageRatio) && packageRatio > 0;
+
+  // 操作单位已是拆零（或未标单位）：操作量=拆零持久量
+  if (!unitCode || (splitUnit && unitCode === splitUnit)) {
+    return splitQty;
+  }
+  // 操作单位是包装：拆零 ÷ 包装比 → 开立盒数/件数
+  if (packageUnit && unitCode === packageUnit && hasPackageRatio) {
+    return splitQty / packageRatio;
+  }
+  // 异构操作单位且无可靠换算：回落拆零量（勿臆造倍数）
+  return splitQty;
 }
 
 /** @deprecated 汇总追溯码不按患者发放行采集，请用 {@link mapSummaryMergedLinesToTraceLines} */

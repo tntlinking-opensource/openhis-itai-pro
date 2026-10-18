@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { JSONContent } from '@tiptap/core';
 
-import type { FormItemOption } from '@vben-core/table-layout-ui';
+import type { FormItemOption } from '@zxplat-core/table-layout-ui';
 
 import type { TemplateContentDto, TemplateDto } from '#/api/emr/template';
 import type { EmrPrintPaperPayload, GenerateDocumentPdfParams } from '#/api/emr/document';
@@ -22,7 +22,7 @@ import {
 
 import { computed, nextTick, reactive, ref, watch } from 'vue';
 
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 import {
   ElButton,
@@ -488,7 +488,7 @@ async function open(options: {
   await loadContentById(strId);
 }
 
-/** 提交到 whale-emr TemplateAppService（只读不保存） */
+/** 提交到 zxplat-emr TemplateAppService（只读不保存） */
 async function handleSave() {
   if (readOnly()) return;
   editorRef.value?.exitPageChromeEdit?.();

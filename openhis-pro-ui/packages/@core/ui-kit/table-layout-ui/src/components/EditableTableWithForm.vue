@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import type { VbenFormSchema } from '@vben-core/form-ui';
+import type { VbenFormSchema } from '@zxplat-core/form-ui';
 
 import type { EditableTableColumn, EditableTableProps } from '../types/EditableTable.d';
 
 import { computed, nextTick, onMounted, reactive, ref, useTemplateRef, watch } from 'vue';
 
-import { useVbenForm } from '@vben-core/form-ui';
-import { CSS_VARIABLE_LAYOUT_CONTENT_HEIGHT } from '@vben-core/shared/constants';
-import { cn } from '@vben-core/shared/utils';
+import { useVbenForm } from '@zxplat-core/form-ui';
+import { CSS_VARIABLE_LAYOUT_CONTENT_HEIGHT } from '@zxplat-core/shared/constants';
+import { cn } from '@zxplat-core/shared/utils';
 
 import { ArrowLeft, ArrowRight, Plus, Search } from '@element-plus/icons-vue';
 import { useDebounceFn } from '@vueuse/core';

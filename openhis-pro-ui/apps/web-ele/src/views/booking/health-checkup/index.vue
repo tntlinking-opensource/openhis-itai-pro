@@ -8,7 +8,7 @@ import type { ContractTypeRowDto } from '#/api/peis/group-check';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import {
   addDaySlotApi,

@@ -24,6 +24,8 @@ import {
   resolveOptionalDraftSortNumber,
 } from './advice-sort-number';
 import { MEDICATION_DEFINITION_TABLE } from './advice-tab.constants';
+import { resolvePersistMedicationQuantityUnit } from '#/utils/doctor-station/medication-unit-band-query';
+
 import { resolveMedicationDraftDosePayload } from './medication-unit-bands';
 import { resolveServiceBillingQuantity } from './service-quantity-calc';
 
@@ -286,12 +288,21 @@ function buildMedicationDraftLine(
   const contractId = resolveMedicationContractId(item);
   const qtyRaw = Number(item.totalAmount ?? 1);
   const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
-  const unitCode = String(item.totalAmountUnit || 'U').trim() || 'U';
+  const unitCodeRaw = String(item.totalAmountUnit || 'U').trim() || 'U';
   const pharmacyRaw = String(item.pharmacy || '').trim();
   const dispenseLocationId = /^\d+$/.test(pharmacyRaw) ? pharmacyRaw : undefined;
   const methodCode = String(item.usage || '').trim() || undefined;
   const rateCode = String(item.frequency || '').trim() || undefined;
   const { dose, doseUnitCode } = resolveMedicationDraftDosePayload(item);
+  // Gate：unitCode 须在目录 unitBands；非法时按剂量回落拆零
+  const { quantity: qtyPersist, unitCode } = resolvePersistMedicationQuantityUnit({
+    quantity: qty,
+    unitCode: unitCodeRaw,
+    bands: item.unitBands,
+    dose,
+    doseUnitCode,
+    drugName: item.selectedDrugName,
+  });
   const daysRaw = Number(item.medicationDays ?? Number.NaN);
   const dispensePerDuration =
     Number.isFinite(daysRaw) && daysRaw > 0 ? Math.trunc(daysRaw) : undefined;
@@ -304,7 +315,7 @@ function buildMedicationDraftLine(
 
   const gid = String(item.groupId ?? '').trim();
   const medicationPayload: DoctorStationAdviceDraftLineRequest['medicationPayload'] = {
-    quantity: qty,
+    quantity: qtyPersist,
     unitCode,
     skinTestFlag: Boolean(item.skinTest),
     ...(defId ? { medicationDefinitionId: defId } : {}),

@@ -13,4 +13,4 @@ Config (config.env, then restart start.bat)
   BACKEND_HOST=127.0.0.1
   BACKEND_PORT=8081
 
-See whale-doc/framework/ops/frontend-deployment.md for details.
+See docs/framework/ops/frontend-deployment.md for details.

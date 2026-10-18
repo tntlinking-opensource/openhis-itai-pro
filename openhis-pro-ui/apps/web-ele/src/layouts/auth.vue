@@ -1,8 +1,8 @@
 <script lang="ts" setup>
 import { computed, onMounted, ref } from 'vue';
 
-import { AuthPageLayout } from '@vben/layouts/es/authentication';
-import { preferences } from '@vben/preferences/es/preferences-manager';
+import { AuthPageLayout } from '@zxplat/layouts/es/authentication';
+import { preferences } from '@zxplat/preferences/es/preferences-manager';
 
 import { fetchHealthInfo } from '#/api/core/health';
 import { AUTH_COPYRIGHT_TEXT } from '#/layouts/auth-copyright';

@@ -10,7 +10,7 @@ import {
   isHiprintHealthRecentlyUnavailable,
   prefetchHiprintSocketHost,
   resolveHiprintSocketHostAsync,
-} from '#/api/local/openhisWin';
+} from '#/api/local/zxplatWin';
 
 import { PRINT_SCENARIO } from '../constants/print-scenario';
 import {
@@ -337,7 +337,7 @@ export async function probeHiprintClient(): Promise<HiprintProbeResult> {
     : {
         ready: false,
         host,
-        reason: `无法连接 Hiprint 打印客户端（${host}），请确认 OpenHIS.Win 已启动且 Hiprint 子进程在运行`,
+        reason: `无法连接 Hiprint 打印客户端（${host}），请确认 Zxplat.Win 已启动且 Hiprint 子进程在运行`,
       };
 }
 
@@ -571,7 +571,7 @@ function printOnce(
     () => {
       template.print2(printData, {
         printer: options.printer ?? '',
-        title: options.title ?? 'OpenHIS',
+        title: options.title ?? 'ZXPlat',
         pageSize: options.pageSize,
         landscape: options.landscape,
         duplexMode: options.duplexMode,
@@ -599,7 +599,7 @@ function printHtmlOnce(
     () => {
       template.printByHtml2?.(html, {
         printer: options.printer ?? '',
-        title: options.title ?? 'OpenHIS',
+        title: options.title ?? 'ZXPlat',
         pageSize: options.pageSize,
         landscape: options.landscape,
         duplexMode: options.duplexMode,
@@ -673,7 +673,7 @@ export async function postHiprintPrint(
 
   const copies = Math.max(1, request.copies ?? 1);
   const printer = request.printer?.trim() || undefined;
-  const title = request.jobName?.trim() || 'OpenHIS';
+  const title = request.jobName?.trim() || 'ZXPlat';
   const panel = readFirstPanel(printJson);
   const pageOpts =
     request.pageSize !== undefined || request.landscape !== undefined

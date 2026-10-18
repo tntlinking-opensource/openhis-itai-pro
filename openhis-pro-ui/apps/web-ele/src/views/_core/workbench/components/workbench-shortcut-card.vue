@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { WorkbenchShortcutItem } from '../workbench-types';
 
-import { IconifyIcon } from '@vben/icons';
+import { IconifyIcon } from '@zxplat/icons';
 
 interface Props {
   item: WorkbenchShortcutItem;

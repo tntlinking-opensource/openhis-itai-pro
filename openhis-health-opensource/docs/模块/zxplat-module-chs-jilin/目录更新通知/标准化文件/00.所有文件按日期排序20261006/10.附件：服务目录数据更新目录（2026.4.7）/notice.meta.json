@@ -1,0 +1,10 @@
+{
+  "doc_kind": "CATALOG_DELTA",
+  "category": "SERVICE",
+  "title": "服务目录数据更新目录（2026.4.7）",
+  "source_filename": "附件：服务目录数据更新目录（2026.4.7）.xlsx",
+  "notice_date": "2026-04-07",
+  "effective_date": null,
+  "wash_note": "引擎=openpyxl；目录更新洗数；服务ADD用project_code(01*)；STOP/MODIFY用hilist_code；限价等进ext_json",
+  "wash_tool": "cursor-ai"
+}

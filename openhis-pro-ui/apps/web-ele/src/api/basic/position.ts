@@ -104,7 +104,7 @@ export async function loadBusinessBuiltInRoleOptions(): Promise<RoleOptionDto[]>
 export interface PractitionerAssignmentRow {
   assignmentId?: string;
   practitionerId?: string;
-  /** whale_roles.id */
+  /** zxplat_roles.id */
   roleId?: string;
   roleName?: string;
   orgId?: string;
@@ -134,7 +134,7 @@ export interface AssignPractitionerRoleItemPayload {
   practitionerId: string;
   orgId?: string | null;
   locationId?: string | null;
-  /** whale_roles.id（必填） */
+  /** zxplat_roles.id（必填） */
   roleId?: string;
   name?: string;
   specialtyCode?: string;

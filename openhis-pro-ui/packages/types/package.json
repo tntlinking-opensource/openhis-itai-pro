@@ -1,5 +1,5 @@
 {
-  "name": "@vben/types",
+  "name": "@zxplat/types",
   "version": "5.5.9",
   "homepage": "https://github.com/vbenjs/vue-vben-admin",
   "bugs": "https://github.com/vbenjs/vue-vben-admin/issues",
@@ -20,7 +20,7 @@
     }
   },
   "dependencies": {
-    "@vben-core/typings": "workspace:*",
+    "@zxplat-core/typings": "workspace:*",
     "vue": "catalog:",
     "vue-router": "catalog:"
   }

@@ -3,7 +3,7 @@ import type { PluginOption } from 'vite';
 
 import { EOL } from 'node:os';
 
-import { dateUtil, readPackageJSON } from '@vben/node-utils';
+import { dateUtil, readPackageJSON } from '@zxplat/node-utils';
 
 /**
  * 用于注入版权信息
@@ -20,9 +20,9 @@ async function viteLicensePlugin(root = process.cwd()): Promise<PluginOption | u
       handler: (_options: NormalizedOutputOptions, bundle: OutputBundle) => {
         const date = dateUtil().format('YYYY-MM-DD ');
         const copyrightText = `/*!
-  * openhis
+  * zxplat
   * Version: ${version}
-  * Author: openhis
+  * Author: zxplat
   * Copyright © 2018-2025 his.vip All Rights Reserved.
   * License: GNU Lesser General Public License v3.0 (LGPL-3.0)
   * Description: ${description}

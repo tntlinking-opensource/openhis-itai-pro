@@ -16,13 +16,14 @@ import { saveDoctorStationAdviceDraftBatchWithSkinTestCrossLotConfirm } from './
  * | 场景 | 策略 | 函数 |
  * |------|------|------|
  * | 编辑卡手动保存 | DIRECT_ONLY | saveAdviceDraftBatchWithManualUsageBind → 仅主医嘱 |
- * | 组套套用 | DIRECT_ONLY | saveAdviceDraftBatchDirect |
+ * | 组套套用 | DIRECT_ONLY | saveAdviceDraftBatchDirect（签发再跳过绑定，见 BR-ORD-038） |
  * | 历史医嘱复用 | DIRECT_ONLY | saveAdviceDraftBatchDirect |
  * | 删除草稿行 | DIRECT_ONLY | saveAdviceDraftBatchDirect |
  * | 工具栏「签发」 | SIGN_TIME_BIND | resolveAndPersistAdviceDraftBindsAtSign（见 bind.service） |
  *
  * **暂存不弹绑定**；**签发前**对本次待签草稿统一解析、确认（可改量/删行）、落派生后再扩 signTargets。
- * 去重仍由 bind.service 既有规则保证（合管同设备一份、同组同用法一份、已有 based_on 不重复）。
+ * 去重仍由 bind.service 既有规则保证（合管耗材同设备同组一份、采血费跨设备/跨组一份且独立 SR、
+ * 用法诊疗跨组一份、用法耗材按组一份、已有 based_on 不重复）。
  *
  * 新增暂存入口时：先对照上表选定策略，禁止直接调用 httpSaveDoctorStationAdviceDraftBatch。
  */

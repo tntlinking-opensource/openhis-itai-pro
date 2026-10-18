@@ -1,0 +1,35 @@
+{
+  "Name": "ZxplatOrthanc",
+  "DicomAet": "ZXPLAT_ORTHANC",
+  "DicomPort": 4242,
+  "HttpPort": 8042,
+  "RemoteAccessAllowed": true,
+  "AuthenticationEnabled": true,
+  "RegisteredUsers": {
+    "orthanc": "orthanc"
+  },
+  "DicomWeb": {
+    "Enable": true,
+    "Root": "/dicom-web/",
+    "EnableWado": true,
+    "WadoRoot": "/wado",
+    "Ssl": false,
+    "QidoCaseSensitive": false,
+    "Host": "localhost",
+    "StudiesMetadata": "Full",
+    "SeriesMetadata": "Full"
+  },
+  "HttpHeaders": {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Accept, Authorization, Content-Type",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Credentials": "true"
+  },
+  "StorageCompression": false,
+  "MaximumStorageSize": 0,
+  "MaximumPatientCount": 0,
+  "StableAge": 10,
+  "LuaScripts": [
+    "/etc/orthanc/on-stable-study.lua"
+  ]
+}

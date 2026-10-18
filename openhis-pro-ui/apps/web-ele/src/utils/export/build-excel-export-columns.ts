@@ -1,7 +1,7 @@
 /**
  * 后端 Excel 导出列清单工具：页面列 → `exportColumns` 请求体。
  *
- * <p>与 whale-core {@code ExcelExportColumnDto} / {@code AnnotatedExcelExporter} 对齐；
+ * <p>与 zxplat-core {@code ExcelExportColumnDto} / {@code AnnotatedExcelExporter} 对齐；
  * 展示字段（如 quantityDisplay）在此展开为可求和数量列 + 单位列。</p>
  */
 

@@ -1,4 +1,4 @@
-# @vben/vsh
+# @zxplat/vsh
 
 一个 Shell 脚本工具集合，用于 Vue Vben Admin 项目的开发和管理。
 
@@ -14,13 +14,13 @@
 
 ```bash
 # 使用 pnpm 安装
-pnpm add -D @vben/vsh
+pnpm add -D @zxplat/vsh
 
 # 或者使用 npm
-npm install -D @vben/vsh
+npm install -D @zxplat/vsh
 
 # 或者使用 yarn
-yarn add -D @vben/vsh
+yarn add -D @zxplat/vsh
 ```
 
 ## 使用方法
@@ -29,7 +29,7 @@ yarn add -D @vben/vsh
 
 ```bash
 # 全局安装
-pnpm add -g @vben/vsh
+pnpm add -g @zxplat/vsh
 
 # 使用 vsh 命令
 vsh [command]

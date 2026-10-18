@@ -1,0 +1,10 @@
+{
+  "doc_kind": "CATALOG_DELTA",
+  "category": "SERVICE",
+  "title": "诊疗目录新增(2024.7.8)",
+  "source_filename": "诊疗目录新增(2024.7.8).xls",
+  "notice_date": "2024-07-08",
+  "effective_date": null,
+  "wash_note": "原件为用户另存可解析 .xls（此前伪xlsx/.et失败）；xlrd读取；CATALOG_DELTA/SERVICE；行数=5；actions=ADD:5；ADD：01*仅进project_code，hilist_code留空；限价进ext_json",
+  "wash_tool": "cursor-ai"
+}

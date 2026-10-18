@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.zxplat</groupId>
+        <artifactId>zxplat</artifactId>
+        <version>2.0.9</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>zxplat-core</artifactId>
+    <packaging>pom</packaging>
+
+    <name>ZXPlat Core</name>
+    <description>核心领域聚合：zxplat-share / zxplat-domain / zxplat-infrastructure（相对稳定；application/starter 在仓库根级，不在本聚合）</description>
+
+    <modules>
+        <module>zxplat-share</module>
+        <module>zxplat-domain</module>
+        <module>zxplat-infrastructure</module>
+    </modules>
+</project>

@@ -37,6 +37,8 @@ import {
 import { mapCatalogRowToOption } from './advice-list';
 import { buildAdviceDraftLines } from './advice-medication-draft';
 import { validateWesternEditLineItem } from './advice-row';
+import { ADVICE_CATALOG_EXCLUDE_SERVICE_APPLY_CATEGORY_CODES } from '#/views/outpatient/doctor-station/advice/constants/advice-catalog-exclude-service-apply-categories.config';
+
 import {
   INPATIENT_ADVICE_CATALOG_TABLE_NAMES,
   WESTERN_ADVICE_CATALOG_EXCLUDE_MEDICATION_CATEGORY_CODES,
@@ -415,6 +417,7 @@ async function fetchCatalogForClipboard(
     prepickedProductKeys: keys,
     productTableNames: tableNames,
     excludeMedicationCategoryCodes: [...WESTERN_ADVICE_CATALOG_EXCLUDE_MEDICATION_CATEGORY_CODES],
+    excludeCategoryCodes: [...ADVICE_CATALOG_EXCLUDE_SERVICE_APPLY_CATEGORY_CODES],
   });
   const { content: rawRows } = parsePagedRowsFromApiData<DoctorStationAdviceCatalogRowDto>(res);
   return rawRows.map((item) => mapCatalogRowToOption(item));

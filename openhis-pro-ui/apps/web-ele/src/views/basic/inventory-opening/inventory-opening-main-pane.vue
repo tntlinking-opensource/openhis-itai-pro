@@ -7,8 +7,8 @@ import type { ApiOptionItem } from '#/types/api-response';
 
 import { computed, nextTick, reactive, ref, watch } from 'vue';
 
-import { Trash2 } from '@vben/icons';
-import { formatDateTime } from '@vben/utils';
+import { Trash2 } from '@zxplat/icons';
+import { formatDateTime } from '@zxplat/utils';
 
 import InvDocActions from '@inventory/components/inv-doc-actions.vue';
 import InvDocDetailGridShell from '@inventory/components/inv-doc-detail-grid-shell.vue';
@@ -108,7 +108,7 @@ import {
   resolveDocHeadProductPickLocationId,
   warnInventoryLocationRequiredByLabel,
 } from '#/utils/inventory/inventory-workbench-list';
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 import { WAREHOUSE_FORM_ENUM } from '#/api/basic/warehouse';
 
 defineOptions({ name: 'BasicInventoryOpeningMainPane' });

@@ -33,7 +33,7 @@ export interface ResendResult {
 }
 
 const SITE =
-  String(import.meta.env.VITE_OPENHIS_PROJECT ?? 'H22010402403').trim() || 'H22010402403';
+  String(import.meta.env.VITE_ZXPLAT_PROJECT ?? 'H22010402403').trim() || 'H22010402403';
 const BASE = `/${SITE.toLowerCase()}MedSyncResend`;
 
 export async function pageFailedDispatchApi(params: PageFailedDispatchParams) {

@@ -21,7 +21,7 @@ export type PresentationModeCode =
 
 /** 明细行合并：逐条发生行（默认）。 */
 export const LINE_MERGE_MODE_LINE = 'LINE' as const;
-/** 明细行合并：同就诊块内按收费项目定义净合计（住院按患者+品规）。 */
+/** 明细行合并：同就诊块内按产品品规净合计（住院「按患者维度合并」→ 患者就诊块内同 product）。 */
 export const LINE_MERGE_MODE_BY_DEFINITION = 'BY_DEFINITION' as const;
 export type FeeDetailLineMergeMode =
   | typeof LINE_MERGE_MODE_BY_DEFINITION
@@ -74,6 +74,8 @@ export interface LoadFeeDetailReportPageInitResponse {
   presentationModeOptions?: ApiOptionItem[];
   /** 汇总维度下拉（仅汇总 Tab）。 */
   summaryDimensionOptions?: ApiOptionItem[];
+  /** 是否已配置有效折扣（ACTIVE 配置>0；明细 Tab 展示优惠/实收）。 */
+  discountFeatureEnabled?: boolean;
 }
 
 export interface FeeDetailReportQueryFilter {
@@ -102,7 +104,7 @@ export interface FeeDetailReportQueryFilter {
   summaryDimension?: string;
   /**
    * 明细行合并：LINE / BY_DEFINITION；仅住院明细 Tab / 明细导出。
-   * BY_DEFINITION = 同就诊内同品规净合计。
+   * BY_DEFINITION = 同就诊内同产品品规（product）净合计数量与金额；LINE = 逐条展示落库数量。
    */
   lineMergeMode?: FeeDetailLineMergeMode | string;
 }
@@ -216,6 +218,8 @@ export interface PageFeeDetailReportResponse {
   pageSize?: number;
   /** 页脚合计；进价合计可能延后由列角 IF 回填。 */
   summary?: FeeDetailAmountSummaryDto;
+  /** 是否已配置有效折扣（与 init 同真源；明细表显隐）。 */
+  discountFeatureEnabled?: boolean;
 }
 
 /** 明细分页进价列角（异步回填页脚进价合计）。 */
@@ -275,6 +279,7 @@ export async function pageFeeDetailReportApi(
     pageNo: pageNo ?? res?.pageNo,
     pageSize: pageSize ?? res?.pageSize,
     summary: res?.summary,
+    discountFeatureEnabled: res?.discountFeatureEnabled,
   } satisfies PageFeeDetailReportResponse;
 }
 

@@ -3,7 +3,7 @@ import type { LossDetailResponse } from '#/api/warehouse/loss';
 
 import { computed, reactive, ref } from 'vue';
 
-import { useVbenDrawer } from '@vben/common-ui';
+import { useVbenDrawer } from '@zxplat/common-ui';
 
 import { findLossByBusNoApi } from '#/api/warehouse/loss';
 import { useRequest } from '#/hooks/use-request';

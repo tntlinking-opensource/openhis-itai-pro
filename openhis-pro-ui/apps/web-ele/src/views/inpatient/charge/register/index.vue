@@ -1,20 +1,22 @@
 <script setup lang="ts">
-import type { TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type {
+  AdmissionDepartmentBedOptionDto,
   AdmissionDiagnosisSubmitDto,
   LoadRegistrationContextResult,
   OptionDto,
   RegistrationListStatus,
   RegistrationQueueItemDto,
+  WardOptionDto,
 } from '#/api/inpatient-registration';
 import type { PatientItemDto, RegisterContractMatchDto } from '#/api/outpatient-registration';
 import type { YbRegisterBenefitPreviewDto } from '#/api/outpatient-registration';
 
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 
-import { Page } from '@vben/common-ui';
-import { useUserStore } from '@vben/stores';
+import { Page } from '@zxplat/common-ui';
+import { useUserStore } from '@zxplat/stores';
 
 import dayjs from 'dayjs';
 import {
@@ -22,8 +24,8 @@ import {
   ElInputNumber,
   ElMessage,
   ElMessageBox,
-  ElRadio,
-  ElRadioGroup,
+  ElOption,
+  ElSelect,
   ElTabPane,
   ElTabs,
   ElTag,
@@ -36,10 +38,14 @@ import {
   calcAgeFromBirthDate,
   isAcceptableChineseIdCardInput,
 } from '#/utils/format/id-card-cn';
+import { getPatientApi } from '#/api/basic/patient';
 import { httpGetConditionDefinitionMetadata } from '#/api/doctor-station/diagnosis.http';
 import {
   httpCancelInpatientRegistration,
   httpCancelInsuranceInpatientAdmission,
+  httpChangeAdmissionDepartment,
+  httpListAdmissionDepartmentBeds,
+  httpListAdmissionDepartmentWards,
   httpListWardsByDepartment,
   httpLoadInpatientRegistrationContext,
   httpLoadInpatientRegistrationPageInit,
@@ -47,10 +53,19 @@ import {
   httpPageInpatientRegistrationQueue,
   httpSubmitInpatientRegistration,
   httpSwitchInpatientToInsurance,
+  httpSwitchInpatientToSelfPay,
 } from '#/api/inpatient-registration';
 import { httpLoadAdmissionParticipantInit } from '#/api/inpatient/nurse-station/inpatient-nurse-station.http';
 import { httpPagePatientsForSelect } from '#/api/outpatient-registration';
 import AppDialog from '#/components/app-dialog.vue';
+import SelectArea from '#/components/select-area.vue';
+import {
+  CONER_RLTS_OPTIONS,
+  MRG_STAS_OPTIONS,
+  NATY_OPTIONS,
+  NTLY_OPTIONS,
+  PRFS_OPTIONS,
+} from '#/views/mrms/mrms.constants';
 import AdmissionDiagnosisField from '#/components/admission/admission-diagnosis-field.vue';
 import type { AdmissionDiagnosisFormState } from '#/components/admission/admission-diagnosis.types';
 import { createEmptyAdmissionDiagnosisFormState } from '#/components/admission/admission-diagnosis.types';
@@ -62,19 +77,27 @@ import {
 import SelectTable from '#/components/select-table.vue';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import {
+  printAdmissionCertificate,
+  resolveAdmissionCertificateDiagnosisText,
+  resolveAdmissionCertificateGenderText,
+} from '#/utils/print';
 import { normalizeAdmCondTermCode } from '#/utils/terminology/resolve-adm-cond-code-label';
 import {
   optionDtosToPayChannelOptions,
   type PayChannelOption,
 } from '#/utils/payment/payment-channel-options';
-
+import { formatInsutype } from '#/chs/constants/reconciliation';
 import RegisterBenefitPreviewPanel from '#/views/outpatient/charge/register/components/register-benefit-preview-panel.vue';
 import {
   enrichInsuranceBenefitPreview,
   isInsuranceContractCategory,
   CHARGE_TYPE_CATEGORY,
 } from '#/views/outpatient/charge/register/services/register-benefit.service';
-import { requiresInsuranceBenefitFlow } from '#/views/outpatient/charge/register/services/charge-type-category';
+import {
+  isSelfPayContractCategory,
+  requiresInsuranceBenefitFlow,
+} from '#/views/outpatient/charge/register/services/charge-type-category';
 import { useRegisterBenefit } from '#/views/outpatient/charge/register/services/use-register-benefit';
 import { buildFormRecordFromSnapshot } from '#/views/outpatient/charge/register/services/register-patient-identity.service';
 
@@ -114,10 +137,15 @@ const registerDialogVisible = ref(false);
 const dialogMode = ref<RegisterDialogMode>('register');
 /** 当前上下文是否允许转医保（查看弹窗底部按钮） */
 const switchToInsuranceEnabled = ref(false);
+/** 当前上下文是否允许医保转自费（查看弹窗底部按钮） */
+const switchToSelfPayEnabled = ref(false);
+/** 转自费提交中，避免重复点平台撤销 */
+const selfPaySwitching = ref(false);
 /** 登记弹窗 Tab：默认住院信息，避免待遇面板撑高弹窗 */
 const registerDetailTab = ref<'benefit' | 'inpatient'>('inpatient');
 const dialogReadOnly = ref(false);
 const dialogSubmitting = ref(false);
+const printingCertificate = ref(false);
 const tableData = ref<RegistrationQueueItemDto[]>([]);
 const loading = ref(false);
 const total = ref(0);
@@ -130,6 +158,10 @@ const queryParams = reactive({
   pageSize: 20,
   keyword: '',
   idCard: '',
+  organizationId: '',
+  wardId: '',
+  admissionDateFrom: '',
+  admissionDateTo: '',
   registrationListStatuses: [] as RegistrationListStatus[],
 });
 
@@ -142,6 +174,8 @@ const westernAdmissionDiagnosisOptions = ref<OptionDto[]>([]);
 const admissionDiagnosisReadonly = ref(false);
 /** 入院病区下拉（与入院科室同为 label/value 结构） */
 const wardOptions = ref<OptionDto[]>([]);
+/** 列表筛选病区下拉（随筛选科室联动，与登记弹窗病区 options 隔离） */
+const filterWardOptions = ref<OptionDto[]>([]);
 /** 主治医生下拉（科室下角色为医生的参与者） */
 const attendingDoctorOptions = ref<OptionDto[]>([]);
 const wardCapacityHint = ref('');
@@ -196,6 +230,33 @@ const dialogContext = reactive({
   patientId: '' as string | undefined,
 });
 
+/** 查看弹窗对应就诊状态，决定能否更正入院科室、是否必须选床 */
+const viewedEncounterStatus = ref('');
+/** 查看弹窗当前床，科室变更时用于「不换床」回显 */
+const viewedBedId = ref('');
+const departmentChangeVisible = ref(false);
+const departmentChangeSubmitting = ref(false);
+const departmentChangeWards = ref<WardOptionDto[]>([]);
+const departmentChangeBeds = ref<AdmissionDepartmentBedOptionDto[]>([]);
+const departmentChangeForm = reactive({
+  organizationId: '',
+  wardId: '',
+  bedId: '',
+});
+
+/** 待入科、已入科的查看弹窗可以更正选错的入院科室 */
+const departmentChangeEnabled = computed(
+  () =>
+    dialogReadOnly.value &&
+    (viewedEncounterStatus.value === ENCOUNTER_STATUS.REGISTERED ||
+      viewedEncounterStatus.value === ENCOUNTER_STATUS.IN_PROGRESS),
+);
+
+/** 已入科必须改到目标病区的床；待入科只改科室和病区 */
+const departmentChangeNeedsBed = computed(
+  () => viewedEncounterStatus.value === ENCOUNTER_STATUS.IN_PROGRESS,
+);
+
 const registerForm = reactive({
   patientName: '',
   genderEnum: 'MALE',
@@ -203,6 +264,28 @@ const registerForm = reactive({
   age: undefined as number | undefined,
   idCard: '',
   birthDate: '',
+  /** 国籍（country_code，病案 ntly） */
+  countryCode: '156',
+  /** 民族（nationality_code，病案 naty） */
+  nationalityCode: '01',
+  /** 籍贯省市区 code（SelectArea，maxLevel=2） */
+  naplCodes: [] as string[],
+  /** 婚姻状况编码（患者主档） */
+  maritalStatusEnum: '',
+  /** 职业编码（患者主档） */
+  prfsEnum: '',
+  /** 现住址省市区 code（SelectArea） */
+  regionCodes: [] as string[],
+  /** 现住址详细地址 */
+  address: '',
+  /** 工作单位 */
+  workCompany: '',
+  /** 联系人姓名 */
+  linkName: '',
+  /** 联系人关系编码 */
+  linkRelationCode: '' as string,
+  /** 联系人电话 */
+  linkTelcom: '',
   encounterBusNo: '',
   admissionCount: '',
   organizationId: '',
@@ -212,15 +295,210 @@ const registerForm = reactive({
   attendingDoctorId: '',
   admissionDiagnosis: createEmptyAdmissionDiagnosisFormState(),
   contractId: '',
+  /** 医保险种类别码（310 职工 / 390 居民等；只读展示，读卡或上下文回填） */
+  insutype: '',
   startTime: '',
   admitSourceCode: DEFAULT_ADMIT_SOURCE_CODE_ROUTINE,
   inWayCode: '',
   priorityEnum: DEFAULT_ADM_COND_CODE_GENERAL,
-  advanceDepositAmount: 0,
-  payChannelCode: DEFAULT_PAY_CHANNEL_CODE,
+  /**
+   * 预交金支付分配行（款员拆分渠道）。
+   * 医生意向总额只用于打开弹窗时预填，界面不单独展示「总额」。
+   */
+  paymentDetailRows: [
+    { payChannelCode: DEFAULT_PAY_CHANNEL_CODE, amount: 0 },
+  ] as Array<{ amount: number; payChannelCode: string }>,
 });
 
+/** 病案口径下拉：国籍/民族/婚姻/职业/联系人关系 */
+const ntlySelectOptions = NTLY_OPTIONS.map((opt) => ({
+  label: opt.label,
+  value: String(opt.value),
+}));
+const natySelectOptions = NATY_OPTIONS.map((opt) => ({
+  label: opt.label,
+  value: String(opt.value),
+}));
+const mrgStasSelectOptions = MRG_STAS_OPTIONS.map((opt) => ({
+  label: opt.label,
+  value: String(opt.value),
+}));
+const prfsSelectOptions = PRFS_OPTIONS.map((opt) => ({
+  label: opt.label,
+  value: String(opt.value),
+}));
+const conerRltsSelectOptions = CONER_RLTS_OPTIONS.map((opt) => ({
+  label: opt.label,
+  value: String(opt.value),
+}));
+
+/** 省市区字段 → SelectArea 用 code 数组 */
+function buildRegionCodes(
+  province?: null | string,
+  city?: null | string,
+  district?: null | string,
+): string[] {
+  const codes: string[] = [];
+  if (province) codes.push(String(province));
+  if (city) codes.push(String(city));
+  if (district) codes.push(String(district));
+  return codes;
+}
+
+/** 籍贯斜杠串 → SelectArea codes */
+function parseNativePlaceCodes(nativePlace?: null | string): string[] {
+  if (!nativePlace) return [];
+  const trimmed = String(nativePlace).trim();
+  if (!trimmed) return [];
+  if (/^\d{6}(\/\d{6}){0,2}$/.test(trimmed)) {
+    return trimmed.split('/').filter(Boolean);
+  }
+  return [];
+}
+
+/** SelectArea codes → 籍贯斜杠串（写入患者 nativePlace） */
+function joinNativePlaceCodes(codes: string[]): string {
+  return codes.map((c) => String(c).trim()).filter(Boolean).join('/');
+}
+
+/** 清空基础信息中的病案对齐人口学字段 */
+function clearPatientDemographicsExtra() {
+  registerForm.countryCode = '156';
+  registerForm.nationalityCode = '01';
+  registerForm.naplCodes = [];
+  registerForm.maritalStatusEnum = '';
+  registerForm.prfsEnum = '';
+  registerForm.regionCodes = [];
+  registerForm.address = '';
+  registerForm.workCompany = '';
+  registerForm.linkName = '';
+  registerForm.linkRelationCode = '';
+  registerForm.linkTelcom = '';
+}
+
+/**
+ * 将患者主档人口学字段写入登记表单（与病案首页病人基本信息对齐）。
+ *
+ * @param source 含人口学扩展字段的对象
+ */
+function applyPatientDemographicsExtra(source: {
+  address?: null | string;
+  addressCity?: null | string;
+  addressDistrict?: null | string;
+  addressProvince?: null | string;
+  countryCode?: null | string;
+  linkName?: null | string;
+  linkRelationCode?: null | number | string;
+  linkTelcom?: null | string;
+  maritalStatusEnum?: null | number | string;
+  nationalityCode?: null | string;
+  nativePlace?: null | string;
+  prfsEnum?: null | number | string;
+  workCompany?: null | string;
+}) {
+  registerForm.countryCode = source.countryCode ? String(source.countryCode) : '156';
+  registerForm.nationalityCode = source.nationalityCode ? String(source.nationalityCode) : '01';
+  registerForm.naplCodes = parseNativePlaceCodes(source.nativePlace);
+  registerForm.maritalStatusEnum =
+    source.maritalStatusEnum === null || source.maritalStatusEnum === undefined
+      ? ''
+      : String(source.maritalStatusEnum);
+  registerForm.prfsEnum =
+    source.prfsEnum === null || source.prfsEnum === undefined ? '' : String(source.prfsEnum);
+  registerForm.regionCodes = buildRegionCodes(
+    source.addressProvince,
+    source.addressCity,
+    source.addressDistrict,
+  );
+  registerForm.address = source.address ? String(source.address) : '';
+  registerForm.workCompany = source.workCompany ? String(source.workCompany) : '';
+  registerForm.linkName = source.linkName ? String(source.linkName) : '';
+  // 医保 patn_rlts：01/02 等；主档 Integer 存 1/2，回填时补零以匹配下拉 value
+  registerForm.linkRelationCode =
+    source.linkRelationCode === null || source.linkRelationCode === undefined
+      ? ''
+      : String(source.linkRelationCode).padStart(2, '0');
+  registerForm.linkTelcom = source.linkTelcom ? String(source.linkTelcom) : '';
+}
+
 const payChannelOptions = ref<PayChannelOption[]>([...PAY_CHANNEL_OPTIONS]);
+
+/**
+ * 按医生意向/改后金额预填一条支付行（默认现金）。
+ *
+ * @param amount 预填金额
+ * @returns 单行明细
+ */
+function createSeedPaymentDetailRows(amount: number) {
+  let rowAmount = 0;
+  if (Number.isFinite(amount) && amount > 0) {
+    rowAmount = amount;
+  }
+  return [
+    {
+      payChannelCode: DEFAULT_PAY_CHANNEL_CODE,
+      amount: rowAmount,
+    },
+  ];
+}
+
+/** 新增一条支付渠道明细行。 */
+function addPaymentDetailRow() {
+  registerForm.paymentDetailRows.push({
+    payChannelCode: DEFAULT_PAY_CHANNEL_CODE,
+    amount: 0,
+  });
+}
+
+/**
+ * 删除一条支付渠道明细行（至少保留一行）。
+ *
+ * @param index 行下标
+ */
+function removePaymentDetailRow(index: number) {
+  // 至少保留一行，避免提交时空明细
+  if (registerForm.paymentDetailRows.length <= 1) {
+    return;
+  }
+  registerForm.paymentDetailRows.splice(index, 1);
+}
+
+/**
+ * 组装提交用支付明细；金额均为 0 时表示不收预交金。
+ *
+ * @returns 明细数组或 undefined
+ */
+function buildPaymentDetailsForSubmit() {
+  const rows = registerForm.paymentDetailRows
+    .filter((row) => row && Number(row.amount) > 0 && String(row.payChannelCode || '').trim())
+    .map((row) => ({
+      payChannelCode: String(row.payChannelCode).trim(),
+      amount: Number(row.amount),
+    }));
+  if (rows.length === 0) {
+    return undefined;
+  }
+  return rows;
+}
+
+/**
+ * 由支付明细合计得到预交金总额（提交用；界面不单独展示）。
+ *
+ * @param details 支付明细
+ * @returns 合计金额
+ */
+function sumPaymentDetailsAmount(
+  details: Array<{ amount: number; payChannelCode: string }> | undefined,
+): number {
+  if (!details || details.length === 0) {
+    return 0;
+  }
+  let sum = 0;
+  for (const row of details) {
+    sum += Number(row.amount);
+  }
+  return Number(sum.toFixed(2));
+}
 
 const isInsuranceContractSelected = computed(() => {
   const contractId = String(registerForm.contractId ?? '').trim();
@@ -234,6 +512,94 @@ const isInsuranceContractSelected = computed(() => {
 function clearInsuranceCardState() {
   benefitYbPreview.value = null;
   resetBenefitState();
+}
+
+/** 费用性质展示名 */
+function resolveContractLabel(contractId: string): string {
+  const id = String(contractId ?? '').trim();
+  if (!id) return '';
+  return contractOptions.value.find((item) => String(item.value) === id)?.label?.trim() || '';
+}
+
+/** 医保类别展示文案（职工基本医疗保险 / 城乡居民基本医疗保险 等） */
+function resolveInsutypeDisplay(insutype?: string | null): string {
+  const code = String(insutype ?? '').trim();
+  if (!code) {
+    return '';
+  }
+  const label = formatInsutype(code);
+  if (!label || label === '—') {
+    return '';
+  }
+  return label;
+}
+
+/**
+ * 回写医保类别码并刷新只读展示。
+ *
+ * @param insutype 国家医保险种码（310/390 等）
+ */
+async function applyInsutypeToForm(insutype?: string | null) {
+  registerForm.insutype = String(insutype ?? '').trim();
+  await inpatientInfoFormApi.setFieldValue(
+    'insutypeDisplay',
+    resolveInsutypeDisplay(registerForm.insutype),
+  );
+}
+
+/** 患者病情展示名 */
+function resolvePriorityLabel(priorityCode: string): string {
+  const code = String(priorityCode ?? '').trim();
+  if (!code) return '';
+  return admCondCodeOptions.value.find((item) => String(item.value) === code)?.label?.trim() || '';
+}
+
+/** 组装并打印住院证（取弹窗当前表单已有字段） */
+async function handlePrintAdmissionCertificate() {
+  if (!dialogReadOnly.value) {
+    await syncModelFromDialogForms();
+  }
+  const patientName = registerForm.patientName.trim();
+  if (!patientName) {
+    ElMessage.warning('缺少患者姓名，无法打印住院证');
+    return;
+  }
+  printingCertificate.value = true;
+  try {
+    const startTime = registerForm.startTime?.trim();
+    const admissionTimeText = startTime
+      ? dayjs(startTime).isValid()
+        ? dayjs(startTime).format('YYYY-MM-DD HH:mm')
+        : startTime
+      : '';
+    const ageText =
+      registerForm.age === undefined || registerForm.age === null || Number.isNaN(registerForm.age)
+        ? ''
+        : String(registerForm.age);
+    await printAdmissionCertificate({
+      encounterId: dialogContext.encounterId,
+      source: {
+        departmentName: resolveOrganizationLabel(registerForm.organizationId) ?? '',
+        inpatientNo: registerForm.encounterBusNo.trim(),
+        patientName,
+        genderText: resolveAdmissionCertificateGenderText(registerForm.genderEnum),
+        ageText,
+        phone: registerForm.phone.trim(),
+        diagnosisText: resolveAdmissionCertificateDiagnosisText(
+          registerForm.admissionDiagnosis,
+          westernAdmissionDiagnosisOptions.value,
+        ),
+        conditionText: resolvePriorityLabel(registerForm.priorityEnum),
+        admissionTimeText,
+        // 住院证费用性质：与弹窗「费用性质」下拉一致（医生意向已预填到 contractId）
+        paymentMethodText: resolveContractLabel(registerForm.contractId) || '',
+        // 预交金：取弹窗支付行合计（表单无单独 advanceDepositAmount 字段）
+        prepayAmount: sumPaymentDetailsAmount(registerForm.paymentDetailRows),
+      },
+    });
+  } finally {
+    printingCertificate.value = false;
+  }
 }
 
 function resolveOrganizationLabel(organizationId: string): string | undefined {
@@ -261,6 +627,8 @@ async function applyPatientSnapshotToForm(
   } else if (registerForm.idCard) {
     syncBirthAgeFromIdCard(registerForm.idCard);
   }
+  // 读卡快照不含婚姻/职业/现住址；先清空，匹配到档案后再由选人逻辑回填
+  clearPatientDemographicsExtra();
   await syncDialogFormsFromModel();
 }
 
@@ -335,6 +703,11 @@ async function syncBenefitPreview(options?: { autoApplyRecommend?: boolean }) {
       patientName: registerForm.patientName,
     };
     benefitYbPreview.value = enrichInsuranceBenefitPreview(preview, patientFallback);
+    const insu = preview.insuinfoList?.[0];
+    const nextInsutype = String(insu?.insutype ?? preview.insutype ?? '').trim();
+    if (nextInsutype) {
+      void applyInsutypeToForm(nextInsutype);
+    }
   };
   const result = await syncInsuranceBenefit({
     contractBusNo: getInpatientContractBusNo(contractId, contractMeta.value),
@@ -515,6 +888,7 @@ async function handlePatientSelect(
     if (draft) {
       applyManualPatientNameFromSearch(draft);
       clearPatientSelectionOnly();
+      clearPatientDemographicsExtra();
       return;
     }
     clearPatientSelectState();
@@ -523,6 +897,7 @@ async function handlePatientSelect(
     registerForm.idCard = '';
     registerForm.birthDate = '';
     registerForm.age = undefined;
+    clearPatientDemographicsExtra();
     await syncDialogFormsFromModel();
     return;
   }
@@ -547,6 +922,23 @@ async function handlePatientSelect(
   } else {
     registerForm.birthDate = '';
     registerForm.age = undefined;
+  }
+  // 检索列表无婚姻/职业/地址；拉患者详情补齐（失败时不阻断选人）
+  try {
+    const detail = await getPatientApi(patientId);
+    if (detail) {
+      if (detail.phone) {
+        registerForm.phone = String(detail.phone);
+      }
+      if (detail.idCard) {
+        registerForm.idCard = String(detail.idCard);
+      }
+      applyPatientDemographicsExtra(detail);
+    } else {
+      clearPatientDemographicsExtra();
+    }
+  } catch {
+    clearPatientDemographicsExtra();
   }
   await syncDialogFormsFromModel();
   if (!options?.preserveInsuranceRead && lastYbCardInfo.value) {
@@ -678,10 +1070,19 @@ const tableColumns: TableColumn[] = [
   {
     prop: 'contractDisplay',
     label: '费用性质',
-    minWidth: 100,
+    minWidth: 168,
+    slot: 'contract',
     align: 'center',
     headerAlign: 'center',
-    formatter: (_row, _column, cellValue) => String(cellValue ?? '').trim() || '—',
+    showOverflowTooltip: false,
+  },
+  {
+    prop: 'insutype',
+    label: '医保类别',
+    minWidth: 120,
+    align: 'center',
+    headerAlign: 'center',
+    formatter: (_row, _column, cellValue) => formatInsutype(String(cellValue ?? '').trim() || null),
   },
   {
     prop: 'statusEnumText',
@@ -794,6 +1195,108 @@ const [BasicInfoForm, basicInfoFormApi] = useVbenForm(
         label: '联系方式',
         required: true,
         componentProps: { placeholder: '请输入联系电话' },
+      },
+      {
+        component: 'Select',
+        fieldName: 'countryCode',
+        label: '国籍',
+        componentProps: {
+          clearable: true,
+          filterable: true,
+          placeholder: '请选择国籍',
+          options: ntlySelectOptions,
+        },
+      },
+      {
+        component: 'Select',
+        fieldName: 'nationalityCode',
+        label: '民族',
+        componentProps: {
+          clearable: true,
+          filterable: true,
+          placeholder: '请选择民族',
+          options: natySelectOptions,
+        },
+      },
+      {
+        component: SelectArea,
+        fieldName: 'naplCodes',
+        label: '籍贯',
+        modelPropName: 'modelValue',
+        componentProps: {
+          maxLevel: 2,
+          placeholder: '请选择籍贯',
+        },
+      },
+      {
+        component: 'Select',
+        fieldName: 'maritalStatusEnum',
+        label: '婚姻',
+        componentProps: {
+          clearable: true,
+          filterable: true,
+          placeholder: '请选择婚姻状况',
+          options: mrgStasSelectOptions,
+        },
+      },
+      {
+        component: 'Select',
+        fieldName: 'prfsEnum',
+        label: '职业',
+        componentProps: {
+          clearable: true,
+          filterable: true,
+          placeholder: '请选择职业',
+          options: prfsSelectOptions,
+        },
+      },
+      {
+        component: SelectArea,
+        fieldName: 'regionCodes',
+        label: '现住址',
+        modelPropName: 'modelValue',
+        formItemClass: 'register-form-item--region',
+        componentProps: {
+          maxLevel: 3,
+          placeholder: '请选择省市区',
+        },
+      },
+      {
+        component: 'Input',
+        fieldName: 'address',
+        label: '详细地址',
+        formItemClass: 'register-form-item--address-detail',
+        componentProps: { placeholder: '请输入现住址详细地址' },
+      },
+      {
+        component: 'Input',
+        fieldName: 'workCompany',
+        label: '工作单位',
+        formItemClass: 'register-form-item--work-company',
+        componentProps: { placeholder: '请输入工作单位' },
+      },
+      {
+        component: 'Input',
+        fieldName: 'linkName',
+        label: '联系人',
+        componentProps: { placeholder: '请输入联系人姓名' },
+      },
+      {
+        component: 'Select',
+        fieldName: 'linkRelationCode',
+        label: '关系',
+        componentProps: {
+          clearable: true,
+          filterable: true,
+          placeholder: '请选择关系',
+          options: conerRltsSelectOptions,
+        },
+      },
+      {
+        component: 'Input',
+        fieldName: 'linkTelcom',
+        label: '联系电话',
+        componentProps: { placeholder: '请输入联系人电话' },
       },
     ],
     showDefaultActions: false,
@@ -919,6 +1422,15 @@ const [InpatientInfoForm, inpatientInfoFormApi] = useVbenForm(
         componentProps: { options: [], placeholder: '费用性质' },
       },
       {
+        component: 'Input',
+        fieldName: 'insutypeDisplay',
+        label: '医保类别',
+        componentProps: {
+          disabled: true,
+          placeholder: '读卡后自动带出（职工/居民）',
+        },
+      },
+      {
         component: 'DatePicker',
         fieldName: 'startTime',
         label: '入院时间',
@@ -993,6 +1505,52 @@ function applyDefaultContractIdIfEmpty() {
   const first = contractOptions.value[0];
   if (first?.value) {
     registerForm.contractId = String(first.value);
+  }
+}
+
+/**
+ * 医生转住院意向（INSURANCE/SELF_PAY）直接预填「费用性质」下拉，不再单独展示「医生费用性质」。
+ * 仅在尚无账户合同（contractId 为空）时生效，不覆盖已登记合同。
+ */
+function applyContractIdFromDoctorChargeIntent(chargeIntent?: string) {
+  if (registerForm.contractId) {
+    return;
+  }
+  const intent = String(chargeIntent ?? '')
+    .trim()
+    .toUpperCase();
+  if (intent !== 'INSURANCE' && intent !== 'SELF_PAY') {
+    return;
+  }
+  if (intent === 'SELF_PAY') {
+    const selfPay = contractOptions.value.find((opt) =>
+      isSelfPayContractCategory(
+        getInpatientContractCategory(String(opt.value), contractMeta.value),
+      ),
+    );
+    if (selfPay?.value) {
+      registerForm.contractId = String(selfPay.value);
+    }
+    return;
+  }
+  // 医生意向「医保」默认市医保；无市医保再回落其它医保合同
+  const municipal = contractOptions.value.find((opt) => {
+    const cat = getInpatientContractCategory(String(opt.value), contractMeta.value);
+    return (
+      cat === CHARGE_TYPE_CATEGORY.MUNICIPAL_INSURANCE || cat === 'MUNICIPAL_INSURANCE'
+    );
+  });
+  if (municipal?.value) {
+    registerForm.contractId = String(municipal.value);
+    return;
+  }
+  const insurance = contractOptions.value.find((opt) =>
+    isInsuranceContractCategory(
+      getInpatientContractCategory(String(opt.value), contractMeta.value),
+    ),
+  );
+  if (insurance?.value) {
+    registerForm.contractId = String(insurance.value);
   }
 }
 
@@ -1165,6 +1723,7 @@ async function applyContextToDialog(
 ) {
   dialogMode.value = mode;
   switchToInsuranceEnabled.value = Boolean(context.switchToInsuranceEnabled);
+  switchToSelfPayEnabled.value = Boolean(context.switchToSelfPayEnabled);
   if (mode === 'view') {
     dialogReadOnly.value = true;
   } else if (mode === 'switchInsurance') {
@@ -1184,6 +1743,8 @@ async function applyContextToDialog(
   const encounter = context.encounter;
   dialogContext.encounterId = preserveApiIdForRequest(encounter?.encounterId);
   dialogContext.patientId = preserveApiIdForRequest(patient?.patientId);
+  viewedEncounterStatus.value = encounter?.statusEnum ?? '';
+  viewedBedId.value = preserveApiIdForRequest(encounter?.bedId) ?? '';
   syncPatientSelectDisplayFromContext(patient);
   registerForm.genderEnum = patient?.genderEnum ?? 'MALE';
   registerForm.phone = patient?.phone ?? '';
@@ -1193,12 +1754,19 @@ async function applyContextToDialog(
   if (registerForm.idCard && !registerForm.birthDate) {
     syncBirthAgeFromIdCard(registerForm.idCard);
   }
+  if (patient) {
+    applyPatientDemographicsExtra(patient);
+  } else {
+    clearPatientDemographicsExtra();
+  }
   registerForm.encounterBusNo = encounter?.encounterBusNo ?? '';
   registerForm.organizationId = preserveApiIdForRequest(encounter?.organizationId) ?? '';
   registerForm.wardId = preserveApiIdForRequest(encounter?.wardId) ?? '';
-  // 已有就诊：回显优先合同；仅无档/未开户时才默认下拉第一项（避免一律落成自费）。
+  // 已有就诊：回显优先合同；未开户时按医生意向预填费用性质，再回落第一项。
   registerForm.contractId = preserveApiIdForRequest(encounter?.contractId) ?? '';
+  applyContractIdFromDoctorChargeIntent(encounter?.chargeIntent);
   applyDefaultContractIdIfEmpty();
+  registerForm.insutype = String(encounter?.insutype ?? '').trim();
   registerForm.startTime = normalizeStartTimeForForm(encounter?.startTime);
   registerForm.admitSourceCode =
     encounter?.admitSourceCode?.trim() || DEFAULT_ADMIT_SOURCE_CODE_ROUTINE;
@@ -1219,8 +1787,13 @@ async function applyContextToDialog(
   // 已有住院线（医生申请/已登记）或弹窗只读查看时，入院诊断不可编辑
   admissionDiagnosisReadonly.value = dialogReadOnly.value || Boolean(encounter?.encounterId);
   registerForm.admissionCount = '-';
-  registerForm.advanceDepositAmount = 0;
-  registerForm.payChannelCode = DEFAULT_PAY_CHANNEL_CODE;
+  // 医生意向总额只预填到支付行，款员按行拆分渠道，界面不单独展示总额
+  const draftAdvance = Number(encounter?.advanceDepositAmount ?? 0);
+  let seedAmount = 0;
+  if (Number.isFinite(draftAdvance) && draftAdvance > 0) {
+    seedAmount = draftAdvance;
+  }
+  registerForm.paymentDetailRows = createSeedPaymentDetailRows(seedAmount);
   clearInsuranceCardState();
   await refreshContractOptionsSchema();
   await refreshWesternAdmissionDiagnosisOptionsSchema();
@@ -1259,6 +1832,7 @@ async function resetDialogForNoRecord() {
 function resetRegisterFormModel() {
   dialogMode.value = 'register';
   switchToInsuranceEnabled.value = false;
+  switchToSelfPayEnabled.value = false;
   dialogReadOnly.value = false;
   dialogContext.encounterId = undefined;
   dialogContext.patientId = undefined;
@@ -1268,10 +1842,12 @@ function resetRegisterFormModel() {
   registerForm.idCard = '';
   registerForm.birthDate = '';
   registerForm.age = undefined;
+  clearPatientDemographicsExtra();
   registerForm.encounterBusNo = '';
   registerForm.organizationId = '';
   registerForm.wardId = '';
   registerForm.contractId = '';
+  registerForm.insutype = '';
   registerForm.startTime = dayjs().format('YYYY-MM-DD HH:mm:ss');
   registerForm.admitSourceCode = DEFAULT_ADMIT_SOURCE_CODE_ROUTINE;
   registerForm.inWayCode = '';
@@ -1279,8 +1855,7 @@ function resetRegisterFormModel() {
   registerForm.outpatientDoctor = '';
   resetInpatientInfoExtendedFields();
   registerForm.admissionCount = '-';
-  registerForm.advanceDepositAmount = 0;
-  registerForm.payChannelCode = DEFAULT_PAY_CHANNEL_CODE;
+  registerForm.paymentDetailRows = createSeedPaymentDetailRows(0);
   wardCapacityHint.value = '';
 }
 
@@ -1325,6 +1900,17 @@ async function syncDialogFormsFromModel() {
     age: ageToFormValue(registerForm.age),
     idCard: registerForm.idCard,
     birthDate: registerForm.birthDate,
+    countryCode: registerForm.countryCode || undefined,
+    nationalityCode: registerForm.nationalityCode || undefined,
+    naplCodes: [...registerForm.naplCodes],
+    maritalStatusEnum: registerForm.maritalStatusEnum || undefined,
+    prfsEnum: registerForm.prfsEnum || undefined,
+    regionCodes: [...registerForm.regionCodes],
+    address: registerForm.address,
+    workCompany: registerForm.workCompany,
+    linkName: registerForm.linkName,
+    linkRelationCode: registerForm.linkRelationCode || undefined,
+    linkTelcom: registerForm.linkTelcom,
   });
   await inpatientInfoFormApi.setValues({
     encounterBusNo: registerForm.encounterBusNo || '-',
@@ -1336,6 +1922,7 @@ async function syncDialogFormsFromModel() {
     attendingDoctorId: registerForm.attendingDoctorId,
     admissionDiagnosisSlot: ' ',
     contractId: registerForm.contractId,
+    insutypeDisplay: resolveInsutypeDisplay(registerForm.insutype),
     startTime: registerForm.startTime,
     admitSourceCode: registerForm.admitSourceCode,
     inWayCode: registerForm.inWayCode,
@@ -1355,6 +1942,23 @@ async function syncModelFromDialogForms() {
     ageValue === null || ageValue === undefined || ageValue === '' ? undefined : Number(ageValue);
   registerForm.idCard = String(basicInfoValues.idCard ?? '');
   registerForm.birthDate = String(basicInfoValues.birthDate ?? '');
+  registerForm.countryCode = String(basicInfoValues.countryCode ?? '156');
+  registerForm.nationalityCode = String(basicInfoValues.nationalityCode ?? '01');
+  const naplRaw = basicInfoValues.naplCodes;
+  registerForm.naplCodes = Array.isArray(naplRaw)
+    ? naplRaw.map((code) => String(code)).filter(Boolean)
+    : [];
+  registerForm.maritalStatusEnum = String(basicInfoValues.maritalStatusEnum ?? '');
+  registerForm.prfsEnum = String(basicInfoValues.prfsEnum ?? '');
+  const regionRaw = basicInfoValues.regionCodes;
+  registerForm.regionCodes = Array.isArray(regionRaw)
+    ? regionRaw.map((code) => String(code)).filter(Boolean)
+    : [];
+  registerForm.address = String(basicInfoValues.address ?? '');
+  registerForm.workCompany = String(basicInfoValues.workCompany ?? '');
+  registerForm.linkName = String(basicInfoValues.linkName ?? '');
+  registerForm.linkRelationCode = String(basicInfoValues.linkRelationCode ?? '');
+  registerForm.linkTelcom = String(basicInfoValues.linkTelcom ?? '');
   registerForm.organizationId = String(inpatientInfoValues.organizationId ?? '');
   registerForm.wardId = String(inpatientInfoValues.wardId ?? '');
   registerForm.attendingDoctorId = String(inpatientInfoValues.attendingDoctorId ?? '');
@@ -1462,6 +2066,100 @@ async function setDialogFormsDisabled(disabled: boolean) {
       fieldName: 'phone',
       componentProps: disabledProps,
     },
+    {
+      fieldName: 'countryCode',
+      componentProps: {
+        ...disabledProps,
+        clearable: true,
+        filterable: true,
+        placeholder: '请选择国籍',
+        options: ntlySelectOptions,
+      },
+    },
+    {
+      fieldName: 'nationalityCode',
+      componentProps: {
+        ...disabledProps,
+        clearable: true,
+        filterable: true,
+        placeholder: '请选择民族',
+        options: natySelectOptions,
+      },
+    },
+    {
+      fieldName: 'naplCodes',
+      componentProps: {
+        ...disabledProps,
+        maxLevel: 2,
+        placeholder: '请选择籍贯',
+      },
+    },
+    {
+      fieldName: 'maritalStatusEnum',
+      componentProps: {
+        ...disabledProps,
+        clearable: true,
+        filterable: true,
+        placeholder: '请选择婚姻状况',
+        options: mrgStasSelectOptions,
+      },
+    },
+    {
+      fieldName: 'prfsEnum',
+      componentProps: {
+        ...disabledProps,
+        clearable: true,
+        filterable: true,
+        placeholder: '请选择职业',
+        options: prfsSelectOptions,
+      },
+    },
+    {
+      fieldName: 'regionCodes',
+      componentProps: {
+        ...disabledProps,
+        maxLevel: 3,
+        placeholder: '请选择省市区',
+      },
+    },
+    {
+      fieldName: 'address',
+      componentProps: {
+        ...disabledProps,
+        placeholder: '请输入现住址详细地址',
+      },
+    },
+    {
+      fieldName: 'workCompany',
+      componentProps: {
+        ...disabledProps,
+        placeholder: '请输入工作单位',
+      },
+    },
+    {
+      fieldName: 'linkName',
+      componentProps: {
+        ...disabledProps,
+        placeholder: '请输入联系人姓名',
+      },
+    },
+    {
+      fieldName: 'linkRelationCode',
+      componentProps: {
+        ...disabledProps,
+        clearable: true,
+        filterable: true,
+        placeholder: '请选择关系',
+        options: conerRltsSelectOptions,
+      },
+    },
+    {
+      fieldName: 'linkTelcom',
+      componentProps: {
+        ...disabledProps,
+        placeholder: '请输入联系人电话',
+      },
+    },
   ]);
   const inpatientEditableFields = [
     'organizationId',
@@ -1524,7 +2222,10 @@ async function setDialogFormsForSwitchInsurance() {
   ]);
 }
 
-/** 按入院科室/病区拉取主治医生下拉（角色=医生）。 */
+/**
+ * 按入院科室/病区拉取主治医生下拉（角色=医生）。
+ * 院点若在 init 响应带回 defaultAttendingDoctorId，且当前未选手治，则自动带出。
+ */
 async function loadAttendingDoctorOptions() {
   const organizationId = preserveApiIdForRequest(registerForm.organizationId);
   if (!organizationId) {
@@ -1543,6 +2244,17 @@ async function loadAttendingDoctorOptions() {
         value: String(item.value),
       }))
       .filter((item) => item.label && item.value);
+    // 院点默认主治：仅在当前未选手治时带出，避免覆盖已选/回显
+    const defaultAttendingId = preserveApiIdForRequest(result.defaultAttendingDoctorId);
+    if (!registerForm.attendingDoctorId && defaultAttendingId) {
+      const matched = attendingDoctorOptions.value.some(
+        (item) => String(item.value) === defaultAttendingId,
+      );
+      if (matched) {
+        registerForm.attendingDoctorId = defaultAttendingId;
+        await inpatientInfoFormApi.setFieldValue('attendingDoctorId', defaultAttendingId);
+      }
+    }
   } catch {
     attendingDoctorOptions.value = [];
   }
@@ -1647,10 +2359,11 @@ async function handleOrganizationChange(organizationId: string) {
   await reloadContractOptionsByOrganization(organizationId);
   restoreContractIdAfterOrganizationReload(previousContractId);
   await loadWardSelectOptions();
+  // 先清空表单主治，再拉下拉；院点默认主治在 loadAttendingDoctorOptions 内回填
+  await inpatientInfoFormApi.setFieldValue('attendingDoctorId', '');
   await loadAttendingDoctorOptions();
   await refreshAttendingDoctorOptionsSchema();
   await applyWardIdEcho('');
-  await inpatientInfoFormApi.setFieldValue('attendingDoctorId', '');
   await inpatientInfoFormApi.setFieldValue('contractId', registerForm.contractId);
 }
 
@@ -1733,9 +2446,15 @@ async function handleQuery() {
   loading.value = true;
   try {
     const statuses = queryParams.registrationListStatuses;
+    const organizationId = preserveApiIdForRequest(queryParams.organizationId);
+    const wardId = preserveApiIdForRequest(queryParams.wardId);
     const result = await httpPageInpatientRegistrationQueue({
       keyword: queryParams.keyword.trim() || undefined,
       idCard: queryParams.idCard.trim() || undefined,
+      organizationId: organizationId || undefined,
+      wardId: wardId || undefined,
+      admissionDateFrom: queryParams.admissionDateFrom.trim() || undefined,
+      admissionDateTo: queryParams.admissionDateTo.trim() || undefined,
       registrationListStatuses: statuses.length > 0 ? [...statuses] : undefined,
       // 单选兼容：仅选一个状态时同步传 registrationListStatus
       registrationListStatus: statuses.length === 1 ? statuses[0] : undefined,
@@ -1747,6 +2466,36 @@ async function handleQuery() {
   } finally {
     loading.value = false;
   }
+}
+
+/** 列表筛选：按所选住院科室加载病区下拉。 */
+async function loadFilterWardOptions(organizationIdRaw?: string) {
+  const organizationId = preserveApiIdForRequest(organizationIdRaw) ?? '';
+  if (!organizationId) {
+    filterWardOptions.value = [];
+    return;
+  }
+  try {
+    const result = await httpListWardsByDepartment({ organizationId });
+    filterWardOptions.value = (result.wards ?? [])
+      .map((item) => {
+        const value = preserveApiIdForRequest(item.wardId) ?? '';
+        const label = (item.wardName ?? '').trim();
+        if (!value || !label) {
+          return null;
+        }
+        return { label, value };
+      })
+      .filter((item): item is OptionDto => item !== null);
+  } catch {
+    filterWardOptions.value = [];
+  }
+}
+
+/** 列表筛选科室变更：清空病区并重载病区选项。 */
+async function handleFilterOrganizationChange(organizationId: string) {
+  queryParams.wardId = '';
+  await loadFilterWardOptions(organizationId);
 }
 
 /** 加载住院科室与入院方式/类型术语下拉。 */
@@ -1797,6 +2546,184 @@ async function handleOpenSwitchInsurance(row: RegistrationQueueItemDto) {
   await nextTick();
   await applyContextToDialog(context, 'switchInsurance');
   admissionDiagnosisReadonly.value = true;
+}
+
+/**
+ * 打开更正入院科室弹窗。默认带出当前科室、病区和床，收费员可以不换。
+ */
+async function openDepartmentChangeDialog() {
+  if (!departmentChangeEnabled.value) {
+    return;
+  }
+  departmentChangeForm.organizationId = registerForm.organizationId;
+  departmentChangeForm.wardId = '';
+  departmentChangeForm.bedId = '';
+  departmentChangeWards.value = [];
+  departmentChangeBeds.value = [];
+  departmentChangeVisible.value = true;
+  await loadDepartmentChangeWards();
+  const currentWardId = preserveApiIdForRequest(registerForm.wardId) ?? '';
+  const wardStillListed = departmentChangeWards.value.some(
+    (item) => preserveApiIdForRequest(item.wardId) === currentWardId,
+  );
+  if (currentWardId && wardStillListed) {
+    departmentChangeForm.wardId = currentWardId;
+    await loadDepartmentChangeBeds(currentWardId);
+  }
+}
+
+/** 加载全部启用病区，不随入院科室收窄，以便改到其他科室的病区。 */
+async function loadDepartmentChangeWards() {
+  const result = await httpListAdmissionDepartmentWards();
+  departmentChangeWards.value = result.wards ?? [];
+}
+
+/**
+ * 按所选病区加载空床。已入科时包含当前床；病区未换则回显当前床。
+ *
+ * @param wardId 病区主键
+ */
+async function loadDepartmentChangeBeds(wardId: string) {
+  const previousBedId = preserveApiIdForRequest(departmentChangeForm.bedId) ?? '';
+  departmentChangeForm.bedId = '';
+  if (!wardId || !departmentChangeNeedsBed.value) {
+    departmentChangeBeds.value = [];
+    return;
+  }
+  const encounterId = preserveApiIdForRequest(dialogContext.encounterId);
+  const result = await httpListAdmissionDepartmentBeds({
+    wardId,
+    encounterId,
+  });
+  departmentChangeBeds.value = result.beds ?? [];
+  const currentWardId = preserveApiIdForRequest(registerForm.wardId) ?? '';
+  const currentBedId = preserveApiIdForRequest(viewedBedId.value) ?? '';
+  let preferredBedId = previousBedId;
+  if (!preferredBedId && wardId === currentWardId) {
+    preferredBedId = currentBedId;
+  }
+  const bedStillListed = departmentChangeBeds.value.some(
+    (item) => preserveApiIdForRequest(item.bedId) === preferredBedId,
+  );
+  if (preferredBedId && bedStillListed) {
+    departmentChangeForm.bedId = preferredBedId;
+  }
+}
+
+/** 病区下拉文案：带主挂靠科室，当前病区标明。 */
+function formatDepartmentChangeWardLabel(ward: WardOptionDto): string {
+  const wardName = ward.wardName?.trim() ?? '';
+  const organizationName = ward.organizationName?.trim() ?? '';
+  let label = wardName;
+  if (organizationName && wardName) {
+    label = `${organizationName} / ${wardName}`;
+  } else if (organizationName) {
+    label = organizationName;
+  }
+  const currentWardId = preserveApiIdForRequest(registerForm.wardId) ?? '';
+  if (currentWardId && preserveApiIdForRequest(ward.wardId) === currentWardId) {
+    return `${label}（当前病区）`;
+  }
+  return label;
+}
+
+/** 床位下拉文案：当前床标明，其余用病房/床名。 */
+function formatDepartmentChangeBedLabel(bed: AdmissionDepartmentBedOptionDto): string {
+  const houseName = bed.houseName?.trim() ?? '';
+  const bedName = bed.bedName?.trim() ?? '';
+  let label = bedName;
+  if (houseName && bedName) {
+    label = `${houseName} / ${bedName}`;
+  } else if (houseName) {
+    label = houseName;
+  }
+  if (bed.currentBed) {
+    return `${label}（当前床）`;
+  }
+  return label;
+}
+
+/**
+ * 更换入院科室。病区和床不跟着清空，可以只改科室。
+ *
+ * @param value 科室主键
+ */
+function onDepartmentChangeOrganization(value: number | string) {
+  departmentChangeForm.organizationId = preserveApiIdForRequest(value) ?? '';
+}
+
+/**
+ * 更换目标病区后重载可选床。
+ *
+ * @param value 病区主键
+ */
+function onDepartmentChangeWard(value: number | string) {
+  const wardId = preserveApiIdForRequest(value) ?? '';
+  departmentChangeForm.wardId = wardId;
+  void loadDepartmentChangeBeds(wardId);
+}
+
+/** 提交更正入院科室。已医保入院时后端会发 2403，失败则院内也不改。 */
+async function submitDepartmentChange() {
+  const operatorId = resolveOperatorId();
+  const encounterId = preserveApiIdForRequest(dialogContext.encounterId);
+  const organizationId = preserveApiIdForRequest(departmentChangeForm.organizationId);
+  const wardId = preserveApiIdForRequest(departmentChangeForm.wardId);
+  const bedId = preserveApiIdForRequest(departmentChangeForm.bedId);
+  if (!operatorId) {
+    ElMessage.warning('无法获取当前操作人，请重新登录');
+    return;
+  }
+  if (!encounterId || !organizationId || !wardId) {
+    ElMessage.warning('请选择入院科室和病区');
+    return;
+  }
+  if (departmentChangeNeedsBed.value && !bedId) {
+    ElMessage.warning('已入科请选择目标病区的床位');
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      '确认更正入院科室？已在医保入院的，会同时向医保平台变更入院科室。',
+      '科室变更',
+      {
+        cancelButtonText: '取消',
+        confirmButtonText: '确认变更',
+        type: 'warning',
+      },
+    );
+  } catch {
+    return;
+  }
+  departmentChangeSubmitting.value = true;
+  try {
+    const result = await httpChangeAdmissionDepartment({
+      encounterId,
+      operatorId,
+      organizationId,
+      wardId,
+      bedId: departmentChangeNeedsBed.value ? bedId : undefined,
+    });
+    if (!result.success) {
+      ElMessage.error('科室变更失败，请稍后重试');
+      return;
+    }
+    if (result.insurancePlatformChanged) {
+      ElMessage.success('入院科室已变更，并已通知医保');
+    } else {
+      ElMessage.success('入院科室已变更');
+    }
+    departmentChangeVisible.value = false;
+    registerDialogVisible.value = false;
+    await handleQuery();
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '科室变更失败，请稍后重试';
+    if (message) {
+      ElMessage.error(message);
+    }
+  } finally {
+    departmentChangeSubmitting.value = false;
+  }
 }
 
 /** 查看弹窗内进入转医保模式。 */
@@ -1953,10 +2880,13 @@ async function handleSubmitRegister() {
         return;
       }
     }
-    const advanceAmount = Number(registerForm.advanceDepositAmount ?? 0);
+    // 总额由支付行合计得出；医生草稿仅作打开时的预填
+    const paymentDetails = buildPaymentDetailsForSubmit();
+    const advanceAmount = sumPaymentDetailsAmount(paymentDetails);
     const submitPatientId = preserveApiIdForRequest(dialogContext.patientId);
     const normalizedBirthDate = normalizeBirthDateForSubmit(registerForm.birthDate);
     const attendingDoctorId = preserveApiIdForRequest(registerForm.attendingDoctorId);
+    const regionCodes = registerForm.regionCodes;
     const body = {
       encounterId: preserveApiIdForRequest(dialogContext.encounterId),
       patientId: submitPatientId,
@@ -1965,7 +2895,23 @@ async function handleSubmitRegister() {
       idCard: registerForm.idCard || undefined,
       birthDate: normalizedBirthDate || undefined,
       phone: registerForm.phone || undefined,
-      updatePatientFromIdCard: normalizedBirthDate ? true : undefined,
+      // 空串也传：后端叠写主档；登记后 bootstrap 病案首页从主档自动取值
+      countryCode: registerForm.countryCode ?? '',
+      nationalityCode: registerForm.nationalityCode ?? '',
+      nativePlace: joinNativePlaceCodes(registerForm.naplCodes),
+      maritalStatusEnum: registerForm.maritalStatusEnum ?? '',
+      prfsEnum: registerForm.prfsEnum ?? '',
+      address: registerForm.address ?? '',
+      addressProvince: regionCodes[0] ?? '',
+      addressCity: regionCodes[1] ?? '',
+      addressDistrict: regionCodes[2] ?? '',
+      workCompany: registerForm.workCompany ?? '',
+      linkName: registerForm.linkName ?? '',
+      linkRelationCode: registerForm.linkRelationCode
+        ? Number(registerForm.linkRelationCode)
+        : undefined,
+      linkTelcom: registerForm.linkTelcom ?? '',
+      updatePatientFromIdCard: true,
       organizationId,
       wardId,
       contractId,
@@ -1977,15 +2923,7 @@ async function handleSubmitRegister() {
       admissionDiagnoses: hasDoctorAdmission ? undefined : buildAdmissionDiagnosesForSubmit(),
       operatorId,
       advanceDepositAmount: advanceAmount > 0 ? advanceAmount : undefined,
-      paymentDetails:
-        advanceAmount > 0
-          ? [
-              {
-                payChannelCode: registerForm.payChannelCode,
-                amount: advanceAmount,
-              },
-            ]
-          : undefined,
+      paymentDetails,
       ...insuranceFields,
     };
     const result = await httpSubmitInpatientRegistration(body);
@@ -2104,7 +3042,61 @@ async function handleSwitchToInsurance() {
   }
 }
 
-/** 取消住院登记。 */
+/** 医保入院整单改为自费：撤销平台入院，未结费用改挂个人现金户。 */
+async function handleSwitchToSelfPay(encounterIdRaw: string | undefined) {
+  const encounterId = preserveApiIdForRequest(encounterIdRaw);
+  const operatorId = resolveOperatorId();
+  // 没有住院就诊就无法撤销平台入院
+  if (!encounterId) {
+    ElMessage.warning('缺少就诊标识，无法转自费');
+    return;
+  }
+  // 操作人写入切户审计
+  if (!operatorId) {
+    ElMessage.warning('无法获取当前操作人，请重新登录');
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      '确认将该住院从医保入院改为自费？将撤销医保入院登记，未结费用改挂个人现金账户，已收预交金保留。已结算费用须先取消结算。',
+      '转自费',
+      {
+        cancelButtonText: '取消',
+        confirmButtonText: '确认转自费',
+        type: 'warning',
+      },
+    );
+  } catch {
+    return;
+  }
+  selfPaySwitching.value = true;
+  try {
+    const result = await httpSwitchInpatientToSelfPay({
+      encounterId,
+      operatorId,
+    });
+    if (!result.success) {
+      ElMessage.error('转自费失败，请稍后重试');
+      return;
+    }
+    let successMsg = '已转为自费';
+    if (result.switchedChargeItemCount != null && result.switchedChargeItemCount > 0) {
+      successMsg += `，已切换 ${result.switchedChargeItemCount} 条未结费用`;
+    }
+    ElMessage.success(successMsg);
+    registerDialogVisible.value = false;
+    await handleQuery();
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '转自费失败，请稍后重试';
+    if (message) {
+      ElMessage.error(message);
+    }
+  } finally {
+    selfPaySwitching.value = false;
+  }
+}
+
+/** 取消住院登记。已医保入院时先撤销平台入院（2404），再取消本地登记。 */
 async function handleCancelRegistration(row: RegistrationQueueItemDto) {
   const encounterId = preserveApiIdForRequest(row.encounterId);
   if (!encounterId) return;
@@ -2113,66 +3105,46 @@ async function handleCancelRegistration(row: RegistrationQueueItemDto) {
     ElMessage.warning('无法获取当前操作人，请重新登录');
     return;
   }
+  const platformAdmitted = Boolean(row.insurancePlatformRegistered);
   try {
-    const { value } = await ElMessageBox.prompt('请输入取消原因（可选）', '取消住院登记', {
-      confirmButtonText: '确认取消',
-      cancelButtonText: '返回',
-      inputPlaceholder: '取消原因',
-    });
-    await httpCancelInpatientRegistration({
-      encounterId,
-      operatorId,
-      cancelReason: value?.trim() || undefined,
-    });
-    ElMessage.success('已取消住院登记');
-    await handleQuery();
-  } catch {
-    // 用户关闭弹窗时不提示
-  }
-}
-
-/** 待入科且已医保入院：撤销 2404 并取消登记。 */
-async function handleYbInsuranceRevokeAdmission(row: RegistrationQueueItemDto) {
-  const encounterId = preserveApiIdForRequest(row.encounterId);
-  if (!encounterId) return;
-  const operatorId = resolveOperatorId();
-  if (!operatorId) {
-    ElMessage.warning('无法获取当前操作人，请重新登录');
-    return;
-  }
-  try {
-    await ElMessageBox.confirm(
-      '该记录已在医保平台完成入院登记（2401）且尚未入科，确认后将撤销平台入院（2404）并取消本地住院登记。',
-      '确认医保退入院',
-      {
-        confirmButtonText: '确认医保退入院',
+    if (platformAdmitted) {
+      await ElMessageBox.confirm(
+        '该记录已在医保平台完成入院登记，确认后将先撤销医保入院（2404），再取消本地住院登记。',
+        '取消住院登记',
+        {
+          confirmButtonText: '确认取消',
+          cancelButtonText: '返回',
+          type: 'warning',
+        },
+      );
+      await httpCancelInsuranceInpatientAdmission({
+        encounterId,
+        operatorId,
+        cancelReason: '取消登记',
+      });
+      ElMessage.success('已取消住院登记，并已撤销医保入院');
+    } else {
+      const { value } = await ElMessageBox.prompt('请输入取消原因（可选）', '取消住院登记', {
+        confirmButtonText: '确认取消',
         cancelButtonText: '返回',
-        type: 'warning',
-      },
-    );
-    await httpCancelInsuranceInpatientAdmission({
-      encounterId,
-      operatorId,
-      cancelReason: '窗口医保退入院',
-    });
-    ElMessage.success('医保退入院成功');
+        inputPlaceholder: '取消原因',
+      });
+      await httpCancelInpatientRegistration({
+        encounterId,
+        operatorId,
+        cancelReason: value?.trim() || undefined,
+      });
+      ElMessage.success('已取消住院登记');
+    }
     await handleQuery();
   } catch {
     // 用户关闭弹窗时不提示
   }
 }
 
-/** 是否展示「医保退入院」（待入科 + 已 2401）。 */
-function canShowYbInsuranceRevoke(row: RegistrationQueueItemDto) {
-  return row.statusEnum === ENCOUNTER_STATUS.REGISTERED && Boolean(row.insurancePlatformRegistered);
-}
-
-/** 是否展示普通「取消」（待登记，或待入科但未医保入院）。 */
+/** 是否展示「取消」。已医保入院的待入科记录也走取消，确认后自动 2404。 */
 function canShowCancel(row: RegistrationQueueItemDto) {
-  if (!row.cancelable) {
-    return false;
-  }
-  return !canShowYbInsuranceRevoke(row);
+  return Boolean(row.cancelable);
 }
 
 /** 列表分页变更。 */
@@ -2186,6 +3158,66 @@ function handlePagination({ page, limit }: { limit: number; page: number }) {
 function handleSearch() {
   queryParams.pageNo = 1;
   void handleQuery();
+}
+
+/**
+ * 费用性质列的合同名（市医保/省医保/自费）。
+ * 无合同时回落医生费用性质意向（医保/自费）；再无则险种标签或破折号。
+ *
+ * @param row 登记队列行
+ */
+function feeNatureContractLabel(row: RegistrationQueueItemDto): string {
+  const contract = String(row.contractDisplay ?? '').trim();
+  if (contract) {
+    return contract;
+  }
+  // 待登记：尚无账户合同时展示医生费用性质意向（医保/自费）
+  const chargeIntentText = String(row.chargeIntentText ?? '').trim();
+  if (chargeIntentText) {
+    return chargeIntentText;
+  }
+  if (feeNatureInsutypeLabel(row)) {
+    return '';
+  }
+  return '—';
+}
+
+/**
+ * 险种展示文案：310 职工医保，390 居民医保，340 离休。
+ * 其它码或未读卡不展示，列表仍只显示合同名。
+ *
+ * @param row 登记队列行
+ */
+function feeNatureInsutypeLabel(row: RegistrationQueueItemDto): string {
+  const code = String(row.insutype ?? '').trim();
+  if (code === '310') {
+    return '职工医保';
+  }
+  if (code === '390') {
+    return '居民医保';
+  }
+  if (code === '340') {
+    return '离休';
+  }
+  return '';
+}
+
+/**
+ * 险种标签颜色：职工蓝、居民绿、离休灰。
+ *
+ * @param row 登记队列行
+ */
+function feeNatureInsutypeTagType(
+  row: RegistrationQueueItemDto,
+): 'info' | 'primary' | 'success' {
+  const code = String(row.insutype ?? '').trim();
+  if (code === '310') {
+    return 'primary';
+  }
+  if (code === '390') {
+    return 'success';
+  }
+  return 'info';
 }
 
 /** 行状态标签类型。 */
@@ -2244,13 +3276,33 @@ onBeforeUnmount(() => {
           <RegisterListToolbar
             v-model:keyword="queryParams.keyword"
             v-model:id-card="queryParams.idCard"
+            v-model:organization-id="queryParams.organizationId"
+            v-model:ward-id="queryParams.wardId"
+            v-model:admission-date-from="queryParams.admissionDateFrom"
+            v-model:admission-date-to="queryParams.admissionDateTo"
             v-model:registration-list-statuses="queryParams.registrationListStatuses"
+            :organization-options="organizationOptions"
+            :ward-options="filterWardOptions"
+            @organization-change="handleFilterOrganizationChange"
             @search="handleSearch"
             @no-record="handleOpenNoRecordRegister"
           />
         </template>
         <template #status="{ row }">
           <ElTag :type="getStatusTagType(row)" effect="light">{{ row.statusEnumText }}</ElTag>
+        </template>
+        <template #contract="{ row }">
+          <span class="ip-register-fee">
+            <span v-if="feeNatureContractLabel(row)">{{ feeNatureContractLabel(row) }}</span>
+            <ElTag
+              v-if="feeNatureInsutypeLabel(row)"
+              size="small"
+              effect="plain"
+              :type="feeNatureInsutypeTagType(row)"
+            >
+              {{ feeNatureInsutypeLabel(row) }}
+            </ElTag>
+          </span>
         </template>
         <template #actions="{ row }">
           <div class="flex items-center justify-center gap-2">
@@ -2269,12 +3321,13 @@ onBeforeUnmount(() => {
               转医保
             </ElButton>
             <ElButton
-              v-if="canShowYbInsuranceRevoke(row)"
+              v-if="row.switchToSelfPayEnabled"
               link
-              type="danger"
-              @click="handleYbInsuranceRevokeAdmission(row)"
+              type="primary"
+              :loading="selfPaySwitching"
+              @click="handleSwitchToSelfPay(row.encounterId)"
             >
-              医保退入院
+              转自费
             </ElButton>
             <ElButton
               v-if="canShowCancel(row)"
@@ -2407,6 +3460,13 @@ onBeforeUnmount(() => {
 
         <footer v-if="dialogMode === 'switchInsurance'" class="register-footer">
           <div class="flex w-full justify-end gap-2">
+            <ElButton
+              :loading="printingCertificate"
+              :disabled="!registerForm.patientName.trim()"
+              @click="handlePrintAdmissionCertificate"
+            >
+              打印住院证
+            </ElButton>
             <ElButton @click="requestCloseRegisterDialog">取消</ElButton>
             <ElButton
               type="primary"
@@ -2421,21 +3481,48 @@ onBeforeUnmount(() => {
           <div class="register-footer__left">
             <div class="register-footer__payment">
               <span class="register-footer__label">预交金</span>
-              <ElInputNumber
-                v-model="registerForm.advanceDepositAmount"
-                :precision="2"
-                :step="100"
-                :min="0"
-                controls-position="right"
-              />
-              <ElRadioGroup v-model="registerForm.payChannelCode">
-                <ElRadio v-for="item in payChannelOptions" :key="item.value" :label="item.value">
-                  {{ item.label }}
-                </ElRadio>
-              </ElRadioGroup>
+              <div class="register-footer__pay-rows">
+                <div
+                  v-for="(row, index) in registerForm.paymentDetailRows"
+                  :key="`pay-row-${index}`"
+                  class="register-footer__pay-row"
+                >
+                  <ElSelect v-model="row.payChannelCode" class="register-footer__channel" filterable>
+                    <ElOption
+                      v-for="item in payChannelOptions"
+                      :key="item.value"
+                      :label="item.label"
+                      :value="item.value"
+                    />
+                  </ElSelect>
+                  <ElInputNumber
+                    v-model="row.amount"
+                    :precision="2"
+                    :step="100"
+                    :min="0"
+                    controls-position="right"
+                  />
+                  <ElButton
+                    link
+                    type="danger"
+                    :disabled="registerForm.paymentDetailRows.length <= 1"
+                    @click="removePaymentDetailRow(index)"
+                  >
+                    删除
+                  </ElButton>
+                </div>
+                <ElButton link type="primary" @click="addPaymentDetailRow">添加支付方式</ElButton>
+              </div>
             </div>
           </div>
           <div class="flex gap-2">
+            <ElButton
+              :loading="printingCertificate"
+              :disabled="!registerForm.patientName.trim()"
+              @click="handlePrintAdmissionCertificate"
+            >
+              打印住院证
+            </ElButton>
             <ElButton @click="requestCloseRegisterDialog">取消</ElButton>
             <ElButton
               type="primary"
@@ -2448,20 +3535,105 @@ onBeforeUnmount(() => {
         </footer>
         <footer v-else class="register-footer register-footer--readonly">
           <ElButton
+            :loading="printingCertificate"
+            :disabled="!registerForm.patientName.trim()"
+            @click="handlePrintAdmissionCertificate"
+          >
+            打印住院证
+          </ElButton>
+          <ElButton
             v-if="switchToInsuranceEnabled"
             type="primary"
             @click="enterSwitchInsuranceFromView"
           >
             转医保
           </ElButton>
+          <ElButton
+            v-if="switchToSelfPayEnabled"
+            type="primary"
+            :loading="selfPaySwitching"
+            @click="handleSwitchToSelfPay(dialogContext.encounterId)"
+          >
+            转自费
+          </ElButton>
+          <ElButton v-if="departmentChangeEnabled" type="primary" @click="openDepartmentChangeDialog">
+            科室变更
+          </ElButton>
           <ElButton @click="requestCloseRegisterDialog">关闭</ElButton>
         </footer>
       </div>
+    </AppDialog>
+    <AppDialog
+      v-model="departmentChangeVisible"
+      title="科室变更"
+      width="520px"
+      :close-on-click-modal="false"
+    >
+      <div class="department-change-form">
+        <label class="department-change-form__row">
+          <span>入院科室</span>
+          <ElSelect
+            :model-value="departmentChangeForm.organizationId"
+            filterable
+            placeholder="请选择住院科室"
+            @update:model-value="onDepartmentChangeOrganization"
+          >
+            <ElOption
+              v-for="item in organizationOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </ElSelect>
+        </label>
+        <label class="department-change-form__row">
+          <span>入院病区</span>
+          <ElSelect
+            :model-value="departmentChangeForm.wardId"
+            filterable
+            placeholder="请选择病区"
+            @update:model-value="onDepartmentChangeWard"
+          >
+            <ElOption
+              v-for="item in departmentChangeWards"
+              :key="item.wardId"
+              :label="formatDepartmentChangeWardLabel(item)"
+              :value="item.wardId"
+            />
+          </ElSelect>
+        </label>
+        <label v-if="departmentChangeNeedsBed" class="department-change-form__row">
+          <span>床位</span>
+          <ElSelect v-model="departmentChangeForm.bedId" filterable placeholder="请选择床位">
+            <ElOption
+              v-for="item in departmentChangeBeds"
+              :key="item.bedId"
+              :label="formatDepartmentChangeBedLabel(item)"
+              :value="item.bedId"
+            />
+          </ElSelect>
+        </label>
+      </div>
+      <template #footer>
+        <ElButton @click="departmentChangeVisible = false">取消</ElButton>
+        <ElButton type="primary" :loading="departmentChangeSubmitting" @click="submitDepartmentChange">
+          确认变更
+        </ElButton>
+      </template>
     </AppDialog>
   </Page>
 </template>
 
 <style scoped>
+.ip-register-fee {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  line-height: 1.4;
+}
+
 .register-dialog-body {
   display: flex;
   flex-direction: column;
@@ -2490,6 +3662,19 @@ onBeforeUnmount(() => {
 
 :deep(.register-grid-form .vxe-input) {
   width: 100%;
+}
+
+.department-change-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.department-change-form__row {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  align-items: center;
+  gap: 8px;
 }
 
 .register-basic-patient-readonly {
@@ -2536,6 +3721,18 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
+:deep(.register-form-item--region) {
+  grid-column: span 2;
+}
+
+:deep(.register-form-item--address-detail) {
+  grid-column: span 2;
+}
+
+:deep(.register-form-item--work-company) {
+  grid-column: span 2;
+}
+
 :deep(.register-form-item--admission-diagnosis) {
   grid-column: 1 / -1;
   align-items: flex-start;
@@ -2561,6 +3758,9 @@ onBeforeUnmount(() => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  :deep(.register-form-item--region),
+  :deep(.register-form-item--address-detail),
+  :deep(.register-form-item--work-company),
   :deep(.register-form-item--admission-diagnosis),
   :deep(.register-form-item--admission-diagnosis-readonly) {
     grid-column: 1 / -1;
@@ -2581,8 +3781,24 @@ onBeforeUnmount(() => {
 
 .register-footer__payment {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
+}
+
+.register-footer__pay-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.register-footer__pay-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.register-footer__channel {
+  width: 140px;
 }
 
 .form-section__title--with-actions {

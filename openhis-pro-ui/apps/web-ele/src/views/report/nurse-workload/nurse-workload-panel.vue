@@ -70,11 +70,15 @@ interface NurseWorkloadCardView {
   consumableItemChips: NurseConsumableItemChip[];
   consumableItemCount: number;
   consumableSaleAmountTotal: number | string;
+  consumableDiscountAmountTotal?: number | string;
+  consumableActualReceivedAmountTotal?: number | string;
   consumablePurchaseAmountTotal?: number | string | null;
   consumableSummaryRows: NurseConsumableSummaryRowDto[];
   consumableTotalQuantity: number | string;
   executionChips: NurseExecutionItemChip[];
   executionSaleAmountTotal: number | string;
+  executionDiscountAmountTotal?: number | string;
+  executionActualReceivedAmountTotal?: number | string;
   executionPurchaseAmountTotal?: number | string | null;
   executionSummaryRows: NurseExecutionSummaryRowDto[];
   executionTotalCount: number;
@@ -95,7 +99,10 @@ const overallConsumableTotal = ref<number | string>(0);
 const overallExecutionSaleAmount = ref<number | string>(0);
 const overallExecutionPurchaseAmount = ref<number | string | null>(null);
 const overallConsumableSaleAmount = ref<number | string>(0);
+const overallConsumableDiscountAmount = ref<number | string>(0);
 const overallConsumablePurchaseAmount = ref<number | string | null>(null);
+const overallExecutionDiscountAmount = ref<number | string>(0);
+const discountFeatureEnabled = ref(false);
 const cardsLoading = ref(false);
 const detailDialogVisible = ref(false);
 const selectedNurse = ref<NurseWorkloadCardView | null>(null);
@@ -126,6 +133,7 @@ const { run: runInit, loading: initLoading } = useRequest(loadNurseWorkloadFormI
     }
     queryParams.dateFrom = data?.defaultDateFrom ?? queryParams.dateFrom;
     queryParams.dateTo = data?.defaultDateTo ?? queryParams.dateTo;
+    discountFeatureEnabled.value = Boolean(data?.discountFeatureEnabled);
   },
 });
 
@@ -202,8 +210,10 @@ function resetOverallTotals() {
   overallExecutionTotal.value = 0;
   overallConsumableTotal.value = 0;
   overallExecutionSaleAmount.value = 0;
+  overallExecutionDiscountAmount.value = 0;
   overallExecutionPurchaseAmount.value = null;
   overallConsumableSaleAmount.value = 0;
+  overallConsumableDiscountAmount.value = 0;
   overallConsumablePurchaseAmount.value = null;
 }
 
@@ -214,11 +224,13 @@ function buildEmptyNurseCards() {
     practitionerName: nurse.label,
     executionTotalCount: 0,
     executionSaleAmountTotal: 0,
+    executionDiscountAmountTotal: 0,
     executionPurchaseAmountTotal: null,
     executionSummaryRows: [],
     executionChips: [],
     consumableTotalQuantity: 0,
     consumableSaleAmountTotal: 0,
+    consumableDiscountAmountTotal: 0,
     consumablePurchaseAmountTotal: null,
     consumableSummaryRows: [],
     consumableItemChips: [],
@@ -244,11 +256,15 @@ function mapNurseCardView(
     practitionerName,
     executionTotalCount: Number(card.executionTotalCount ?? 0),
     executionSaleAmountTotal: card.executionSaleAmountTotal ?? 0,
+    executionDiscountAmountTotal: card.executionDiscountAmountTotal ?? 0,
+    executionActualReceivedAmountTotal: card.executionActualReceivedAmountTotal ?? 0,
     executionPurchaseAmountTotal: card.executionPurchaseAmountTotal ?? null,
     executionSummaryRows,
     executionChips: buildExecutionItemChips(executionSummaryRows),
     consumableTotalQuantity: card.consumableTotalQuantity ?? 0,
     consumableSaleAmountTotal: card.consumableSaleAmountTotal ?? 0,
+    consumableDiscountAmountTotal: card.consumableDiscountAmountTotal ?? 0,
+    consumableActualReceivedAmountTotal: card.consumableActualReceivedAmountTotal ?? 0,
     consumablePurchaseAmountTotal: card.consumablePurchaseAmountTotal ?? null,
     consumableSummaryRows: card.consumableSummaryRows ?? [],
     consumableItemChips,
@@ -288,9 +304,11 @@ async function loadNurseCards(filter: NurseWorkloadQueryFilter) {
     );
     overallExecutionTotal.value = Number(data?.totalExecutionCount ?? 0);
     overallExecutionSaleAmount.value = data?.totalExecutionSaleAmount ?? 0;
+    overallExecutionDiscountAmount.value = data?.totalExecutionDiscountAmount ?? 0;
     overallExecutionPurchaseAmount.value = null;
     overallConsumableTotal.value = data?.totalConsumableQuantity ?? 0;
     overallConsumableSaleAmount.value = data?.totalConsumableSaleAmount ?? 0;
+    overallConsumableDiscountAmount.value = data?.totalConsumableDiscountAmount ?? 0;
     overallConsumablePurchaseAmount.value = purchaseCorner === '' ? null : purchaseCorner;
     // 无业务数据：仍展示下拉全员零值卡
     if (!hasOverallWorkloadData(overallExecutionTotal.value, overallConsumableTotal.value)) {
@@ -453,9 +471,12 @@ onMounted(async () => {
       :execution-total-count="overallExecutionTotal"
       :consumable-total-quantity="overallConsumableTotal"
       :execution-total-sale-amount="overallExecutionSaleAmount"
+      :execution-total-discount-amount="overallExecutionDiscountAmount"
       :execution-total-purchase-amount="overallExecutionPurchaseAmount"
       :consumable-total-sale-amount="overallConsumableSaleAmount"
+      :consumable-total-discount-amount="overallConsumableDiscountAmount"
       :consumable-total-purchase-amount="overallConsumablePurchaseAmount"
+      :discount-feature-enabled="discountFeatureEnabled"
       :nurse-count="nurseCountLabel"
     />
 
@@ -472,9 +493,12 @@ onMounted(async () => {
           :practitioner-name="card.practitionerName"
           :execution-total-count="card.executionTotalCount"
           :execution-sale-amount-total="card.executionSaleAmountTotal"
+          :execution-discount-amount-total="card.executionDiscountAmountTotal"
           :execution-chips="card.executionChips"
           :consumable-item-count="card.consumableItemCount"
           :consumable-sale-amount-total="card.consumableSaleAmountTotal"
+          :consumable-discount-amount-total="card.consumableDiscountAmountTotal"
+          :discount-feature-enabled="discountFeatureEnabled"
           :consumable-item-chips="card.consumableItemChips"
           @view-detail="openNurseDetail(card)"
         />
@@ -489,10 +513,15 @@ onMounted(async () => {
       :practitioner-name="selectedNurse.practitionerName"
       :execution-total-count="selectedNurse.executionTotalCount"
       :execution-sale-amount-total="selectedNurse.executionSaleAmountTotal"
+      :execution-discount-amount-total="selectedNurse.executionDiscountAmountTotal"
+      :execution-actual-received-amount-total="selectedNurse.executionActualReceivedAmountTotal"
       :execution-purchase-amount-total="selectedNurse.executionPurchaseAmountTotal"
       :execution-summary-rows="selectedNurse.executionSummaryRows"
       :consumable-total-quantity="selectedNurse.consumableTotalQuantity"
       :consumable-sale-amount-total="selectedNurse.consumableSaleAmountTotal"
+      :consumable-discount-amount-total="selectedNurse.consumableDiscountAmountTotal"
+      :consumable-actual-received-amount-total="selectedNurse.consumableActualReceivedAmountTotal"
+      :discount-feature-enabled="discountFeatureEnabled"
       :consumable-purchase-amount-total="selectedNurse.consumablePurchaseAmountTotal"
       :consumable-summary-rows="selectedNurse.consumableSummaryRows"
       :consumable-item-chips="selectedNurse.consumableItemChips"

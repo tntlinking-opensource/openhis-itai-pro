@@ -2,7 +2,7 @@
 /**
  * 目录对码工作台：左院内 / 右平台，对照查看并批量 3301 / 3302。
  */
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type {
   CatalogMappingWorkbenchStatus,
@@ -16,9 +16,9 @@ import type { PageParams } from '#/types/api-response';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import {
   ElAlert,

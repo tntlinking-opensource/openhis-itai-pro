@@ -99,7 +99,7 @@ const obj = { name: 'John' };
 
 ### 2. ESLint 规则
 
-项目使用 `@vben/eslint-config`，主要规则：
+项目使用 `@zxplat/eslint-config`，主要规则：
 
 - ✅ 使用 `===` 而不是 `==`
 - ✅ 禁止使用 `console.log`（允许 `console.warn` 和 `console.error`）

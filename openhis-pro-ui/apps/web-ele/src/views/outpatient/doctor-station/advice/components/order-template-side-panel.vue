@@ -19,6 +19,7 @@ import {
   changeOrderTemplateLifecycleApi,
   ORDER_TEMPLATE_KIND_GENERAL,
   ORDER_TEMPLATE_LIFECYCLE_DELETE,
+  ORDER_TEMPLATE_SOURCE_FROM_ADVICE,
 } from '#/api/basic/order-template';
 import SidePaneCollapseHandle from '#/components/layouts/side-pane-collapse-handle.vue';
 import { DOCTOR_STATION_SIDEBAR_WIDTH_PX } from '#/constants/layout/viewport-breakpoints';
@@ -30,12 +31,20 @@ import {
   fetchMergedDoctorStationOrderTemplateGroups,
   findOrderTemplateHeaderInGroups,
 } from '../services/order-template.service';
+import EditOrderTemplateDialog from './edit-order-template-dialog.vue';
 
 defineOptions({ name: 'OrderTemplateSidePanel' });
 
 interface Props {
-  /** 为 true 时，个人组套节点展示删除（住院医生站开启；门诊默认关闭） */
+  /**
+   * 为 true 时，个人组套节点展示删除（住院医生站开启）。
+   * 门诊另开 allowAdviceTemplateManage 时，个人/科室「另存模板」也可删。
+   */
   allowPersonalDelete?: boolean;
+  /**
+   * 为 true 时，个人/科室「另存模板」（FROM_ADVICE）展示编辑、删除（门诊医生站开启）。
+   */
+  allowAdviceTemplateManage?: boolean;
   encounterId?: string;
   patientId?: string;
   templateKindEnum?: string;
@@ -43,6 +52,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   allowPersonalDelete: false,
+  allowAdviceTemplateManage: false,
   encounterId: '',
   patientId: '',
   templateKindEnum: ORDER_TEMPLATE_KIND_GENERAL,
@@ -62,6 +72,9 @@ const selectedNodeId = ref('');
 const listLoading = ref(false);
 /** 正在删除的个人组套 id，避免重复提交 */
 const deletingTemplateId = ref('');
+/** 编辑弹窗 */
+const editDialogOpen = ref(false);
+const editingTemplate = ref<null | OrderTemplateHeaderItem>(null);
 /** 小屏可收起组套树，把横向空间让给医嘱表格 */
 const isCollapsed = ref(false);
 const templateGroups =
@@ -153,22 +166,67 @@ function handleTemplateTreeNodeClick(data: OrderTemplateTreeNode) {
   emit('select', header);
 }
 
-/** 个人组套节点是否展示删除（仅住院医生站开启） */
-function showPersonalDelete(data: OrderTemplateTreeNode) {
+/** 是否医生站另存模板（FROM_ADVICE），维护端组套不可在侧栏改删 */
+function isAdviceSavedTemplate(data: OrderTemplateTreeNode) {
+  const source = String(data.header?.templateSourceEnum ?? '')
+    .trim()
+    .toUpperCase();
+  return source === ORDER_TEMPLATE_SOURCE_FROM_ADVICE;
+}
+
+/** 个人/科室另存模板是否展示编辑 */
+function showTemplateEdit(data: OrderTemplateTreeNode) {
   return (
-    props.allowPersonalDelete && data.nodeType === 'template' && data.bindingScope === 'PERSONAL'
+    props.allowAdviceTemplateManage &&
+    data.nodeType === 'template' &&
+    (data.bindingScope === 'PERSONAL' || data.bindingScope === 'DEPARTMENT') &&
+    isAdviceSavedTemplate(data)
   );
 }
 
-/** 删除当前医生的个人组套，成功后刷新侧栏 */
-async function handleDeletePersonalTemplate(data: OrderTemplateTreeNode) {
+/** 个人组套删除，或门诊另存模板（个人/科室）删除 */
+function showTemplateDelete(data: OrderTemplateTreeNode) {
+  if (data.nodeType !== 'template') {
+    return false;
+  }
+  if (props.allowPersonalDelete && data.bindingScope === 'PERSONAL') {
+    return true;
+  }
+  return (
+    props.allowAdviceTemplateManage &&
+    (data.bindingScope === 'PERSONAL' || data.bindingScope === 'DEPARTMENT') &&
+    isAdviceSavedTemplate(data)
+  );
+}
+
+/** 打开组套编辑弹窗（阻止冒泡以免触发套用） */
+function handleEditTemplate(data: OrderTemplateTreeNode) {
+  const header =
+    data.header ?? findOrderTemplateHeaderInGroups(templateGroups.value, data.templateId ?? '');
+  if (!header) {
+    ElMessage.warning('未找到组套信息');
+    return;
+  }
+  editingTemplate.value = header;
+  editDialogOpen.value = true;
+}
+
+/** 编辑保存成功后刷新侧栏 */
+function handleEditOrderTemplateSaved() {
+  editingTemplate.value = null;
+  void reloadTemplateList();
+}
+
+/** 删除组套，成功后刷新侧栏 */
+async function handleDeleteTemplate(data: OrderTemplateTreeNode) {
   const orderTemplateId = preserveApiIdForRequest(data.templateId ?? data.header?.orderTemplateId);
   if (!orderTemplateId || deletingTemplateId.value) {
     return;
   }
   const name = String(data.header?.name ?? '').trim() || '该组套';
+  const scopeLabel = data.bindingScope === 'DEPARTMENT' ? '科室组套' : '个人组套';
   try {
-    await ElMessageBox.confirm(`确定删除个人组套「${name}」吗？`, '确认操作', {
+    await ElMessageBox.confirm(`确定删除${scopeLabel}「${name}」吗？`, '确认操作', {
       type: 'warning',
     });
   } catch {
@@ -256,16 +314,27 @@ defineExpose({ clearSelection, reloadTemplateList });
                 </span>
               </div>
               <span
-                v-if="showPersonalDelete(data)"
-                class="order-template-tree-node__delete shrink-0"
+                v-if="showTemplateEdit(data) || showTemplateDelete(data)"
+                class="order-template-tree-node__actions shrink-0"
                 @mousedown.stop
-                @click.stop="handleDeletePersonalTemplate(data)"
+                @click.stop
               >
                 <ElButton
+                  v-if="showTemplateEdit(data)"
+                  link
+                  type="primary"
+                  class="order-template-tree-node__action-btn"
+                  @click="handleEditTemplate(data)"
+                >
+                  编辑
+                </ElButton>
+                <ElButton
+                  v-if="showTemplateDelete(data)"
                   link
                   type="danger"
-                  class="order-template-tree-node__delete-btn"
+                  class="order-template-tree-node__action-btn"
                   :loading="deletingTemplateId === data.templateId"
+                  @click="handleDeleteTemplate(data)"
                 >
                   删除
                 </ElButton>
@@ -280,6 +349,12 @@ defineExpose({ clearSelection, reloadTemplateList });
     <div class="order-template-side-panel__edge">
       <SidePaneCollapseHandle :collapsed="isCollapsed" @toggle="toggleCollapsed" />
     </div>
+
+    <EditOrderTemplateDialog
+      v-model:open="editDialogOpen"
+      :template="editingTemplate"
+      @saved="handleEditOrderTemplateSaved"
+    />
   </div>
 </template>
 
@@ -334,12 +409,14 @@ defineExpose({ clearSelection, reloadTemplateList });
   overflow: hidden;
 }
 
-.order-template-tree-node__delete {
+.order-template-tree-node__actions {
   display: inline-flex;
   flex-shrink: 0;
+  align-items: center;
+  gap: 0;
 }
 
-.order-template-tree-node__delete-btn {
+.order-template-tree-node__action-btn {
   height: 24px;
   padding: 0 4px;
   margin-left: 0;

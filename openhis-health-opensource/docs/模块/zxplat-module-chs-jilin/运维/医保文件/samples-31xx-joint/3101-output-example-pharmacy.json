@@ -1,0 +1,60 @@
+{
+  "output": {
+    "result": [
+      {
+        "judge_result_detail_dtos": [
+          {
+            "vola_item_type": "1",
+            "mdtrt_id": "149402417",
+            "jrd_id": "b6df3dcb9f764b1485615b183501cc1b",
+            "patn_id": "149402417",
+            "rx_id": "1054440262",
+            "vola_amt": 31.92
+          }
+        ],
+        "rule_id": "220000202603171556171000059004",
+        "vola_evid": null,
+        "mdtrt_id": "149402417",
+        "rule_name": "药品区分性别使用_事前提醒",
+        "vola_amt_stas": "1",
+        "jr_id": "3f8e13d1962a41488b732f7431af570a",
+        "patn_id": "149402417",
+        "sev_deg": "1",
+        "vola_amt": 31.92,
+        "vola_bhvr_type": "2",
+        "vola_cont": "[抗妇炎胶囊0.35g*48粒/抗妇炎胶囊0.35g*48粒]为女性使用药物，参保人当前信息显示性别为：男"
+      },
+      {
+        "judge_result_detail_dtos": [
+          {
+            "vola_item_type": "1",
+            "mdtrt_id": "149402417",
+            "jrd_id": "38206dd6c82a4c819c2e54d13ab5c303",
+            "patn_id": "149402417",
+            "rx_id": "1054440262",
+            "vola_amt": 31.92
+          }
+        ],
+        "rule_id": "220000202604091214131000061008",
+        "vola_evid": "为女性使用药品",
+        "mdtrt_id": "149402417",
+        "rule_name": "单次就诊性别用药禁忌_事前提醒",
+        "vola_amt_stas": "1",
+        "jr_id": "55d962b0d4004350b0c6927c9f9b3eca",
+        "patn_id": "149402417",
+        "sev_deg": "2",
+        "vola_amt": 31.92,
+        "vola_bhvr_type": "2",
+        "vola_cont": "[抗妇炎胶囊0.35g*48粒/抗妇炎胶囊0.35g*48粒]为女性使用药物，参保人当前信息显示性别为：男"
+      }
+    ]
+  },
+  "infcode": 0,
+  "warn_msg": null,
+  "cainfo": null,
+  "err_msg": "成功",
+  "refmsg_time": "20260409121756781",
+  "signtype": null,
+  "respond_time": "20260409121756894",
+  "inf_refmsgid": "220000202604091217560000606066"
+}

@@ -311,7 +311,7 @@ export async function verifyInpatientInsuranceCard(contractId: string): Promise<
       ElMessage.warning(
         (await isYbPluginOnline())
           ? outpatientChargeReadCredentialFailHint(medium)
-          : '本机 OpenHIS.Win 未启动，无法进行医保读卡校验',
+          : '本机 Zxplat.Win 未启动，无法进行医保读卡校验',
       );
       return;
     }

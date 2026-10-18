@@ -64,6 +64,8 @@ export interface NurseAdviceExecuteRow {
   performerDisplay?: string;
   /** 来源请求主键（取消执行 IF-NUR-03B/05） */
   requestId?: string;
+  /** 申请业务号（采血贴/LIS applyNo；缺省回落 requestId） */
+  busNo?: string;
   /** 来源表（wkf_service_request / med_medication_request） */
   requestTable?: string;
   /** 净已执行次数 performCount - cancelCount */
@@ -92,6 +94,8 @@ export interface NurseAdviceExecuteRow {
   serviceCategoryCodeText?: string;
   /** 合管检验设备主键（采血贴分组） */
   specimenTubeMergeDeviceId?: string;
+  /** 合管组序号（同设备多组时区分采血贴） */
+  specimenTubeMergeGroupNo?: number | string;
   /** 医嘱优先级 code（EM=急；采血贴印「急」） */
   priorityEnum?: string;
 }
@@ -129,12 +133,14 @@ export type NurseActionRecordActionCode =
   | 'CANCEL_EXECUTE'
   | 'DELETE_SKIN_TEST'
   | 'EXECUTE_AND_RECORD'
+  | 'PRINT_EXAM_APPLY'
   | 'PRINT_INFUSION_LABEL'
+  | 'PRINT_LAB_APPLY'
   | 'PRINT_NEBULIZATION_LABEL'
   | 'PRINT_PRESCRIPTION'
-  | 'PRINT_PROCEDURE_APPLY'
   | 'PRINT_SKIN_TEST_LABEL'
   | 'PRINT_SPECIMEN_BARCODE'
+  | 'PRINT_TREATMENT_APPLY'
   | 'PRINT_TREATMENT_SHEET'
   | 'REGISTER_SKIN_TEST';
 
@@ -149,7 +155,9 @@ export const NURSE_ACTION_RECORD_ACTION_LABEL: Record<NurseActionRecordActionCod
   PRINT_SPECIMEN_BARCODE: '打印采血码',
   PRINT_SKIN_TEST_LABEL: '打印皮试标签',
   PRINT_NEBULIZATION_LABEL: '打印雾化标签',
-  PRINT_PROCEDURE_APPLY: '打印处置申请单',
+  PRINT_EXAM_APPLY: '打印检查申请单',
+  PRINT_LAB_APPLY: '打印检验申请单',
+  PRINT_TREATMENT_APPLY: '打印治疗申请单',
 };
 
 /** 与 IF-NUR-03 服务端记录重复、需过滤的本地汇总动作 */

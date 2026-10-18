@@ -1,0 +1,6 @@
+{
+  "moduleId": "pacs",
+  "enabledProperty": "zxplat.modules.pacs.enabled",
+  "locations": "classpath:db/migration/pacs",
+  "historyTable": "flyway_schema_history_pacs"
+}

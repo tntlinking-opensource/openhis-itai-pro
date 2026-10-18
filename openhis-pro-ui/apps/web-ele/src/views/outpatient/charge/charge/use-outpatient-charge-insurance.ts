@@ -36,9 +36,75 @@ export interface OutpatientChargeInsuranceContext {
   insutype?: string;
   /** 本次读卡介质 */
   medium: OutpatientChargeInsuranceMedium;
+  /** 1101 参保人身份证号（BR-OPC-035，供预结算回传） */
+  payerCertno?: string;
+  /** 1101 参保人姓名（BR-OPC-035，供预结算回传） */
+  payerPsnName?: string;
   psnNo: string;
   ybCardInfo: string;
   ybMediumType: string;
+}
+
+/**
+ * 就诊患者身份（用于读卡后与 1101 结果比对，BR-OPC-035）。
+ */
+export interface OutpatientChargePatientIdentity {
+  /** 患者身份证号；可空（临时建档） */
+  idCard?: null | string;
+  /** 患者姓名 */
+  patientName?: null | string;
+}
+
+/**
+ * 断言 1101 读卡人与当前就诊患者一致；不一致时提示并返回 false。
+ *
+ * @param person 1101 人员信息
+ * @param patient 当前队列就诊患者
+ * @returns 一致 true；不一致 false（已 ElMessage.error）
+ */
+function assertPayerMatchesChargePatient(
+  person: { certno?: string; psnName?: string },
+  patient: OutpatientChargePatientIdentity,
+): boolean {
+  const patientIdCard = String(patient.idCard ?? '')
+    .trim()
+    .toUpperCase();
+  const patientName = String(patient.patientName ?? '').trim();
+  const payerCertno = String(person.certno ?? '')
+    .trim()
+    .toUpperCase();
+  const payerName = String(person.psnName ?? '').trim();
+  // Gate：就诊无可比对身份时拒绝，避免静默放行
+  if (!patientIdCard && !patientName) {
+    ElMessage.error('当前就诊缺少患者身份证号与姓名，无法核验医保读卡人');
+    return false;
+  }
+  // Gate：有身份证时以证件为准（防串账）
+  if (patientIdCard) {
+    if (!payerCertno) {
+      ElMessage.error('读卡未返回身份证号，请重新读取当前患者医保凭证后再收费');
+      return false;
+    }
+    if (patientIdCard !== payerCertno) {
+      const patientLabel = patientName || '当前患者';
+      const payerLabel = payerName || '读卡人员';
+      ElMessage.error(
+        `医保读卡人「${payerLabel}」与就诊患者「${patientLabel}」不一致，请重新读取当前患者的医保凭证后再收费`,
+      );
+      return false;
+    }
+    return true;
+  }
+  // Gate：无证号档案回落姓名
+  if (!payerName || patientName !== payerName) {
+    const patientLabel = patientName || '当前患者';
+    const payerLabel = payerName || '读卡人员';
+    ElMessage.error(
+      `医保读卡人「${payerLabel}」与就诊患者「${patientLabel}」不一致，请重新读取当前患者的医保凭证后再收费`,
+    );
+    return false;
+  }
+  return true;
 }
 
 function resolvePersonBalc(person: {
@@ -63,6 +129,222 @@ export function hasMultipleChargeAccounts(rows: PendingChargeItemRowDto[]): bool
     accountIds.add(String(row.accountId ?? '__default__'));
   }
   return accountIds.size > 1;
+}
+
+/**
+ * 收费行绑定诊断串的首位（主诊断）。雪花主键保持字符串，避免精度丢失。
+ */
+export function primaryEncounterDiagnosisId(row: PendingChargeItemRowDto): string {
+  const raw = String(row.encounterDiagnosisIds ?? '');
+  const first = raw.split(',')[0] ?? '';
+  return first.trim();
+}
+
+/** 医保/工伤记账行。自费、公费不参与病种分次。 */
+function isInsuranceSettleRow(row: PendingChargeItemRowDto): boolean {
+  const contractCat = String(row.contractCategoryCode ?? '').trim();
+  const feeNature = String(row.feeNatureDisplay ?? '').trim();
+  const isSelfOrPublic =
+    isSelfPayContractCategory(contractCat) ||
+    isPublicChargeContractCategory(contractCat) ||
+    feeNature.includes('自费');
+  if (isSelfOrPublic) {
+    return false;
+  }
+  return (
+    isInsuranceContractCategory(contractCat) ||
+    isWorkInjuryContractCategory(contractCat) ||
+    feeNature.includes('医保') ||
+    feeNature.includes('工伤')
+  );
+}
+
+function insuranceSettleAccountId(row: PendingChargeItemRowDto): string {
+  return String(row.accountId ?? '').trim() || '0';
+}
+
+/**
+ * 须按病种分次结算的医疗类别：门诊慢特病、门诊慢病、门诊特病、特药。
+ * 普通门诊等同类别一次结算，不按诊断拆组。
+ */
+const DISEASE_SETTLE_MED_TYPES = new Set(['14', '140104', '140201', '15']);
+
+/**
+ * 该就诊类型是否按病种分次。
+ *
+ * @param medType 医疗类别码
+ */
+function requiresPerDiseaseSettle(medType: string): boolean {
+  return DISEASE_SETTLE_MED_TYPES.has(medType);
+}
+
+/**
+ * 已绑诊断的医保分组键：账户 + 就诊类型；慢特病再加诊断。
+ * 普通门诊忽略诊断，同账户同类别合成一组。
+ * 未绑诊断的医保行返回空串，不单独成组。
+ * 自费/公费行返回空串，不计入医保组数。
+ */
+export function resolveInsuranceSettleGroupKey(row: PendingChargeItemRowDto): string {
+  if (!isInsuranceSettleRow(row)) {
+    return '';
+  }
+  const diseKey = primaryEncounterDiagnosisId(row);
+  if (!diseKey) {
+    return '';
+  }
+  const accountId = insuranceSettleAccountId(row);
+  const medType = String(row.medTypeCode ?? '').trim() || '11';
+  if (!requiresPerDiseaseSettle(medType)) {
+    return `${accountId}|${medType}|`;
+  }
+  return `${accountId}|${medType}|${diseKey}`;
+}
+
+/** 整账户都没有诊断时，无诊断医保行合成普通门诊一组。 */
+function blankInsuranceGroupKey(accountId: string): string {
+  return `${accountId}|11|`;
+}
+
+/**
+ * 分组键的账户段。键格式为账户|就诊类型|诊断。
+ *
+ * @param key 医保结算分组键
+ */
+function insuranceSplitKeyAccount(key: string): string {
+  const cut = key.indexOf('|');
+  if (cut < 0) {
+    return key;
+  }
+  return key.slice(0, cut);
+}
+
+/**
+ * 医保结算分组键列表（账户|medType|诊断）：供组数统计。
+ * 普通门诊有诊断的行按就诊类型并组；慢特病按诊断拆。
+ * 同账户无诊断行不另开一组。
+ */
+function listInsuranceSplitKeys(rows: PendingChargeItemRowDto[]): string[] {
+  const diagnosedKeys: string[] = [];
+  const diagnosedSeen = new Set<string>();
+  const diagnosedAccounts = new Set<string>();
+  const blankOnlyAccounts: string[] = [];
+  const blankOnlySeen = new Set<string>();
+  for (const row of rows) {
+    if (!isInsuranceSettleRow(row)) {
+      continue;
+    }
+    const accountId = insuranceSettleAccountId(row);
+    const diagnosedKey = resolveInsuranceSettleGroupKey(row);
+    if (diagnosedKey) {
+      diagnosedAccounts.add(accountId);
+      if (!diagnosedSeen.has(diagnosedKey)) {
+        diagnosedSeen.add(diagnosedKey);
+        diagnosedKeys.push(diagnosedKey);
+      }
+      continue;
+    }
+    if (!blankOnlySeen.has(accountId)) {
+      blankOnlySeen.add(accountId);
+      blankOnlyAccounts.push(accountId);
+    }
+  }
+  const keys = [...diagnosedKeys];
+  for (const accountId of blankOnlyAccounts) {
+    if (diagnosedAccounts.has(accountId)) {
+      continue;
+    }
+    keys.push(blankInsuranceGroupKey(accountId));
+  }
+  return keys;
+}
+
+/**
+ * 按出现顺序列出医保行上的病种名。同一诊断只出现一次。
+ * 未绑诊断的行不记成「未填病种」。
+ */
+export function collectInsuranceDiseaseLabels(rows: PendingChargeItemRowDto[]): string[] {
+  const seen = new Set<string>();
+  const labels: string[] = [];
+  for (const row of rows) {
+    const key = resolveInsuranceSettleGroupKey(row);
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    const name = String(row.diseName ?? '').trim();
+    labels.push(name || '未填病种');
+  }
+  return labels;
+}
+
+/**
+ * 多个慢特病不能一次勾选时的提示。普通门诊多诊断不提示。只有一个病种时返回空串。
+ *
+ * @param labels 病种名列表
+ */
+export function buildPerDiseaseSettleHint(labels: string[]): string {
+  if (labels.length <= 1) {
+    return '';
+  }
+  const parts: string[] = [];
+  for (const label of labels) {
+    parts.push(`「${label}」单独结一笔`);
+  }
+  return `多个慢特病不能一次结算：${parts.join('，')}。请只勾选其中一个病种。`;
+}
+
+/**
+ * 勾选跨了多个病种时，只保留一个病种的行，自费行仍保留。
+ * 同账户未绑诊断的医保行跟着留下的病种，不单独剔出。
+ * preferredKey 是改勾选前已选中的病种；全选时传空，则保留列表中的第一个病种。
+ *
+ * @param rows         展开后的勾选行
+ * @param preferredKey 优先保留的分组键
+ */
+export function keepSingleInsuranceDiseaseRows<T extends PendingChargeItemRowDto>(
+  rows: T[],
+  preferredKey: string,
+): T[] {
+  const keys = listInsuranceSplitKeys(rows);
+  if (keys.length <= 1) {
+    return rows;
+  }
+  let keepKey = keys[0] ?? '';
+  if (preferredKey && keys.includes(preferredKey)) {
+    keepKey = preferredKey;
+  }
+  const keepAccount = insuranceSplitKeyAccount(keepKey);
+  return rows.filter((row) => {
+    if (!isInsuranceSettleRow(row)) {
+      return true;
+    }
+    const diagnosedKey = resolveInsuranceSettleGroupKey(row);
+    if (diagnosedKey) {
+      return diagnosedKey === keepKey;
+    }
+    return insuranceSettleAccountId(row) === keepAccount;
+  });
+}
+
+/**
+ * 当前勾选里若只有一个医保结算组，返回其分组键；否则返回空串。
+ *
+ * @param rows 勾选明细
+ */
+export function singleSelectedInsuranceGroupKey(rows: PendingChargeItemRowDto[]): string {
+  const keys = listInsuranceSplitKeys(rows);
+  if (keys.length === 1) {
+    return keys[0] ?? '';
+  }
+  return '';
+}
+
+/**
+ * 勾选明细对应的医保结算组数（>1 须分次结算）。
+ * 同账户未绑诊断的行不另计一组。
+ */
+export function countInsuranceSettleGroups(rows: PendingChargeItemRowDto[]): number {
+  return listInsuranceSplitKeys(rows).length;
 }
 
 /**
@@ -255,7 +537,7 @@ async function resolveSocialCardCredential(): Promise<{
   }
   if (!(card.busiCardInfo ?? '').trim()) {
     ElMessage.warning(
-      '读卡未返回卡串（BusiCardInfo），已按回落规则组凭证；若 2201 失败请更新并重启 OpenHIS.Win',
+      '读卡未返回卡串（BusiCardInfo），已按回落规则组凭证；若 2201 失败请更新并重启 Zxplat.Win',
     );
   }
   return {
@@ -292,6 +574,8 @@ export async function resolveOutpatientChargeInsuranceContext(
   options: {
     medium: OutpatientChargeInsuranceMedium;
     onPhase?: (phase: OutpatientChargeInsurancePhase) => void;
+    /** 当前收费队列就诊患者（BR-OPC-035 读卡核验） */
+    patient?: OutpatientChargePatientIdentity;
   },
 ): Promise<null | OutpatientChargeInsuranceContext> {
   if (!selectionIncludesInsuranceItems(rows)) {
@@ -302,7 +586,7 @@ export async function resolveOutpatientChargeInsuranceContext(
     ElMessage.warning('所选费用项缺少医保合同，请先转医保或检查账户绑定');
     return null;
   }
-  const { medium, onPhase } = options;
+  const { medium, onPhase, patient } = options;
   onPhase?.('plugin');
   if (!(await isYbPluginOnline())) {
     ElMessage.warning('医保读卡插件未启动，请先启动读卡服务后再收费');
@@ -351,12 +635,21 @@ export async function resolveOutpatientChargeInsuranceContext(
       ElMessage.warning('读卡未返回人员编号，请重试或检查费用性质');
       return null;
     }
+    // Gate：BR-OPC-035 — 读卡人须等于当前就诊患者，扫错卡当场拦截
+    if (patient && !assertPayerMatchesChargePatient(person, patient)) {
+      return null;
+    }
+    const payerCertno = String(person.certno ?? '').trim() || undefined;
+    const payerPsnName =
+      String(person.psnName ?? '').trim() || (psnName ? psnName.trim() : undefined);
     return {
       balc: resolvePersonBalc(person),
       contractId,
       insuplcAdmdvs: person.insuplcAdmdvs || issuingAdmdvs,
       insutype: person.insutype,
       medium,
+      payerCertno,
+      payerPsnName,
       psnNo,
       ybCardInfo: credential.mdtrtCertNo,
       ybMediumType: credential.mdtrtCertType,

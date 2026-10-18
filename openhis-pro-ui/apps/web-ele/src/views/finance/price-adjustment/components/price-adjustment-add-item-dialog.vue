@@ -8,7 +8,7 @@ import type { AdjustableItemRowDto } from '#/api/finance/price-adjustment';
 
 import { computed, ref, watch } from 'vue';
 
-import { Search } from '@vben/icons';
+import { Search } from '@zxplat/icons';
 
 import { searchAdjustableItemsApi } from '#/api/finance/price-adjustment';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';

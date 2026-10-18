@@ -8,7 +8,7 @@ import type {
 
 import { computed, onMounted, reactive, ref, unref, useTemplateRef, watch } from 'vue';
 
-import { $t } from '@vben/locales';
+import { $t } from '@zxplat/locales';
 
 import SliderCaptcha from '../slider-captcha/index.vue';
 

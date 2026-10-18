@@ -1,11 +1,11 @@
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 /** 二次接诊跳转用的开药页签（开立医嘱=西药；中医处方=中药） */
 export type DoctorOrderTabPreference = '中医处方' | '开立医嘱';
 
-const STORAGE_KEY_PREFIX = 'openhis:doctor-station:order-tab-pref:';
+const STORAGE_KEY_PREFIX = 'zxplat:doctor-station:order-tab-pref:';
 const DEFAULT_PREF: DoctorOrderTabPreference = '开立医嘱';
 const VALID_PREFS = new Set<string>(['开立医嘱', '中医处方']);
 

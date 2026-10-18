@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import type { NurseStationModulePatient } from '../../components/nurse-station-module-patient.types';
 import type { NurseStationStickyPatientInfo } from '../../components/build-nurse-station-sticky-patient-info';
+import type {
+  InfusionTherapyFilter,
+  OrderEntrustFilter,
+  TempOrderSurgeryAnesthFilter,
+} from '../../print-center/doc-registry';
 import type { PrintPendingRow } from '../../print-center/print-center.types';
 
 import { computed, nextTick, ref, watch } from 'vue';
@@ -9,7 +14,15 @@ import dayjs from 'dayjs';
 import { ElMessage } from 'element-plus';
 
 import { buildNurseStationStickyPatientInfoFromModulePatient } from '../../components/build-nurse-station-sticky-patient-info';
+import {
+  filterInfusionRowsByTherapy,
+  filterOrderRowsByEntrust,
+  filterTempOrderRowsBySurgeryAnesth,
+  needsOrderEntrustFilter,
+  needsTempOrderSurgeryAnesthFilter,
+} from '../../print-center/doc-registry';
 import { loadPrintPendingRows } from '../../print-center/load-print-pending';
+import { PRINT_CENTER_HIDDEN_DOC_TYPES } from '#/views/inpatient/nurse-station/print-center/print-center-doc.config';
 import { printInpatientPrintCenter } from '../../print-center/print-center-print';
 
 /** 执行页可打单据（与工具栏原下拉一致） */
@@ -104,15 +117,21 @@ const DOC_TYPE_OPTIONS: Array<{
     value: 'long_order',
     label: '长期医嘱',
     singlePatient: true,
-    description: '打印已校对长期医嘱；按开嘱日区间筛选',
+    description: '打印已校对长期医嘱；按开嘱日区间筛选；可筛嘱托',
   },
   {
     value: 'temp_order',
     label: '临时医嘱',
     singlePatient: true,
-    description: '打印已校对临时医嘱；按开嘱日区间筛选',
+    description: '打印已校对临时医嘱；可筛手术 / 麻醉 / 嘱托（互斥）',
   },
 ];
+
+const hiddenPrintDocTypeSet = new Set<string>(PRINT_CENTER_HIDDEN_DOC_TYPES);
+
+const visibleDocTypeOptions = computed(() =>
+  DOC_TYPE_OPTIONS.filter((opt) => !hiddenPrintDocTypeSet.has(opt.value)),
+);
 
 const activeDocType = ref<OrderExecutePrintDocType>('infusion_label');
 /** 长/临医嘱查询区间（默认入院日 ~ 今天；按开嘱日） */
@@ -124,6 +143,12 @@ const orderExecDateRange = ref<[string, string]>([
 const dayQueryDate = ref(dayjs().format('YYYY-MM-DD'));
 /** 患者用药单筛选：all 全部 / infusion 输液药 / non_infusion 非输液药 */
 const oralMedInfusionFilter = ref<'all' | 'infusion' | 'non_infusion'>('all');
+/** 临时医嘱筛选：all 全部 / surgery 手术 / anesthesia 麻醉 / entrust 嘱托（互斥） */
+const tempOrderSurgeryAnesthFilter = ref<TempOrderSurgeryAnesthFilter>('all');
+/** 长期/临时医嘱筛选：all 全部 / entrust 嘱托 */
+const orderEntrustFilter = ref<OrderEntrustFilter>('all');
+/** 输液巡视卡长临筛选：all 全部 / long 长期 / temp 临时 */
+const infusionTherapyFilter = ref<InfusionTherapyFilter>('all');
 const pendingRows = ref<PrintPendingRow[]>([]);
 const selectedRowIds = ref<string[]>([]);
 const loadingPending = ref(false);
@@ -189,21 +214,40 @@ const isMedSheetDoc = computed(
 /** 是否患者用药单 */
 const isOralMedSheetDoc = computed(() => activeDocType.value === 'oral_med_sheet');
 
-/** 列表展示行（患者用药单按全部/输液药/非输液药筛选） */
+/** 当前单据是否展示临时医嘱的手术/麻醉筛选 */
+const showTempOrderSurgeryAnesthFilter = computed(() =>
+  needsTempOrderSurgeryAnesthFilter(activeDocType.value),
+);
+
+/** 当前单据是否展示长/临嘱托筛选 */
+const showOrderEntrustFilter = computed(() => needsOrderEntrustFilter(activeDocType.value));
+
+/** 输液巡视卡：全部 / 长期 / 临时（输液贴沿用打印中心，本抽屉不重复展开） */
+const showPatrolTherapyFilter = computed(() => activeDocType.value === 'patrol_card');
+
+/** 列表展示行（患者用药单按输液筛选；临时医嘱按手术/麻醉筛选；长/临按嘱托筛选） */
 const displayRows = computed(() => {
-  if (!isOralMedSheetDoc.value) {
-    return pendingRows.value;
+  let rows = pendingRows.value;
+  if (isOralMedSheetDoc.value) {
+    const filter = oralMedInfusionFilter.value;
+    // 输液药
+    if (filter === 'infusion') {
+      rows = pendingRows.value.filter((row) => row.infusionFlag === true);
+    } else if (filter === 'non_infusion') {
+      // 非输液药（输液判定取反）
+      rows = pendingRows.value.filter((row) => row.infusionFlag !== true);
+    }
   }
-  const filter = oralMedInfusionFilter.value;
-  // 输液药
-  if (filter === 'infusion') {
-    return pendingRows.value.filter((row) => row.infusionFlag === true);
+  if (showTempOrderSurgeryAnesthFilter.value) {
+    rows = filterTempOrderRowsBySurgeryAnesth(rows, tempOrderSurgeryAnesthFilter.value);
   }
-  // 非输液药（输液判定取反）
-  if (filter === 'non_infusion') {
-    return pendingRows.value.filter((row) => row.infusionFlag !== true);
+  if (showOrderEntrustFilter.value) {
+    rows = filterOrderRowsByEntrust(rows, orderEntrustFilter.value);
   }
-  return pendingRows.value;
+  if (showPatrolTherapyFilter.value) {
+    rows = filterInfusionRowsByTherapy(rows, infusionTherapyFilter.value);
+  }
+  return rows;
 });
 
 /** 单日查询日：默认当天，可切换 */
@@ -340,6 +384,27 @@ const emptyPendingDescription = computed(() => {
       return `暂无「患者用药单」可打印数据（无已执行非输液药品）`;
     }
   }
+  if (showTempOrderSurgeryAnesthFilter.value && tempOrderSurgeryAnesthFilter.value === 'surgery') {
+    return '暂无「临时医嘱」可打印的手术';
+  }
+  if (
+    showTempOrderSurgeryAnesthFilter.value &&
+    tempOrderSurgeryAnesthFilter.value === 'anesthesia'
+  ) {
+    return '暂无「临时医嘱」可打印的麻醉';
+  }
+  if (showTempOrderSurgeryAnesthFilter.value && tempOrderSurgeryAnesthFilter.value === 'entrust') {
+    return '暂无「临时医嘱」可打印的嘱托医嘱';
+  }
+  if (showOrderEntrustFilter.value && orderEntrustFilter.value === 'entrust') {
+    return `暂无「${resolveDocLabel(activeDocType.value)}」可打印的嘱托医嘱`;
+  }
+  if (showPatrolTherapyFilter.value && infusionTherapyFilter.value === 'long') {
+    return '暂无「输液巡视卡」可打印的长期输液';
+  }
+  if (showPatrolTherapyFilter.value && infusionTherapyFilter.value === 'temp') {
+    return '暂无「输液巡视卡」可打印的临时输液';
+  }
   return `暂无「${resolveDocLabel(activeDocType.value)}」可打印数据`;
 });
 
@@ -394,6 +459,7 @@ async function refreshPendingRows() {
       dateFrom: effectiveDateFrom.value,
       dateTo: effectiveDateTo.value,
       executionDeadline: effectiveDeadline.value,
+      tempOrderSurgeryAnesthFilter: tempOrderSurgeryAnesthFilter.value,
     });
     pendingRows.value = rows;
     await nextTick();
@@ -416,6 +482,17 @@ function handleDocTypeChange() {
   // 切离患者用药单时复位筛选
   if (!isOralMedSheetDoc.value) {
     oralMedInfusionFilter.value = 'all';
+  }
+  // 切离临时医嘱时复位手术/麻醉筛选
+  if (!showTempOrderSurgeryAnesthFilter.value) {
+    tempOrderSurgeryAnesthFilter.value = 'all';
+  }
+  // 切离长/临医嘱时复位嘱托筛选
+  if (!showOrderEntrustFilter.value) {
+    orderEntrustFilter.value = 'all';
+  }
+  if (!showPatrolTherapyFilter.value) {
+    infusionTherapyFilter.value = 'all';
   }
   void refreshPendingRows();
 }
@@ -472,6 +549,7 @@ async function handleConfirmPrint() {
       dateFrom: effectiveDateFrom.value,
       dateTo: effectiveDateTo.value,
       executionDeadline: effectiveDeadline.value,
+      tempOrderSurgeryAnesthFilter: tempOrderSurgeryAnesthFilter.value,
     });
     if (result.ok) {
       ElMessage.success(`已发送打印：${label}，共 ${result.count} 份`);
@@ -493,6 +571,9 @@ watch(visible, (open) => {
     resetOrderExecDateRangeFromAdmission();
     resetDayQueryDateToToday();
     oralMedInfusionFilter.value = 'all';
+    tempOrderSurgeryAnesthFilter.value = 'all';
+    orderEntrustFilter.value = 'all';
+    infusionTherapyFilter.value = 'all';
     void refreshPendingRows();
     return;
   }
@@ -506,6 +587,30 @@ watch(oralMedInfusionFilter, () => {
     return;
   }
   selectAllPendingRows();
+});
+
+/** 长/临嘱托筛选变化时仅重勾选可见行 */
+watch(orderEntrustFilter, () => {
+  if (!showOrderEntrustFilter.value) {
+    return;
+  }
+  selectAllPendingRows();
+});
+
+/** 巡视卡长临筛选变化时仅重勾选可见行 */
+watch(infusionTherapyFilter, () => {
+  if (!showPatrolTherapyFilter.value) {
+    return;
+  }
+  selectAllPendingRows();
+});
+
+/** 临时医嘱手术/麻醉筛选变化：麻醉与正常取数口径不同，需重新拉列表 */
+watch(tempOrderSurgeryAnesthFilter, () => {
+  if (!showTempOrderSurgeryAnesthFilter.value) {
+    return;
+  }
+  void refreshPendingRows();
 });
 </script>
 
@@ -573,7 +678,7 @@ watch(oralMedInfusionFilter, () => {
           size="small"
           @change="handleDocTypeChange"
         >
-          <ElRadioButton v-for="opt in DOC_TYPE_OPTIONS" :key="opt.value" :label="opt.value">
+          <ElRadioButton v-for="opt in visibleDocTypeOptions" :key="opt.value" :label="opt.value">
             {{ opt.label }}
           </ElRadioButton>
         </ElRadioGroup>
@@ -613,6 +718,30 @@ watch(oralMedInfusionFilter, () => {
             <ElRadio value="all">全部</ElRadio>
             <ElRadio value="infusion">输液药</ElRadio>
             <ElRadio value="non_infusion">非输液药</ElRadio>
+          </ElRadioGroup>
+        </div>
+
+        <div v-if="showTempOrderSurgeryAnesthFilter" class="print-drawer__range">
+          <ElRadioGroup v-model="tempOrderSurgeryAnesthFilter" size="small">
+            <ElRadio value="all">全部</ElRadio>
+            <ElRadio value="surgery">手术</ElRadio>
+            <ElRadio value="anesthesia">麻醉</ElRadio>
+            <ElRadio value="entrust">嘱托</ElRadio>
+          </ElRadioGroup>
+        </div>
+
+        <div v-if="showOrderEntrustFilter" class="print-drawer__range">
+          <ElRadioGroup v-model="orderEntrustFilter" size="small">
+            <ElRadio value="all">全部</ElRadio>
+            <ElRadio value="entrust">嘱托</ElRadio>
+          </ElRadioGroup>
+        </div>
+
+        <div v-if="showPatrolTherapyFilter" class="print-drawer__range">
+          <ElRadioGroup v-model="infusionTherapyFilter" size="small">
+            <ElRadio value="all">全部</ElRadio>
+            <ElRadio value="long">长期</ElRadio>
+            <ElRadio value="temp">临时</ElRadio>
           </ElRadioGroup>
         </div>
       </section>
@@ -691,6 +820,14 @@ watch(oralMedInfusionFilter, () => {
               align="center"
               header-align="center"
               show-overflow-tooltip
+            />
+            <ElTableColumn
+              v-if="showPatrolTherapyFilter"
+              prop="therapyTypeText"
+              label="长临"
+              width="72"
+              align="center"
+              header-align="center"
             />
             <ElTableColumn
               v-if="isMedSheetDoc"

@@ -218,6 +218,8 @@ export interface NurseStationPricedOrderRowDto {
   dispenseStatusDisplay?: string;
   pricingModeCode?: string;
   pricingModeDisplay?: string;
+  /** 划价/补费操作人姓名 */
+  requesterName?: string;
   parentRequestId?: string;
   /** 与 parentRequestId 同义，关联父医嘱 requestId */
   basedOnId?: string;
@@ -267,11 +269,14 @@ export interface ChangeNurseStationPricingBusinessTimeResponse {
   message?: string;
 }
 
-/** 自动计费配置列表查询 */
+/** 自动计费配置列表查询（billDate 空=全住院期护理行） */
 export interface ListAutoRollConfigsRequest {
   encounterId: string;
   patientId: string;
+  /** 业务日 YYYY-MM-DD；空表示全住院期 */
   billDate?: string;
+  /** 是否装载计费人护士下拉；刷新可传 false，前端缓存首屏结果 */
+  includeNurseOptions?: boolean;
 }
 
 /** 自动计费配置行 */
@@ -316,16 +321,25 @@ export interface NurseStationAutoRollNursingReadonlyDto {
 
 export interface ListAutoRollConfigsResponse {
   configs?: NurseStationAutoRollConfigRowDto[];
+  /** 兼容字段：等同 nursingLevels 首行 */
   nursingLevelReadonly?: NurseStationAutoRollNursingReadonlyDto | null;
+  /** 护理级别只读列表（可展开取消已滚费用） */
+  nursingLevels?: NurseStationAutoRollNursingReadonlyDto[];
   /** 计费人护士下拉 */
   nurseOptions?: { value?: string; label?: string; sort?: string | number }[];
 }
 
-/** 自动计费配置已滚费用记录查询（IF-IP-ARG-09） */
+/**
+ * 自动计费已滚费用记录查询（IF-IP-ARG-09）。
+ * ruleId（床位配置）与 serviceRequestId（护理医嘱）二选一。
+ */
 export interface ListAutoRollPostedChargesRequest {
   encounterId: string;
   patientId: string;
-  ruleId: string;
+  /** 床位自动计费配置主键（与 serviceRequestId 二选一） */
+  ruleId?: string;
+  /** 护理级别医嘱主键（与 ruleId 二选一） */
+  serviceRequestId?: string;
   dateFrom?: string;
   dateTo?: string;
 }

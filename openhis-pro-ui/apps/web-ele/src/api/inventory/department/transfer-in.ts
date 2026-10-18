@@ -1,5 +1,5 @@
 /**
- * 科室调入单（只读壳单台账）— 对接 Whale {@code POST /api/app/inventoryDepartmentTransferIn/<method>}
+ * 科室调入单（只读壳单台账）— 对接 ZXPlat {@code POST /api/app/inventoryDepartmentTransferIn/<method>}
  */
 import type { ApiResponse } from '#/types/api-response';
 

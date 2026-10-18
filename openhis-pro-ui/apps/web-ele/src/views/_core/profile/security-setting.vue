@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-import { ProfileSecuritySetting } from '@vben/common-ui';
-import { useUserStore } from '@vben/stores';
+import { ProfileSecuritySetting } from '@zxplat/common-ui';
+import { useUserStore } from '@zxplat/stores';
 
 defineOptions({ name: 'ProfileSecuritySettingPage' });
 

@@ -1,5 +1,5 @@
 {
-  "name": "@vben/utils",
+  "name": "@zxplat/utils",
   "version": "5.5.9",
   "homepage": "https://github.com/vbenjs/vue-vben-admin",
   "bugs": "https://github.com/vbenjs/vue-vben-admin/issues",
@@ -24,8 +24,8 @@
     }
   },
   "dependencies": {
-    "@vben-core/shared": "workspace:*",
-    "@vben-core/typings": "workspace:*",
+    "@zxplat-core/shared": "workspace:*",
+    "@zxplat-core/typings": "workspace:*",
     "vue-router": "catalog:"
   }
 }

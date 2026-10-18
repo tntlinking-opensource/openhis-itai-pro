@@ -29,13 +29,30 @@ export async function httpLoadPharmacyDispensePageInit(
   );
 }
 
+/** 与后端 {@code SilentPollHttpHeaders#NAME} 对齐：带此头时跳过访问/入参日志 */
+const SILENT_POLL_HEADER = 'X-Zxplat-Silent-Poll';
+
+export interface PagePendingDispenseEncounterQueueHttpOptions {
+  /** 静默轮询：不写后端访问日志、失败不 toast；前端勿配合 loading */
+  silentPoll?: boolean;
+}
+
 /** 分页加载待发/已发就诊队列 */
 export async function httpPagePendingDispenseEncounterQueue(
   body: PagePendingDispenseEncounterQueueRequest,
+  options?: PagePendingDispenseEncounterQueueHttpOptions,
 ): Promise<PagePendingDispenseEncounterQueueResponse> {
+  const headers =
+    options?.silentPoll === true
+      ? {
+          [SILENT_POLL_HEADER]: '1',
+          'X-Zxplat-Soft-Fail': '1',
+        }
+      : undefined;
   return publicRequestClient.post<PagePendingDispenseEncounterQueueResponse>(
     `${BASE}/pagePendingDispenseEncounterQueue`,
     body,
+    { headers },
   );
 }
 

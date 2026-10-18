@@ -8,8 +8,10 @@ import {
   resolvePrescriptionPaperTypeLine1,
   resolvePrescriptionPaperTypeLine2,
 } from '#/utils/print/resolve-prescription-paper-type';
+import { TCM_RX_PRINT_HERB_WEIGHT_PER_DOSE } from '#/utils/print/outpatient-tcm-rx-print.config';
 import {
   buildTcmHerbGridRowsFromSlipRows,
+  buildTcmHerbGridRowsFromSlipRowsForRxPrint,
   buildTcmPrescriptionUsageTextFromSlipHead,
   type TcmHerbGridDisplayRow,
 } from '#/utils/tcm-prescription-display';
@@ -84,6 +86,9 @@ function resolveConditionSummaryText(
 }
 
 function buildTcmHerbRows(rows: EncounterMedicationDispenseSlipRowDto[]): TcmHerbGridDisplayRow[] {
+  if (TCM_RX_PRINT_HERB_WEIGHT_PER_DOSE === true) {
+    return buildTcmHerbGridRowsFromSlipRowsForRxPrint(rows);
+  }
   return buildTcmHerbGridRowsFromSlipRows(rows);
 }
 

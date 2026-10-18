@@ -1,6 +1,6 @@
 /**
  * 工作台菜单图标（参照设计稿 lucide 线型图标）。
- * key 为 whale_menus.code / 路由 name。
+ * key 为 zxplat_menus.code / 路由 name。
  */
 export const WORKBENCH_MENU_ICONS: Record<string, string> = {
   ChargeIpDayClose: 'lucide:calendar-check',

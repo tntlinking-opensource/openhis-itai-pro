@@ -13,7 +13,7 @@ import type { ReportPrintColumnDef } from '#/utils/print/print-report-list';
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import { Download, Printer, Refresh, Search, Setting } from '@element-plus/icons-vue';
 import {

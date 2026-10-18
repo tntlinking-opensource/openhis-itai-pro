@@ -167,6 +167,8 @@ export interface PreSettleInpatientChargesRequest {
   settleMode?: string;
   ybCardInfo?: string;
   ybMediumType?: string;
+  /** 医护站无卡试算：不读卡，后端复用入院参保信息 */
+  cardlessTrial?: boolean;
 }
 
 /** 住院费用明细单批上传请求（2301 进度条） */
@@ -185,6 +187,8 @@ export interface UploadInpatientFeeDetailsBatchRequest {
   settleMode?: string;
   ybCardInfo?: string;
   ybMediumType?: string;
+  /** 医护站无卡试算：不读卡 */
+  cardlessTrial?: boolean;
 }
 
 /** 住院费用明细单批上传响应 */
@@ -360,6 +364,22 @@ export interface SettledPaymentBriefDto {
   ybPsnCashPay?: null | number | string;
   /** 结算模式：DISCHARGE_FULL / MID_SETTLE */
   settleMode?: string;
+  ybPsnNo?: null | string;
+  ybPsnName?: null | string;
+  ybInsutype?: null | string;
+  ybMedType?: null | string;
+  ybPsnType?: null | string;
+  ybClrOptins?: null | string;
+  ybSetlTime?: null | string;
+  ybPoolPropSelfpay?: null | number | string;
+  ybHifesPay?: null | number | string;
+  ybHifmiPay?: null | number | string;
+  ybHifobPay?: null | number | string;
+  ybMafPay?: null | number | string;
+  ybHifdmPay?: null | number | string;
+  ybPsnPartAmt?: null | number | string;
+  ybAcctMulaidPay?: null | number | string;
+  ybBalc?: null | number | string;
 }
 
 /** 已结算单查阅请求 */
@@ -383,6 +403,17 @@ export interface LoadSettledInpatientPaymentViewResponse {
   netSettleTotal?: null | number | string;
   receivableTotal?: null | number | string;
   settleTime?: string;
+  /** 医保结算单票面基础信息 */
+  idCardNo?: string;
+  nationalityCode?: string;
+  employerName?: string;
+  admissionDiagnosisText?: string;
+  dischargeDiagnosisText?: string;
+  stayDaysText?: string;
+  doctorCode?: string;
+  admissionDate?: string;
+  dischargeDate?: string;
+  visitCountText?: string;
 }
 
 /** 住院反结请求（IF-IP-RVS-01） */

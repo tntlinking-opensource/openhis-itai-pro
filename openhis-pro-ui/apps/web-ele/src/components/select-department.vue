@@ -149,7 +149,7 @@ async function fetchOrganizations() {
 
       if (resolvedOrgId) {
         selectedOrganizationId.value = resolvedOrgId;
-        // 会话科室由 requireLoginScopeReady / switchOrganizationUnitSession 维护，此处仅同步展示
+        // 会话科室由 JWT 登录实例 + switchOrganizationUnitSession 维护，此处只同步顶栏展示
       } else {
         selectedOrganizationId.value = '';
         authStore.setSelectedOrganization('');
@@ -191,12 +191,15 @@ async function handleChange(value: string) {
       ElMessage.success(`已切换到${orgName}`);
     } catch (error: any) {
       console.error('Failed to switch department:', error);
-      selectedOrganizationId.value = oldValue;
+      selectedOrganizationId.value = oldValue || '';
+      // 与会话回滚一致，禁止只改顶栏 ref、localStorage 仍停在新科
+      authStore.setSelectedOrganization(oldValue || '');
       popoverVisible.value = false;
+      ElMessage.error(error?.message || '切换科室失败，请重试');
     }
   } catch (error: any) {
     if (error === 'cancel' || error?.action === 'cancel') {
-      selectedOrganizationId.value = oldValue;
+      selectedOrganizationId.value = oldValue || '';
       popoverVisible.value = false;
     }
   }

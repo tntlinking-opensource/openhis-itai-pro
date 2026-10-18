@@ -1,0 +1,10 @@
+{
+  "doc_kind": "CATALOG_DELTA",
+  "category": "SERVICE_F",
+  "title": "附件：F服务目录15号文数据更新目录（2025.09.01）",
+  "source_filename": "附件：F服务目录15号文数据更新目录（2025.09.01）.xlsx",
+  "notice_date": "2025-09-01",
+  "effective_date": "2025-09-01",
+  "wash_note": "F服务局发目录更新；Sheet=['停用15', '新增23']；服务ADD仅写project_code(01*)；价格/超限等进ext_json；",
+  "wash_tool": "cursor-ai"
+}

@@ -1,0 +1,10 @@
+{
+  "doc_kind": "CATALOG_DELTA",
+  "category": "SERVICE_F",
+  "title": "F服务目录5类工程师版（2026.7.28）",
+  "source_filename": "F服务目录5类工程师版（2026.7.28）.xlsx",
+  "notice_date": "2026-07-28",
+  "effective_date": "2026-07-31",
+  "wash_note": "F服务局发目录更新（工程师版）；Sheet=['新增779', '停用1323', '变更1']；服务ADD仅写project_code(01*)；STOP/MODIFY用国家目录编码；STOP中5条国家目录编码实为01*项目码→改落project_code；ADD表有重复列名(价格构成/计价单位/计价说明)取首次非空；限价/超限等进ext_json；原件已在原始文件/未再move",
+  "wash_tool": "cursor-ai"
+}

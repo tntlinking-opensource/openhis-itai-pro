@@ -1,0 +1,15 @@
+{
+  "moduleId": "einvoice-boss",
+  "displayName": "博思电子票据",
+  "enabledProperty": "zxplat.modules.einvoice-boss.enabled",
+  "autoConfigurationClass": "com.zxplat.plugin.einvoice.boss.application.config.EinvoiceBossAutoConfiguration",
+  "appServiceNames": [
+    "einvoiceBossCommon",
+    "einvoiceBossContrast",
+    "einvoiceBossDocument",
+    "einvoiceBossList",
+    "einvoiceBossCompensation",
+    "einvoiceBossCashier",
+    "einvoiceBossReconcile"
+  ]
+}

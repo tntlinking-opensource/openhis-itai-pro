@@ -41,7 +41,9 @@ export function useNurseStationPatientProjections(
       age: item.age,
       nurseLevel: item.level,
       feeType: item.feeType,
+      insutype: item.insutype,
       attendingDoctorName: item.attendingDoctorName,
+      primaryNurseName: item.primaryNurseName,
       diagnosis: item.diagnosis,
       // 病区：优先读模型 wardName，再 regionId 反查
       organizationName: (item.organizationName ?? '').trim() || undefined,

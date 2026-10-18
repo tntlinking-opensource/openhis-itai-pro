@@ -1,0 +1,1123 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.zxplat.application.inpatient.financial.dailysettlement.service;
+
+import com.zxplat.application.inpatient.financial.dailysettlement.dto.InpatientDailySettlementPatientExportRowDto;
+import com.zxplat.application.inpatient.financial.dailysettlement.mapper.InpatientDailySettlementMapper;
+import com.zxplat.application.inpatient.financial.dailysettlement.request.LoadInpatientCashierSettlementVoucherRequest;
+import com.zxplat.application.inpatient.financial.dailysettlement.request.LoadInpatientDailySettlementPageInitRequest;
+import com.zxplat.application.inpatient.financial.dailysettlement.request.PageInpatientCashierSettlementHistoryRequest;
+import com.zxplat.application.inpatient.financial.dailysettlement.request.PreviewInpatientDailySettlementRequest;
+import com.zxplat.application.inpatient.financial.dailysettlement.request.SubmitInpatientDailySettlementRequest;
+import com.zxplat.application.inpatient.financial.dailysettlement.response.ExportInpatientDailySettlementPatientResponse;
+import com.zxplat.application.inpatient.financial.dailysettlement.response.InpatientCashierSettlementHistoryItemDto;
+import com.zxplat.application.inpatient.financial.dailysettlement.response.LoadInpatientCashierSettlementVoucherResponse;
+import com.zxplat.application.inpatient.financial.dailysettlement.response.LoadInpatientDailySettlementPageInitResponse;
+import com.zxplat.application.inpatient.financial.dailysettlement.response.PageInpatientCashierSettlementHistoryResponse;
+import com.zxplat.application.inpatient.financial.dailysettlement.response.PreviewInpatientDailySettlementResponse;
+import com.zxplat.application.inpatient.financial.dailysettlement.response.SubmitInpatientDailySettlementResponse;
+import com.zxplat.framework.core.application.util.AnnotatedExcelExporter;
+import com.zxplat.application.inpatient.financial.dailysettlement.request.WithdrawInpatientDailySettlementRequest;
+import com.zxplat.application.inpatient.financial.dailysettlement.response.WithdrawInpatientDailySettlementResponse;
+import com.zxplat.application.outpatient.financial.dailysettlement.support.DailySettlementPaymentDetailLoader;
+import com.zxplat.application.shared.chargediscount.ChargeDiscountApplySupport;
+import com.zxplat.domain.administration.chargeitem.entity.ChargeItem;
+import com.zxplat.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
+import com.zxplat.domain.administration.practitioner.entity.Practitioner;
+import com.zxplat.domain.administration.practitioner.service.PractitionerQueryService;
+import com.zxplat.domain.financial.cashiersettlement.command.SubmitCashierSettlementCommand;
+import com.zxplat.domain.financial.cashiersettlement.command.WithdrawCashierSettlementCommand;
+import com.zxplat.domain.financial.cashiersettlement.queries.PreviewCashierSettlementQuery;
+import com.zxplat.domain.financial.cashiersettlement.queries.model.CashierSettlementMountedPaymentBundle;
+import com.zxplat.domain.financial.cashiersettlement.queries.model.CashierSettlementSummaryPaymentBundle;
+import com.zxplat.domain.financial.cashiersettlement.queries.model.PreviewCashierSettlementQueryModel;
+import com.zxplat.domain.financial.cashiersettlement.queries.model.UnsettledPaymentPreviewItemQueryModel;
+import com.zxplat.domain.financial.cashiersettlement.service.CashierSettlementDomainService;
+import com.zxplat.domain.financial.cashiersettlement.service.CashierSettlementQueryService;
+import com.zxplat.domain.financial.contract.queries.model.ContractListItemQueryModel;
+import com.zxplat.domain.financial.contract.service.ContractQueryService;
+import com.zxplat.domain.financial.paymentreconciliation.queries.model.PaymentRecDetailQueryModel;
+import com.zxplat.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
+import com.zxplat.domain.financial.paymentreconciliation.service.PaymentReconciliationQueryService;
+import com.zxplat.domain.share.constants.GeneralSharedConstants;
+import com.zxplat.domain.share.constants.InpatientDailySettlementConstants;
+import com.zxplat.domain.share.constants.TerminologyCodeSystemNameConstants;
+import com.zxplat.domain.share.constants.PlatformRoleCodeConstants;
+import com.zxplat.domain.share.enums.CashierSettlementStatus;
+import com.zxplat.domain.share.enums.CashierSettlementType;
+import com.zxplat.application.shared.practitioner.PractitionerRoleScopeLoader;
+import com.zxplat.application.shared.encounter.EncounterContextReader;
+import com.zxplat.application.shared.financial.ContractExpenseNatureAssembler;
+import com.zxplat.application.shared.financial.DailySettlementCashierScope;
+import com.zxplat.application.shared.financial.DailySettlementCashierScopeResolver;
+import com.zxplat.application.shared.financial.DailySettlementOrgLocationScopeSupport;
+import com.zxplat.application.shared.financial.PaymentEntererMatchResolver;
+import com.zxplat.application.shared.validator.CurrentPractitionerResolver;
+import com.zxplat.application.shared.financial.cashiersettlement.CashierSettlementMountedVoucherDto;
+import com.zxplat.application.shared.financial.cashiersettlement.CashierSettlementPartyNamesEnricher;
+import com.zxplat.application.shared.financial.medicationrevenue.DailySettlementMedicationRevenueAssembler;
+import com.zxplat.application.shared.financial.medicationrevenue.PreviewDailySettlementMedicationRevenueResponse;
+import com.zxplat.application.shared.option.TerminologyOptionLoader;
+import com.zxplat.domain.financial.cashiersettlement.entity.CashierSettlement;
+import com.zxplat.domain.financial.cashiersettlement.queries.model.CashierSettlementHistoryItemQueryModel;
+import com.zxplat.framework.core.application.dto.OptionDto;
+import com.zxplat.framework.core.application.exception.BusinessException;
+import com.zxplat.framework.core.application.session.CurrentOperatorResolver;
+import com.zxplat.framework.core.application.util.StringUtils;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * 住院日结交账应用服务（AS-IP-FIN-005，IF-IP-DCL-01～03）。
+ *
+ * <p>职责边界：</p>
+ * <ul>
+ *   <li>Gate：登录、日期窗、款员岗（提交与撤回均须 {@code ROLE_CASHIER}）。</li>
+ *   <li>Pre：未交账候选、医保/子明细/病区 enrichment。</li>
+ *   <li>Cmd：提交住院 type 交账。</li>
+ *   <li>Asm：经 {@link InpatientDailySettlementMapper} 装配响应。</li>
+ * </ul>
+ *
+ * <p>接入：{@code AppServiceControllerRegistrar} →
+ * {@code POST /api/app/inpatientDailySettlement/{methodName}}；不另写 RestController。</p>
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class InpatientDailySettlementAppService {
+
+    /** 写路径操作人门控。 */
+    private final CurrentOperatorResolver currentOperatorResolver;
+
+    /** 交账候选集读侧（未交账 payment 在 Payment 聚合 QueryService，B.6.4）。 */
+    private final PaymentReconciliationQueryService paymentReconciliationQueryService;
+
+    /** 交账头读侧（busNo 等本聚合字段）。 */
+    private final CashierSettlementQueryService cashierSettlementQueryService;
+
+    /** 交账历史展示名 enrich。 */
+    private final CashierSettlementPartyNamesEnricher cashierSettlementPartyNamesEnricher;
+
+    /** 交账写侧。 */
+    private final CashierSettlementDomainService cashierSettlementDomainService;
+
+    /** 住院就诊上下文读侧（病区名）。 */
+    private final EncounterContextReader EncounterContextReader;
+
+    /** 经办人主数据读侧。 */
+    private final PractitionerQueryService practitionerQueryService;
+
+    /** 费用性质（fin_contract）读侧。 */
+    private final ContractQueryService contractQueryService;
+
+    /** 岗位人员预解析。 */
+    private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
+
+    /** Request/Response 映射。 */
+    private final InpatientDailySettlementMapper inpatientDailySettlementMapper;
+
+    /** 收费折扣配置探测（日结列显隐；BR-IP-DCL-031）。 */
+    private final ChargeDiscountApplySupport chargeDiscountApplySupport;
+
+    /** 费用性质（合同）展示判定。 */
+    private final ContractExpenseNatureAssembler contractExpenseNatureAssembler;
+
+    /** payment.enterer_id ↔ Practitioner 主键归一（窗内收费人下拉）。 */
+    private final PaymentEntererMatchResolver paymentEntererMatchResolver;
+
+    /** 收款人多选可选软筛解析。 */
+    private final DailySettlementCashierScopeResolver dailySettlementCashierScopeResolver;
+
+    /** 科室 → location 范围与交账头快照辅助。 */
+    private final DailySettlementOrgLocationScopeSupport dailySettlementOrgLocationScopeSupport;
+
+    /** 当前登录医务人员（提交人/撤回 Gate）。 */
+    private final CurrentPractitionerResolver currentPractitionerResolver;
+
+    /** 药品收入 TAB 组装。 */
+    private final DailySettlementMedicationRevenueAssembler dailySettlementMedicationRevenueAssembler;
+
+    /** fin_type_code 字典读侧。 */
+    private final TerminologyOptionLoader terminologyOptionLoader;
+
+    /** payment 项目行与支付方式 enrichment。 */
+    private final DailySettlementPaymentDetailLoader dailySettlementPaymentDetailLoader;
+
+    /**
+     * IF-IP-DCL-01：住院日结页初始化。
+     *
+     * @param request 占位请求
+     * @return 默认结账日与筛选项
+     * @throws BusinessException 未登录时抛出
+     */
+    public LoadInpatientDailySettlementPageInitResponse loadInpatientDailySettlementPageInit(
+        LoadInpatientDailySettlementPageInitRequest request) {
+        // Gate：须已登录；下拉主数据不因未绑定 Practitioner 而整页失败（与门诊日结同构）
+        Long operatorId = this.currentOperatorResolver.requireOperatorId(
+            InpatientDailySettlementConstants.EX_IP_DCL_101,
+            "页面初始化失败，请稍后重试");
+        // Pre：默认收款人优先会话 practitionerId，回落 userId→Practitioner 映射
+        Long currentCashierId = this.resolveCurrentCashierPractitionerId(operatorId);
+        List<OptionDto> expensePropertyOptions = this.buildExpensePropertyOptions();
+        List<OptionDto> cashierOptions = this.buildCashierOptions();
+        LocalDate today = LocalDate.now();
+        // Asm：只读初始化（收款人默认勾选由前端按 preview 窗内有流水人驱动）
+        LoadInpatientDailySettlementPageInitResponse response =
+            this.inpatientDailySettlementMapper.toLoadInpatientDailySettlementPageInitResponse(
+                today,
+                expensePropertyOptions,
+                cashierOptions,
+                currentCashierId);
+        // Asm：折扣列显隐；未配置有效折扣时 false
+        response.setDiscountFeatureEnabled(chargeDiscountApplySupport.isDiscountFeatureEnabled());
+        return response;
+    }
+
+    /**
+     * IF-IP-DCL-02：住院日结查询。
+     *
+     * @param request 日期窗、经办人与费用性质
+     * @return 候选明细、渠道/病区汇总
+     * @throws BusinessException 参数非法或查询失败
+     */
+    public PreviewInpatientDailySettlementResponse previewInpatientDailySettlement(
+        PreviewInpatientDailySettlementRequest request) {
+        try {
+            // Gate：未登录拒绝查询
+            Long operatorId = this.currentOperatorResolver.requireOperatorId(
+                InpatientDailySettlementConstants.EX_IP_DCL_103,
+                "查询失败，请稍后重试");
+            this.assertDateRangeValid(request.getDateFrom(), request.getDateTo());
+            this.assertOrgIdRequired(request.getOrgId(), InpatientDailySettlementConstants.EX_IP_DCL_102);
+            PreviewCashierSettlementQuery previewQuery = this.buildPreviewQuery(
+                request,
+                CashierSettlementType.IP_PAYMENT.getCode(),
+                operatorId);
+            LocalDateTime gapHardBlockEarliestAt =
+                this.paymentReconciliationQueryService.findEarliestUnsettledPaymentBillTimeBeforeWindow(previewQuery);
+            long gapSoftWarnCount =
+                this.paymentReconciliationQueryService.countUnsettledPaymentsAfterWindow(previewQuery);
+            // Pre：窗内 enterer_id 为医务人员主键（BR-OPC-016），规范后装配收款人下拉
+            List<Long> practitionerIdsInWindow =
+                this.paymentEntererMatchResolver.resolvePractitionerIdsFromEntererIds(
+                    this.paymentReconciliationQueryService.listDistinctEntererIdsInCashierSettlementWindow(
+                        previewQuery));
+            List<OptionDto> practitionerOptions =
+                this.buildPractitionerOptions(practitionerIdsInWindow);
+            PreviewCashierSettlementQueryModel previewModel =
+                this.paymentReconciliationQueryService.previewUnsettledPaymentsForCashierSettlement(previewQuery);
+            // Pre：展示汇总须含已交账流水，仅 paymentCount/items 保持未交账口径
+            CashierSettlementSummaryPaymentBundle summaryBundle =
+                this.paymentReconciliationQueryService.loadPaymentsForCashierSettlementSummary(previewQuery);
+            List<UnsettledPaymentPreviewItemQueryModel> summaryPreviewItems = summaryBundle.getPreviewItems();
+            List<PaymentReconciliationQueryModel> displayPaymentModels = summaryBundle.getPaymentModels();
+            Set<Long> displayPaymentIds = this.collectPaymentIdsFromPreviewItems(summaryPreviewItems);
+            Map<Long, List<PaymentRecDetailQueryModel>> recDetailsByPaymentId =
+                this.loadRecDetailsByPaymentIds(displayPaymentIds);
+            List<Long> encounterIdsOrdered = this.collectEncounterIdsOrdered(displayPaymentModels);
+            List<InpatientEncounterContextQueryModel> encounterContexts =
+                this.EncounterContextReader.listInpatientContextsByEncounterIdsOrdered(encounterIdsOrdered);
+            Map<Long, InpatientEncounterContextQueryModel> encounterByEncounterId =
+                this.buildEncounterIndex(encounterContexts);
+            Map<String, Boolean> insuranceByContractBusNo =
+                this.contractExpenseNatureAssembler.mapInsuranceFlagByContractBusNoIn(
+                    this.collectContractBusNosFromPreviewItems(summaryPreviewItems));
+            List<OptionDto> finTypeOptions =
+                this.terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.FIN_TYPE_CODE);
+            // Pre：展示口径 payment 加载收费行（上半区折后扣减 + 弹窗项目行 enrichment）
+            Map<Long, List<ChargeItem>> chargeItemsByPaymentId =
+                this.dailySettlementPaymentDetailLoader.loadChargeItemsByPaymentModels(displayPaymentModels);
+            // Asm：费用性质仅过滤展示，paymentCount 保持全量（按 fin_contract 判定）
+            PreviewInpatientDailySettlementResponse response =
+                this.inpatientDailySettlementMapper.toPreviewInpatientDailySettlementResponse(
+                    previewModel,
+                    summaryPreviewItems,
+                    displayPaymentModels,
+                    recDetailsByPaymentId,
+                    chargeItemsByPaymentId,
+                    encounterByEncounterId,
+                    request.getExpenseProperty(),
+                    insuranceByContractBusNo,
+                    finTypeOptions);
+            this.applyDateRangeToSummary(response, request.getDateFrom(), request.getDateTo());
+            response.setGapHardBlockEarliestAt(gapHardBlockEarliestAt);
+            response.setGapHardBlockMessage(
+                this.dailySettlementOrgLocationScopeSupport.buildGapHardBlockMessage(gapHardBlockEarliestAt));
+            response.setGapSoftWarnCount(gapSoftWarnCount);
+            response.setPractitionerIdsInWindow(practitionerIdsInWindow);
+            response.setPractitionerOptions(practitionerOptions);
+            return response;
+        } catch (BusinessException businessException) {
+            throw businessException;
+        } catch (RuntimeException runtimeException) {
+            log.error("住院日结查询失败", runtimeException);
+            throw new BusinessException(
+                InpatientDailySettlementConstants.EX_IP_DCL_103,
+                "查询失败，请稍后重试");
+        }
+    }
+
+    /**
+     * IF-IP-DCL-07：导出住院日结患者分项 Excel（POI 真 xlsx；与预览同筛选/同口径）。
+     *
+     * @param request 与 IF-IP-DCL-02 同筛
+     * @return 导出响应（body 为 xlsx 字节）
+     */
+    public ExportInpatientDailySettlementPatientResponse exportInpatientDailySettlementPatientSummaries(
+        PreviewInpatientDailySettlementRequest request) {
+        try {
+            // Pre：复用预览管线，保证导出与页面患者分项一致
+            PreviewInpatientDailySettlementResponse preview = this.previewInpatientDailySettlement(request);
+            List<InpatientDailySettlementPatientExportRowDto> exportRows =
+                this.inpatientDailySettlementMapper.toPatientExportRows(preview.getPatientSummaries());
+            // Asm：AnnotatedExcelExporter 写真 xlsx（与门诊费用明细同栈）
+            byte[] body = AnnotatedExcelExporter.exportToXlsxBytes(
+                InpatientDailySettlementConstants.EXPORT_SHEET_NAME,
+                exportRows,
+                InpatientDailySettlementPatientExportRowDto.class);
+            return this.inpatientDailySettlementMapper.toExportPatientResponse(body, exportRows.size());
+        } catch (BusinessException businessException) {
+            throw businessException;
+        } catch (RuntimeException runtimeException) {
+            log.error("住院日结患者分项导出失败", runtimeException);
+            throw new BusinessException(
+                InpatientDailySettlementConstants.EX_IP_DCL_108,
+                "导出失败，请稍后重试");
+        }
+    }
+
+    /**
+     * IF-IP-DCL-03：确认住院交账。
+     *
+     * @param request 业务窗与经办人
+     * @return 交账结果
+     * @throws BusinessException 参数非法、空候选或并发冲突
+     */
+    public SubmitInpatientDailySettlementResponse submitInpatientDailySettlement(
+        SubmitInpatientDailySettlementRequest request) {
+        // Gate：登录、日期窗、科室与提交人必填
+        Long operatorId = this.currentOperatorResolver.requireOperatorId(
+            InpatientDailySettlementConstants.EX_IP_DCL_102,
+            "请选择有效的结账日期范围");
+        Long submitterId = this.currentPractitionerResolver.requirePractitionerId(
+            InpatientDailySettlementConstants.EX_IP_DCL_102,
+            "当前账号未绑定医务人员，无法提交交账");
+        // Gate：提交人须为款员岗，财务/管理员不能代交
+        if (!this.holdsCashierRole(submitterId)) {
+            throw new BusinessException(
+                InpatientDailySettlementConstants.EX_IP_DCL_102,
+                "仅款员可提交交账");
+        }
+        this.assertDateRangeValid(request.getDateFrom(), request.getDateTo());
+        this.assertOrgIdRequired(request.getOrgId(), InpatientDailySettlementConstants.EX_IP_DCL_102);
+        PreviewInpatientDailySettlementRequest previewRequest = this.toPreviewRequestFromSubmit(request);
+        PreviewCashierSettlementQuery previewQuery = this.buildPreviewQuery(
+            previewRequest,
+            CashierSettlementType.IP_PAYMENT.getCode(),
+            operatorId);
+        // Gate：漏交硬栏（DD §2.6.5）
+        LocalDateTime gapHardBlockEarliestAt =
+            this.paymentReconciliationQueryService.findEarliestUnsettledPaymentBillTimeBeforeWindow(previewQuery);
+        if (gapHardBlockEarliestAt != null) {
+            throw new BusinessException(
+                InpatientDailySettlementConstants.EX_IP_DCL_106,
+                this.dailySettlementOrgLocationScopeSupport.buildGapHardBlockMessage(gapHardBlockEarliestAt));
+        }
+        long gapSoftWarnCount =
+            this.paymentReconciliationQueryService.countUnsettledPaymentsAfterWindow(previewQuery);
+        // Pre：提交前重新锁定候选集，paymentIds 须 ⊆ 未交账候选（BR-IP-DCL-018）
+        PreviewCashierSettlementQueryModel locked =
+            this.paymentReconciliationQueryService.previewUnsettledPaymentsForCashierSettlement(previewQuery);
+        List<Long> selectedPaymentIds = request.getPaymentIds();
+        this.assertPaymentIdsSubsetOfCandidates(
+            selectedPaymentIds,
+            locked,
+            InpatientDailySettlementConstants.EX_IP_DCL_105,
+            InpatientDailySettlementConstants.EX_IP_DCL_201);
+        // Pre：头表笔数/总收入与日结同口径（不含工伤；挂载仍含工伤 payment）
+        Integer paymentCount =
+            this.inpatientDailySettlementMapper.resolveSelectedSettlementPaymentCount(
+                locked.getItems(),
+                selectedPaymentIds);
+        BigDecimal totalIncome =
+            this.inpatientDailySettlementMapper.resolveSelectedSettlementTotalIncome(
+                locked.getItems(),
+                selectedPaymentIds);
+        // Pre：提交快照 practitioner_ids 与下拉同口径（归一后的 Practitioner 主键）
+        List<Long> practitionerIdsInWindow =
+            this.paymentEntererMatchResolver.resolvePractitionerIdsFromEntererIds(
+                this.paymentReconciliationQueryService.listDistinctEntererIdsInCashierSettlementWindow(previewQuery));
+        String practitionerIds =
+            this.dailySettlementOrgLocationScopeSupport.joinPractitionerIds(practitionerIdsInWindow);
+        // Pre：请求转领域命令（不写 print_snapshot_json；收款不下推 locationIds）
+        SubmitCashierSettlementCommand command = this.inpatientDailySettlementMapper.toSubmitCashierSettlementCommand(
+            request,
+            CashierSettlementType.IP_PAYMENT.getCode(),
+            submitterId,
+            operatorId,
+            selectedPaymentIds,
+            null,
+            practitionerIds,
+            paymentCount,
+            totalIncome);
+        this.applyOptionalEntererSoftFilterToCommand(command, previewQuery);
+        // Cmd：单事务写交账头并挂载 payment
+        Long settlementId = this.cashierSettlementDomainService.submitCashierSettlement(command);
+        String busNo = this.cashierSettlementQueryService.findBusNoBySettlementId(settlementId);
+        // Asm：返回交账标识与单号
+        SubmitInpatientDailySettlementResponse response =
+            this.inpatientDailySettlementMapper.toSubmitInpatientDailySettlementResponse(
+                settlementId,
+                busNo,
+                paymentCount);
+        response.setStatusEnum(CashierSettlementStatus.SUBMITTED.getCode());
+        response.setGapSoftWarnCount(gapSoftWarnCount);
+        return response;
+    }
+
+    /**
+     * 住院日结药品收入 TAB 预览（发药口径汇总 + 收费药品明细 + 未发提醒）。
+     *
+     * @param request 与日结查询相同筛选
+     * @return 药品收入预览
+     */
+    public PreviewDailySettlementMedicationRevenueResponse previewInpatientDailySettlementMedicationRevenue(
+        PreviewInpatientDailySettlementRequest request) {
+        // Gate：登录、日期窗与科室必填
+        Long operatorId = this.currentOperatorResolver.requireOperatorId(
+            InpatientDailySettlementConstants.EX_IP_DCL_103,
+            "查询失败，请稍后重试");
+        this.assertDateRangeValid(request.getDateFrom(), request.getDateTo());
+        this.assertOrgIdRequired(request.getOrgId(), InpatientDailySettlementConstants.EX_IP_DCL_102);
+        PreviewCashierSettlementQuery previewQuery = this.buildPreviewQuery(
+            request,
+            CashierSettlementType.IP_PAYMENT.getCode(),
+            operatorId);
+        // Pre：加载 payment 与 charge_item 明细
+        List<PaymentReconciliationQueryModel> paymentModels =
+            this.paymentReconciliationQueryService.findPaymentQueryModelsForCashierSettlementSummary(previewQuery);
+        Map<Long, List<ChargeItem>> chargeItemsByPaymentId =
+            this.dailySettlementPaymentDetailLoader.loadChargeItemsByPaymentModels(paymentModels);
+        List<OptionDto> finTypeOptions =
+            this.terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.FIN_TYPE_CODE);
+        // Asm：组装药品收入 TAB 响应
+        return this.dailySettlementMedicationRevenueAssembler.assemble(
+            paymentModels,
+            chargeItemsByPaymentId,
+            request.getDateFrom(),
+            request.getDateTo(),
+            finTypeOptions);
+    }
+
+    /**
+     * 住院交账历史分页。
+     *
+     * @param request 交账时刻窗与分页
+     * @return 历史页
+     */
+    public PageInpatientCashierSettlementHistoryResponse pageInpatientCashierSettlementHistory(
+        PageInpatientCashierSettlementHistoryRequest request) {
+        // Gate：登录与交账时刻窗必填
+        this.currentOperatorResolver.requireOperatorId(
+            InpatientDailySettlementConstants.EX_IP_DCL_103,
+            "查询失败，请稍后重试");
+        this.assertDateRangeValid(request.getSubmittedFrom(), request.getSubmittedTo());
+        // Pre：分页缺省与窗口裁剪（禁三元）
+        int pageIndex = 0;
+        if (request.getPageIndex() != null) {
+            pageIndex = Math.max(0, request.getPageIndex());
+        }
+        int pageSize = 20;
+        if (request.getPageSize() != null) {
+            pageSize = Math.min(200, Math.max(1, request.getPageSize()));
+        }
+        // Pre：按交账提交时刻窗分页历史
+        Page<CashierSettlementHistoryItemQueryModel> page = this.cashierSettlementQueryService.pageHistory(
+            CashierSettlementType.IP_PAYMENT.getCode(),
+            request.getSubmittedFrom(),
+            request.getSubmittedTo(),
+            PageRequest.of(pageIndex, pageSize));
+        PageInpatientCashierSettlementHistoryResponse response = new PageInpatientCashierSettlementHistoryResponse();
+        response.setPageIndex(pageIndex);
+        response.setPageSize(pageSize);
+        response.setTotal(page.getTotalElements());
+        List<InpatientCashierSettlementHistoryItemDto> items = new ArrayList<>();
+        for (CashierSettlementHistoryItemQueryModel model : page.getContent()) {
+            if (model == null) {
+                continue;
+            }
+            InpatientCashierSettlementHistoryItemDto dto = new InpatientCashierSettlementHistoryItemDto();
+            dto.setSettlementId(model.getSettlementId());
+            dto.setBusNo(model.getBusNo());
+            dto.setSubmittedAt(model.getSubmittedAt());
+            dto.setDateFrom(model.getDateFrom());
+            dto.setDateTo(model.getDateTo());
+            dto.setPractitionerIds(model.getPractitionerIds());
+            dto.setSubmitterId(model.getSubmitterId());
+            dto.setApproverId(model.getApproverId());
+            dto.setApprovedAt(model.getApprovedAt());
+            dto.setOrgId(model.getOrgId());
+            dto.setLocationId(model.getLocationId());
+            dto.setPaymentCount(model.getPaymentCount());
+            dto.setTotalIncome(model.getTotalIncome());
+            dto.setCanReprintFromMounts(model.isCanReprintFromMounts());
+            dto.setStatusEnum(model.getStatusEnum());
+            dto.setStatusEnumText(this.resolveCashierSettlementStatusDisplay(model.getStatusEnum()));
+            items.add(dto);
+        }
+        // Asm：回填交账人/审批人/科室名
+        this.cashierSettlementPartyNamesEnricher.enrich(items);
+        response.setItems(items);
+        // Asm：历史分页响应
+        return response;
+    }
+
+    /**
+     * 加载住院交账原单打印体（历史重打：按挂载 payment 现算，DD §8.G）。
+     *
+     * @param request 交账头主键
+     * @return 现算打印体
+     */
+    public LoadInpatientCashierSettlementVoucherResponse loadInpatientCashierSettlementVoucher(
+        LoadInpatientCashierSettlementVoucherRequest request) {
+        // Gate：须已登录
+        this.currentOperatorResolver.requireOperatorId(
+            InpatientDailySettlementConstants.EX_IP_DCL_103,
+            "查询失败，请稍后重试");
+        // Gate：交账头必填
+        if (request == null || request.getSettlementId() == null) {
+            throw new BusinessException(
+                InpatientDailySettlementConstants.EX_IP_DCL_102,
+                "交账头不能为空");
+        }
+        // Pre：校验交账头存在且为住院收款类型
+        CashierSettlement settlement = this.cashierSettlementQueryService.findEntityById(request.getSettlementId());
+        if (settlement == null
+            || !CashierSettlementType.IP_PAYMENT.getCode().equals(settlement.getTypeEnum())) {
+            throw new BusinessException(
+                InpatientDailySettlementConstants.EX_IP_DCL_103,
+                "交账记录不存在");
+        }
+        // Pre：按挂载 payment 组装与预览同构的 rows/summary
+        CashierSettlementMountedVoucherDto mountedVoucher =
+            this.rebuildInpatientMountedVoucherFromMounts(settlement);
+        // Asm：返回打印体
+        LoadInpatientCashierSettlementVoucherResponse response = new LoadInpatientCashierSettlementVoucherResponse();
+        response.setSettlementId(settlement.getId());
+        response.setBusNo(settlement.getBusNo());
+        response.setMountedVoucher(mountedVoucher);
+        return response;
+    }
+
+    /**
+     * 按交账头挂载 payment 现算住院打印体。
+     *
+     * @param settlement 交账头实体
+     * @return 打印体；无挂载时 summary 为空对象结构仍可打印表头
+     */
+    private CashierSettlementMountedVoucherDto rebuildInpatientMountedVoucherFromMounts(
+        CashierSettlement settlement) {
+        Long settlementId = settlement.getId();
+        // Pre：一次装载挂载 payment（避免头表双扫）
+        CashierSettlementMountedPaymentBundle mountedBundle =
+            this.paymentReconciliationQueryService.loadMountedPaymentsByCashierSettlementId(settlementId);
+        List<UnsettledPaymentPreviewItemQueryModel> mountedItems = mountedBundle.getPreviewItems();
+        List<PaymentReconciliationQueryModel> paymentModels = mountedBundle.getPaymentModels();
+        PreviewCashierSettlementQueryModel previewModel = new PreviewCashierSettlementQueryModel();
+        previewModel.setItems(mountedItems);
+        previewModel.setPaymentCount(mountedItems.size());
+        Set<Long> paymentIds = this.collectPaymentIdsFromPreviewItems(mountedItems);
+        Map<Long, List<PaymentRecDetailQueryModel>> recDetailsByPaymentId =
+            this.loadRecDetailsByPaymentIds(paymentIds);
+        Map<String, Boolean> insuranceByContractBusNo =
+            this.contractExpenseNatureAssembler.mapInsuranceFlagByContractBusNoIn(
+                this.collectContractBusNosFromPreviewItems(mountedItems));
+        List<OptionDto> finTypeOptions =
+            this.terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.FIN_TYPE_CODE);
+        List<Long> encounterIdsOrdered = this.collectEncounterIdsOrdered(paymentModels);
+        List<InpatientEncounterContextQueryModel> encounterContexts =
+            this.EncounterContextReader.listInpatientContextsByEncounterIdsOrdered(encounterIdsOrdered);
+        Map<Long, InpatientEncounterContextQueryModel> encounterByEncounterId =
+            this.buildEncounterIndex(encounterContexts);
+        // 挂载现算最终只取 rows/summary；不装 charge_item
+        PreviewInpatientDailySettlementResponse preview =
+            this.inpatientDailySettlementMapper.toPreviewInpatientDailySettlementResponse(
+                previewModel,
+                mountedItems,
+                paymentModels,
+                recDetailsByPaymentId,
+                Map.of(),
+                encounterByEncounterId,
+                null,
+                insuranceByContractBusNo,
+                finTypeOptions);
+        this.applyDateRangeToSummary(preview, settlement.getDateFrom(), settlement.getDateTo());
+        CashierSettlementMountedVoucherDto mountedVoucher = new CashierSettlementMountedVoucherDto();
+        mountedVoucher.setSchemaVersion(1);
+        mountedVoucher.setCashierName(null);
+        mountedVoucher.setSettlementPeriodText(this.formatSettlementPeriodText(settlement));
+        // 挂载集合即本批口径；用主区 rows/summary/patientSummaries（与挂载集一致）
+        if (preview != null) {
+            mountedVoucher.setRows(preview.getRows());
+            mountedVoucher.setSummary(preview.getSummary());
+            mountedVoucher.setPatientSummaries(preview.getPatientSummaries());
+        }
+        List<String> paymentIdTexts = new ArrayList<>();
+        for (Long paymentId : paymentIds) {
+            if (paymentId != null) {
+                paymentIdTexts.add(String.valueOf(paymentId));
+            }
+        }
+        mountedVoucher.setPaymentIds(paymentIdTexts);
+        return mountedVoucher;
+    }
+
+    /**
+     * 格式化交账业务窗文案（date_from ～ date_to）。
+     *
+     * @param settlement 交账头
+     * @return 时间窗文案；缺窗时回落 bus_no
+     */
+    private String formatSettlementPeriodText(CashierSettlement settlement) {
+        LocalDateTime dateFrom = settlement.getDateFrom();
+        LocalDateTime dateTo = settlement.getDateTo();
+        if (dateFrom == null || dateTo == null) {
+            return settlement.getBusNo();
+        }
+        return dateFrom.format(GeneralSharedConstants.DATE_TIME_FORMATTER)
+            + " ~ "
+            + dateTo.format(GeneralSharedConstants.DATE_TIME_FORMATTER);
+    }
+
+    /**
+     * 撤回住院待审交账（仅 SUBMITTED；须为款员岗）。
+     *
+     * @param request 交账头主键
+     * @return 交账标识与单号
+     * @throws BusinessException 无权限、状态非法或记录不存在
+     */
+    public WithdrawInpatientDailySettlementResponse withdrawInpatientDailySettlement(
+        WithdrawInpatientDailySettlementRequest request) {
+        // Gate：须已登录
+        Long operatorId = this.currentOperatorResolver.requireOperatorId(
+            InpatientDailySettlementConstants.EX_IP_DCL_102,
+            "撤回失败，请稍后重试");
+        if (request == null || request.getSettlementId() == null) {
+            throw new BusinessException(
+                InpatientDailySettlementConstants.EX_IP_DCL_102,
+                "交账头不能为空");
+        }
+        CashierSettlement settlement = this.cashierSettlementQueryService.findEntityById(request.getSettlementId());
+        if (settlement == null
+            || !CashierSettlementType.IP_PAYMENT.getCode().equals(settlement.getTypeEnum())) {
+            throw new BusinessException(
+                InpatientDailySettlementConstants.EX_IP_DCL_103,
+                "交账记录不存在");
+        }
+        // Gate：仅待审可撤回；须为款员岗
+        this.assertWithdrawPermission(
+            settlement,
+            InpatientDailySettlementConstants.EX_IP_DCL_107);
+        WithdrawCashierSettlementCommand command = new WithdrawCashierSettlementCommand();
+        command.setSettlementId(request.getSettlementId());
+        command.setOperatorId(operatorId);
+        // Cmd：清挂载并改态 WITHDRAWN
+        this.cashierSettlementDomainService.withdrawCashierSettlement(command);
+        WithdrawInpatientDailySettlementResponse response = new WithdrawInpatientDailySettlementResponse();
+        response.setSettlementId(settlement.getId());
+        response.setBusNo(settlement.getBusNo());
+        return response;
+    }
+
+    /**
+     * 当前医务人员是否挂了激活的款员岗（{@code ROLE_CASHIER} / {@code adm_pr_assign}）。
+     *
+     * @param practitionerId 当前经办人 Practitioner 主键
+     * @return 是款员时为 true
+     */
+    private boolean holdsCashierRole(Long practitionerId) {
+        // 未绑定医务人员没有岗位，不能当款员交账
+        if (practitionerId == null) {
+            return false;
+        }
+        Set<Long> cashierIds = this.practitionerRoleScopeLoader.resolvePractitionerIdsForActivePlatformRole(
+            PlatformRoleCodeConstants.ROLE_CASHIER,
+            null);
+        return cashierIds.contains(practitionerId);
+    }
+
+    /**
+     * 构造费用性质下拉：启用中合同 busNo → 展示名（与门诊日结同构）。
+     *
+     * @return 费用性质 OptionDto 列表
+     */
+    private List<OptionDto> buildExpensePropertyOptions() {
+        List<OptionDto> options = new ArrayList<>();
+        List<ContractListItemQueryModel> contracts = this.contractQueryService.listAllContracts();
+        for (ContractListItemQueryModel contract : contracts) {
+            if (contract == null) {
+                continue;
+            }
+            if (Boolean.FALSE.equals(contract.getActiveFlag())) {
+                continue;
+            }
+            if (StringUtils.isEmpty(contract.getBusNo()) || StringUtils.isEmpty(contract.getName())) {
+                continue;
+            }
+            OptionDto option = new OptionDto();
+            if (contract.getDisplayOrder() != null) {
+                option.setSort(contract.getDisplayOrder().longValue());
+            }
+            option.setValue(contract.getBusNo().trim());
+            option.setLabel(contract.getName().trim());
+            options.add(option);
+        }
+        return options;
+    }
+
+    /**
+     * 构造收款人下拉岗池：仅款员岗（{@code ROLE_CASHIER} / {@code adm_pr_assign}），供多选软筛。
+     *
+     * <p>不含管理员岗、不含财务岗：admin 仅当挂了款员岗，或查询后作为窗内实际收费人合并进下拉。
+     * 空选表示不按人过滤。岗池直出 Option，不做 identity 用户态二次过滤。</p>
+     *
+     * @return 收款人 OptionDto 列表；永不为 null
+     */
+    private List<OptionDto> buildCashierOptions() {
+        // Pre：仅款员岗在岗人员（adm_pr_assign + ROLE_CASHIER）；保留挂款员岗的 admin（excludePlatformAdmin=false）
+        Page<Practitioner> page = this.practitionerRoleScopeLoader.pageActivePractitionersForPlatformRole(
+            PlatformRoleCodeConstants.ROLE_CASHIER,
+            null,
+            null,
+            PageRequest.of(0, InpatientDailySettlementConstants.CASHIER_OPTION_PAGE_SIZE),
+            true,
+            false);
+        List<OptionDto> options = new ArrayList<>();
+        for (Practitioner practitioner : page.getContent()) {
+            if (practitioner == null || practitioner.getId() == null) {
+                continue;
+            }
+            OptionDto option = new OptionDto();
+            option.setValue(String.valueOf(practitioner.getId()));
+            if (practitioner.getName() != null) {
+                option.setLabel(practitioner.getName());
+            } else {
+                option.setLabel(String.valueOf(practitioner.getId()));
+            }
+            options.add(option);
+        }
+        return options;
+    }
+
+    /**
+     * 解析收款人可选软筛（仅 cashierIds；空=不按人）。
+     *
+     * <p>人选软筛不按代交账权限拦截：岗池与窗内收费人均可勾选。</p>
+     *
+     * @param cashierIds 多选收款人
+     * @param operatorId 当前登录用户
+     * @return 筛选范围
+     */
+    private DailySettlementCashierScope resolveCashierScope(
+        List<Long> cashierIds,
+        Long operatorId) {
+        Long currentCashierId = this.resolveCurrentCashierPractitionerId(operatorId);
+        return this.dailySettlementCashierScopeResolver.resolve(
+            cashierIds,
+            currentCashierId,
+            operatorId,
+            InpatientDailySettlementConstants.EX_IP_DCL_102);
+    }
+
+    /**
+     * 解析当前登录用户对应的收款人 Practitioner 主键。
+     *
+     * @param operatorUserId 当前登录用户主键
+     * @return Practitioner 主键；无法解析则 null
+     */
+    private Long resolveCurrentCashierPractitionerId(Long operatorUserId) {
+        Long practitionerId = this.currentPractitionerResolver.findPractitionerIdOrNull();
+        if (practitionerId != null) {
+            return practitionerId;
+        }
+        if (operatorUserId == null) {
+            return null;
+        }
+        Practitioner practitioner = this.practitionerQueryService.findByUserId(operatorUserId);
+        if (practitioner == null || practitioner.getId() == null) {
+            return null;
+        }
+        return practitioner.getId();
+    }
+
+    /**
+     * 组装预览查询：落 orgId（头表范围键）+ 可选 enterer 软筛。
+     *
+     * <p>收款不绑款台：{@code locationIds} 传 {@code null}，Payment 读侧<strong>不</strong>按科室下地点过滤。</p>
+     *
+     * @param request    预览请求（含 orgId 与日期窗）
+     * @param typeEnum   交账类型 code
+     * @param operatorId 当前登录用户主键
+     * @return 领域预览查询
+     */
+    private PreviewCashierSettlementQuery buildPreviewQuery(
+        PreviewInpatientDailySettlementRequest request,
+        String typeEnum,
+        Long operatorId) {
+        // Pre：收款候选仅 type+时间窗（+可选人软筛）；不下推 org→location 白名单
+        PreviewCashierSettlementQuery previewQuery = this.inpatientDailySettlementMapper.toPreviewCashierSettlementQuery(
+            request,
+            typeEnum,
+            null);
+        DailySettlementCashierScope cashierScope = this.resolveCashierScope(
+            request.getCashierIds(),
+            operatorId);
+        this.applyCashierScopeToPreviewQuery(previewQuery, cashierScope);
+        return previewQuery;
+    }
+
+    /**
+     * 提交请求转预览请求。
+     */
+    private PreviewInpatientDailySettlementRequest toPreviewRequestFromSubmit(
+        SubmitInpatientDailySettlementRequest request) {
+        PreviewInpatientDailySettlementRequest previewRequest = new PreviewInpatientDailySettlementRequest();
+        previewRequest.setDateFrom(request.getDateFrom());
+        previewRequest.setDateTo(request.getDateTo());
+        previewRequest.setOrgId(request.getOrgId());
+        previewRequest.setCashierIds(request.getCashierIds());
+        return previewRequest;
+    }
+
+    /**
+     * 交账科室 Gate。
+     */
+    private void assertOrgIdRequired(Long orgId, String errorCode) {
+        if (orgId == null) {
+            throw new BusinessException(errorCode, "请选择交账科室");
+        }
+    }
+
+    /**
+     * 窗内收费人 Practitioner 主键 → OptionDto 下拉（供前端合并进 cashierOptions）。
+     *
+     * <p>入参须已由 {@link PaymentEntererMatchResolver#resolvePractitionerIdsFromEntererIds} 归一。</p>
+     *
+     * @param practitionerIdsInWindow 窗内收费人 Practitioner 主键（去重）
+     * @return 收费人选项
+     */
+    private List<OptionDto> buildPractitionerOptions(List<Long> practitionerIdsInWindow) {
+        List<OptionDto> options = new ArrayList<>();
+        if (practitionerIdsInWindow == null || practitionerIdsInWindow.isEmpty()) {
+            return options;
+        }
+        List<Practitioner> practitioners =
+            this.practitionerQueryService.findAllByIds(practitionerIdsInWindow);
+        Map<Long, Practitioner> practitionerById = new LinkedHashMap<>();
+        for (Practitioner practitioner : practitioners) {
+            if (practitioner != null && practitioner.getId() != null) {
+                practitionerById.put(practitioner.getId(), practitioner);
+            }
+        }
+        for (Long practitionerId : practitionerIdsInWindow) {
+            if (practitionerId == null) {
+                continue;
+            }
+            Practitioner practitioner = practitionerById.get(practitionerId);
+            OptionDto option = new OptionDto();
+            option.setValue(String.valueOf(practitionerId));
+            if (practitioner != null && practitioner.getName() != null) {
+                option.setLabel(practitioner.getName());
+            } else {
+                option.setLabel(String.valueOf(practitionerId));
+            }
+            options.add(option);
+        }
+        return options;
+    }
+
+    /**
+     * 可选软筛 entererMatchIds 写入提交命令。
+     */
+    private void applyOptionalEntererSoftFilterToCommand(
+        SubmitCashierSettlementCommand command,
+        PreviewCashierSettlementQuery previewQuery) {
+        if (command == null || previewQuery == null) {
+            return;
+        }
+        List<Long> entererMatchIds = previewQuery.getEntererMatchIds();
+        if (entererMatchIds != null && !entererMatchIds.isEmpty()) {
+            command.setEntererMatchIds(entererMatchIds);
+        }
+    }
+
+    /**
+     * 撤回权限 Gate：须为款员岗，且头表须为 SUBMITTED。
+     *
+     * @param settlement 交账头
+     * @param errorCode  权限不足异常码
+     */
+    private void assertWithdrawPermission(CashierSettlement settlement, String errorCode) {
+        // 无头不能撤回
+        if (settlement == null) {
+            throw new BusinessException(errorCode, "交账记录不存在");
+        }
+        // 已审或已撤回不可再撤，只允许待审
+        if (!CashierSettlementStatus.isSubmitted(settlement.getStatusEnum())) {
+            throw new BusinessException(errorCode, "仅待审交账可撤回");
+        }
+        Long currentPractitionerId = this.currentPractitionerResolver.findPractitionerIdOrNull();
+        // 撤回只认款员岗，不认提交人、财务或管理员
+        if (this.holdsCashierRole(currentPractitionerId)) {
+            return;
+        }
+        throw new BusinessException(errorCode, "仅款员可撤回该交账");
+    }
+
+    /**
+     * 交账状态 code → 展示名；未知 code 回落原值。
+     *
+     * @param statusEnum 状态 code
+     * @return 展示名
+     */
+    private String resolveCashierSettlementStatusDisplay(String statusEnum) {
+        if (StringUtils.isEmpty(statusEnum)) {
+            return statusEnum;
+        }
+        for (CashierSettlementStatus status : CashierSettlementStatus.values()) {
+            if (status.getCode().equals(statusEnum.trim())) {
+                return status.getDisplay();
+            }
+        }
+        return statusEnum;
+    }
+
+    /**
+     * 日结时间起止必填且止不早于起。
+     *
+     * @param dateFrom 起
+     * @param dateTo   止
+     * @throws BusinessException 参数非法
+     */
+    private void assertDateRangeValid(LocalDateTime dateFrom, LocalDateTime dateTo) {
+        // Gate：日结时间起止均须填写
+        if (dateFrom == null || dateTo == null) {
+            throw new BusinessException(
+                InpatientDailySettlementConstants.EX_IP_DCL_102,
+                "请选择有效的日结时间范围");
+        }
+        // Gate：止不得早于起
+        if (dateTo.isBefore(dateFrom)) {
+            throw new BusinessException(
+                InpatientDailySettlementConstants.EX_IP_DCL_102,
+                "请选择有效的日结时间范围");
+        }
+    }
+
+    /**
+     * 从未交账预览行收集 paymentId（保序去重）。
+     *
+     * @param previewItems 预览行
+     * @return paymentId 集合
+     */
+    private Set<Long> collectPaymentIdsFromPreviewItems(List<UnsettledPaymentPreviewItemQueryModel> previewItems) {
+        Set<Long> paymentIds = new LinkedHashSet<>();
+        if (previewItems == null) {
+            return paymentIds;
+        }
+        for (UnsettledPaymentPreviewItemQueryModel item : previewItems) {
+            if (item != null && item.getPaymentId() != null) {
+                paymentIds.add(item.getPaymentId());
+            }
+        }
+        return paymentIds;
+    }
+
+    /**
+     * 从预览行收集 fin_contract busNo（trim 后非空）。
+     *
+     * @param previewItems 预览行
+     * @return 合同 busNo 集合
+     */
+    private Set<String> collectContractBusNosFromPreviewItems(List<UnsettledPaymentPreviewItemQueryModel> previewItems) {
+        Set<String> contractBusNos = new LinkedHashSet<>();
+        if (previewItems == null) {
+            return contractBusNos;
+        }
+        for (UnsettledPaymentPreviewItemQueryModel item : previewItems) {
+            if (item == null || item.getContractNo() == null) {
+                continue;
+            }
+            String busNo = item.getContractNo().trim();
+            if (!busNo.isEmpty()) {
+                contractBusNos.add(busNo);
+            }
+        }
+        return contractBusNos;
+    }
+
+    /**
+     * 按 payment 主键批量加载渠道明细（分批 IN，避免 N+1）。
+     *
+     * @param paymentIds payment 主键集合
+     * @return paymentId → 明细列表
+     */
+    private Map<Long, List<PaymentRecDetailQueryModel>> loadRecDetailsByPaymentIds(Set<Long> paymentIds) {
+        return this.paymentReconciliationQueryService.mapPaymentRecDetailsByPaymentIds(paymentIds);
+    }
+
+    /**
+     * 从 payment 读模型按出现顺序收集 encounterId（去重）。
+     *
+     * @param paymentModels payment 列表
+     * @return 有序 encounterId
+     */
+    private List<Long> collectEncounterIdsOrdered(List<PaymentReconciliationQueryModel> paymentModels) {
+        List<Long> encounterIds = new ArrayList<>();
+        Set<Long> seen = new LinkedHashSet<>();
+        if (paymentModels == null) {
+            return encounterIds;
+        }
+        for (PaymentReconciliationQueryModel paymentModel : paymentModels) {
+            if (paymentModel == null || paymentModel.getEncounterId() == null) {
+                continue;
+            }
+            if (!seen.contains(paymentModel.getEncounterId())) {
+                seen.add(paymentModel.getEncounterId());
+                encounterIds.add(paymentModel.getEncounterId());
+            }
+        }
+        return encounterIds;
+    }
+
+    /**
+     * 住院就诊上下文列表 → encounterId 索引。
+     *
+     * @param encounterContexts 就诊快照
+     * @return encounterId → 上下文
+     */
+    private Map<Long, InpatientEncounterContextQueryModel> buildEncounterIndex(
+        List<InpatientEncounterContextQueryModel> encounterContexts) {
+        Map<Long, InpatientEncounterContextQueryModel> index = new LinkedHashMap<>();
+        if (encounterContexts == null) {
+            return index;
+        }
+        for (InpatientEncounterContextQueryModel context : encounterContexts) {
+            if (context != null && context.getEncounterId() != null) {
+                index.put(context.getEncounterId(), context);
+            }
+        }
+        return index;
+    }
+
+    /**
+     * 校验勾选 payment 主键均属于当前未交账候选集。
+     *
+     * @param paymentIds       请求勾选列表
+     * @param lockedPreview    提交前锁定的未交账预览
+     * @param invalidExCode    越权 ID 异常码
+     * @param emptyExCode      空列表异常码
+     */
+    private void assertPaymentIdsSubsetOfCandidates(
+        List<Long> paymentIds,
+        PreviewCashierSettlementQueryModel lockedPreview,
+        String invalidExCode,
+        String emptyExCode) {
+        if (paymentIds == null || paymentIds.isEmpty()) {
+            throw new BusinessException(emptyExCode, "请至少选择一笔待交账流水");
+        }
+        Set<Long> candidateIds;
+        // 无锁定预览则按空候选集校验勾选
+        if (lockedPreview == null) {
+            candidateIds = this.collectPaymentIdsFromPreviewItems(null);
+        } else {
+            candidateIds = this.collectPaymentIdsFromPreviewItems(lockedPreview.getItems());
+        }
+        for (Long paymentId : paymentIds) {
+            // 勾选须 ⊆ 未交账候选，防并发交账越权
+            if (paymentId == null || !candidateIds.contains(paymentId)) {
+                throw new BusinessException(
+                    invalidExCode,
+                    "所选流水不在待交账范围内或已变更，请刷新后重试");
+            }
+        }
+    }
+
+    /**
+     * 按 payment 主键过滤读模型（保序）。
+     *
+     * @param paymentModels 展示窗 payment 读模型
+     * @param paymentIds    目标主键集合
+     * @return 命中子集
+     */
+    private List<PaymentReconciliationQueryModel> filterPaymentModelsByIds(
+        List<PaymentReconciliationQueryModel> paymentModels,
+        Set<Long> paymentIds) {
+        List<PaymentReconciliationQueryModel> result = new ArrayList<>();
+        if (paymentModels == null || paymentIds == null || paymentIds.isEmpty()) {
+            return result;
+        }
+        for (PaymentReconciliationQueryModel paymentModel : paymentModels) {
+            if (paymentModel != null
+                && paymentModel.getId() != null
+                && paymentIds.contains(paymentModel.getId())) {
+                result.add(paymentModel);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 将请求时间窗写入预览 summary.dateRange 展示串。
+     *
+     * @param response 预览响应
+     * @param dateFrom 起
+     * @param dateTo   止
+     */
+    private void applyDateRangeToSummary(
+        PreviewInpatientDailySettlementResponse response,
+        LocalDateTime dateFrom,
+        LocalDateTime dateTo) {
+        if (response == null || response.getSummary() == null) {
+            // 无汇总块时不改写 dateRange
+            return;
+        }
+        String rangeText = dateFrom.format(GeneralSharedConstants.DATE_TIME_FORMATTER)
+            + " ~ " + dateTo.format(GeneralSharedConstants.DATE_TIME_FORMATTER);
+        response.getSummary().setDateRange(rangeText);
+    }
+
+    /**
+     * 将收款人筛选范围写入预览查询（entererMatchIds）。
+     *
+     * @param previewQuery 日结预览/提交共用查询
+     * @param cashierScope 已解析范围
+     */
+    private void applyCashierScopeToPreviewQuery(
+        PreviewCashierSettlementQuery previewQuery,
+        DailySettlementCashierScope cashierScope) {
+        if (previewQuery == null || cashierScope == null) {
+            return;
+        }
+        List<Long> entererMatchIds = cashierScope.entererMatchIds();
+        if (entererMatchIds == null || entererMatchIds.isEmpty()) {
+            return;
+        }
+        previewQuery.setEntererMatchIds(entererMatchIds);
+    }
+}

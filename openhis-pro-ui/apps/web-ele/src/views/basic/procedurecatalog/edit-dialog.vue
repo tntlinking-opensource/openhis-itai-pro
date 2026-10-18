@@ -3,22 +3,17 @@ import type { ProcedureCatalogInitResponse, ProcedureCatalogItem } from '#/api';
 
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 
-import { useVbenModal } from '@vben/common-ui';
+import { useVbenModal } from '@zxplat/common-ui';
 
-import { ElButton, ElMessage } from 'element-plus';
+import { ElMessage } from 'element-plus';
 
 import { useVbenForm } from '#/adapter/form';
 import {
   createProcedureCatalogApi,
   getProcedureCatalogApi,
   initProcedureCatalogApi,
-  pageProcedureCatalogApi,
   updateProcedureCatalogApi,
 } from '#/api';
-import { httpSearchSurchargeActivityDefinition } from '#/api/inpatient/doctor-station/inpatient-doctor-station-surgery-anesth.http';
-import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
-import SelectTable from '#/components/select-table.vue';
-import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 /** 国家临床版手术 3.0 */
 const SOURCE_CLINICAL_PROC_V3 = 'clinical_proc_v3';
@@ -43,25 +38,18 @@ const emit = defineEmits<{
 const originalData = ref<Partial<ProcedureCatalogItem>>({});
 const procedureCategoryList = ref<Array<{ label: string; value: number | string }>>([]);
 const statusFlagOptions = ref<Array<{ label: string; value: number | string }>>([]);
-/** 当前表单来源（驱动字段只读/选码） */
+/** 当前表单来源（驱动编码标签） */
 const currentSource = ref<string>('');
-/** 国临选码展示名（general_op 侧） */
-const clinicSelectedLabel = ref('');
-/** 医保选码展示名（clinical_proc_v3 侧） */
-const ybSelectedLabel = ref('');
-/** 挂靠诊疗项目展示名 */
-const activitySelectedLabel = ref('');
 
 const isEditMode = computed(() => !!props.formData?.id);
 const isClinicalProcV3 = computed(() => currentSource.value === SOURCE_CLINICAL_PROC_V3);
 const isGeneralOp = computed(() => currentSource.value === SOURCE_GENERAL_OP);
 
-const crossCodeColumns = [
-  { prop: 'procedureCode', label: '编码', width: 140 },
-  { prop: 'name', label: '名称', minWidth: 220 },
-  { prop: 'pyStr', label: '拼音', width: 100 },
-];
-
+/**
+ * 详情字段规范化：标志位与状态码统一为表单可绑类型。
+ *
+ * @param data 接口详情
+ */
 function normalizeDetailForForm(data: Record<string, unknown>) {
   const next: Record<string, unknown> = { ...data };
   if (next.ybFlag === 1 || next.ybFlag === '1') {
@@ -80,96 +68,9 @@ function normalizeDetailForForm(data: Record<string, unknown>) {
   return next;
 }
 
-async function searchCatalogBySource(sourceEnum: string, params: Record<string, unknown>) {
-  const response = await pageProcedureCatalogApi({
-    pageNo: Number(params.pageNo ?? 1) || 1,
-    pageSize: Number(params.pageSize ?? 20) || 20,
-    keyword: String(params.keyword ?? '').trim() || undefined,
-    sourceEnum,
-  });
-  const parsed = parsePagedRowsFromApiData<ProcedureCatalogItem>(response.data);
-  const content = (parsed.content ?? []).map((item) => ({
-    ...item,
-    value: String(item.procedureCode ?? ''),
-    label: String(item.name ?? ''),
-  }));
-  return { content, totalCount: parsed.totalCount };
-}
-
-function remoteSearchClinicalProcV3(params: Record<string, unknown>) {
-  return searchCatalogBySource(SOURCE_CLINICAL_PROC_V3, params);
-}
-
-function remoteSearchGeneralOp(params: Record<string, unknown>) {
-  return searchCatalogBySource(SOURCE_GENERAL_OP, params);
-}
-
-function onClinicCodePicked(code: string | string[]) {
-  const v = Array.isArray(code) ? (code[0] ?? '') : code;
-  formApi.setFieldValue('clinicCode', v || undefined);
-}
-
-function onClinicBeforeClose(item: Record<string, unknown>) {
-  clinicSelectedLabel.value = String(item.name ?? item.label ?? '');
-  return true;
-}
-
-function onYbNoPicked(code: string | string[]) {
-  const v = Array.isArray(code) ? (code[0] ?? '') : code;
-  formApi.setFieldValue('ybNo', v || undefined);
-}
-
-function onYbBeforeClose(item: Record<string, unknown>) {
-  ybSelectedLabel.value = String(item.name ?? item.label ?? '');
-  formApi.setFieldValue('ybNo', String(item.procedureCode ?? item.value ?? '') || undefined);
-  return true;
-}
-
-function clearClinicCode() {
-  formApi.setFieldValue('clinicCode', undefined);
-  clinicSelectedLabel.value = '';
-}
-
-function clearYbNo() {
-  formApi.setFieldValue('ybNo', undefined);
-  ybSelectedLabel.value = '';
-}
-
-/** 国临目录挂靠计费诊疗项目，供医生站术式开立 */
-async function remoteSearchActivity(params: Record<string, unknown>) {
-  const res = await httpSearchSurchargeActivityDefinition({
-    keyword: String(params.keyword ?? '').trim() || undefined,
-    sideCode: 'SURGERY',
-    pageNo: Number(params.pageNo ?? 1) || 1,
-    pageSize: Number(params.pageSize ?? 20) || 20,
-  });
-  const content = (res.items ?? []).map((item) => ({
-    ...item,
-    value: preserveApiIdForRequest(item.activityDefinitionId) ?? '',
-    label: item.name ?? '',
-  }));
-  return { content, totalCount: res.totalCount ?? content.length };
-}
-
-function onActivityPicked(id: string | string[]) {
-  const v = Array.isArray(id) ? (id[0] ?? '') : id;
-  formApi.setFieldValue('activityDefinitionId', v || undefined);
-}
-
-function onActivityBeforeClose(item: Record<string, unknown>) {
-  activitySelectedLabel.value = String(item.name ?? item.label ?? '');
-  formApi.setFieldValue(
-    'activityDefinitionId',
-    preserveApiIdForRequest(item.activityDefinitionId ?? item.value) || undefined,
-  );
-  return true;
-}
-
-function clearActivity() {
-  formApi.setFieldValue('activityDefinitionId', undefined);
-  activitySelectedLabel.value = '';
-}
-
+/**
+ * 提交保存：编码都写在本行，不再做对侧目录选码/挂靠。
+ */
 async function handleSubmit() {
   const { valid } = await formApi.validate();
   if (!valid) {
@@ -186,30 +87,34 @@ async function handleSubmit() {
         submitData[key] = value;
       }
     });
-    submitData.activityDefinitionId =
-      preserveApiIdForRequest(submitData.activityDefinitionId) || undefined;
+    // 本行编码自洽：国临行 procedureCode=clinicCode；医保行 procedureCode=ybNo
     if (submitData.sourceEnum === SOURCE_CLINICAL_PROC_V3) {
-      submitData.clinicCode = String(submitData.procedureCode ?? '').trim() || undefined;
+      const code = String(submitData.procedureCode ?? '').trim();
+      submitData.procedureCode = code || undefined;
+      submitData.clinicCode = code || undefined;
       const yb = String(submitData.ybNo ?? '').trim();
       submitData.ybNo = yb || undefined;
       submitData.ybFlag = yb ? 1 : 0;
       submitData.ybMatchFlag = yb ? 1 : 0;
     } else if (submitData.sourceEnum === SOURCE_GENERAL_OP) {
-      const yb =
-        String(submitData.ybNo ?? '').trim() || String(submitData.procedureCode ?? '').trim();
-      submitData.ybNo = yb || undefined;
+      const code = String(submitData.procedureCode ?? '').trim();
+      submitData.procedureCode = code || undefined;
+      submitData.ybNo = code || undefined;
       submitData.ybFlag = 1;
       const clinic = String(submitData.clinicCode ?? '').trim();
+      submitData.clinicCode = clinic || undefined;
       submitData.ybMatchFlag = clinic ? 1 : 0;
     }
+    // 开立不依赖挂靠 AD，维护页不再维护该字段
+    delete submitData.activityDefinitionId;
 
     if (isEditMode.value) {
       await updateProcedureCatalogApi(submitData);
-      ElMessage.success('更新成功（对照已同步到对侧目录）');
+      ElMessage.success('更新成功');
     } else {
       const { id: _id, ...createData } = submitData;
       await createProcedureCatalogApi(createData);
-      ElMessage.success('创建成功（对照已同步到对侧目录）');
+      ElMessage.success('创建成功');
     }
     emit('success');
     modalApi.close();
@@ -221,10 +126,10 @@ async function handleSubmit() {
   }
 }
 
+/**
+ * 打开弹窗时装载详情或新增空表。
+ */
 async function loadFormData() {
-  clinicSelectedLabel.value = '';
-  ybSelectedLabel.value = '';
-  activitySelectedLabel.value = '';
   const id = props.formData?.id;
   if (id) {
     modalApi.setState({ loading: true });
@@ -235,21 +140,6 @@ async function loadFormData() {
         originalData.value = { ...data };
         currentSource.value = String(data.sourceEnum ?? '');
         formApi.setValues(normalizeDetailForForm(data as Record<string, unknown>));
-        clinicSelectedLabel.value = String(data.clinicCode ?? '');
-        ybSelectedLabel.value = String(data.ybNo ?? '');
-        activitySelectedLabel.value = data.activityDefinitionId
-          ? String(data.activityDefinitionId)
-          : '';
-        if (data.sourceEnum === SOURCE_GENERAL_OP && data.clinicCode) {
-          await resolveLabel(SOURCE_CLINICAL_PROC_V3, String(data.clinicCode), (n) => {
-            clinicSelectedLabel.value = n;
-          });
-        }
-        if (data.sourceEnum === SOURCE_CLINICAL_PROC_V3 && data.ybNo) {
-          await resolveLabel(SOURCE_GENERAL_OP, String(data.ybNo), (n) => {
-            ybSelectedLabel.value = n;
-          });
-        }
       } else {
         ElMessage.warning('未找到手术目录信息');
         modalApi.close();
@@ -272,24 +162,9 @@ async function loadFormData() {
   }
 }
 
-async function resolveLabel(sourceEnum: string, code: string, apply: (name: string) => void) {
-  try {
-    const res = await pageProcedureCatalogApi({
-      pageNo: 1,
-      pageSize: 5,
-      keyword: code,
-      sourceEnum,
-    });
-    const parsed = parsePagedRowsFromApiData<ProcedureCatalogItem>(res.data);
-    const hit = (parsed.content ?? []).find((r) => String(r.procedureCode) === code);
-    if (hit?.name) {
-      apply(`${hit.procedureCode} ${hit.name}`);
-    }
-  } catch {
-    // 展示编码即可
-  }
-}
-
+/**
+ * 加载目录分类与状态选项。
+ */
 async function loadInitData() {
   try {
     const res = await initProcedureCatalogApi();
@@ -323,9 +198,14 @@ const [Modal, modalApi] = useVbenModal({
 
 const fullWidthStyle = { width: '100%' };
 
-const convertOptions = (
+/**
+ * 下拉选项转 Form Select 结构。
+ *
+ * @param options 初始化选项
+ */
+function convertOptions(
   options: Array<{ label: string; value: number | string }> | null | undefined,
-) => {
+) {
   if (!options || !Array.isArray(options)) {
     return [];
   }
@@ -333,17 +213,22 @@ const convertOptions = (
     label: item.label,
     value: item.value,
   }));
-};
+}
 
-/** 对照选码区：按来源只留一边 SelectTable */
-const crossCodeSchema = computed(() => {
+/**
+ * 本行辅码：国临行可填医保编码；医保行可填国临码——均为本表输入，不对侧选码。
+ */
+const sameLineExtraCodeSchema = computed(() => {
   if (isClinicalProcV3.value) {
     return [
       {
         component: 'Input' as const,
         fieldName: 'ybNo',
         label: '医保编码',
-        formItemClass: 'col-span-2',
+        componentProps: {
+          placeholder: '可选，本行填写医保手术编码',
+          clearable: true,
+        },
       },
     ];
   }
@@ -353,7 +238,10 @@ const crossCodeSchema = computed(() => {
         component: 'Input' as const,
         fieldName: 'clinicCode',
         label: '国临码',
-        formItemClass: 'col-span-2',
+        componentProps: {
+          placeholder: '可选，本行填写国临手术编码',
+          clearable: true,
+        },
       },
     ];
   }
@@ -394,8 +282,6 @@ const [Form, formApi] = useVbenForm(
             currentSource.value = String(v ?? '');
             formApi.setFieldValue('clinicCode', undefined);
             formApi.setFieldValue('ybNo', undefined);
-            clinicSelectedLabel.value = '';
-            ybSelectedLabel.value = '';
           },
         },
       },
@@ -411,14 +297,6 @@ const [Form, formApi] = useVbenForm(
               : '请先选择手术目录',
           clearable: true,
           disabled: !currentSource.value,
-          onChange: async (v: string) => {
-            if (isClinicalProcV3.value) {
-              formApi.setFieldValue('clinicCode', v || undefined);
-            }
-            if (isGeneralOp.value) {
-              formApi.setFieldValue('ybNo', v || undefined);
-            }
-          },
         },
       },
       {
@@ -427,17 +305,7 @@ const [Form, formApi] = useVbenForm(
         label: '类别',
         componentProps: { placeholder: '请输入手术类别', clearable: true },
       },
-      ...crossCodeSchema.value,
-      ...(isClinicalProcV3.value
-        ? [
-            {
-              component: 'Input' as const,
-              fieldName: 'activityDefinitionId',
-              label: '挂靠项目',
-              formItemClass: 'col-span-2',
-            },
-          ]
-        : []),
+      ...sameLineExtraCodeSchema.value,
       {
         component: 'Select',
         fieldName: 'statusEnum',
@@ -493,64 +361,10 @@ watch(
     :close-on-click-modal="false"
     :close-on-press-escape="false"
   >
-    <p class="procedure-form-dialog__hint">对照请从对侧目录选择，保存后自动同步。</p>
-    <Form>
-      <!-- 插槽名必须等于 fieldName，Form 按 fieldName 分发 -->
-      <template #ybNo="slotProps">
-        <div v-if="isClinicalProcV3" class="procedure-form-dialog__picker">
-          <SelectTable
-            :model-value="slotProps?.value ?? undefined"
-            :selected-label="ybSelectedLabel"
-            placeholder="从「手术操作目录」选择医保编码"
-            :remote-method="remoteSearchGeneralOp"
-            :columns="crossCodeColumns"
-            value-key="procedureCode"
-            label-key="name"
-            :panel-width="640"
-            :before-close="onYbBeforeClose"
-            @update:model-value="onYbNoPicked"
-          />
-          <ElButton link type="danger" @click="clearYbNo">清除</ElButton>
-        </div>
-      </template>
-      <template #activityDefinitionId="slotProps">
-        <div v-if="isClinicalProcV3" class="procedure-form-dialog__picker">
-          <SelectTable
-            :model-value="slotProps?.value ?? undefined"
-            :selected-label="activitySelectedLabel"
-            placeholder="选择计费诊疗项目"
-            :remote-method="remoteSearchActivity"
-            :columns="[
-              { prop: 'busNo', label: '编码', width: 140 },
-              { prop: 'name', label: '名称', minWidth: 220 },
-            ]"
-            value-key="activityDefinitionId"
-            label-key="name"
-            :panel-width="640"
-            :before-close="onActivityBeforeClose"
-            @update:model-value="onActivityPicked"
-          />
-          <ElButton link type="danger" @click="clearActivity">清除</ElButton>
-        </div>
-      </template>
-      <template #clinicCode="slotProps">
-        <div v-if="isGeneralOp" class="procedure-form-dialog__picker">
-          <SelectTable
-            :model-value="slotProps?.value ?? undefined"
-            :selected-label="clinicSelectedLabel"
-            placeholder="从「国家临床版手术3.0」选择国临码"
-            :remote-method="remoteSearchClinicalProcV3"
-            :columns="crossCodeColumns"
-            value-key="procedureCode"
-            label-key="name"
-            :panel-width="640"
-            :before-close="onClinicBeforeClose"
-            @update:model-value="onClinicCodePicked"
-          />
-          <ElButton link type="danger" @click="clearClinicCode">清除</ElButton>
-        </div>
-      </template>
-    </Form>
+    <p class="procedure-form-dialog__hint">
+      编码写在本行即可：主编码按目录类型填写；另一编码为可选文本，不再从对侧目录选码、也不挂靠诊疗项目。
+    </p>
+    <Form />
   </Modal>
 </template>
 
@@ -568,18 +382,5 @@ watch(
   color: #666;
   font-size: 12px;
   line-height: 1.5;
-}
-
-.procedure-form-dialog__picker {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  width: 100%;
-}
-
-.procedure-form-dialog__picker :deep(.vxe-pulldown),
-.procedure-form-dialog__picker :deep(.vxe-input) {
-  flex: 1;
-  width: 100%;
 }
 </style>

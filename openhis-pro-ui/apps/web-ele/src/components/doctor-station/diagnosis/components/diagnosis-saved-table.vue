@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type {
   DiagnosisOptionDto,
@@ -9,7 +9,7 @@ import type {
 import { computed } from 'vue';
 
 import { ElButton, ElOption, ElSelect, ElTag } from 'element-plus';
-import { Table } from '@vben-core/table-layout-ui';
+import { Table } from '@zxplat-core/table-layout-ui';
 
 import type { DoctorStationDiagnosisScope } from '../services/encounter-diagnosis.service';
 
@@ -19,7 +19,10 @@ import {
   resolveChronicMedicalTypeTag,
 } from '#/utils/chronic-medical-type';
 
-import { formatDiagnosisYbNoDisplay } from '../services/tcm-diagnosis-display';
+import {
+  formatDiagnosisYbNoDisplay,
+  hasDiagnosisYbNo,
+} from '../services/tcm-diagnosis-display';
 
 defineOptions({ name: 'DiagnosisSavedTable' });
 
@@ -363,7 +366,9 @@ function onMedicalTypeSelectChange(
           border
         >
           <template #ybNo="{ row }">
-            <span>{{ formatDiagnosisYbNoDisplay(row.ybNo) }}</span>
+            <span :class="{ 'text-red-500': !hasDiagnosisYbNo(row.ybNo) }">
+              {{ formatDiagnosisYbNoDisplay(row.ybNo) }}
+            </span>
           </template>
           <template #dxName="{ row }">
             <span class="dx-name-cell">

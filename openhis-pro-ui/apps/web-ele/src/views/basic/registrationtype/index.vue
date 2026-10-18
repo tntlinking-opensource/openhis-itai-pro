@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { RegistrationType } from '#/api/core/system/registration';
 
 import { onMounted, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { ElButton, ElMessage, ElMessageBox, ElTag } from 'element-plus';
 
@@ -264,7 +264,7 @@ onMounted(() => {
         <ElButton type="primary" @click="handleAdd">新增</ElButton>
       </template>
       <template #activeFlag="{ row }">
-        <ElTag :type="isRegistrationTypeActive(row) ? 'success' : 'info'">
+        <ElTag :type="isRegistrationTypeActive(row) ? 'success' : 'warning'">
           {{ isRegistrationTypeActive(row) ? '启用' : '停用' }}
         </ElTag>
       </template>

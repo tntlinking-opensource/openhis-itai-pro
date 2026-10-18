@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import type { SelectOption } from '@vben/types';
+import type { SelectOption } from '@zxplat/types';
 
 import { useSlots } from 'vue';
 
-import { CircleHelp, CircleX } from '@vben/icons';
+import { CircleHelp, CircleX } from '@zxplat/icons';
 
-import { Input, VbenTooltip } from '@vben-core/shadcn-ui';
+import { Input, VbenTooltip } from '@zxplat-core/shadcn-ui';
 
 defineOptions({
   name: 'PreferenceSelectItem',

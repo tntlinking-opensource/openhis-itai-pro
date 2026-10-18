@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import { ElCard } from 'element-plus';
 

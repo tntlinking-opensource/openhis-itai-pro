@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-import { ProfileNotificationSetting } from '@vben/common-ui';
+import { ProfileNotificationSetting } from '@zxplat/common-ui';
 
 const formSchema = computed(() => {
   return [

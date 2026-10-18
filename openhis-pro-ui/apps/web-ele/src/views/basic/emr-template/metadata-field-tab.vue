@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { MetadataFieldDto } from '#/api/emr/metadata-field';
 
 import { computed, reactive, ref } from 'vue';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { ElButton, ElMessage, ElMessageBox, ElTag } from 'element-plus';
 
@@ -238,7 +238,7 @@ getList();
         </ElTag>
       </template>
       <template #enabled="{ row }">
-        <ElTag :type="isRowEnabled(row) ? 'success' : 'info'" size="small">
+        <ElTag :type="isRowEnabled(row) ? 'success' : 'warning'" size="small">
           {{ isRowEnabled(row) ? '启用' : '停用' }}
         </ElTag>
       </template>

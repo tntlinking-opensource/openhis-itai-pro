@@ -98,6 +98,12 @@ export interface ListOriginalPayChannelCodesRequest {
   paymentId: string;
 }
 
+/** 原支付按渠道汇总的实付（退号确认窗；与支付明细同源） */
+export interface OriginalPayChannelAmountDto {
+  amount?: null | number | string;
+  payChannelCode?: null | string;
+}
+
 /** 执行前可退门禁请求 */
 export interface VerifyRefundableBeforeExecutionRequest {
   encounterId: string;

@@ -10,6 +10,12 @@ import { computed, inject, nextTick, ref } from 'vue';
 import dayjs from 'dayjs';
 import { ElMessage } from 'element-plus';
 
+import {
+  TEMPERATURE_SHEET_SHOW_ALLERGY_DRUG_INPUT,
+  TEMPERATURE_SHEET_SHOW_DRAINAGE_INPUT,
+  TEMPERATURE_SHEET_SHOW_OTHER_INPUT,
+  TEMPERATURE_SHEET_SHOW_REMARK_INPUT,
+} from '#/views/inpatient/nurse-station/temperature-sheet/temperature-sheet-footer.config';
 import { httpLoadNurseStationTemperatureSheetInit } from '#/api/inpatient/nurse-station/inpatient-nurse-station-temperature-sheet.http';
 import { httpSaveNurseStationTemperatureSheetAtRecordedTime } from '#/api/inpatient/nurse-station/inpatient-nurse-station-temperature-sheet.http';
 import { useFormKeyboardNavigation } from '#/hooks/use-form-keyboard-navigation';
@@ -39,7 +45,11 @@ import {
   type TemperatureSheetSpecialEventOption,
   validateFillRowsSpecialEvents,
 } from '../services/temperature-sheet-special-events';
-import { resolveTemperatureSheetChartTimeSlotFromHm } from '../services/temperature-sheet-time-format';
+import {
+  isRecordDateTimeBeforeAdmission,
+  parseDateTimeYmdHm,
+  resolveTemperatureSheetChartTimeSlotFromHm,
+} from '../services/temperature-sheet-time-format';
 import '../styles/temperature-sheet-fill-drawer.css';
 
 defineOptions({
@@ -89,7 +99,7 @@ function mapPatientItemToModulePatient(item: PatientItem): NurseStationModulePat
     id: item.id,
     patientId: item.patientId,
     encounterBusNo: item.encounterBusNo,
-    admissionAt: item.startTime,
+    admissionAt: item.admissionTime ?? item.startTime,
     dischargeAt: item.endTime,
     bedNo: item.bedNo,
     name: item.name,
@@ -130,7 +140,10 @@ const loadProgressText = computed(() => {
   return `加载中 ${loadProgress.value.done}/${loadProgress.value.total}`;
 });
 const filledRowCount = computed(
-  () => batchRows.value.filter((row) => hasBatchFillRowSaveContent(row)).length,
+  () =>
+    batchRows.value.filter(
+      (row) => hasBatchFillRowSaveContent(row) && !isBatchRowBeforeAdmission(row),
+    ).length,
 );
 
 const { handleFormKeydown: handleBatchFormKeydown } = useFormKeyboardNavigation(batchFormAreaRef, {
@@ -202,10 +215,10 @@ async function loadBatchRows(): Promise<void> {
   }
 }
 
-/** 修改批量录入时间后刷新各患者该时分回显 */
+/** 修改批量录入时间后刷新各患者该时分回显（不按入院时间抬升） */
 function handleActiveRecordTimeChange(timeHm: string): void {
   const nextTime = normalizeTemperatureSheetRecordTime(timeHm);
-  if (nextTime === activeRecordTime.value) {
+  if (!nextTime || nextTime === activeRecordTime.value) {
     return;
   }
   activeRecordTime.value = nextTime;
@@ -253,9 +266,44 @@ function isBatchRowAdmissionDay(row: TemperatureSheetBatchFillRowDraft): boolean
   return isTemperatureSheetAdmissionRecordDate(recordDate.value, row.admissionAt);
 }
 
-/** 保存前校验各行特殊事件 */
-function validateBatchSpecialEvents(): string | null {
-  for (const row of batchRows.value) {
+/** 当前批量日期+时间是否早于该患者入院时间 */
+function isBatchRowBeforeAdmission(row: TemperatureSheetBatchFillRowDraft): boolean {
+  const dateYmd = recordDate.value.trim();
+  if (!dateYmd) {
+    return false;
+  }
+  return isRecordDateTimeBeforeAdmission(dateYmd, activeRecordTime.value, row.admissionAt);
+}
+
+/** 早于入院时挂在该患者行上的提醒；未早于则空串 */
+function resolveBatchRowAdmissionHint(row: TemperatureSheetBatchFillRowDraft): string {
+  if (!isBatchRowBeforeAdmission(row)) {
+    return '';
+  }
+  const admission = parseDateTimeYmdHm(row.admissionAt);
+  if (!admission) {
+    return '测量时间早于入院时间，该患者本次不录入';
+  }
+  const dateYmd = recordDate.value.trim();
+  if (dateYmd < admission.dateYmd) {
+    return `录入日期早于入院时间 ${admission.dateYmd} ${admission.hm}，该患者本次不录入`;
+  }
+  return `测量时间早于入院时间 ${admission.hm}，该患者本次不录入`;
+}
+
+/** 早于入院且有内容的患者摘要（整批都无法保存时提示） */
+function formatBeforeAdmissionSkipMessage(rows: TemperatureSheetBatchFillRowDraft[]): string {
+  const preview = rows
+    .slice(0, 3)
+    .map((row) => `${row.bedNo} ${row.name}`)
+    .join('、');
+  const suffix = rows.length > 3 ? ` 等 ${rows.length} 人` : '';
+  return `${preview}${suffix} 的测量时间早于入院时间，未保存`;
+}
+
+/** 保存前校验各行特殊事件（早于入院的患者不参与本次保存） */
+function validateBatchSpecialEvents(rows: TemperatureSheetBatchFillRowDraft[]): string | null {
+  for (const row of rows) {
     const error = validateFillRowsSpecialEvents([row.slotRow], specialEventLabelMap.value);
     if (error) {
       return `${row.bedNo} ${row.name}：${error}`;
@@ -311,14 +359,24 @@ async function handleSaveBatch(): Promise<void> {
     syncFillRowChartTimeSlot(row.slotRow);
   }
 
-  const specialEventError = validateBatchSpecialEvents();
+  // 早于入院的患者只做行内提醒，不拦截其他人的时间，也不参与本次保存
+  const savableRows = batchRows.value.filter((row) => !isBatchRowBeforeAdmission(row));
+  const skippedRows = batchRows.value.filter(
+    (row) => isBatchRowBeforeAdmission(row) && hasBatchFillRowSaveContent(row),
+  );
+
+  const specialEventError = validateBatchSpecialEvents(savableRows);
   if (specialEventError) {
     ElMessage.warning(specialEventError);
     return;
   }
 
-  const saveRequests = collectBatchTemperatureSheetSaveRequests(batchRows.value, recordDate.value);
+  const saveRequests = collectBatchTemperatureSheetSaveRequests(savableRows, recordDate.value);
   if (saveRequests.length === 0) {
+    if (skippedRows.length > 0) {
+      ElMessage.warning(formatBeforeAdmissionSkipMessage(skippedRows));
+      return;
+    }
     ElMessage.warning('请至少为一位患者填写生命体征或补充记录');
     return;
   }
@@ -430,10 +488,14 @@ defineExpose({
               :key="row.encounterId"
               class="batch-row"
               :class="{
-                'is-persisted': isBatchFillRowPersisted(row),
+                'is-persisted': isBatchFillRowPersisted(row) && !isBatchRowBeforeAdmission(row),
                 'is-load-error': Boolean(row.loadError),
+                'is-before-admission': isBatchRowBeforeAdmission(row),
               }"
             >
+              <p v-if="resolveBatchRowAdmissionHint(row)" class="batch-admission-hint">
+                {{ resolveBatchRowAdmissionHint(row) }}
+              </p>
               <div class="batch-vital-row">
                 <button
                   class="batch-bed-cell batch-patient-link"
@@ -452,6 +514,14 @@ defineExpose({
                   <span class="batch-name">{{ row.name }}</span>
                   <span v-if="row.gender" class="batch-gender">{{ row.gender }}</span>
                   <ElTag
+                    v-if="isBatchRowBeforeAdmission(row)"
+                    class="batch-admission-tag"
+                    size="small"
+                    type="warning"
+                  >
+                    早于入院
+                  </ElTag>
+                  <ElTag
                     v-if="row.loadError"
                     class="batch-load-error-tag"
                     size="small"
@@ -460,24 +530,36 @@ defineExpose({
                   >
                 </button>
                 <div class="nav-cell" :data-nav-col="0" :data-nav-row="index">
-                  <ElInput v-model="row.slotRow.temp" placeholder="体温">
+                  <ElInput
+                    v-model="row.slotRow.temp"
+                    :disabled="isBatchRowBeforeAdmission(row)"
+                    placeholder="体温"
+                  >
                     <template #suffix>℃</template>
                   </ElInput>
                 </div>
                 <div class="nav-cell" :data-nav-col="1" :data-nav-row="index">
-                  <ElInput v-model="row.slotRow.pulse" placeholder="脉搏">
+                  <ElInput
+                    v-model="row.slotRow.pulse"
+                    :disabled="isBatchRowBeforeAdmission(row)"
+                    placeholder="脉搏"
+                  >
                     <template #suffix>次/分</template>
                   </ElInput>
                 </div>
                 <div class="nav-cell" :data-nav-col="2" :data-nav-row="index">
-                  <ElInput v-model="row.slotRow.respiratory" placeholder="呼吸">
+                  <ElInput
+                    v-model="row.slotRow.respiratory"
+                    :disabled="isBatchRowBeforeAdmission(row)"
+                    placeholder="呼吸"
+                  >
                     <template #suffix>次/分</template>
                   </ElInput>
                 </div>
                 <div class="nav-cell" :data-nav-col="3" :data-nav-row="index">
                   <ElInput
                     v-model="row.slotRow.systolic"
-                    :disabled="isRowBloodPressureDisabled(row)"
+                    :disabled="isRowBloodPressureDisabled(row) || isBatchRowBeforeAdmission(row)"
                     placeholder="收缩压"
                   >
                     <template #suffix>mmHg</template>
@@ -486,13 +568,14 @@ defineExpose({
                 <div class="nav-cell" :data-nav-col="4" :data-nav-row="index">
                   <ElInput
                     v-model="row.slotRow.diastolic"
-                    :disabled="isRowBloodPressureDisabled(row)"
+                    :disabled="isRowBloodPressureDisabled(row) || isBatchRowBeforeAdmission(row)"
                     placeholder="舒张压"
                   >
                     <template #suffix>mmHg</template>
                   </ElInput>
                 </div>
                 <TemperatureSheetFillSlotSpecial
+                  :disabled="isBatchRowBeforeAdmission(row)"
                   :row="row.slotRow"
                   :special-event-select-options="specialEventSelectOptions"
                 />
@@ -503,13 +586,23 @@ defineExpose({
                 <span class="batch-extra-name-spacer" aria-hidden="true"></span>
                 <div class="batch-extra-item">
                   <span class="batch-extra-label">体重</span>
-                  <ElInput v-model="row.extraRecord.weight" placeholder="体重" size="small">
+                  <ElInput
+                    v-model="row.extraRecord.weight"
+                    :disabled="isBatchRowBeforeAdmission(row)"
+                    placeholder="体重"
+                    size="small"
+                  >
                     <template #suffix>kg</template>
                   </ElInput>
                 </div>
                 <div v-if="!isBatchRowAdmissionDay(row)" class="batch-extra-item">
                   <span class="batch-extra-label">小便</span>
-                  <ElInput v-model="row.extraRecord.urineCount" placeholder="次数" size="small">
+                  <ElInput
+                    v-model="row.extraRecord.urineCount"
+                    :disabled="isBatchRowBeforeAdmission(row)"
+                    placeholder="次数"
+                    size="small"
+                  >
                     <template #suffix>次</template>
                   </ElInput>
                 </div>
@@ -517,6 +610,7 @@ defineExpose({
                   <span class="batch-extra-label">腹围</span>
                   <ElInput
                     v-model="row.extraRecord.abdominalCircumference"
+                    :disabled="isBatchRowBeforeAdmission(row)"
                     placeholder="腹围"
                     size="small"
                   >
@@ -525,33 +619,90 @@ defineExpose({
                 </div>
                 <div v-if="!isBatchRowAdmissionDay(row)" class="batch-extra-item">
                   <span class="batch-extra-label">大便</span>
-                  <ElInput v-model="row.extraRecord.stoolCount" placeholder="次数" size="small">
+                  <ElInput
+                    v-model="row.extraRecord.stoolCount"
+                    :disabled="isBatchRowBeforeAdmission(row)"
+                    placeholder="次数"
+                    size="small"
+                  >
                     <template #suffix>次</template>
                   </ElInput>
                 </div>
                 <div class="batch-extra-item">
                   <span class="batch-extra-label">身高</span>
-                  <ElInput v-model="row.extraRecord.height" placeholder="身高" size="small">
+                  <ElInput
+                    v-model="row.extraRecord.height"
+                    :disabled="isBatchRowBeforeAdmission(row)"
+                    placeholder="身高"
+                    size="small"
+                  >
                     <template #suffix>cm</template>
                   </ElInput>
                 </div>
                 <div v-if="!isBatchRowAdmissionDay(row)" class="batch-extra-item">
                   <span class="batch-extra-label">入量</span>
-                  <ElInput v-model="row.extraRecord.intake" placeholder="入量" size="small">
+                  <ElInput
+                    v-model="row.extraRecord.intake"
+                    :disabled="isBatchRowBeforeAdmission(row)"
+                    placeholder="入量"
+                    size="small"
+                  >
                     <template #suffix>ml</template>
                   </ElInput>
                 </div>
                 <div v-if="!isBatchRowAdmissionDay(row)" class="batch-extra-item">
                   <span class="batch-extra-label">尿量</span>
-                  <ElInput v-model="row.extraRecord.urine" placeholder="尿量" size="small">
+                  <ElInput
+                    v-model="row.extraRecord.urine"
+                    :disabled="isBatchRowBeforeAdmission(row)"
+                    placeholder="尿量"
+                    size="small"
+                  >
                     <template #suffix>ml</template>
                   </ElInput>
                 </div>
-                <div v-if="!isBatchRowAdmissionDay(row)" class="batch-extra-item">
-                  <span class="batch-extra-label">其他</span>
-                  <ElInput v-model="row.extraRecord.other" placeholder="其他" size="small">
+                <div
+                  v-if="!isBatchRowAdmissionDay(row) && TEMPERATURE_SHEET_SHOW_DRAINAGE_INPUT"
+                  class="batch-extra-item"
+                >
+                  <span class="batch-extra-label">引流</span>
+                  <ElInput
+                    v-model="row.extraRecord.drainage"
+                    :disabled="isBatchRowBeforeAdmission(row)"
+                    placeholder="引流量"
+                    size="small"
+                  >
                     <template #suffix>ml</template>
                   </ElInput>
+                </div>
+                <div v-if="TEMPERATURE_SHEET_SHOW_ALLERGY_DRUG_INPUT" class="batch-extra-item">
+                  <span class="batch-extra-label">过敏</span>
+                  <ElInput
+                    v-model="row.extraRecord.allergyDrug"
+                    :disabled="isBatchRowBeforeAdmission(row)"
+                    placeholder="过敏药物"
+                    size="small"
+                  />
+                </div>
+                <div v-if="TEMPERATURE_SHEET_SHOW_OTHER_INPUT" class="batch-extra-item">
+                  <span class="batch-extra-label">其他</span>
+                  <ElInput
+                    v-model="row.extraRecord.other"
+                    :disabled="isBatchRowBeforeAdmission(row)"
+                    placeholder="其他"
+                    size="small"
+                  >
+                    <template #suffix>ml</template>
+                  </ElInput>
+                </div>
+                <div v-if="TEMPERATURE_SHEET_SHOW_REMARK_INPUT" class="batch-extra-item">
+                  <span class="batch-extra-label">备注</span>
+                  <ElInput
+                    v-model="row.extraRecord.remark"
+                    :disabled="isBatchRowBeforeAdmission(row)"
+                    placeholder="备注"
+                    size="small"
+                  />
                 </div>
               </div>
             </div>
@@ -681,6 +832,22 @@ defineExpose({
 .batch-row.is-load-error {
   background: #fef2f2;
 }
+.batch-row.is-before-admission {
+  margin: 0 -4px;
+  padding: 8px 4px;
+  background: #fff7ed;
+  border-radius: 6px;
+}
+.batch-admission-hint {
+  margin: 0 0 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #ffedd5;
+  color: #c2410c;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
 .batch-patient-link {
   margin: 0;
   padding: 0;
@@ -731,7 +898,8 @@ defineExpose({
   font-weight: 400;
   color: #334155;
 }
-.batch-load-error-tag {
+.batch-load-error-tag,
+.batch-admission-tag {
   flex-shrink: 0;
 }
 .batch-vital-row .nav-cell :deep(.el-input) {

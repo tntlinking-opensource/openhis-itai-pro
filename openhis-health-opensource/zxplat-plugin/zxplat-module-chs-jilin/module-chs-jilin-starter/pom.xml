@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.zxplat</groupId>
+        <artifactId>zxplat-module-chs-jilin</artifactId>
+        <version>2.0.9</version>
+    </parent>
+
+    <artifactId>module-chs-jilin-starter</artifactId>
+    <packaging>jar</packaging>
+    <name>CHS Jilin Starter</name>
+    <description>HIS embedded 安装入口（local）：domain + gateway + bridge + application</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.zxplat</groupId>
+            <artifactId>module-chs-jilin-application</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.zxplat</groupId>
+            <artifactId>module-chs-jilin-domain</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.zxplat</groupId>
+            <artifactId>module-chs-jilin-gateway</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.zxplat</groupId>
+            <artifactId>module-chs-jilin-bridge</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+    </dependencies>
+</project>

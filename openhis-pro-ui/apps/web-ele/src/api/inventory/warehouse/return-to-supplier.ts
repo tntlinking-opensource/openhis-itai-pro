@@ -1,5 +1,5 @@
 /**
- * 药库退货单（向供应商退货）— 对接 Whale {@code POST /api/app/inventoryWarehouseReturnToSupplier/<method>}
+ * 药库退货单（向供应商退货）— 对接 ZXPlat {@code POST /api/app/inventoryWarehouseReturnToSupplier/<method>}
  */
 import type { ApiResponse } from '#/types/api-response';
 

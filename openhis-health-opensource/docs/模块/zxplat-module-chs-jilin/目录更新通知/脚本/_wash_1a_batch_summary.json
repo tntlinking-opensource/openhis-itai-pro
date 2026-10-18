@@ -1,0 +1,221 @@
+[
+  {
+    "result": "OK",
+    "source": "2024.10.25中药饮片（林下山参）.xlsx",
+    "std_dir": "标准化文件\\2024.10.25中药饮片（林下山参）",
+    "moved_to": "原始文件\\2024.10.25中药饮片（林下山参）.xlsx",
+    "rows": 1,
+    "actions": {
+      "MODIFY": 1
+    },
+    "category": "HERBAL",
+    "doc_kind": "CATALOG_DELTA",
+    "notice_date": "2024-10-25",
+    "remark": "CATALOG_DELTA/HERBAL；行数=1；actions=MODIFY:1；hilist_code←医疗目录编码"
+  },
+  {
+    "result": "OK",
+    "source": "附件：中药饮片数据更新目录（2025.5.21）.xlsx",
+    "std_dir": "标准化文件\\附件：中药饮片数据更新目录（2025.5.21）",
+    "moved_to": "原始文件\\附件：中药饮片数据更新目录（2025.5.21）.xlsx",
+    "rows": 2,
+    "actions": {
+      "STOP": 1,
+      "ADD": 1
+    },
+    "category": "HERBAL",
+    "doc_kind": "CATALOG_DELTA",
+    "notice_date": "2025-05-21",
+    "remark": "CATALOG_DELTA/HERBAL；行数=2；actions=ADD:1,STOP:1；hilist_code←医疗目录编码"
+  },
+  {
+    "result": "OK",
+    "source": "附件：耗材数据更新目录（2026.5.9）.xlsx",
+    "std_dir": "标准化文件\\附件：耗材数据更新目录（2026.5.9）",
+    "moved_to": "原始文件\\附件：耗材数据更新目录（2026.5.9）.xlsx",
+    "rows": 11,
+    "actions": {
+      "MODIFY": 11
+    },
+    "category": "DEVICE",
+    "doc_kind": "CATALOG_DELTA",
+    "notice_date": "2026-05-09",
+    "remark": "CATALOG_DELTA/DEVICE；行数=11；actions=MODIFY:11；hilist_code←国家目录编码；限价列进ext_json"
+  },
+  {
+    "result": "OK",
+    "source": "附件：耗材数据更新目录（2026.5.9） (1).xlsx",
+    "std_dir": "标准化文件\\附件：耗材数据更新目录（2026.5.9） (1)",
+    "moved_to": "原始文件\\附件：耗材数据更新目录（2026.5.9） (1).xlsx",
+    "rows": 11,
+    "actions": {
+      "MODIFY": 11
+    },
+    "category": "DEVICE",
+    "doc_kind": "CATALOG_DELTA",
+    "notice_date": "2026-05-09",
+    "remark": "CATALOG_DELTA/DEVICE；行数=11；actions=MODIFY:11；hilist_code←国家目录编码；限价列进ext_json"
+  },
+  {
+    "result": "OK",
+    "source": "附件：耗材数据更新（2025.7.23、2025.8.7）.xlsx",
+    "std_dir": "标准化文件\\附件：耗材数据更新（2025.7.23、2025.8.7）",
+    "moved_to": "原始文件\\附件：耗材数据更新（2025.7.23、2025.8.7）.xlsx",
+    "rows": 24,
+    "actions": {
+      "ADD": 23,
+      "STOP": 1
+    },
+    "category": "DEVICE",
+    "doc_kind": "CATALOG_DELTA",
+    "notice_date": "2025-08-07",
+    "remark": "CATALOG_DELTA/DEVICE；行数=24；actions=ADD:23,STOP:1；hilist_code←国家目录编码；限价列进ext_json"
+  },
+  {
+    "result": "OK",
+    "source": "附件：耗材数据更新目录（2025.9.13）.xlsx",
+    "std_dir": "标准化文件\\附件：耗材数据更新目录（2025.9.13）",
+    "moved_to": "原始文件\\附件：耗材数据更新目录（2025.9.13）.xlsx",
+    "rows": 48,
+    "actions": {
+      "ADD": 42,
+      "STOP": 6
+    },
+    "category": "DEVICE",
+    "doc_kind": "CATALOG_DELTA",
+    "notice_date": "2025-09-13",
+    "remark": "CATALOG_DELTA/DEVICE；行数=48；actions=ADD:42,STOP:6；hilist_code←国家目录编码；限价列进ext_json"
+  },
+  {
+    "result": "OK",
+    "source": "附件：耗材数据更新目录（2025.4.24）.xlsx",
+    "std_dir": "标准化文件\\附件：耗材数据更新目录（2025.4.24）",
+    "moved_to": "原始文件\\附件：耗材数据更新目录（2025.4.24）.xlsx",
+    "rows": 101,
+    "actions": {
+      "ADD": 73,
+      "STOP": 28
+    },
+    "category": "DEVICE",
+    "doc_kind": "CATALOG_DELTA",
+    "notice_date": "2025-04-24",
+    "remark": "CATALOG_DELTA/DEVICE；行数=101；actions=ADD:73,STOP:28；hilist_code←国家目录编码；限价列进ext_json"
+  },
+  {
+    "result": "OK",
+    "source": "附件：1.耗材目录更新目录（2025.10.13）.xlsx",
+    "std_dir": "标准化文件\\附件：1.耗材目录更新目录（2025.10.13）",
+    "moved_to": "原始文件\\附件：1.耗材目录更新目录（2025.10.13）.xlsx",
+    "rows": 311,
+    "actions": {
+      "MODIFY": 303,
+      "STOP": 8
+    },
+    "category": "DEVICE",
+    "doc_kind": "CATALOG_DELTA",
+    "notice_date": "2025-10-13",
+    "remark": "CATALOG_DELTA/DEVICE；行数=311；actions=MODIFY:303,STOP:8；hilist_code←国家目录编码；限价列进ext_json"
+  },
+  {
+    "result": "OK",
+    "source": "附件：耗材数据更新目录（2025.6.28）.xlsx",
+    "std_dir": "标准化文件\\附件：耗材数据更新目录（2025.6.28）",
+    "moved_to": "原始文件\\附件：耗材数据更新目录（2025.6.28）.xlsx",
+    "rows": 713,
+    "actions": {
+      "ADD": 298,
+      "STOP": 415
+    },
+    "category": "DEVICE",
+    "doc_kind": "CATALOG_DELTA",
+    "notice_date": "2025-06-28",
+    "remark": "CATALOG_DELTA/DEVICE；行数=713；actions=ADD:298,STOP:415；hilist_code←国家目录编码；限价列进ext_json"
+  },
+  {
+    "result": "FAIL",
+    "source": "耗材数据更新（H2024.7.1）.xlsx",
+    "std_dir": "",
+    "moved_to": "原始文件\\_无法转换\\耗材数据更新（H2024.7.1）\\耗材数据更新（H2024.7.1）.xlsx",
+    "rows": 0,
+    "actions": {},
+    "category": "DEVICE",
+    "doc_kind": "",
+    "notice_date": "2024-07-01",
+    "remark": "无法打开 xlsx：BadZipFile: File is not a zip file",
+    "reason_file": "原始文件\\_无法转换\\耗材数据更新（H2024.7.1）\\reason.txt"
+  },
+  {
+    "result": "OK",
+    "source": "附件：院内制剂目录更新（2025.12.30）.xlsx",
+    "std_dir": "标准化文件\\附件：院内制剂目录更新（2025.12.30）",
+    "moved_to": "原始文件\\附件：院内制剂目录更新（2025.12.30）.xlsx",
+    "rows": 342,
+    "actions": {
+      "MODIFY": 342
+    },
+    "category": "PREP",
+    "doc_kind": "CATALOG_DELTA",
+    "notice_date": "2025-12-30",
+    "remark": "CATALOG_DELTA/PREP；行数=342；actions=MODIFY:342；hilist_code←制剂代码；Sheet名含变更→MODIFY"
+  },
+  {
+    "result": "OK",
+    "source": "附件：中药配方颗粒(2025.3.7) .xlsx",
+    "std_dir": "标准化文件\\附件：中药配方颗粒(2025.3.7)",
+    "moved_to": "原始文件\\附件：中药配方颗粒(2025.3.7) .xlsx",
+    "rows": 4440,
+    "actions": {
+      "ADD": 3724,
+      "STOP": 716
+    },
+    "category": "FORMULA",
+    "doc_kind": "CATALOG_DELTA",
+    "notice_date": "2025-03-07",
+    "remark": "CATALOG_DELTA/FORMULA；行数=4440；actions=ADD:3724,STOP:716；标准目录名已trim：'附件：中药配方颗粒(2025.3.7) '→'附件：中药配方颗粒(2025.3.7)'；hilist_code←中药配方颗粒代码"
+  },
+  {
+    "result": "OK",
+    "source": "附件：中药配方颗粒（2025.08.11）.xlsx",
+    "std_dir": "标准化文件\\附件：中药配方颗粒（2025.08.11）",
+    "moved_to": "原始文件\\附件：中药配方颗粒（2025.08.11）.xlsx",
+    "rows": 5971,
+    "actions": {
+      "ADD": 4416,
+      "STOP": 1555
+    },
+    "category": "FORMULA",
+    "doc_kind": "CATALOG_DELTA",
+    "notice_date": "2025-08-11",
+    "remark": "CATALOG_DELTA/FORMULA；行数=5971；actions=ADD:4416,STOP:1555；hilist_code←中药配方颗粒代码"
+  },
+  {
+    "result": "OK",
+    "source": "中药配方颗粒（2024.11.15）.xlsx",
+    "std_dir": "标准化文件\\中药配方颗粒（2024.11.15）",
+    "moved_to": "原始文件\\中药配方颗粒（2024.11.15）.xlsx",
+    "rows": 2995,
+    "actions": {
+      "STOP": 409,
+      "ADD": 2586
+    },
+    "category": "FORMULA",
+    "doc_kind": "CATALOG_DELTA",
+    "notice_date": "2024-11-15",
+    "remark": "CATALOG_DELTA/FORMULA；行数=2995；actions=ADD:2586,STOP:409；hilist_code←中药配方颗粒代码"
+  },
+  {
+    "result": "OK",
+    "source": "中药配方颗粒更新目录（2024.8.23）.xlsx",
+    "std_dir": "标准化文件\\中药配方颗粒更新目录（2024.8.23）",
+    "moved_to": "原始文件\\中药配方颗粒更新目录（2024.8.23）.xlsx",
+    "rows": 4078,
+    "actions": {
+      "ADD": 4060,
+      "STOP": 18
+    },
+    "category": "FORMULA",
+    "doc_kind": "CATALOG_DELTA",
+    "notice_date": "2024-08-23",
+    "remark": "CATALOG_DELTA/FORMULA；行数=4078；actions=ADD:4060,STOP:18；hilist_code←中药配方颗粒代码"
+  }
+]

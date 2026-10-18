@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.zxplat</groupId>
+        <artifactId>zxplat-plugin</artifactId>
+        <version>2.0.9</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>zxplat-module-elep-jilin</artifactId>
+    <packaging>pom</packaging>
+    <name>ZXPlat Module ELEP Jilin</name>
+    <description>吉林省电子处方扩展 Module（Gateway-Only Remote：domain→gateway→bridge→application→host→starter）</description>
+
+    <modules>
+        <module>module-elep-jilin-domain</module>
+        <module>module-elep-jilin-gateway</module>
+        <module>module-elep-jilin-bridge</module>
+        <module>module-elep-jilin-application</module>
+        <module>module-elep-jilin-host</module>
+        <module>module-elep-jilin-starter</module>
+    </modules>
+</project>

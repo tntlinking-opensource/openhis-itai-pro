@@ -9,6 +9,7 @@ import type { PageApiResponse } from '#/types/api-response';
 import type { InpatientEmrListItemDto, QueryInpatientEmrParams } from './types';
 
 import { publicRequestClient } from '#/api/request';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 /** 分页检索住院病例（以住院就诊为行） */
 
@@ -48,4 +49,36 @@ export async function unarchiveInpatientClinicalCaseApi(
 
     params,
   );
+}
+
+/** 单份住院文书提交归档（DRAFT → PENDING_ARCHIVE） */
+export interface SubmitInpatientDocumentArchiveParams {
+  /** 文书主键（string，防雪花精度丢失） */
+  documentId: string;
+}
+
+/** 批量住院文书提交归档 */
+export interface SubmitInpatientDocumentArchiveBatchParams {
+  /** 文书主键列表 */
+  documentIds: string[];
+}
+
+/** 单份提交归档审批 */
+export async function submitInpatientDocumentArchiveApi(
+  params: SubmitInpatientDocumentArchiveParams,
+) {
+  return publicRequestClient.post<void>('/mrmsInpatientEmrQuery/submitDocumentArchive', {
+    documentId: preserveApiIdForRequest(params.documentId),
+  });
+}
+
+/** 批量提交归档审批（任一份失败整批回滚） */
+export async function submitInpatientDocumentArchiveBatchApi(
+  params: SubmitInpatientDocumentArchiveBatchParams,
+) {
+  return publicRequestClient.post<void>('/mrmsInpatientEmrQuery/submitDocumentArchiveBatch', {
+    documentIds: (params.documentIds ?? [])
+      .map((id) => preserveApiIdForRequest(id))
+      .filter(Boolean),
+  });
 }

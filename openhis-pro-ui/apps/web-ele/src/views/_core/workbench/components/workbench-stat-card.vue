@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { IconifyIcon } from '@vben/icons';
+import { IconifyIcon } from '@zxplat/icons';
 
 interface Props {
   accentColor: string;

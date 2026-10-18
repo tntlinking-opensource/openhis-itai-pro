@@ -1,6 +1,8 @@
 import type { NurseStationModulePatient } from '../components/nurse-station-module-patient.types';
+import { isAnesthesiaApplyPrescriptionNo } from './doc-registry';
 import type { PrintPendingRow } from './print-center.types';
 
+import type { AdvicePackageChildItemDto } from '#/api/doctor-station/advice.types';
 import type { InpatientDoctorStationAdviceRowDto } from '#/api/inpatient/doctor-station/inpatient-doctor-station-advice.types';
 import { httpListInpatientDoctorStationAdvice } from '#/api/inpatient/doctor-station/inpatient-doctor-station-advice.http';
 import type {
@@ -53,6 +55,7 @@ import type {
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-cost-detail.types';
 
 import { httpQueryNurseStationInpatientCostDetail } from '#/api/inpatient/nurse-station/inpatient-nurse-station-cost-detail.http';
+import { httpGetMedicationSummaryDispenseDetail } from '#/api/inpatient-pharmacy-dispense/inpatient-pharmacy-summary-dispense.http';
 import { httpGetPatientDetail } from '#/api/inpatient/nurse-station/inpatient-nurse-station.http';
 import type { PatientDetailDto } from '#/api/inpatient/nurse-station/inpatient-nurse-station.types';
 import {
@@ -63,22 +66,26 @@ import { httpListNurseStationNursingRecords } from '#/api/inpatient/nurse-statio
 import { httpListNurseStationOrderAudit } from '#/api/inpatient/nurse-station/inpatient-nurse-station-order-audit.http';
 import type { NurseStationOrderAuditRowDto } from '#/api/inpatient/nurse-station/inpatient-nurse-station-order-audit.types';
 import { httpListNurseStationOrderExecuteForPrint } from '#/api/inpatient/nurse-station/inpatient-nurse-station-order-execute.http';
+import type { NurseStationOrderExecuteSlotDto } from '#/api/inpatient/nurse-station/inpatient-nurse-station-order-execute.types';
+import { TEMP_ORDER_PRINT_FILL_EXECUTE_TIME } from '#/views/inpatient/nurse-station/print-center/temp-order-print.config';
 import {
-  INFUSION_METHOD_CODES,
-  METHOD_CODE_IV_INJECTION,
   ORAL_METHOD_CODES,
   normalizeMedicationMethodCode,
 } from '#/utils/print/constants/medication-method-codes';
 import {
+  SERVICE_CATEGORY_ANESTHESIA,
   SERVICE_CATEGORY_DISCHARGE,
   SERVICE_CATEGORY_ENTRUST,
   SERVICE_CATEGORY_NURSING,
+  SERVICE_CATEGORY_PROCEDURE,
   SERVICE_CATEGORY_PROOF,
   SERVICE_CATEGORY_TEST,
   SERVICE_CATEGORY_TRANSFER,
+  SERVICE_CATEGORY_TREATMENT,
 } from '#/utils/print/constants/service-request-category-codes';
 import { buildMedicationContentTitleWithPackageSplit } from '#/utils/doctor-station/package-split-ratio-display';
 import { decimalAdd } from '#/utils/format/decimal-util';
+import { moneyDiffAtSettle } from '#/utils/format/money-scale';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { parseTcmCollapsedHerbDisplay } from '#/utils/tcm-prescription-display';
@@ -92,9 +99,14 @@ import {
   formatCostSummaryQuantity,
 } from '../cost-details/services/map-nurse-station-cost-detail';
 import {
-  joinPackageChildrenDetailText,
+  expandExamApplyItemRowsForPrint,
+  expandLabApplyItemRowsForPrint,
   joinServiceRequestDetailNames,
 } from '../order-execute/services/resolve-order-execute-label-print';
+import {
+  expandActivityDefinitionChildrenForPrint,
+  isLabServiceCategoryForPrint,
+} from '#/utils/print/expand-activity-definition-children-for-print';
 
 function str(value: null | number | string | undefined): string {
   if (value === null || value === undefined) {
@@ -173,6 +185,7 @@ function mergeFeePrintPatientFromDetail(
     nurseLevel: str(detail.nursingLevelName) || patient.nurseLevel,
     feeType: str(detail.contractDisplay) || patient.feeType,
     attendingDoctorName: str(detail.attendingDoctorName) || patient.attendingDoctorName,
+    primaryNurseName: str(detail.primaryNurseName) || patient.primaryNurseName,
     diagnosis,
     organizationName: str(detail.organizationName) || patient.organizationName,
     organizationId: preserveApiIdForRequest(detail.organizationId) ?? patient.organizationId,
@@ -219,14 +232,6 @@ function resolvePatient(
   return patients[0];
 }
 
-function isInfusionMethodCode(methodCode?: null | string): boolean {
-  const normalized = normalizeMedicationMethodCode(methodCode);
-  if (!normalized) {
-    return false;
-  }
-  return INFUSION_METHOD_CODES.has(normalized) || INFUSION_METHOD_CODES.has(str(methodCode));
-}
-
 function isOralMethodCode(methodCode?: null | string): boolean {
   const normalized = normalizeMedicationMethodCode(methodCode);
   if (!normalized) {
@@ -235,33 +240,18 @@ function isOralMethodCode(methodCode?: null | string): boolean {
   return ORAL_METHOD_CODES.has(normalized) || ORAL_METHOD_CODES.has(str(methodCode));
 }
 
-/** 医嘱执行行是否输液药品（优先 infusionFlag，其次 methodCode；字段未回传时不误杀） */
+/**
+ * 医嘱执行行是否可打输液瓶贴：仅看 infusionFlag（目录输液标记 / 药嘱空值回落 inject_flag）。
+ * 不再按用法 methodCode（404/405 等）放行。
+ */
 function isInfusionExecuteOrder(order: {
   infusionFlag?: boolean | null;
-  methodCode?: null | string;
   orderType?: null | string;
 }): boolean {
   if (str(order.orderType).toUpperCase() !== 'MED_REQUEST') {
     return false;
   }
-  if (order.infusionFlag === true) {
-    return true;
-  }
-  const methodCode = str(order.methodCode);
-  if (methodCode) {
-    // 静滴 405/IVD，或静脉注射 404（执行页右键打印输液贴口径）
-    const normalized = normalizeMedicationMethodCode(methodCode);
-    return (
-      isInfusionMethodCode(methodCode) ||
-      normalized === METHOD_CODE_IV_INJECTION ||
-      methodCode === METHOD_CODE_IV_INJECTION
-    );
-  }
-  if (order.infusionFlag === false) {
-    return false;
-  }
-  // 旧后端未回传途径字段时先纳入，避免空列表
-  return true;
+  return order.infusionFlag === true;
 }
 
 /** 计划点是否落在查询日（锚定 planTime 日期） */
@@ -537,7 +527,20 @@ export function buildWristbandPrintSource(
   };
 }
 
-/** 入院日期展示：YYYY-MM-DD（缺省空） */
+/** 入院时间展示：YYYY-MM-DD HH:mm（缺省空） */
+function formatAdmissionTimeText(raw?: string): string {
+  const value = str(raw);
+  if (!value) {
+    return '';
+  }
+  const parsed = dayjs(value);
+  if (!parsed.isValid()) {
+    return value.length >= 16 ? value.slice(0, 16) : value;
+  }
+  return parsed.format('YYYY-MM-DD HH:mm');
+}
+
+/** 入院日期展示：YYYY-MM-DD（床头卡模板 field=admissionDateText） */
 function formatAdmissionDateText(raw?: string): string {
   const value = str(raw);
   if (!value) {
@@ -550,20 +553,29 @@ function formatAdmissionDateText(raw?: string): string {
   return parsed.format('YYYY-MM-DD');
 }
 
-/** 床头卡：姓名/性别/住院号/年龄/入院日期/主治医生/医保类别 */
+/** 床头卡：对齐 ip-bedCard-print（入院日期/医保类别） */
 export function buildBedCardPrintSource(
   patients: NurseStationModulePatient[],
   row: PrintPendingRow,
 ): InpatientBedCardPrintSource {
   const patient = resolvePatient(patients, row);
+  const admissionRaw = patient?.admissionAt || patient?.inWardAt;
   return {
     patientName: str(row.patientName) || str(patient?.name),
-    genderEnumText: str(patient?.gender),
-    inpatientNo: str(patient?.encounterBusNo),
     ageText: ageTextOf(patient),
-    admissionDateText: formatAdmissionDateText(patient?.admissionAt || patient?.inWardAt),
+    genderEnumText: str(patient?.gender),
+    // 病区=regionName；病房=wardName（house）；床位=bedNo
+    wardName: printLocationText(patient?.regionName),
+    roomName: printLocationText(patient?.wardName),
+    bedNo: str(row.bedNo) || str(patient?.bedNo),
+    inpatientNo: str(patient?.encounterBusNo),
+    diagnosisText: str(patient?.diagnosis),
+    admissionDateText: formatAdmissionDateText(admissionRaw),
+    admissionTimeText: formatAdmissionTimeText(admissionRaw),
+    nursingLevelText: str(patient?.nurseLevel),
     attendingDoctorName: str(patient?.attendingDoctorName),
     insuranceCategoryText: str(patient?.feeType),
+    primaryNurseName: str(patient?.primaryNurseName),
   };
 }
 
@@ -688,10 +700,21 @@ function feeSummaryQuantityText(line: NurseStationCostSummaryLineDto): string {
   return text;
 }
 
-/** 冲销成对剔除后仍可能残留负净额：费用清单不打印该行 */
-function isPositiveFeeAmount(value: null | number | string | undefined): boolean {
+/** 费用清单行：与页面汇总一致，零金额行不打；正负净额都打 */
+function isPrintableFeeAmount(value: null | number | string | undefined): boolean {
   const amount = Number(value);
-  return Number.isFinite(amount) && amount > 0;
+  return Number.isFinite(amount) && amount !== 0;
+}
+
+/**
+ * 预缴余额与费用总额同一次查询口径：预交金 − 总合计（所见即所打）。
+ * 禁止再用患者队列 availableBalance（全量待结算），避免单头总额与余额各算各的。
+ */
+function feePrintBalanceAmountText(
+  prepayNetBalance: null | number | string | undefined,
+  grandTotal: null | number | string | undefined,
+): string {
+  return moneyText(moneyDiffAtSettle(prepayNetBalance, grandTotal));
 }
 
 /**
@@ -749,13 +772,15 @@ function resolveFeeListGroupMeta(line: NurseStationCostSummaryLineDto): {
   };
 }
 
-/** 费用清单：SUMMARY 同品合并；按实际分类分组；成对剔除冲销留痕后再排除非正净额 */
+/** 费用清单：SUMMARY 同品合并；按实际分类分组；查询口径与费用明细页一致（所见即所打） */
 export async function buildFeeListPrintSource(
   patients: NurseStationModulePatient[],
   dateFrom: string,
   dateTo: string,
   /** 与费用明细页筛选一致；默认待结算（打印中心入口） */
   statusEnum: NurseStationCostDetailStatusFilter = 'PENDING_SETTLEMENT',
+  /** 与费用明细页「麻醉统计」一致；未传则不过滤 */
+  anesthesiaStatisticsOnly?: boolean,
 ): Promise<InpatientFeeListPrintSource> {
   const seedPatient = patients[0];
   if (!seedPatient) {
@@ -769,6 +794,7 @@ export async function buildFeeListPrintSource(
     throw new Error('患者就诊信息不完整');
   }
 
+  // 与费用明细页同参：不传 excludeOffsetPairs / printExpandPackageChildren，避免打印另开口径把总额打偏
   const res = await httpQueryNurseStationInpatientCostDetail({
     encounterId,
     patientId,
@@ -776,8 +802,7 @@ export async function buildFeeListPrintSource(
     dateTo,
     presentationMode: 'SUMMARY',
     statusEnum,
-    // 一进一退成对剔除：原正向行 + refund_id 冲销行都不进清单（冲销可在日期窗外）
-    excludeOffsetPairs: true,
+    anesthesiaStatisticsOnly: anesthesiaStatisticsOnly === true ? true : undefined,
   });
 
   // 保持 SUMMARY 行顺序（后端已按费用大类排序），分类按首次出现入桶
@@ -788,7 +813,7 @@ export async function buildFeeListPrintSource(
   >();
 
   for (const line of res.summaryLines ?? []) {
-    if (!isPositiveFeeAmount(line.lineTotalAmount)) {
+    if (!isPrintableFeeAmount(line.lineTotalAmount)) {
       continue;
     }
     const { groupKey, display } = resolveFeeListGroupMeta(line);
@@ -846,8 +871,8 @@ export async function buildFeeListPrintSource(
     });
   }
 
-  const grand = moneyText(res.totals?.grandTotal);
-  const prepaid = moneyText(patient.accountBalance);
+  const grandTotal = res.totals?.grandTotal;
+  const prepayNetBalance = res.totals?.prepayNetBalance;
   return {
     hospitalName: resolvePrintHospitalName(),
     documentTitle: '住院费用清单',
@@ -864,9 +889,9 @@ export async function buildFeeListPrintSource(
     dischargeAtText: str(patient.dischargeAt),
     inpatientDaysText: calcInpatientDaysText(patient.admissionAt, patient.dischargeAt),
     admissionDiagnosis: str(patient.diagnosis),
-    prepaidAmountText: prepaid,
-    totalAmountText: grand,
-    balanceAmountText: moneyText(patient.availableBalance ?? patient.accountBalance),
+    prepaidAmountText: moneyText(prepayNetBalance),
+    totalAmountText: moneyText(grandTotal),
+    balanceAmountText: feePrintBalanceAmountText(prepayNetBalance, grandTotal),
     feeRows,
     printedAtText: printedAtNow(),
   };
@@ -934,6 +959,8 @@ export async function buildFeeDetailPrintSource(
   dateTo: string,
   /** 与费用明细页筛选一致；默认待结算（打印中心入口） */
   statusEnum: NurseStationCostDetailStatusFilter = 'PENDING_SETTLEMENT',
+  /** 与费用明细页「麻醉统计」一致；未传则不过滤 */
+  anesthesiaStatisticsOnly?: boolean,
 ): Promise<InpatientFeeDetailPrintSource> {
   const seedPatient = patients[0];
   if (!seedPatient) {
@@ -947,6 +974,7 @@ export async function buildFeeDetailPrintSource(
     throw new Error('患者就诊信息不完整');
   }
 
+  // 与费用明细页 DETAIL 同参：不传 printExpandPackageChildren，避免打印展开检验子项与屏上不一致
   const res = await httpQueryNurseStationInpatientCostDetail({
     encounterId,
     patientId,
@@ -954,6 +982,7 @@ export async function buildFeeDetailPrintSource(
     dateTo,
     presentationMode: 'DETAIL',
     statusEnum,
+    anesthesiaStatisticsOnly: anesthesiaStatisticsOnly === true ? true : undefined,
   });
 
   const groupOrder: string[] = [];
@@ -1004,8 +1033,8 @@ export async function buildFeeDetailPrintSource(
     }
   }
 
-  const grand = moneyText(res.totals?.grandTotal);
-  const prepaid = moneyText(patient.accountBalance);
+  const grandTotal = res.totals?.grandTotal;
+  const prepayNetBalance = res.totals?.prepayNetBalance;
   return {
     hospitalName: resolvePrintHospitalName(),
     documentTitle: '住院费用明细单',
@@ -1021,9 +1050,9 @@ export async function buildFeeDetailPrintSource(
     dischargeAtText: str(patient.dischargeAt),
     inpatientDaysText: calcInpatientDaysText(patient.admissionAt, patient.dischargeAt),
     admissionDiagnosis: str(patient.diagnosis),
-    prepaidAmountText: prepaid,
-    totalAmountText: grand,
-    balanceAmountText: moneyText(patient.availableBalance ?? patient.accountBalance),
+    prepaidAmountText: moneyText(prepayNetBalance),
+    totalAmountText: moneyText(grandTotal),
+    balanceAmountText: feePrintBalanceAmountText(prepayNetBalance, grandTotal),
     feeRows,
     printedAtText: printedAtNow(),
   };
@@ -1034,6 +1063,8 @@ interface LongTempOrderContentSource {
   adviceDisplayName?: string;
   specificationText?: string;
   packageSplitRatioText?: null | string;
+  /** 输液/注射目录标记；为 true 时医嘱内容不拼装量后缀 */
+  infusionFlag?: boolean | null;
   dosageDisplay?: string;
   usageDisplay?: string;
   frequencyDisplay?: string;
@@ -1041,18 +1072,23 @@ interface LongTempOrderContentSource {
   orderKindDisplay?: string;
   orderType?: string;
   tcmFlag?: boolean;
+  packageChildren?: AdvicePackageChildItemDto[];
 }
 
 /** 长/临打印行源（含开停嘱痕迹字段） */
 interface LongTempOrderPrintLineSource extends LongTempOrderContentSource {
   listRowKey?: string;
   requestId?: string;
+  /** 申请单号（麻醉 AA 前缀过滤） */
+  prescriptionNo?: string;
   reqOpenedTime?: string;
   stopTime?: string;
   requesterName?: string;
   performerCheckName?: string;
   stopperName?: string;
   stopCheckerName?: string;
+  /** 已执行时刻展示（MM-DD HH:mm，多槽换行）；仅国基临时医嘱单填充 */
+  executeRecordedText?: string;
 }
 
 /** 病案归档打印数据源：护士已校对 / 医生站已开立 */
@@ -1135,6 +1171,15 @@ function resolvePrintOrderKindText(order: LongTempOrderContentSource): string {
   if (category === SERVICE_CATEGORY_TEST) {
     return '检查';
   }
+  if (category === SERVICE_CATEGORY_TREATMENT) {
+    return '治疗';
+  }
+  if (category === SERVICE_CATEGORY_PROCEDURE) {
+    return '手术';
+  }
+  if (category === SERVICE_CATEGORY_ANESTHESIA) {
+    return '麻醉';
+  }
   if (order.tcmFlag === true) {
     return '中药';
   }
@@ -1172,6 +1217,7 @@ function buildLongTempOrderContentLine(order: LongTempOrderContentSource): strin
           name,
           str(order.specificationText),
           order.packageSplitRatioText,
+          order.infusionFlag === true,
         ) || name;
 
   if (!nameLine) {
@@ -1198,6 +1244,23 @@ function buildLongTempOrderContentLine(order: LongTempOrderContentSource): strin
   return nameLine;
 }
 
+/** 已校对 / 医生站行 → 打印明细行（国基仅检验带子项拆成多行且不打父项） */
+function mapOrderLineToPrintRows(order: LongTempOrderPrintLineSource): InpatientTempOrderRow[] {
+  const base = mapOrderLineToPrintRow(order);
+  return expandActivityDefinitionChildrenForPrint(
+    [base],
+    () => order.packageChildren,
+    (row, child) => ({
+      ...row,
+      orderContent: buildLongTempOrderContentLine({
+        ...order,
+        adviceDisplayName: str(child.childrenName) || order.adviceDisplayName,
+      }),
+    }),
+    () => isLabServiceCategoryForPrint(order.categoryEnum),
+  );
+}
+
 /** 已校对 / 医生站行 → 打印明细行 */
 function mapOrderLineToPrintRow(order: LongTempOrderPrintLineSource): InpatientTempOrderRow {
   const opened = str(order.reqOpenedTime);
@@ -1208,7 +1271,7 @@ function mapOrderLineToPrintRow(order: LongTempOrderPrintLineSource): InpatientT
     orderContent: buildLongTempOrderContentLine(order),
     orderDoctorName: str(order.requesterName),
     startCheckerName: str(order.performerCheckName),
-    executeAtText: '',
+    executeAtText: str(order.executeRecordedText),
     stopTimeText: stopRaw && dayjs(stopRaw).isValid() ? dayjs(stopRaw).format('MM-DD HH:mm') : '',
     stopDoctorName: str(order.stopperName),
     // 停嘱校对护士：取 stopCheckerName（与开嘱校对 performerCheckName 并列）
@@ -1223,9 +1286,11 @@ function toPrintLineSourceFromAudit(
   return {
     listRowKey: order.listRowKey,
     requestId: order.requestId,
+    prescriptionNo: order.prescriptionNo,
     adviceDisplayName: order.adviceDisplayName,
     specificationText: order.specificationText,
     packageSplitRatioText: order.packageSplitRatioText,
+    // 校对列表无 infusionFlag：装量后缀依赖后端对输液回 null
     dosageDisplay: order.dosageDisplay,
     usageDisplay: order.usageDisplay,
     frequencyDisplay: order.frequencyDisplay,
@@ -1239,6 +1304,7 @@ function toPrintLineSourceFromAudit(
     performerCheckName: order.performerCheckName,
     stopperName: order.stopperName,
     stopCheckerName: order.stopCheckerName,
+    packageChildren: order.packageChildren,
   };
 }
 
@@ -1338,9 +1404,11 @@ function toPrintLineSourceFromDoctorAdvice(
   return {
     listRowKey: order.listRowKey,
     requestId: order.requestId,
+    prescriptionNo: order.prescriptionNo,
     adviceDisplayName,
     specificationText: order.specificationText,
     packageSplitRatioText: order.packageSplitRatioText,
+    infusionFlag: order.injectionFlag === true,
     dosageDisplay: order.dosageDisplay,
     usageDisplay: order.methodName,
     frequencyDisplay: order.rateName,
@@ -1353,6 +1421,7 @@ function toPrintLineSourceFromDoctorAdvice(
     stopTime: order.stopTime,
     requesterName: order.authoredByName,
     stopperName: order.stopperName,
+    packageChildren: order.packageChildren,
   };
 }
 
@@ -1360,11 +1429,19 @@ function toPrintLineSourceFromDoctorAdvice(
 async function loadAuditedOrdersForPrint(
   encounterId: string,
   therapyType: 'long' | 'temp',
+  /** true=仅麻醉申请；不传=排除麻醉（后端默认） */
+  anesthesiaApplyOnly?: boolean,
 ): Promise<LongTempOrderPrintLineSource[]> {
+  // 仅勾选麻醉时显式传 true；否则不传，后端默认排除 AA
+  let anesthesiaApplyOnlyParam: boolean | undefined;
+  if (anesthesiaApplyOnly === true) {
+    anesthesiaApplyOnlyParam = true;
+  }
   const base = {
     encounterIds: [encounterId],
     auditTab: 'passed' as const,
     therapyType,
+    anesthesiaApplyOnly: anesthesiaApplyOnlyParam,
   };
   const [westRes, tcmRes] = await Promise.all([
     httpListNurseStationOrderAudit({ ...base, medicineCategoryTab: 'west' }),
@@ -1426,6 +1503,68 @@ async function loadDoctorAdviceOrdersForPrint(
   return orders;
 }
 
+/** 已执行槽 → 纸面执行时间（MM-DD HH:mm；同一分钟去重，多槽换行） */
+function formatExecuteRecordedTimes(slots: NurseStationOrderExecuteSlotDto[] | undefined): string {
+  const texts: string[] = [];
+  const seen = new Set<string>();
+  for (const slot of slots ?? []) {
+    const raw = str(slot.recordedTime);
+    if (!raw || !dayjs(raw).isValid()) {
+      continue;
+    }
+    const text = dayjs(raw).format('MM-DD HH:mm');
+    if (seen.has(text)) {
+      continue;
+    }
+    seen.add(text);
+    texts.push(text);
+  }
+  return texts.join('\n');
+}
+
+/**
+ * 临时医嘱已执行时刻，按申请主键 + 医嘱类型索引。
+ * 截止到当天结束，避免打印开嘱日区间把更晚的实际执行裁掉。
+ */
+async function loadTempOrderExecuteTimeByRequest(
+  encounterId: string,
+  anesthesiaApplyOnly: boolean,
+): Promise<Map<string, string>> {
+  const executionDeadline = dayjs().endOf('day').format('YYYY-MM-DD HH:mm:ss');
+  let anesthesiaApplyOnlyParam: boolean | undefined;
+  if (anesthesiaApplyOnly) {
+    anesthesiaApplyOnlyParam = true;
+  }
+  const base = {
+    encounterIds: [encounterId],
+    executeTab: 'executed' as const,
+    therapyType: 'temp' as const,
+    executionDeadline,
+    anesthesiaApplyOnly: anesthesiaApplyOnlyParam,
+  };
+  const [westRes, tcmRes] = await Promise.all([
+    httpListNurseStationOrderExecuteForPrint({ ...base, medicineCategoryTab: 'west' }),
+    httpListNurseStationOrderExecuteForPrint({ ...base, medicineCategoryTab: 'tcm' }),
+  ]);
+  const map = new Map<string, string>();
+  for (const group of [...(westRes.groups ?? []), ...(tcmRes.groups ?? [])]) {
+    for (const order of group.orders ?? []) {
+      const text = formatExecuteRecordedTimes(order.executedSlots);
+      if (!text) {
+        continue;
+      }
+      const orderType = str(order.orderType);
+      const ids = [str(order.orderId), ...(order.lineRequestIds ?? []).map((id) => str(id))].filter(
+        (id) => id.length > 0,
+      );
+      for (const id of ids) {
+        map.set(`${id}\0${orderType}`, text);
+      }
+    }
+  }
+  return map;
+}
+
 /**
  * 长期/临时医嘱打印：默认取护士已校对列表；病案传 doctor_advice 取医生站已开立（含已停嘱）。
  * 有日期区间时按开嘱日过滤；内容含规格/用法用量/频次。
@@ -1443,6 +1582,8 @@ export async function buildOrderExecutePrintSource(
   dateTo?: string,
   orderOpenedTimeAsc = false,
   orderPrintDataSource: OrderPrintDataSource = 'nurse_audited',
+  /** true=仅麻醉申请内容；默认排除麻醉申请 */
+  anesthesiaApplyOnly = false,
 ): Promise<InpatientTempOrderPrintSource> {
   const patient = patients[0];
   if (!patient) {
@@ -1462,11 +1603,30 @@ export async function buildOrderExecutePrintSource(
     }
     const [doctorOrders, auditedOrders] = await Promise.all([
       loadDoctorAdviceOrdersForPrint(encounterId, patientId, therapyType),
-      loadAuditedOrdersForPrint(encounterId, therapyType),
+      loadAuditedOrdersForPrint(encounterId, therapyType, anesthesiaApplyOnly),
     ]);
     sourceOrders = mergeDoctorAdviceWithAuditedPrintLines(doctorOrders, auditedOrders);
   } else {
-    sourceOrders = await loadAuditedOrdersForPrint(encounterId, therapyType);
+    sourceOrders = await loadAuditedOrdersForPrint(encounterId, therapyType, anesthesiaApplyOnly);
+  }
+  // 麻醉申请：仅 AA；普通长/临：排除 AA（病案医生站路径也兜底）
+  sourceOrders = sourceOrders.filter((order) => {
+    const isAnesth = isAnesthesiaApplyPrescriptionNo(order.prescriptionNo);
+    if (anesthesiaApplyOnly) {
+      return isAnesth;
+    }
+    return !isAnesth;
+  });
+  // 国基临时医嘱单：执行时间列取已执行 recordedTime；其它院点不请求、保持空串
+  if (therapyType === 'temp' && TEMP_ORDER_PRINT_FILL_EXECUTE_TIME) {
+    const timeByRequest = await loadTempOrderExecuteTimeByRequest(
+      encounterId,
+      anesthesiaApplyOnly,
+    );
+    for (const order of sourceOrders) {
+      const key = `${str(order.requestId)}\0${str(order.orderType)}`;
+      order.executeRecordedText = timeByRequest.get(key) ?? '';
+    }
   }
   // 病案首页：按原始开立时间正序（禁止用 MM-DD 展示文案排序，避免跨年错序）
   let orderedSourceOrders = sourceOrders;
@@ -1510,18 +1670,20 @@ export async function buildOrderExecutePrintSource(
         continue;
       }
     }
-    const row = mapOrderLineToPrintRow(order);
-    if (nursingLevel) {
-      // 无活动名时回落患者队列护理级别展示名
-      if (!row.orderContent) {
-        row.orderContent = str(patient.nurseLevel);
+    const rows = mapOrderLineToPrintRows(order);
+    for (const row of rows) {
+      if (nursingLevel) {
+        // 无活动名时回落患者队列护理级别展示名
+        if (!row.orderContent) {
+          row.orderContent = str(patient.nurseLevel);
+        }
+        if (!row.orderContent) {
+          continue;
+        }
+        hasNursingLevelRow = true;
       }
-      if (!row.orderContent) {
-        continue;
-      }
-      hasNursingLevelRow = true;
+      orderRows.push(row);
     }
-    orderRows.push(row);
   }
 
   // 已校对列表无护理级别行时，用患者卡片当前护理级别补一行（仅长期单）
@@ -1540,9 +1702,15 @@ export async function buildOrderExecutePrintSource(
     });
   }
 
+  let documentTitle = '临时医嘱';
+  if (anesthesiaApplyOnly) {
+    documentTitle = '麻醉医嘱';
+  } else if (therapyType === 'long') {
+    documentTitle = '长期医嘱';
+  }
   return {
     hospitalName: resolvePrintHospitalName(),
-    documentTitle: therapyType === 'long' ? '长期医嘱' : '临时医嘱',
+    documentTitle,
     inpatientNo: str(patient.encounterBusNo),
     patientName: str(patient.name),
     genderEnumText: str(patient.gender),
@@ -1558,7 +1726,10 @@ export async function buildOrderExecutePrintSource(
     printedAtText: printedAtNow(),
   };
 }
-/** 临时医嘱 */
+/**
+ * 临时医嘱。
+ * anesthesiaApplyOnly=true 仅麻醉申请内容（标题「麻醉医嘱」）；默认排除麻醉。
+ */
 export async function buildTempOrderPrintSource(
   patients: NurseStationModulePatient[],
   selectedRows: PrintPendingRow[],
@@ -1567,6 +1738,7 @@ export async function buildTempOrderPrintSource(
   dateTo?: string,
   orderOpenedTimeAsc = false,
   orderPrintDataSource: OrderPrintDataSource = 'nurse_audited',
+  anesthesiaApplyOnly = false,
 ): Promise<InpatientTempOrderPrintSource> {
   return buildOrderExecutePrintSource(
     patients,
@@ -1577,10 +1749,11 @@ export async function buildTempOrderPrintSource(
     dateTo,
     orderOpenedTimeAsc,
     orderPrintDataSource,
+    anesthesiaApplyOnly,
   );
 }
 
-/** 长期医嘱（模板：ip-longOrder-print） */
+/** 长期医嘱（模板：ip-longOrder-print；已排除麻醉申请） */
 export async function buildLongOrderPrintSource(
   patients: NurseStationModulePatient[],
   selectedRows: PrintPendingRow[],
@@ -1599,6 +1772,7 @@ export async function buildLongOrderPrintSource(
     dateTo,
     orderOpenedTimeAsc,
     orderPrintDataSource,
+    false,
   );
 }
 
@@ -1648,24 +1822,35 @@ export async function buildNursingRecordPrintSource(
   });
 
   const header = res.paperHeader;
-  const recordRows: InpatientNursingRecordRow[] = (res.rows ?? []).map((row) => ({
-    recordDatetime: formatNursingRecordDatetime(row.recordDate, row.recordTime),
-    temperature: str(row.temperature),
-    pulse: str(row.pulse),
-    heartRate: str(row.heartRate),
-    respiratory: str(row.respiratory),
-    bloodPressure: str(row.bloodPressure),
-    consciousness: str(row.consciousness),
-    pupilLeft: str(row.pupilLeft),
-    pupilRight: str(row.pupilRight),
-    intakeName: str(row.intakeName) || str(row.intakeRoute),
-    intakeAmount: str(row.intakeAmount),
-    outputName: str(row.outputName),
-    outputAmount: str(row.outputAmount),
-    outputColorCharacter: str(row.outputColorCharacter),
-    conditionMeasure: str(row.conditionMeasure),
-    nurseSignature: str(row.nurseSignature),
-  }));
+  const recordRows: InpatientNursingRecordRow[] = (res.rows ?? []).map((row) => {
+    const pulse = str(row.pulse);
+    const heartRate = str(row.heartRate);
+    const bloodPressure = str(row.bloodPressure);
+    return {
+      recordDatetime: formatNursingRecordDatetime(row.recordDate, row.recordTime),
+      temperature: str(row.temperature),
+      pulse,
+      heartRate,
+      pulseHeartRate: pulse || heartRate,
+      respiratory: str(row.respiratory),
+      bloodPressure,
+      systolic: '',
+      diastolic: '',
+      consciousness: str(row.consciousness),
+      pupilLeft: str(row.pupilLeft),
+      pupilRight: str(row.pupilRight),
+      oxygenSaturation: str(row.oxygenSaturation),
+      oxygenRate: str(row.oxygenRate),
+      intakeName: str(row.intakeName) || str(row.intakeRoute),
+      intakeAmount: str(row.intakeAmount),
+      intakeRoute: str(row.intakeRoute),
+      outputName: str(row.outputName),
+      outputAmount: str(row.outputAmount),
+      outputColorCharacter: str(row.outputColorCharacter),
+      conditionMeasure: str(row.conditionMeasure),
+      nurseSignature: str(row.nurseSignature),
+    };
+  });
 
   const hospitalName = resolvePrintHospitalName();
   const fromMd = dayjs(dateFrom).format('MM-DD');
@@ -1685,13 +1870,37 @@ export async function buildNursingRecordPrintSource(
   };
 }
 
-/** 汇总领药单（getMedicationSummarySlipDetail） */
-export async function buildDispenseSummaryPrintSource(
+/** 汇总领药单头（护士站 / 药房详情同族字段） */
+interface DispenseSummaryPrintHeader {
+  applicantDepartmentName?: string;
+  applicantName?: string;
+  applyTime?: string;
+  dispenseTime?: string;
+  purposeLocationName?: string;
+  receiverName?: string;
+  /** 申领科室（申领人登录科室） */
+  requestingDepartmentName?: string;
+}
+
+/** 汇总领药单合并行（护士站 lines / 药房 mergedLines 同族字段） */
+interface DispenseSummaryPrintLine {
+  displayQuantityText?: string;
+  itemQuantity?: number | string;
+  medicationName?: string;
+  specificationText?: string;
+  totalPrice?: number | string;
+  unitCode?: string;
+  unitCodeText?: string;
+  unitPrice?: number | string;
+}
+
+/** 汇总领药单打印源装配（护士站 IF-IP-SUM-03 与药房 IF-IPS-02 共用模板字段） */
+function assembleDispenseSummaryPrintSource(
   summaryNo: string,
-): Promise<InpatientDispenseSummaryPrintSource> {
-  const res = await httpGetMedicationSummarySlipDetail({ summaryNo });
-  const header = res.header;
-  const lines = res.lines ?? [];
+  header: DispenseSummaryPrintHeader | undefined,
+  lines: DispenseSummaryPrintLine[],
+  resolvedDocNo?: string,
+): InpatientDispenseSummaryPrintSource {
   let total = 0;
   const drugRows = lines.map((line, index) => {
     total = decimalAdd(total, line.totalPrice ?? 0);
@@ -1703,15 +1912,21 @@ export async function buildDispenseSummaryPrintSource(
       drugName: str(line.medicationName),
       specText: str(line.specificationText),
       unitPriceText: moneyText(line.unitPrice),
+      amountText: moneyText(line.totalPrice),
       quantityUnitText: qty,
     };
   });
   return {
     hospitalName: resolvePrintHospitalName(),
     documentTitle: '汇总领药单',
-    docNo: str(res.summaryNo) || summaryNo,
+    docNo: str(resolvedDocNo) || summaryNo,
     // 模板字段 wardName 展示「药房」← purposeLocationName
     wardName: str(header?.purposeLocationName),
+    // 申领科室：病区所属科室优先，空则回落申领人登录科室（两字段同传，兼容模板 field）
+    applicantDepartmentName:
+      str(header?.applicantDepartmentName) || str(header?.requestingDepartmentName),
+    requestingDepartmentName:
+      str(header?.requestingDepartmentName) || str(header?.applicantDepartmentName),
     applicantName: str(header?.applicantName),
     dispenseAtText: str(header?.dispenseTime) || str(header?.applyTime),
     generatedAtText: str(header?.applyTime),
@@ -1724,6 +1939,32 @@ export async function buildDispenseSummaryPrintSource(
     receiverSignLabel: '签收：',
     printedAtText: printedAtNow(),
   };
+}
+
+/** 护士站汇总领药单（getMedicationSummarySlipDetail，管辖病区门控） */
+export async function buildDispenseSummaryPrintSource(
+  summaryNo: string,
+): Promise<InpatientDispenseSummaryPrintSource> {
+  const res = await httpGetMedicationSummarySlipDetail({ summaryNo });
+  return assembleDispenseSummaryPrintSource(
+    summaryNo,
+    res.header,
+    res.lines ?? [],
+    res.summaryNo,
+  );
+}
+
+/** 药房汇总领药单（getMedicationSummaryDispenseDetail，药房可见范围，不走病区门控） */
+export async function buildPharmacyDispenseSummaryPrintSource(
+  summaryNo: string,
+): Promise<InpatientDispenseSummaryPrintSource> {
+  const res = await httpGetMedicationSummaryDispenseDetail({ summaryNo });
+  return assembleDispenseSummaryPrintSource(
+    summaryNo,
+    res.header,
+    res.mergedLines ?? [],
+    res.summaryNo,
+  );
 }
 
 /**
@@ -2224,6 +2465,7 @@ export async function buildInfusionPrintSource(
       order: {
         adviceDisplayName?: string;
         dosageDisplay?: string;
+        frequencyDisplay?: string;
         groupId?: string;
         infusionFlag?: boolean;
         methodCode?: string;
@@ -2310,6 +2552,8 @@ export async function buildInfusionPrintSource(
       methodName: str(order.usageDisplay),
       // 频次 code：与门诊瓶签相同，按每日次数拆张（如 BID → 2）
       rateCode: str(order.rateCode) || undefined,
+      // 频次展示：住院瓶签印「频次」
+      rateName: str(order.frequencyDisplay) || undefined,
       // 住院执行列表无发药 quantity；瓶贴总量列印 dosageDisplay（每次量，拆张后每张一份）
       dosageDisplay: str(order.dosageDisplay),
       unitName: '',
@@ -2341,19 +2585,11 @@ export async function buildInfusionPrintSource(
     executeTimeText = `${date} ${hhmm}`;
   }
 
-  // 仅病房 + 床号，形如「301-6床」；不拼病区
+  // 仅床号，形如「6床」；不拼病房/病区
   const stripRoomBedSuffix = (raw: string) =>
     raw.replace(/病房$/u, '').replace(/房$/u, '').replace(/床$/u, '').trim();
-  const room = stripRoomBedSuffix(str(patient?.wardName));
   const bed = stripRoomBedSuffix(str(row.bedNo) || str(patient?.bedNo));
-  let wardBedText = '';
-  if (room && bed) {
-    wardBedText = `${room}-${bed}床`;
-  } else if (bed) {
-    wardBedText = `${bed}床`;
-  } else {
-    wardBedText = room;
-  }
+  const wardBedText = bed ? `${bed}床` : '';
 
   const admissionRaw = str(patient?.admissionAt) || str(patient?.inWardAt);
   let admissionTimeText = '';
@@ -2370,6 +2606,17 @@ export async function buildInfusionPrintSource(
     }
   }
 
+  let freqText = str(row.frequencyDisplay);
+  if (!freqText) {
+    for (const { order } of sortedOrders) {
+      const text = str(order.frequencyDisplay);
+      if (text) {
+        freqText = text;
+        break;
+      }
+    }
+  }
+
   return {
     patientName: str(patient?.name) || str(row.patientName),
     genderEnumText: str(patient?.gender),
@@ -2377,6 +2624,7 @@ export async function buildInfusionPrintSource(
     // 住院模板标题「入院时间」；field 仍为 registerTimeText
     registerTimeText: admissionTimeText,
     wardBedText,
+    freqText,
     medicationLines,
     speedCode: speedPrintText,
     executorName: '',
@@ -2560,19 +2808,35 @@ export async function buildServiceApplyPrintSources(
         source: {
           ...common,
           examPurposeText: '',
-          itemRows: itemOrders.map((order, index) => {
-            const bodySiteText = joinServiceRequestDetailNames(
-              order.serviceRequestDetails,
-              SERVICE_APPLY_BODY_STRUCTURE_TABLE,
-            );
-            const remarkText = str(order.remark) || bodySiteText;
-            return {
+          itemRows: (() => {
+            const rows: Array<{
+              seqNo: string;
+              itemName: string;
+              quantityText: string;
+              remarkText: string;
+            }> = [];
+            for (const order of itemOrders) {
+              const bodySiteText = joinServiceRequestDetailNames(
+                order.serviceRequestDetails,
+                SERVICE_APPLY_BODY_STRUCTURE_TABLE,
+              );
+              const remarkText = str(order.remark) || bodySiteText;
+              const quantityText = str(order.dosageDisplay) || quantityFallback;
+              const expanded = expandExamApplyItemRowsForPrint(
+                str(order.adviceDisplayName),
+                quantityText,
+                remarkText,
+                order.packageChildren,
+              );
+              for (const item of expanded) {
+                rows.push(item);
+              }
+            }
+            return rows.map((row, index) => ({
+              ...row,
               seqNo: String(index + 1),
-              itemName: str(order.adviceDisplayName),
-              quantityText: str(order.dosageDisplay) || quantityFallback,
-              remarkText,
-            };
-          }),
+            }));
+          })(),
         },
       });
       continue;
@@ -2584,17 +2848,35 @@ export async function buildServiceApplyPrintSources(
       patientName: common.patientName,
       source: {
         ...common,
-        itemRows: itemOrders.map((order, index) => ({
-          seqNo: String(index + 1),
-          itemName: str(order.adviceDisplayName),
-          detailText: joinPackageChildrenDetailText(order.packageChildren),
-          specimenTypeText: joinServiceRequestDetailNames(
-            order.serviceRequestDetails,
-            SERVICE_APPLY_SPECIMEN_TABLE,
-          ),
-          quantityText: str(order.dosageDisplay) || quantityFallback,
-          remarkText: str(order.remark),
-        })),
+        itemRows: (() => {
+          const rows: Array<{
+            seqNo: string;
+            itemName: string;
+            detailText: string;
+            specimenTypeText: string;
+            quantityText: string;
+            remarkText: string;
+          }> = [];
+          for (const order of itemOrders) {
+            const expanded = expandLabApplyItemRowsForPrint(
+              str(order.adviceDisplayName),
+              str(order.dosageDisplay) || quantityFallback,
+              str(order.remark),
+              joinServiceRequestDetailNames(
+                order.serviceRequestDetails,
+                SERVICE_APPLY_SPECIMEN_TABLE,
+              ),
+              order.packageChildren,
+            );
+            for (const item of expanded) {
+              rows.push(item);
+            }
+          }
+          return rows.map((row, index) => ({
+            ...row,
+            seqNo: String(index + 1),
+          }));
+        })(),
       },
     });
   }

@@ -4,10 +4,17 @@ import type {
   ServiceApplySelectedItem,
 } from '#/views/outpatient/doctor-station/service-apply/service-apply.types';
 
+import { SERVICE_APPLY_KIND_LABEL } from '#/views/outpatient/doctor-station/service-apply/service-apply.constants';
 import { detailTargetIds } from '#/views/outpatient/doctor-station/service-apply/service-apply.service';
 
-/** 检验申请单 PrintData（与 test-print 模板 field 一致） */
+import {
+  type ServiceApplyPrintItemLine,
+  toServiceApplyItemLine,
+} from '../service-apply-print-items';
+
+/** 检验申请单 PrintData（与 examination-print A5 共用模板 field 一致） */
 export interface TestPrintData {
+  documentTitle: string;
   hospitalName: string;
   patientName: string;
   genderEnumText: string;
@@ -18,12 +25,19 @@ export interface TestPrintData {
   orderingPractitionerName: string;
   orderDateText: string;
   diagnosisText: string;
+  /** 项目区：每项名称 + 标本，纵向排列，一列排满再向右开列 */
+  applyItemLines: ServiceApplyPrintItemLine[];
   serviceItemNameText: string;
-  specimenTypeText: string;
+  /** 部位/标本（检验=标本，共用模板字段） */
+  detailText: string;
   precautionText: string;
+  resultText: string;
+  performDepartmentName: string;
+  practitionerSignName: string;
+  /** 兼容旧字段名 */
+  specimenTypeText: string;
   labResultText: string;
   labDepartmentName: string;
-  practitionerSignName: string;
 }
 
 /** 检验申请单 mapper 入参（P：门诊医生站申请弹窗签发后） */
@@ -145,12 +159,23 @@ function joinUniqueNonEmpty(parts: string[], separator = '\n'): string {
 export function buildTestPrintData(source: TestPrintSource): TestPrintData {
   const orderingPractitionerName = str(source.orderingPractitionerName);
   const lines = resolveSourceLines(source);
+  const applyItemLines = lines
+    .map((line, index) =>
+      toServiceApplyItemLine(
+        source.applyKind,
+        str(line.activityName),
+        buildLineSpecimenTypeText(source, line, index),
+      ),
+    )
+    .filter((line): line is ServiceApplyPrintItemLine => line !== null);
   const serviceItemNameText = joinUniqueNonEmpty(lines.map((line) => line.activityName));
-  const specimenTypeText = joinUniqueNonEmpty(
+  const detailText = joinUniqueNonEmpty(
     lines.map((line, index) => buildLineSpecimenTypeText(source, line, index)),
   );
   const precautionText = joinUniqueNonEmpty(lines.map((line) => line.remark));
+  const performDepartmentName = str(source.performOrgName);
   return {
+    documentTitle: `${SERVICE_APPLY_KIND_LABEL.lab}申请单`,
     hospitalName: str(source.hospitalName),
     patientName: str(source.patientName),
     genderEnumText: str(source.genderEnumText),
@@ -161,11 +186,15 @@ export function buildTestPrintData(source: TestPrintSource): TestPrintData {
     orderingPractitionerName,
     orderDateText: str(source.orderDateText),
     diagnosisText: str(source.diagnosisText),
+    applyItemLines,
     serviceItemNameText,
-    specimenTypeText,
+    detailText,
     precautionText,
-    labResultText: '',
-    labDepartmentName: str(source.performOrgName),
+    resultText: '',
+    performDepartmentName,
     practitionerSignName: orderingPractitionerName,
+    specimenTypeText: detailText,
+    labResultText: '',
+    labDepartmentName: performDepartmentName,
   };
 }

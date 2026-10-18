@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { SelectLabelProps } from 'reka-ui';
 
-import { cn } from '@vben-core/shared/utils';
+import { cn } from '@zxplat-core/shared/utils';
 
 import { SelectLabel } from 'reka-ui';
 

@@ -46,7 +46,10 @@ export interface WardBed {
   parentId?: string;
   typeCode?: string;
   formEnum?: string;
+  /** 主挂靠住院科室（雪花 ID 保持 string）。 */
   organizationId?: number | string;
+  /** 病区挂靠的全部住院科室（多科共用一病区；雪花 ID 保持 string）。 */
+  organizationIds?: Array<number | string>;
   statusEnum?: string;
   operationalEnum?: string;
   name?: string;
@@ -59,7 +62,9 @@ export interface WardBed {
 export interface CreateWardBedParams {
   name: string;
   formEnum: string;
-  organizationId: number | string;
+  organizationId?: number | string;
+  /** 病区多选挂靠科室；首项即主挂靠。 */
+  organizationIds?: Array<number | string>;
   parentId?: string;
   displayOrder?: number;
   typeJson?: string;

@@ -12,7 +12,7 @@ export const PRINT_CHROME_FLAG_URL = 'chrome://flags/#local-network-access-check
 
 /** 第一步排查条目 */
 export const PRINT_PLUGIN_INSTALL_BULLETS = [
-  '系统托盘是否出现 OpenHIS.Win 图标',
+  '系统托盘是否出现 Zxplat.Win 图标',
   '程序启动后会自动拉起打印服务',
   '若未安装，请联系信息科获取安装包并完成安装',
 ];
@@ -29,7 +29,7 @@ export async function copyPrintChromeFlagUrl(): Promise<boolean> {
   }
 }
 
-/** 第一步：确认本机 OpenHIS.Win 打印插件（纯文本，供 Alert 等场景） */
+/** 第一步：确认本机 Zxplat.Win 打印插件（纯文本，供 Alert 等场景） */
 export const PRINT_PLUGIN_INSTALL_MESSAGE = [
   '第一步：确认本机打印插件',
   '',
@@ -109,7 +109,7 @@ export function notifyPrintError(options: {
     distinguishCancelAndClose: true,
     closeOnClickModal: false,
     closeOnPressEscape: false,
-    customClass: 'whale-print-troubleshoot-messagebox',
+    customClass: 'zxplat-print-troubleshoot-messagebox',
   }).catch((action) => {
     if (action === 'cancel') {
       void copyPrintChromeFlagUrl();

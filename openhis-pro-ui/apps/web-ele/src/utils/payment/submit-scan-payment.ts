@@ -13,6 +13,7 @@ import { pollUnionPayOrder } from '#/utils/payment/poll-union-pay-order';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
 
 import { cacheClientScanResult, peekCachedClientScanResult } from './scan-settle-cache';
+import { recoverApplyClientScanFailure } from './scan-settle-recovery';
 
 /**
  * 关闭本笔预下单 PENDING（失败吞掉，避免盖住主错误）。
@@ -220,33 +221,49 @@ export async function submitScanPayment(
     throw new Error(clientScanResult.respMsg || '银联被扫失败');
   }
 
-  // Cmd：Win 成功后立刻落 BPC SUCCESS，与后续 settle/2207 事务解耦。
-  try {
-    await httpApplyClientScanResult({
-      paymentId: paymentDraftId,
-      detailIndex: params.detailIndex ?? 0,
-      amount: amountNum,
-      merTradeNo: clientScanResult.merTradeNo || merTradeNo,
-      tradeNo: clientScanResult.tradeNo,
-      payType: clientScanResult.payType,
-      respCode: clientScanResult.respCode || '00',
-      respMsg: clientScanResult.respMsg,
-      txnAmtFen: clientScanResult.txnAmtFen,
-    });
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : '';
-    throw new Error(
-      detail
-        ? `银联已扣款但本地收单落库失败：${detail}。请联系信息科，勿重复扫码`
-        : '银联已扣款但本地收单落库失败，请联系信息科，勿重复扫码',
-    );
-  }
-
   const normalized: ClientScanResultDto = {
     ...clientScanResult,
     merTradeNo: clientScanResult.merTradeNo || merTradeNo,
     respCode: clientScanResult.respCode || '00',
   };
+
+  /** 组装与首次一致的 apply 入参（含 txnAmtFen=0 全额券场景）。 */
+  const buildApplyBody = () => ({
+    paymentId: paymentDraftId,
+    detailIndex: params.detailIndex ?? 0,
+    amount: amountNum,
+    merTradeNo: normalized.merTradeNo,
+    tradeNo: String(normalized.tradeNo ?? ''),
+    payType: String(normalized.payType ?? ''),
+    respCode: normalized.respCode || '00',
+    respMsg: normalized.respMsg,
+    txnAmtFen: normalized.txnAmtFen,
+  });
+
+  // Cmd：Win 成功后立刻落 BPC SUCCESS；失败则弹「补落账/银联退货」，禁止重扫。
+  try {
+    await httpApplyClientScanResult(buildApplyBody());
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : '';
+    const recovered = await recoverApplyClientScanFailure(
+      normalized,
+      async () => {
+        await httpApplyClientScanResult(buildApplyBody());
+      },
+      {
+        paymentDraftId,
+        detailIndex: params.detailIndex ?? 0,
+        amountYuan: amountNum,
+        refundAmountYuan: amountNum,
+        applyErrorMessage: detail,
+      },
+    );
+    return {
+      merTradeNo: recovered.merTradeNo,
+      clientScanResult: recovered,
+    };
+  }
+
   cacheClientScanResult(paymentDraftId, normalized);
   return {
     merTradeNo: normalized.merTradeNo,

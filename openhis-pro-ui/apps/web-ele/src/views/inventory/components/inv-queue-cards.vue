@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import type { ApiOptionItem } from '#/types/api-response';
 
-import { formatDate } from '@vben/utils';
+import { formatDate } from '@zxplat/utils';
 
 import { Document } from '@element-plus/icons-vue';
 import { ElCard } from 'element-plus';

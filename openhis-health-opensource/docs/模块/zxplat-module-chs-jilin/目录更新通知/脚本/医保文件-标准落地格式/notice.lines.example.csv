@@ -1,0 +1,4 @@
+action,hilist_code,project_code,hilist_name,begin_date,end_date,change_fields,chrgitm_lv,list_type,source_sheet,source_row,ext_json
+ADD,,01234567890,示例新增项目（仅项目代码）,2026-05-19,,, ,201,新增,2,"{""归集口径"":""示例""}"
+STOP,003010101010101,,,2020-01-01,2026-05-25,,,201,停用,2,"{}"
+MODIFY,003010101010102,,示例变更项目,2020-01-01,,计价单位;诊疗项目说明,,201,变更,2,"{""本期变更"":""计价单位;诊疗项目说明""}"

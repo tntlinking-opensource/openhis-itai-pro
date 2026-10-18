@@ -262,6 +262,9 @@ const PRINT_HOST_CSS = `
   font-size: 12px;
   line-height: 1.1;
   letter-spacing: 1px;
+  white-space: nowrap;
+  max-width: 1.15em;
+  overflow: visible;
   pointer-events: none;
 }
 

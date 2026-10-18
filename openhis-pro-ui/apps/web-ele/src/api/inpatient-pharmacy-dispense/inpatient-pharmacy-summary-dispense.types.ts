@@ -25,8 +25,12 @@ export interface InpatientPharmacySummarySlipHeaderDto {
   dispenseTime?: string;
   purposeLocationId?: string;
   purposeLocationName?: string;
+  /** 申领科室（点汇总/发送的人的登录科室） */
+  requestingDepartmentName?: string;
   applicantId?: string;
   applicantName?: string;
+  /** 申领科室（病区所属科室；详情/打印回填） */
+  applicantDepartmentName?: string;
   receiverId?: string;
   receiverName?: string;
   supplyStatusEnum?: string;

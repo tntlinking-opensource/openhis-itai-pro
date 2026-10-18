@@ -1,6 +1,6 @@
 /**
  * 定时任务管理 — 对接 POST /api/app/scheduledJob/*
- * 数据持久化在 whale_qrtz_* 表，主键为 jobName + jobGroup。
+ * 数据持久化在 zxplat_qrtz_* 表，主键为 jobName + jobGroup。
  */
 import type { PageApiResponse, PageParams } from '#/types/api-response';
 

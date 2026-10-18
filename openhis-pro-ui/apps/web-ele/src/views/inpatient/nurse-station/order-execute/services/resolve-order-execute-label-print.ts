@@ -14,8 +14,6 @@ import type { OutpatientInfusionLabelPrintSource } from '#/utils/print/mappers/o
 import dayjs from 'dayjs';
 
 import {
-  INFUSION_METHOD_CODES,
-  METHOD_CODE_IV_INJECTION,
   ORAL_METHOD_CODES,
   normalizeMedicationMethodCode,
 } from '#/utils/print/constants/medication-method-codes';
@@ -38,26 +36,6 @@ export type OrderExecuteRowPrintDocType =
   | 'exam_apply'
   | 'lab_apply';
 
-/** 是否静脉注射途径（术语 404） */
-export function isIvInjectionMethodCode(methodCode?: null | string): boolean {
-  const raw = String(methodCode ?? '').trim();
-  if (!raw) {
-    return false;
-  }
-  const normalized = normalizeMedicationMethodCode(raw);
-  return normalized === METHOD_CODE_IV_INJECTION || raw === METHOD_CODE_IV_INJECTION;
-}
-
-/** 是否静滴/输液途径（术语 405 / IVD） */
-export function isInfusionDripMethodCode(methodCode?: null | string): boolean {
-  const raw = String(methodCode ?? '').trim();
-  if (!raw) {
-    return false;
-  }
-  const normalized = normalizeMedicationMethodCode(raw);
-  return INFUSION_METHOD_CODES.has(normalized) || INFUSION_METHOD_CODES.has(raw);
-}
-
 /** 是否口服途径（术语 1 / PO） */
 export function isOralMethodCodeForExecuteRow(methodCode?: null | string): boolean {
   const raw = String(methodCode ?? '').trim();
@@ -69,8 +47,9 @@ export function isOralMethodCodeForExecuteRow(methodCode?: null | string): boole
 }
 
 /**
- * 按用法 code 决定右键贴签（禁止用 usageDisplay）：
- * 口服 → 口服药贴；静脉注射(404) / 静滴(405) / infusionFlag → 输液贴。
+ * 右键贴签分流：
+ * - 输液贴：仅看 infusionFlag（药品目录输液标记 / 药嘱回落），不按用法 code 限制；
+ * - 口服药贴：用法为口服（禁止用 usageDisplay）。
  */
 export function resolveExecuteRowLabelPrintDocType(
   row: Pick<NurseStationOrderExecuteTableRow, 'infusionFlag' | 'methodCode' | 'orderType'>,
@@ -78,15 +57,12 @@ export function resolveExecuteRowLabelPrintDocType(
   if (row.orderType !== 'MED_REQUEST') {
     return null;
   }
+  // 瓶贴优先：有输液标记即可打，与用法无关
+  if (row.infusionFlag === true) {
+    return 'infusion_label';
+  }
   if (isOralMethodCodeForExecuteRow(row.methodCode)) {
     return 'oral_med_label';
-  }
-  if (
-    isIvInjectionMethodCode(row.methodCode) ||
-    isInfusionDripMethodCode(row.methodCode) ||
-    row.infusionFlag === true
-  ) {
-    return 'infusion_label';
   }
   return null;
 }
@@ -183,25 +159,17 @@ function formatAdmissionTimeText(patient: NurseStationModulePatient): string {
   return parsed.format('YYYY-MM-DD HH:mm');
 }
 
-/** 去掉病房/床后缀，便于拼「301-6床」 */
+/** 去掉病房/床后缀，便于拼「6床」 */
 function stripRoomBedSuffix(raw: string): string {
   return raw.replace(/病房$/u, '').replace(/房$/u, '').replace(/床$/u, '').trim();
 }
 
 /**
- * 病房床位展示：仅病房 + 床号，形如「301-6床」。
- * ModulePatient.wardName 为病房名（非病区）；不拼病区。
+ * 床位展示：仅床号（形如「6床」）；不拼病房/病区。
  */
 function formatWardBedText(patient: NurseStationModulePatient): string {
-  const room = stripRoomBedSuffix(str(patient.wardName));
   const bed = stripRoomBedSuffix(str(patient.bedNo));
-  if (room && bed) {
-    return `${room}-${bed}床`;
-  }
-  if (bed) {
-    return `${bed}床`;
-  }
-  return room;
+  return bed ? `${bed}床` : '';
 }
 
 function formatApplyOrderDateText(raw?: string): string {
@@ -359,6 +327,10 @@ function buildInfusionMedicationLinesFromExecuteRow(
   const rateCode =
     String(row.rateCode ?? '').trim() ||
     String(row.mergedMedicationMembers?.[0]?.rateCode ?? '').trim();
+  const rateName =
+    String(row.frequencyDisplay ?? '').trim() ||
+    String(row.groupItems?.[0]?.frequency ?? '').trim() ||
+    String(row.mergedMedicationMembers?.[0]?.frequencyDisplay ?? '').trim();
   const lines: NurseStationTreatmentLineDto[] = [];
 
   const groupItems = row.groupItems ?? [];
@@ -382,6 +354,11 @@ function buildInfusionMedicationLinesFromExecuteRow(
         methodCode: String(member?.methodCode ?? methodCode).trim() || methodCode,
         methodName: String(item.usage ?? '').trim() || methodName,
         rateCode: String(member?.rateCode ?? rateCode).trim() || rateCode || undefined,
+        rateName:
+          String(item.frequency ?? '').trim() ||
+          String(member?.frequencyDisplay ?? '').trim() ||
+          rateName ||
+          undefined,
         infusionFlag: true,
         // 住院无发药 quantity；总量列走 dosageDisplay（每次量，按频次拆张后每张一份）
         unitName: '',
@@ -410,6 +387,7 @@ function buildInfusionMedicationLinesFromExecuteRow(
         methodCode: String(member.methodCode ?? methodCode).trim() || methodCode,
         methodName: resolveUsageDisplayText(member) || methodName,
         rateCode: String(member.rateCode ?? rateCode).trim() || rateCode || undefined,
+        rateName: String(member.frequencyDisplay ?? '').trim() || rateName || undefined,
         infusionFlag: true,
         unitName: '',
         sortNumber: index + 1,
@@ -433,6 +411,7 @@ function buildInfusionMedicationLinesFromExecuteRow(
     methodCode,
     methodName,
     rateCode: rateCode || undefined,
+    rateName: rateName || undefined,
     infusionFlag: true,
     unitName: '',
     sortNumber: 1,
@@ -452,6 +431,10 @@ export function buildInfusionPrintSourceFromExecuteRow(
   const medicationLines = buildInfusionMedicationLinesFromExecuteRow(row);
   const hasRateCode = medicationLines.some((line) => String(line.rateCode ?? '').trim());
   const slotTimesPerDay = resolveTimesPerDayFromExecuteRowSlots(row, queryDate);
+  const freqText =
+    str(row.frequencyDisplay) ||
+    str(row.groupItems?.[0]?.frequency) ||
+    str(row.mergedMedicationMembers?.[0]?.frequencyDisplay);
   return {
     patientName: str(patient.name),
     genderEnumText: str(patient.gender),
@@ -459,6 +442,7 @@ export function buildInfusionPrintSourceFromExecuteRow(
     // 住院模板标题「入院时间」；field 仍为 registerTimeText（与门诊共用 PrintData）
     registerTimeText: formatAdmissionTimeText(patient),
     wardBedText: formatWardBedText(patient),
+    freqText,
     medicationLines,
     // 模板 field=speedCode；值用展示名（同列表「滴速：xx」）
     speedCode: resolveSpeedPrintTextFromExecuteRow(row),
@@ -522,17 +506,16 @@ export function buildExamApplyPrintSourceFromExecuteRow(
     SERVICE_APPLY_BODY_STRUCTURE_TABLE,
   );
   const remarkText = str(row.remark) || bodySiteText;
+  const quantityText = str(row.dosage) || '1次';
   return {
     ...buildServiceApplyCommonFromExecuteRow(row, patient),
     examPurposeText: '',
-    itemRows: [
-      {
-        seqNo: '1',
-        itemName: str(row.content),
-        quantityText: str(row.dosage) || '1次',
-        remarkText,
-      },
-    ],
+    itemRows: expandExamApplyItemRowsForPrint(
+      str(row.content),
+      quantityText,
+      remarkText,
+      row.packageChildren,
+    ),
   };
 }
 
@@ -541,20 +524,81 @@ export function buildLabApplyPrintSourceFromExecuteRow(
   row: NurseStationOrderExecuteTableRow,
   patient: NurseStationModulePatient,
 ): InpatientLabApplyPrintSource {
+  const quantityText = str(row.dosage) || '1次';
+  const specimenTypeText = joinServiceRequestDetailNames(
+    row.serviceRequestDetails,
+    SERVICE_APPLY_SPECIMEN_TABLE,
+  );
   return {
     ...buildServiceApplyCommonFromExecuteRow(row, patient),
-    itemRows: [
-      {
-        seqNo: '1',
-        itemName: str(row.content),
-        detailText: joinPackageChildrenDetailText(row.packageChildren),
-        specimenTypeText: joinServiceRequestDetailNames(
-          row.serviceRequestDetails,
-          SERVICE_APPLY_SPECIMEN_TABLE,
-        ),
-        quantityText: str(row.dosage) || '1次',
-        remarkText: str(row.remark),
-      },
-    ],
+    itemRows: expandLabApplyItemRowsForPrint(
+      str(row.content),
+      quantityText,
+      str(row.remark),
+      specimenTypeText,
+      row.packageChildren,
+    ),
   };
+}
+
+/**
+ * 检查申请单项目行：始终打父项（带子项展开仅检验）。
+ *
+ * @param parentName 父项展示名
+ * @param quantityText 数量文案
+ * @param remarkText 部位/备注
+ * @param _packageChildren 目录子项（检查单不展开）
+ * @return 打印明细行
+ */
+export function expandExamApplyItemRowsForPrint(
+  parentName: string,
+  quantityText: string,
+  remarkText: string,
+  _packageChildren?: AdvicePackageChildItemDto[] | null,
+): Array<{ seqNo: string; itemName: string; quantityText: string; remarkText: string }> {
+  return [
+    {
+      seqNo: '1',
+      itemName: parentName,
+      quantityText,
+      remarkText,
+    },
+  ];
+}
+
+/**
+ * 检验申请单项目行：始终一行对应一条开立医嘱（与待打列表勾选数一致）。
+ * 子项名只进明细列，避免「餐后2小时」被替换成「化学发光法」，以及套餐展开把 33 项打成 45 行。
+ *
+ * @param parentName 父项展示名
+ * @param quantityText 数量文案
+ * @param remarkText 备注
+ * @param specimenTypeText 标本
+ * @param packageChildren 目录子项
+ * @return 打印明细行
+ */
+export function expandLabApplyItemRowsForPrint(
+  parentName: string,
+  quantityText: string,
+  remarkText: string,
+  specimenTypeText: string,
+  packageChildren?: AdvicePackageChildItemDto[] | null,
+): Array<{
+  seqNo: string;
+  itemName: string;
+  detailText: string;
+  specimenTypeText: string;
+  quantityText: string;
+  remarkText: string;
+}> {
+  return [
+    {
+      seqNo: '1',
+      itemName: parentName,
+      detailText: joinPackageChildrenDetailText(packageChildren),
+      specimenTypeText,
+      quantityText,
+      remarkText,
+    },
+  ];
 }

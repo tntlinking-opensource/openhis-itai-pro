@@ -1,0 +1,30 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.zxplat.domain.share.events.administration.location;
+
+import com.zxplat.domain.share.constants.AggregateTypeConstants;
+import com.zxplat.framework.core.domain.event.DomainEvent;
+
+/**
+ * 位置已废弃事件。
+ */
+public class LocationAbolishedEvent extends DomainEvent {
+
+    /**
+     * 处理逻辑。
+     * @return 返回结果
+     */
+    public LocationAbolishedEvent() {
+        super();
+    }
+
+    /**
+     * 处理Long locationId逻辑。
+     * @return 返回结果
+     */
+    public LocationAbolishedEvent(Long locationId) {
+        super(locationId, AggregateTypeConstants.LOCATION);
+    }
+}

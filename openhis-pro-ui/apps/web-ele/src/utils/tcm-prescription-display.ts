@@ -39,18 +39,32 @@ export function formatTcmHerbDisplayFromSlipRow(
   return name;
 }
 
+/**
+ * 处方打印单味：药名 + 每付重量（slip.doseValue）。
+ * 不用 quantity：那是单付×付数的发放总量。
+ */
+export function formatTcmHerbDisplayPerDoseFromSlipRow(
+  row: EncounterMedicationDispenseSlipRowDto,
+): string {
+  const name = str(row.medicationName) || str(row.merchandiseName);
+  const dose = row.doseValue;
+  const unit = str(row.doseUnitText) || str(row.unitText);
+  if (name && dose !== null && dose !== undefined && dose !== '') {
+    const q = String(dose).trim();
+    if (q) {
+      return unit ? `${name} ${q}${unit}` : `${name} ${q}`;
+    }
+  }
+  return name;
+}
+
 function formatDecoctionNote(note: string): string {
   return note ? `(${note})` : '';
 }
 
-/** slip 行 → 四列饮片网格（与打印模板 tcmHerbRows 一致） */
-export function buildTcmHerbGridRowsFromSlipRows(
-  rows: EncounterMedicationDispenseSlipRowDto[],
+function packTcmHerbGridRows(
+  cells: { decoctionNote: string; herbDisplay: string }[],
 ): TcmHerbGridDisplayRow[] {
-  const cells = rows.map((row) => ({
-    herbDisplay: formatTcmHerbDisplayFromSlipRow(row),
-    decoctionNote: str(row.dosageInstructionText),
-  }));
   const cols = 4;
   const gridRows: TcmHerbGridDisplayRow[] = [];
   for (let i = 0; i < cells.length; i += cols) {
@@ -67,6 +81,30 @@ export function buildTcmHerbGridRowsFromSlipRows(
     });
   }
   return gridRows;
+}
+
+/** slip 行 → 四列饮片网格（发药笺面：发放总量） */
+export function buildTcmHerbGridRowsFromSlipRows(
+  rows: EncounterMedicationDispenseSlipRowDto[],
+): TcmHerbGridDisplayRow[] {
+  return packTcmHerbGridRows(
+    rows.map((row) => ({
+      herbDisplay: formatTcmHerbDisplayFromSlipRow(row),
+      decoctionNote: str(row.dosageInstructionText),
+    })),
+  );
+}
+
+/** slip 行 → 四列饮片网格（处方打印：每付重量，对模板 tcmHerbRows） */
+export function buildTcmHerbGridRowsFromSlipRowsForRxPrint(
+  rows: EncounterMedicationDispenseSlipRowDto[],
+): TcmHerbGridDisplayRow[] {
+  return packTcmHerbGridRows(
+    rows.map((row) => ({
+      herbDisplay: formatTcmHerbDisplayPerDoseFromSlipRow(row),
+      decoctionNote: str(row.dosageInstructionText),
+    })),
+  );
 }
 
 /**

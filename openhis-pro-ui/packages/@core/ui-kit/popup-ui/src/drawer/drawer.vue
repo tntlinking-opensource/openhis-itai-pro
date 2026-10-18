@@ -3,8 +3,8 @@ import type { DrawerProps, ExtendedDrawerApi } from './drawer';
 
 import { computed, onDeactivated, provide, ref, unref, useId, watch } from 'vue';
 
-import { useIsMobile, usePriorityValues, useSimpleLocale } from '@vben-core/composables';
-import { X } from '@vben-core/icons';
+import { useIsMobile, usePriorityValues, useSimpleLocale } from '@zxplat-core/composables';
+import { X } from '@zxplat-core/icons';
 import {
   Separator,
   Sheet,
@@ -19,10 +19,10 @@ import {
   VbenIconButton,
   VbenLoading,
   VisuallyHidden,
-} from '@vben-core/shadcn-ui';
-import { ELEMENT_ID_MAIN_CONTENT } from '@vben-core/shared/constants';
-import { globalShareState } from '@vben-core/shared/global-state';
-import { cn } from '@vben-core/shared/utils';
+} from '@zxplat-core/shadcn-ui';
+import { ELEMENT_ID_MAIN_CONTENT } from '@zxplat-core/shared/constants';
+import { globalShareState } from '@zxplat-core/shared/global-state';
+import { cn } from '@zxplat-core/shared/utils';
 
 interface Props extends DrawerProps {
   drawerApi?: ExtendedDrawerApi;

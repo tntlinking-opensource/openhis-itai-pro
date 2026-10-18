@@ -1,0 +1,12 @@
+websocket相关文件：
+websocket.exe、websocket.Ini、wsdemo2.htm
+RegWebsocket.bat、URegWebsocket.bat、RunWebsocket.bat、CloseWebsocekt.bat
+
+websocket使用步骤：
+1.把gmc文件夹放在C盘根目录，先以管理员权限运行运行websocket.exe,打开网页demo（wsdemo2.htm）进行测试;
+
+2.批处理文件作用：
+a.注册websocket.exe开机自启动脚本：RegWebsocket.bat
+b.运行websocket.exe脚本：RunWebsocket.bat
+c.关闭正在运行websocket.exe脚本：CloseWebsocekt.bat
+d.注销websocket.exe开机非自启动执行脚本：URegWebsocket.bat

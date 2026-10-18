@@ -1,5 +1,5 @@
 // @ts-check
 
-import { defineConfig } from '@vben/eslint-config';
+import { defineConfig } from '@zxplat/eslint-config';
 
 export default defineConfig();

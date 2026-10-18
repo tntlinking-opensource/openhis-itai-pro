@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { Props } from './types';
 
-import { preferences } from '@vben-core/preferences';
-import { Card, Separator, Tabs, TabsList, TabsTrigger, VbenAvatar } from '@vben-core/shadcn-ui';
+import { preferences } from '@zxplat-core/preferences';
+import { Card, Separator, Tabs, TabsList, TabsTrigger, VbenAvatar } from '@zxplat-core/shadcn-ui';
 
 import { Page } from '../../components';
 

@@ -1,0 +1,10 @@
+{
+  "doc_kind": "CATALOG_DELTA",
+  "category": "HERBAL",
+  "title": "2024.10.25中药饮片（林下山参）",
+  "source_filename": "2024.10.25中药饮片（林下山参）.xlsx",
+  "notice_date": "2024-10-25",
+  "effective_date": null,
+  "wash_note": "CATALOG_DELTA/HERBAL；行数=1；actions=MODIFY:1；hilist_code←医疗目录编码",
+  "wash_tool": "cursor-ai"
+}

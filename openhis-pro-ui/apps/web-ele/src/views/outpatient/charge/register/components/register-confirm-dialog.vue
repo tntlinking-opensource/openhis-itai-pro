@@ -34,10 +34,11 @@ import {
 import { useRegisterPayChannels } from '../composables/use-register-pay-channels';
 
 import {
+  formatCredentialRescanButtonLabel,
   formatInsuranceCredentialExpiredHint,
-  isEcVoucherMediumType,
-  isEcVoucherStale,
+  isCredentialStale,
   isInsuranceCredentialExpiredError,
+  needsCredentialRefreshBeforePay,
 } from '../services/register-insurance-credential';
 import { payRegisterFee } from '../services/register.service';
 
@@ -131,18 +132,8 @@ const insuranceCvlservFlagRaw = computed(() => {
   return String(flag ?? '').trim();
 });
 
-/**
- * 公务员待遇展示：0→否 / 1→是；空则 —
- */
-function formatConfirmCvlservFlag(flag: string) {
-  if (flag === '1') {
-    return '是';
-  }
-  if (flag === '0') {
-    return '否';
-  }
-  return flag || '—';
-}
+/** 仅公务员（平台 cvlserv_flag=1）才回显公务员待遇/补助 */
+const showConfirmCvlservBenefit = computed(() => insuranceCvlservFlagRaw.value === '1');
 const workInjuryEncounterId = computed(
   () => (pendingPreSettlement.value as null | { encounterId?: string | number })?.encounterId,
 );
@@ -176,14 +167,21 @@ const showScanPaySection = computed(
 const zeroPayHint = computed(() =>
   insurancePreSettled.value ? '医保已全额覆盖，无需额外现金支付' : '本单金额为 0，无需支付',
 );
-const ecVoucherStale = computed(
+/** 读卡/展码超过建议时效 → 缴费前须重读凭证 */
+const credentialStale = computed(
   () =>
     insurancePreSettled.value &&
-    isEcVoucherMediumType(insuranceMediumType.value) &&
-    isEcVoucherStale(ybCredentialReadAt.value),
+    isCredentialStale(ybCredentialReadAt.value, insuranceMediumType.value),
 );
 const showRescanSection = computed(
-  () => insurancePreSettled.value && isEcVoucherMediumType(insuranceMediumType.value),
+  () =>
+    insurancePreSettled.value && needsCredentialRefreshBeforePay(insuranceMediumType.value),
+);
+const credentialRescanButtonLabel = computed(() =>
+  formatCredentialRescanButtonLabel(insuranceMediumType.value),
+);
+const credentialExpiredHintText = computed(() =>
+  formatInsuranceCredentialExpiredHint(insuranceMediumType.value),
 );
 
 function formatGenderShort(code: string): string {
@@ -328,6 +326,10 @@ function resolvePayError(error: unknown): { code?: string; message: string } {
 }
 
 async function handleRescanAndRefresh() {
+  // 防连点：刷新中或缴费中忽略二次点击
+  if (refreshLoading.value || payLoading.value) {
+    return;
+  }
   const handler = rescanAndRefreshHandler.value;
   const pre = pendingPreSettlement.value;
   if (!handler || !pre) {
@@ -348,16 +350,25 @@ async function handleRescanAndRefresh() {
   }
 }
 
+/**
+ * 缴费前凭证时效门禁：过期则阻断并提示重读。
+ *
+ * @returns true 可继续缴费
+ */
 function ensureCredentialFreshBeforePay(): boolean {
-  if (ecVoucherStale.value) {
+  if (credentialStale.value) {
     credentialExpiredHint.value = true;
-    ElMessage.warning(formatInsuranceCredentialExpiredHint());
+    ElMessage.warning(credentialExpiredHintText.value);
     return false;
   }
   return true;
 }
 
 async function executeRegisterPayment() {
+  // 防连点：loading 中忽略二次点击与回车
+  if (payLoading.value || refreshLoading.value) {
+    return;
+  }
   const pre = pendingPreSettlement.value;
   const d = detail.value;
   if (!pre?.paymentDraftId || !d) {
@@ -413,7 +424,7 @@ async function executeRegisterPayment() {
     if (needScanPay && payCash > 0.001) {
       await refreshUnionPayCapabilities();
       if (!scanPayEnabled.value) {
-        ElMessage.error('请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
+        ElMessage.error('请启动本地客户端（Zxplat.Win）并确认银联组件已安装');
         return;
       }
       scanStatusText.value = halfSuccessLocked ? '银联已扣款，正在补结算…' : '等待支付结果…';
@@ -505,9 +516,10 @@ async function executeRegisterPayment() {
       return;
     }
     const { code, message } = resolvePayError(error);
+    // INS-015 由本页提示并展示重读区；拦截器已跳过重复 toast
     if (isInsuranceCredentialExpiredError(code, message)) {
       credentialExpiredHint.value = true;
-      ElMessage.warning(formatInsuranceCredentialExpiredHint());
+      ElMessage.warning(message || credentialExpiredHintText.value);
     } else if (message) {
       ElMessage.error(message);
     }
@@ -576,24 +588,26 @@ defineExpose({
             <span>起付线</span>
             <span>¥{{ formatMoneyDisplay(insuranceActPayDedc) }}</span>
           </div>
-          <div class="register-confirm-dialog__meta-row">
-            <span>公务员待遇</span>
-            <span>{{ formatConfirmCvlservFlag(insuranceCvlservFlagRaw) }}</span>
-          </div>
-          <div class="register-confirm-dialog__meta-row">
-            <span>公务员医疗补助</span>
-            <span>¥{{ formatMoneyDisplay(insuranceCvlservPay) }}</span>
-          </div>
+          <template v-if="showConfirmCvlservBenefit">
+            <div class="register-confirm-dialog__meta-row">
+              <span>公务员待遇</span>
+              <span>是</span>
+            </div>
+            <div class="register-confirm-dialog__meta-row">
+              <span>公务员医疗补助</span>
+              <span>¥{{ formatMoneyDisplay(insuranceCvlservPay) }}</span>
+            </div>
+          </template>
         </template>
       </div>
 
       <ElAlert
-        v-if="showRescanSection && (ecVoucherStale || credentialExpiredHint)"
+        v-if="showRescanSection && (credentialStale || credentialExpiredHint)"
         class="mt-3"
         type="warning"
         :closable="false"
         show-icon
-        :title="formatInsuranceCredentialExpiredHint()"
+        :title="credentialExpiredHintText"
       />
 
       <div v-if="showRescanSection" class="mt-3">
@@ -604,7 +618,7 @@ defineExpose({
           :disabled="payLoading"
           @click="handleRescanAndRefresh"
         >
-          重新扫医保码并刷新预结算
+          {{ credentialRescanButtonLabel }}
         </ElButton>
       </div>
 

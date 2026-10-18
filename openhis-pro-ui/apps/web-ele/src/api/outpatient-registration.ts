@@ -354,6 +354,8 @@ export interface ClinicRegisterItemDto {
   doctorName: string;
   encounterBusNo: string;
   encounterId: string;
+  /** 挂号科室主键（改科室回显） */
+  organizationId?: string;
   organizationName: string;
   patientGenderCode: string;
   patientGenderText: string;
@@ -716,6 +718,26 @@ export interface RefreshRegisterFeeInsurancePreSettleResult {
   ybCvlservFlag?: string;
   /** 公务员医疗补助资金支出（2206；仅展示） */
   ybCvlservPay?: number | string;
+}
+
+/** 挂号记录修改科室 */
+export interface ChangeRegistrationDepartmentParams {
+  departmentId: number | string;
+  encounterId: number | string;
+}
+
+export interface ChangeRegistrationDepartmentResult {
+  insurancePlatformChanged?: boolean;
+  success?: boolean;
+}
+
+export async function httpChangeRegistrationDepartment(
+  body: ChangeRegistrationDepartmentParams,
+): Promise<ChangeRegistrationDepartmentResult> {
+  return publicRequestClient.post<ChangeRegistrationDepartmentResult>(
+    '/outpatientRegistration/changeRegistrationDepartment',
+    body,
+  );
 }
 
 export async function httpCancelPlannedRegistration(

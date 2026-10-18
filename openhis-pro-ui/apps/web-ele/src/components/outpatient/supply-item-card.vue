@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /**
- * 门诊护士站耗材明细卡片：勾选待发放 / 取消已执行，展示规格、批号与单价。
+ * 门诊护士站 / 医技站耗材明细卡片：勾选待发放 / 取消已执行；
+ * 展示编号、规格、数量、批号、单价与总价。
  */
 import type { SupplyDispenseStatusCode } from '#/utils/nurse-station/nurse-execute-status';
 
@@ -18,11 +19,25 @@ export interface SupplyItem {
   spec: string;
   usage: string;
   quantity: number;
+  /** 目录编号 / 业务号；空则不展示编号行 */
+  itemCode?: string;
+  /** 来源诊疗名（待计费预览）；空则不展示 */
+  sourceLabel?: string;
   /** 签发批号；空则不展示 */
   lotNumber?: string;
   /** 已格式化单价文案；空则不展示 */
   unitPriceText?: string;
-  status: '已发放' | '已配药' | '待发放' | '待退费' | '已退费';
+  /** 已格式化总价文案；空则不展示 */
+  totalPriceText?: string;
+  status:
+    | '已发放'
+    | '已配药'
+    | '待发放'
+    | '待退费'
+    | '已退费'
+    | '开立带出'
+    | '待计费'
+    | '已计费';
   statusCode: SupplyDispenseStatusCode;
   canCancelExecute?: boolean;
 }
@@ -68,6 +83,10 @@ const cardClass = computed(() => {
 });
 
 const statusTagType = computed(() => {
+  // 待计费：蓝色（含历史「开立带出」文案）
+  if (props.item.status === '待计费' || props.item.status === '开立带出') {
+    return 'primary';
+  }
   const code = props.item.statusCode;
   if (code === 'REFUNDED') return 'danger';
   if (code === 'REFUNDING') return 'warning';
@@ -76,21 +95,41 @@ const statusTagType = computed(() => {
   return 'primary';
 });
 
-/** 规格·类目·数量摘要行 */
-const metaLine = computed(() => {
-  return `${props.item.spec} · ${props.item.usage} · ×${props.item.quantity}`;
+/** 编号文案 */
+const itemCodeText = computed(() => String(props.item.itemCode ?? '').trim());
+
+/** 规格文案 */
+const specText = computed(() => {
+  const raw = String(props.item.spec ?? '').trim();
+  return raw && raw !== '—' ? raw : '';
 });
 
-/** 批号与单价次行；均无则整行隐藏 */
-const detailLine = computed(() => {
+/** 单位·数量行 */
+const qtyLine = computed(() => {
+  const unit = String(props.item.usage ?? '').trim() || '—';
+  return `单位 ${unit} · 数量 ×${props.item.quantity}`;
+});
+
+/** 来源诊疗 */
+const sourceText = computed(() => String(props.item.sourceLabel ?? '').trim());
+
+/** 批号 */
+const lotText = computed(() => String(props.item.lotNumber ?? '').trim());
+
+/** 单价 */
+const unitPriceText = computed(() => String(props.item.unitPriceText ?? '').trim());
+
+/** 总价 */
+const totalPriceText = computed(() => String(props.item.totalPriceText ?? '').trim());
+
+/** 价格行：单价 / 总价 */
+const priceLine = computed(() => {
   const parts: string[] = [];
-  const lot = String(props.item.lotNumber ?? '').trim();
-  if (lot) {
-    parts.push(`批号 ${lot}`);
+  if (unitPriceText.value) {
+    parts.push(`单价 ${unitPriceText.value}`);
   }
-  const price = String(props.item.unitPriceText ?? '').trim();
-  if (price) {
-    parts.push(`单价 ${price}`);
+  if (totalPriceText.value) {
+    parts.push(`总价 ${totalPriceText.value}`);
   }
   return parts.join(' · ');
 });
@@ -122,21 +161,30 @@ const handleCancelClick = () => {
       @click.stop
       @change="handleCheckboxChange"
     />
-    <div class="flex min-h-[2.75rem] min-w-0 flex-1 flex-col justify-center gap-0.5">
-      <div class="truncate text-sm font-medium text-[var(--el-text-color-primary)]">
+    <div class="supply-item-card__body min-w-0 flex-1">
+      <div class="supply-item-card__name">
         {{ item.name }}
       </div>
-      <div class="truncate text-xs leading-snug text-[var(--el-text-color-regular)]">
-        {{ metaLine }}
+      <div v-if="itemCodeText" class="supply-item-card__meta">
+        编号 {{ itemCodeText }}
       </div>
-      <div
-        v-if="detailLine"
-        class="truncate text-xs leading-snug text-[var(--el-text-color-regular)]"
-      >
-        {{ detailLine }}
+      <div v-if="specText" class="supply-item-card__meta">
+        规格 {{ specText }}
+      </div>
+      <div class="supply-item-card__meta">
+        {{ qtyLine }}
+      </div>
+      <div v-if="sourceText" class="supply-item-card__meta">
+        来自 {{ sourceText }}
+      </div>
+      <div v-if="lotText" class="supply-item-card__meta">
+        批号 {{ lotText }}
+      </div>
+      <div v-if="priceLine" class="supply-item-card__price">
+        {{ priceLine }}
       </div>
     </div>
-    <div class="flex shrink-0 flex-col items-end gap-1 self-center">
+    <div class="flex shrink-0 flex-col items-end gap-1 self-start pt-0.5">
       <ElTag size="small" :type="statusTagType">
         {{ item.status }}
       </ElTag>
@@ -156,9 +204,9 @@ const handleCancelClick = () => {
 <style scoped>
 .supply-item-card {
   display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  padding: 0.625rem 0.75rem;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
   border: 1px solid var(--el-border-color);
   border-radius: 0.5rem;
   font-size: 0.875rem;
@@ -166,6 +214,37 @@ const handleCancelClick = () => {
     border-color 0.2s,
     background-color 0.2s;
   box-sizing: border-box;
+}
+
+.supply-item-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-height: 3.25rem;
+  justify-content: center;
+}
+
+.supply-item-card__name {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--el-text-color-primary);
+  word-break: break-word;
+}
+
+.supply-item-card__meta {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--el-text-color-regular);
+  word-break: break-word;
+}
+
+.supply-item-card__price {
+  margin-top: 0.15rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--el-text-color-primary);
 }
 
 /* 纯展示：无悬停交互 */
@@ -198,6 +277,10 @@ const handleCancelClick = () => {
   border-color: var(--el-border-color-lighter);
   background-color: var(--el-fill-color-light);
   color: var(--el-text-color-regular);
+}
+
+.supply-item-card__checkbox {
+  margin-top: 0.15rem;
 }
 
 .supply-item-card__checkbox :deep(.el-checkbox__input) {

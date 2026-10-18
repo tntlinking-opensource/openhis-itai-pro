@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import type { FormItemConfig, FormItemOption, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, FormItemOption, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { DocumentTypeDto } from '#/api/emr/document-type';
 import type { QueryTemplateParams, TemplateDto } from '#/api/emr/template';
 
 import { computed, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { ElButton, ElMessage, ElMessageBox, ElTabPane, ElTabs, ElTag } from 'element-plus';
 
@@ -379,7 +379,7 @@ getList();
                 {{ row.scopeLevelName || formatTemplateScopeTag(row.scopeLevel) || '—' }}
               </template>
               <template #enabled="{ row }">
-                <ElTag :type="isRowEnabled(row) ? 'success' : 'info'" size="small">
+                <ElTag :type="isRowEnabled(row) ? 'success' : 'warning'" size="small">
                   {{ isRowEnabled(row) ? '启用' : '停用' }}
                 </ElTag>
               </template>

@@ -1,0 +1,37 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.zxplat.plugin.pacsimaging.domain.imagingstudy.command;
+
+import lombok.Getter;
+import lombok.Setter;
+
+/**
+ * 幂等确保 ImagingStudy 命令。
+ */
+@Getter
+@Setter
+public class EnsureImagingStudyCommand {
+
+    /** 检查工单主键。 */
+    private Long workItemId;
+
+    /** DICOM Study Instance UID。 */
+    private String studyInstanceUid;
+
+    /** 主 Series Instance UID；可选。 */
+    private String seriesInstanceUid;
+
+    /** 冗余检查号；可选。 */
+    private String accessionNumber;
+
+    /** 模态码；可选。 */
+    private String modalityCode;
+
+    /** 租户主键。 */
+    private Long tenantId;
+
+    /** 操作人主键。 */
+    private Long operatorId;
+}

@@ -3,8 +3,8 @@ import type { PatientInfoBarPayload } from './patient-card.types';
 
 import { computed } from 'vue';
 
-import { Calendar, UserRoundPen } from '@vben/icons';
-import { getPaymentTypeTagStyles } from '@vben/utils';
+import { Calendar, UserRoundPen } from '@zxplat/icons';
+import { getPaymentTypeTagStyles } from '@zxplat/utils';
 
 import dayjs from 'dayjs';
 import { ElTag } from 'element-plus';
@@ -19,6 +19,8 @@ interface Props {
   doctorName?: string;
   /** 开始时间文案（默认「挂号时间」；住院传「入院时间」） */
   startTimeLabel?: string;
+  /** 本次就诊费用合计展示文案；无就诊时不传 */
+  feeTotalText?: string;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -38,7 +40,10 @@ const props = withDefaults(defineProps<Props>(), {
   }),
   doctorName: '',
   startTimeLabel: '挂号时间',
+  feeTotalText: '',
 });
+
+const showFeeSummary = computed(() => Boolean(props.feeTotalText));
 
 const paymentTypeTagConfig = computed(() => {
   const label = (props.patient.serviceTypeName ?? '').trim();
@@ -79,7 +84,7 @@ const startTimeDisplay = computed(() => {
 
 <template>
   <div
-    class="mb-0 ml-0 mr-2 flex items-start justify-between gap-6 rounded-none bg-white px-4 py-2"
+    class="mb-0 ml-0 mr-2 flex flex-wrap items-start justify-between gap-x-6 gap-y-1 rounded-none bg-white px-4 py-2"
   >
     <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1">
       <div class="flex items-center gap-2">
@@ -134,7 +139,7 @@ const startTimeDisplay = computed(() => {
 
     <div class="bg-border mt-0.5 h-6 w-px shrink-0"></div>
 
-    <div class="flex shrink-0 items-center gap-4">
+    <div class="flex min-w-0 flex-wrap items-center justify-end gap-x-4 gap-y-1">
       <div v-if="patient.startTime" class="flex items-center gap-1.5">
         <Calendar class="text-text-sub h-3.5 w-3.5" />
         <span class="text-text-sub text-sm">{{ startTimeLabel }}：</span>
@@ -145,6 +150,14 @@ const startTimeDisplay = computed(() => {
         <span class="text-text-sub text-sm">医生：</span>
         <span class="text-text-main text-sm font-medium">{{ doctorName }}</span>
       </div>
+
+      <template v-if="showFeeSummary">
+        <div class="bg-border mt-0.5 h-6 w-px shrink-0"></div>
+        <div class="flex items-center gap-1 text-sm">
+          <span class="text-text-sub">总费用</span>
+          <span class="text-text-main font-semibold">{{ feeTotalText }}</span>
+        </div>
+      </template>
     </div>
   </div>
 </template>

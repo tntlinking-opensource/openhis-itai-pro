@@ -1,0 +1,74 @@
+{
+  "stats": {
+    "insert": 207,
+    "update": 22
+  },
+  "begin_dates": {
+    "2025-03-05": 11,
+    "2025-03-07": 35,
+    "2025-03-11": 97,
+    "2025-09-01": 23,
+    "2025-03-14": 45,
+    "2024-01-29": 18
+  },
+  "missing_price": [
+    "013112020100000",
+    "013112020110000"
+  ],
+  "catalog": {
+    "SERVICE:ACTIVE": 14,
+    "SERVICE_F:STOPPED": 373,
+    "SERVICE_F:ACTIVE": 407
+  },
+  "total": 794,
+  "crrt": {
+    "catalog_kind": "SERVICE_F",
+    "status": "ACTIVE",
+    "project_code": "013110000080000",
+    "hilist_code": "",
+    "hilist_name": "连续性肾脏替代治疗费",
+    "chrgitm_lv": "2",
+    "list_type": "201",
+    "begin_date": "2025-09-01",
+    "end_date": "",
+    "计价单位": "小时",
+    "定价上限": "105",
+    "地方编码": "",
+    "限制使用标志": "0",
+    "限制使用范围": "机器法加收50元",
+    "诊疗项目说明": "",
+    "诊疗除外内容": "",
+    "诊疗项目内涵": "通过血液净化实现连续肾脏替代治疗和多脏器功能衰竭的生命支持治疗。",
+    "last_pack": "07",
+    "last_action": "MODIFY",
+    "last_notice_date": "2025-12-15"
+  },
+  "scale": {
+    "name": "临床量表评估(自评)",
+    "price": "20",
+    "begin": "2025-03-05",
+    "pack": "07"
+  },
+  "doula": {
+    "catalog_kind": "SERVICE_F",
+    "status": "ACTIVE",
+    "project_code": "013112020100000",
+    "hilist_code": "",
+    "hilist_name": "导乐分娩",
+    "chrgitm_lv": "3",
+    "list_type": "201",
+    "begin_date": "2025-03-14",
+    "end_date": "",
+    "计价单位": "次",
+    "定价上限": "",
+    "地方编码": "",
+    "限制使用标志": "0",
+    "限制使用范围": "",
+    "诊疗项目说明": "",
+    "诊疗除外内容": "",
+    "诊疗项目内涵": "由专业人员给予孕妇导乐相关知识讲解及陪伴，进行合理用力及分娩配合指导。",
+    "last_pack": "07",
+    "last_action": "MODIFY",
+    "last_notice_date": "2025-12-15"
+  }
+}

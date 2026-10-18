@@ -1,4 +1,5 @@
 import type {
+  AdvicePackageChildItemDto,
   DoctorStationAdviceInventoryRowDto,
   DoctorStationMedicationUnitBandDto,
   ServiceRequestDetailSummaryDto,
@@ -238,4 +239,8 @@ export interface AdviceRowItem {
   contractId?: string;
   /** 费用性质分类展示（自费/公费/省医保/市医保/工伤保险） */
   feeNatureText?: string;
+  /**
+   * 带子项诊疗目录子项（列表不展示；国基**检验**申请单/医嘱单打印展开）。
+   */
+  packageChildren?: AdvicePackageChildItemDto[];
 }

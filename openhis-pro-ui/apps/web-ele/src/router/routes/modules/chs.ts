@@ -65,6 +65,15 @@ const chsRoutes: RouteRecordRaw[] = [
       title: '住院业务上报',
     },
   },
+  {
+    name: 'ChsHongqiResettle',
+    path: '/chs/hongqi-resettle',
+    component: () => import('#/chs/hongqi-resettle/index.vue'),
+    meta: {
+      hideInMenu: true,
+      title: '红旗合同重结',
+    },
+  },
 ];
 
 export default chsRoutes;

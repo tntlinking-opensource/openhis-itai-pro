@@ -12,7 +12,7 @@ defineOptions({
 });
 
 withDefaults(defineProps<Props>(), {
-  companyName: 'openhis',
+  companyName: 'zxplat',
   companySiteLink: '',
   date: '2018-2025',
   icp: '',

@@ -4,7 +4,7 @@ import type { PatientItemDto } from '#/api/outpatient-registration';
 
 import { ref } from 'vue';
 
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 import { ElMessage } from 'element-plus';
 

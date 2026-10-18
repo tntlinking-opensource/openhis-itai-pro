@@ -17,6 +17,7 @@ import { useRequest } from '#/hooks/use-request';
 import type { NurseStationModulePatient } from '../components/nurse-station-module-patient.types';
 import { nurseStationPatientListPanelContextKey } from '../components/patient-list-panel.context';
 import NurseStationPatientOrderCollapseTitle from '../components/nurse-station-patient-order-collapse-title.vue';
+import { INPATIENT_SURGERY_ANESTH_ENABLED } from '#/views/inpatient/surgery-anesth/inpatient-surgery-anesth.config';
 
 import {
   filterAuditIndexByProjectTypes,
@@ -50,18 +51,21 @@ const props = withDefaults(defineProps<Props>(), {
 
 const WRITE_BATCH_LIMIT = 50;
 
-/** 项目类型多选选项（value=code，label 仅展示；含须校对的特殊诊疗） */
+/** 项目类型多选选项（value=code，label 仅展示；含须校对的特殊诊疗；麻醉申请走独立开关） */
 const projectTypeOptions: Array<{ label: string; value: NurseStationOrderAuditProjectType }> = [
   { label: '西药', value: 'west' },
   { label: '中药', value: 'tcm' },
   { label: '检验', value: 'lab' },
   { label: '检查', value: 'exam' },
   { label: '治疗', value: 'treatment' },
+  { label: '手术', value: 'surgery' },
   { label: '嘱托', value: 'entrust' },
   { label: '护理', value: 'nursing' },
   { label: '转科', value: 'transfer' },
   { label: '出院', value: 'discharge' },
-];
+].filter(
+  (item) => INPATIENT_SURGERY_ANESTH_ENABLED || item.value !== 'surgery',
+);
 
 const listPanelContext = inject(nurseStationPatientListPanelContextKey, null);
 
@@ -73,6 +77,10 @@ const statusTabs: Array<{ label: string; value: AuditStatus }> = [
 const activeStatus = ref<AuditStatus>('pending');
 /** 项目类型多选；默认不选（空选按全选拉取并过滤） */
 const selectedProjectTypes = ref<NurseStationOrderAuditProjectType[]>([]);
+/**
+ * 麻醉申请：默认关（普通护士看不到麻醉内容）；勾选后仅看麻醉申请项目与药品。
+ */
+const anesthesiaApplyOnly = ref(false);
 const activeTimeType = ref<TimeTypeFilter>('all');
 const selectedAll = ref(false);
 const selectedRowKeys = ref<Set<string>>(new Set());
@@ -80,12 +88,22 @@ const ordersByEncounterId = ref<Map<string, NurseStationOrderAuditTableRow[]>>(n
 /** 列表拉取 loading（可并行 west/tcm 两次请求） */
 const listFetching = ref(false);
 
-const verifyRequest = useRequest(httpVerifyNurseStationOrders, { manual: true });
-const rejectRequest = useRequest(httpRejectNurseStationOrders, { manual: true });
+/** 写失败由全局 request 拦截器 toast，禁止 useRequest 再弹一次 */
+const verifyRequest = useRequest(httpVerifyNurseStationOrders, {
+  manual: true,
+  showErrorMessage: false,
+});
+const rejectRequest = useRequest(httpRejectNurseStationOrders, {
+  manual: true,
+  showErrorMessage: false,
+});
 
 const encounterIds = computed(() =>
   props.patients.map((p) => String(p.id).trim()).filter((id) => id.length > 0),
 );
+
+/** 稳定就诊集合键：避免左侧静默轮询换新 patients 数组时误重拉校对列表 */
+const encounterIdsKey = computed(() => encounterIds.value.join('\0'));
 
 /** 未校对 Tab 才允许批量校对 */
 const verifyActionsEnabled = computed(() => activeStatus.value === 'pending');
@@ -164,18 +182,27 @@ function handleSelectedAllChange(on: boolean) {
   selectAllVisibleOrderRows();
 }
 
-/** 患者或筛选变化时默认展开全部卡片 */
+/**
+ * 患者集合变化时：新加入的卡片默认展开；用户已手动折叠的保持折叠。
+ * 避免左侧再勾选其他患者时，右侧已收起的患者再次被全部展开。
+ */
 watch(
   visibleCards,
-  (cards) => {
-    expandedPatientIds.value = cards.map((item) => item.patient.id);
+  (cards, prevCards) => {
+    const nextIds = cards.map((item) => item.patient.id);
+    const prevIdSet = new Set((prevCards ?? []).map((item) => item.patient.id));
+    const prevExpanded = new Set(expandedPatientIds.value);
+    expandedPatientIds.value = nextIds.filter((id) => {
+      if (!prevIdSet.has(id)) return true;
+      return prevExpanded.has(id);
+    });
   },
   { immediate: true },
 );
 
-/** 筛选或患者变化时自动拉取列表 */
+/** 筛选或患者集合（非仅校/执计数）变化时自动拉取列表 */
 watch(
-  [encounterIds, activeStatus, selectedProjectTypes, activeTimeType],
+  [encounterIdsKey, activeStatus, selectedProjectTypes, activeTimeType, anesthesiaApplyOnly],
   () => {
     void loadAuditList();
   },
@@ -221,18 +248,21 @@ async function loadAuditList() {
     return;
   }
 
+  // 麻醉申请模式：只拉 west（含诊疗+西药），不再按项目类型二次过滤
+  const anesthOnly = anesthesiaApplyOnly.value === true;
   // 空选按全选；决定需打 west（西药+诊疗）/ tcm（中药方）哪个后端 Tab
   const selected =
     selectedProjectTypes.value.length > 0
       ? selectedProjectTypes.value
       : NURSE_STATION_ORDER_AUDIT_PROJECT_TYPES;
-  const needTcm = selected.includes('tcm');
-  const needWest = selected.some((t) => t !== 'tcm');
+  const needTcm = !anesthOnly && selected.includes('tcm');
+  const needWest = anesthOnly || selected.some((t) => t !== 'tcm');
 
   const base = {
     encounterIds: encounterIds.value,
     auditTab: activeStatus.value,
     therapyType: activeTimeType.value,
+    anesthesiaApplyOnly: anesthOnly,
   };
 
   listFetching.value = true;
@@ -250,7 +280,9 @@ async function loadAuditList() {
     const results = await Promise.all(tasks);
     const mergedGroups = mergeAuditPatientGroups(results.map((res) => res.groups));
     const indexed = indexAuditGroupsByEncounterId(mergedGroups);
-    ordersByEncounterId.value = filterAuditIndexByProjectTypes(indexed, selected);
+    ordersByEncounterId.value = anesthOnly
+      ? indexed
+      : filterAuditIndexByProjectTypes(indexed, selected);
     selectAllVisibleOrderRows();
   } finally {
     listFetching.value = false;
@@ -288,7 +320,10 @@ async function afterWriteSuccess(message: string) {
   }
 }
 
-/** 批量校对通过（开嘱校对或停嘱校对，由后端按状态分支） */
+/**
+ * 批量校对通过（开嘱校对或停嘱校对，由后端按状态分支）。
+ * 写失败 toast 仅走全局 request 拦截器（verifyRequest.showErrorMessage=false，避免双弹）。
+ */
 async function handleVerifyOrders() {
   if (!verifyActionsEnabled.value) return;
   const rows = collectSelectedRows();
@@ -301,12 +336,17 @@ async function handleVerifyOrders() {
       cancelButtonText: '取消',
     });
   } catch {
+    // 用户取消确认框，不发起校对
     return;
   }
 
-  const res = await verifyRequest.run({ items: mapTableRowsToWriteItems(rows) });
-  const n = res.processedCount ?? rows.length;
-  await afterWriteSuccess(`已成功校对 ${n} 条医嘱`);
+  try {
+    const res = await verifyRequest.run({ items: mapTableRowsToWriteItems(rows) });
+    const n = res.processedCount ?? rows.length;
+    await afterWriteSuccess(`已成功校对 ${n} 条医嘱`);
+  } catch {
+    // 业务失败已由全局拦截器提示（如 EX-IP-AUD-205），此处仅吞掉避免未处理 rejection
+  }
 }
 
 /**
@@ -360,9 +400,15 @@ async function handleRejectOrders() {
       } catch {
         return;
       }
-      const res = await rejectRequest.run({ items: mapTableRowsToWriteItems(stopCheckedRows) });
-      const n = res.processedCount ?? stopCheckedRows.length;
-      await afterWriteSuccess(`已取消 ${n} 条停嘱校对`);
+      try {
+        const res = await rejectRequest.run({
+          items: mapTableRowsToWriteItems(stopCheckedRows),
+        });
+        const n = res.processedCount ?? stopCheckedRows.length;
+        await afterWriteSuccess(`已取消 ${n} 条停嘱校对`);
+      } catch {
+        // 全局拦截器已提示
+      }
     }
     // 仅开嘱校对：退回草稿
     if (openCheckedRows.length > 0) {
@@ -378,12 +424,16 @@ async function handleRejectOrders() {
       } catch {
         return;
       }
-      const res = await rejectRequest.run({
-        items: mapTableRowsToWriteItems(openCheckedRows),
-        reason: reason || undefined,
-      });
-      const n = res.processedCount ?? openCheckedRows.length;
-      await afterWriteSuccess(`已退回 ${n} 条医嘱`);
+      try {
+        const res = await rejectRequest.run({
+          items: mapTableRowsToWriteItems(openCheckedRows),
+          reason: reason || undefined,
+        });
+        const n = res.processedCount ?? openCheckedRows.length;
+        await afterWriteSuccess(`已退回 ${n} 条医嘱`);
+      } catch {
+        // 全局拦截器已提示
+      }
     }
     return;
   }
@@ -401,12 +451,16 @@ async function handleRejectOrders() {
     return;
   }
 
-  const res = await rejectRequest.run({
-    items: mapTableRowsToWriteItems(rejectRows),
-    reason: reason || undefined,
-  });
-  const n = res.processedCount ?? rejectRows.length;
-  await afterWriteSuccess(`已退回 ${n} 条医嘱`);
+  try {
+    const res = await rejectRequest.run({
+      items: mapTableRowsToWriteItems(rejectRows),
+      reason: reason || undefined,
+    });
+    const n = res.processedCount ?? rejectRows.length;
+    await afterWriteSuccess(`已退回 ${n} 条医嘱`);
+  } catch {
+    // 全局拦截器已提示
+  }
 }
 </script>
 
@@ -415,42 +469,16 @@ async function handleRejectOrders() {
     v-loading="listFetching || verifyRequest.loading.value || rejectRequest.loading.value"
     class="audit-module flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden rounded-md bg-[#eef9fd]"
   >
+    <!-- 第1行：状态导航 + 批量操作（与医嘱执行一致） -->
     <section
-      class="audit-toolbar flex w-full flex-nowrap items-center justify-between gap-x-3 border-b border-solid border-[var(--el-border-color-lighter)] bg-[var(--el-bg-color)] px-2 py-1.5"
+      class="audit-toolbar-main flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-solid border-[var(--el-border-color-lighter)] bg-[var(--el-bg-color)] px-2 py-1.5"
     >
-      <div class="flex min-w-0 flex-nowrap items-center gap-x-3 overflow-x-auto">
-        <ElRadioGroup v-model="activeStatus" class="audit-filter-segment shrink-0">
-          <ElRadioButton v-for="status in statusTabs" :key="status.value" :label="status.value">
-            {{ status.label }}
-          </ElRadioButton>
-        </ElRadioGroup>
-        <span class="audit-toolbar__divider" aria-hidden="true"></span>
-        <span class="shrink-0 text-sm text-[var(--el-text-color-regular)]">项目类型</span>
-        <ElCheckboxGroup
-          v-model="selectedProjectTypes"
-          class="audit-project-type-checkboxes inline-flex min-w-0 flex-nowrap items-center gap-x-3"
-        >
-          <ElCheckbox
-            v-for="opt in projectTypeOptions"
-            :key="opt.value"
-            :value="opt.value"
-            :label="opt.value"
-          >
-            {{ opt.label }}
-          </ElCheckbox>
-        </ElCheckboxGroup>
-        <span class="audit-toolbar__divider" aria-hidden="true"></span>
-        <ElRadioGroup
-          v-model="activeTimeType"
-          class="audit-time-type-radio inline-flex shrink-0 items-center gap-3"
-        >
-          <ElRadio label="all">全部</ElRadio>
-          <ElRadio label="long">长期</ElRadio>
-          <ElRadio label="temp">临时</ElRadio>
-        </ElRadioGroup>
-        <ElButton plain @click="handleRunFilterQuery">查询</ElButton>
-      </div>
-      <div class="flex shrink-0 flex-nowrap items-center gap-2">
+      <ElRadioGroup v-model="activeStatus" class="audit-filter-segment shrink-0">
+        <ElRadioButton v-for="status in statusTabs" :key="status.value" :label="status.value">
+          {{ status.label }}
+        </ElRadioButton>
+      </ElRadioGroup>
+      <div class="flex flex-wrap items-center gap-2">
         <span class="shrink-0 text-xs text-[var(--el-text-color-secondary)]">
           {{ cardCountText }}
         </span>
@@ -473,6 +501,44 @@ async function handleRejectOrders() {
           退回
         </ElButton>
       </div>
+    </section>
+
+    <!-- 第2行：条件筛选（次要，浅底） -->
+    <section
+      class="audit-toolbar-filter flex w-full flex-wrap items-center gap-x-3 gap-y-2 border-b border-solid border-[var(--el-border-color-lighter)] bg-[var(--el-fill-color-blank)] px-2 py-1.5"
+    >
+      <span class="shrink-0 text-sm text-[var(--el-text-color-regular)]">项目类型</span>
+      <ElCheckboxGroup
+        v-model="selectedProjectTypes"
+        class="audit-project-type-checkboxes inline-flex min-w-0 flex-wrap items-center gap-x-3"
+        :disabled="anesthesiaApplyOnly"
+      >
+        <ElCheckbox
+          v-for="opt in projectTypeOptions"
+          :key="opt.value"
+          :value="opt.value"
+          :label="opt.value"
+        >
+          {{ opt.label }}
+        </ElCheckbox>
+      </ElCheckboxGroup>
+      <ElCheckbox
+        v-if="INPATIENT_SURGERY_ANESTH_ENABLED"
+        v-model="anesthesiaApplyOnly"
+        class="shrink-0"
+      >
+        麻醉申请
+      </ElCheckbox>
+      <span class="audit-toolbar__divider" aria-hidden="true"></span>
+      <ElRadioGroup
+        v-model="activeTimeType"
+        class="audit-time-type-radio inline-flex shrink-0 flex-wrap items-center gap-3"
+      >
+        <ElRadio label="all">全部</ElRadio>
+        <ElRadio label="long">长期</ElRadio>
+        <ElRadio label="temp">临时</ElRadio>
+      </ElRadioGroup>
+      <ElButton plain @click="handleRunFilterQuery">查询</ElButton>
     </section>
 
     <section v-if="visibleCards.length > 0" class="min-h-0 flex-1 overflow-auto p-2.5">
@@ -644,6 +710,11 @@ async function handleRejectOrders() {
   margin-right: 0;
   height: auto;
   align-items: center;
+  flex-shrink: 0;
+}
+
+.audit-project-type-checkboxes :deep(.el-checkbox__label) {
+  white-space: nowrap;
 }
 
 .halt-pill {

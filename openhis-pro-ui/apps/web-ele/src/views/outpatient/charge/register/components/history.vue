@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import type { TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@zxplat-core/table-layout-ui';
 
-import type { RegisterHistoryTableRow } from '../services';
+import type { OptionDto, RegisterHistoryTableRow } from '../services';
 
+import type { OriginalPayChannelAmountDto } from '#/api/outpatient-refund/outpatient-refund.types';
 import type { DateRangeQuickSpec } from '#/utils/format/date-range-quick';
-import type { RefundChannelDisplayItem } from '#/utils/payment/payment-channel-options';
+import type {
+  PayChannelOption,
+  RefundChannelDisplayItem,
+} from '#/utils/payment/payment-channel-options';
 
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { Refresh } from '@element-plus/icons-vue';
 import {
@@ -16,13 +20,22 @@ import {
   ElButton,
   ElDatePicker,
   ElInput,
+  ElOption,
+  ElSelect,
   ElMessage,
   ElRadioButton,
   ElRadioGroup,
   ElTag,
 } from 'element-plus';
 
-import { httpListOriginalPayChannelCodes } from '#/api/outpatient-refund/outpatient-refund.http';
+import {
+  httpCompensateInsuranceSettlementsByPayment,
+  httpConfirmOutpatientInsuranceBeforeScan,
+} from '#/api/outpatient-charge/outpatient-charge.http';
+import {
+  httpListOriginalPayChannelAmounts,
+  httpListOriginalPayChannelCodes,
+} from '#/api/outpatient-refund/outpatient-refund.http';
 import AppDialog from '#/components/app-dialog.vue';
 import SelectFuzzyInput from '#/components/select-fuzzy-input.vue';
 import { isScanPayChannel } from '#/composables/payment/useUnionPayScanPay';
@@ -31,9 +44,9 @@ import { getDateRangeQuick } from '#/utils/format/date-range-quick';
 import { formatMoneyDisplay, formatMoneyYuanWithSymbol } from '#/utils/format/money-scale';
 import { tagTypeByCode } from '#/utils/format/status-tag';
 import {
-  buildRefundChannelDisplayItems,
   FALLBACK_DEFAULT_PAY_CHANNEL,
   resolveCollectPayChannelCode,
+  resolvePayChannelDisplayLabel,
 } from '#/utils/payment/payment-channel-options';
 import {
   clearCachedClientScanResult,
@@ -60,6 +73,8 @@ import { useRegisterPayChannels } from '../composables/use-register-pay-channels
 import {
   cancelPlannedRegisterEncounter,
   cancelRegisterEncounter,
+  changeRegistrationDepartment,
+  loadRegisterFormInit,
   ENCOUNTER_CANCELABLE_STATUS_CODES,
   ENCOUNTER_STATUS_CODE,
   ENCOUNTER_STATUS_EL_TAG_MAP,
@@ -108,6 +123,11 @@ const historyActionDialogVisible = ref(false);
 /** charge=续付；void=未收费取消；cancel=已挂号退号 */
 const historyActionMode = ref<'cancel' | 'charge' | 'void'>('charge');
 const historyActionRow = ref<null | RegisterHistoryTableRow>(null);
+const departmentChangeVisible = ref(false);
+const departmentChangeRow = ref<null | RegisterHistoryTableRow>(null);
+const departmentChangeTargetId = ref('');
+const departmentChangeOptions = ref<OptionDto[]>([]);
+const departmentChangeSubmitting = ref(false);
 const actionDialogLoading = ref(false);
 const historyRefreshLoading = ref(false);
 const historyCredentialExpiredHint = ref(false);
@@ -311,8 +331,8 @@ const tableColumns: TableColumn[] = [
     prop: 'action',
     label: '操作',
     fixed: 'right',
-    // 收费 + 补打 + 取消/退号；固定 width 避免吃掉多余横向空间
-    width: 140,
+    // 收费 + 补打 + 改科室 + 取消/退号
+    width: 200,
     slot: 'action',
     align: 'center',
     headerAlign: 'center',
@@ -508,6 +528,19 @@ function canShowCancel(row: RegisterHistoryTableRow): boolean {
   return ENCOUNTER_CANCELABLE_STATUS_CODES.has(row.statusEnum);
 }
 
+/** 待挂号到就诊中可改科室；完诊、退号、取消不再改。 */
+const DEPARTMENT_CHANGEABLE_STATUS_CODES: ReadonlySet<string> = new Set([
+  ENCOUNTER_STATUS_CODE.PLANNED,
+  ENCOUNTER_STATUS_CODE.REGISTERED,
+  ENCOUNTER_STATUS_CODE.TRIAGED,
+  ENCOUNTER_STATUS_CODE.IN_PROGRESS,
+  ENCOUNTER_STATUS_CODE.ON_HOLD,
+]);
+
+function canShowChangeDepartment(row: RegisterHistoryTableRow): boolean {
+  return DEPARTMENT_CHANGEABLE_STATUS_CODES.has(String(row.statusEnum ?? '').trim());
+}
+
 /**
  * 补打挂号小票。
  */
@@ -556,6 +589,10 @@ async function handleCharge(row: RegisterHistoryTableRow) {
  * 弹窗内确认收费：提交挂号费正式结算后刷新列表。
  */
 async function executeChargeRegister() {
+  // 防连点：loading 中忽略二次确认
+  if (actionDialogLoading.value || historyRefreshLoading.value) {
+    return;
+  }
   const row = historyActionRow.value;
   if (!row || historyActionMode.value !== 'charge') {
     return;
@@ -572,29 +609,63 @@ async function executeChargeRegister() {
     ElMessage.warning('请输入付款码');
     return;
   }
+  /** 医保挂号：先 2207 成功再银联，避免 2207 失败时款已扣、就诊仍待挂号 */
+  const chsBeforeScan = Boolean(row.insurancePreSettled) && needScanPay;
   actionDialogLoading.value = true;
   scanStatusText.value = '';
+  let chs2207BeforeScanDone = false;
+  let payCash = cashPay;
   try {
+    if (chsBeforeScan) {
+      const ybConfirm = await httpConfirmOutpatientInsuranceBeforeScan({
+        paymentDraftId: draftId,
+        encounterId:
+          row.encounterId === null || row.encounterId === undefined
+            ? undefined
+            : String(row.encounterId),
+      });
+      if (ybConfirm?.patientCashAmount != null && ybConfirm.patientCashAmount !== '') {
+        const ybCash = Number(ybConfirm.patientCashAmount);
+        if (Number.isFinite(ybCash)) {
+          payCash = Math.max(0, ybCash);
+        }
+      }
+      chs2207BeforeScanDone = true;
+    }
     let clientScanResult;
-    if (needScanPay) {
+    if (needScanPay && payCash > 0.001) {
       await refreshUnionPayCapabilities();
       if (!scanPayEnabled.value) {
-        ElMessage.error('请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
+        ElMessage.error('请启动本地客户端（Zxplat.Win）并确认银联组件已安装');
         return;
       }
       scanStatusText.value = halfSuccessLocked ? '银联已扣款，正在补结算…' : '等待支付结果…';
-      const scanOutcome = await submitScanPayment({
-        paymentDraftId: draftId,
-        amount: cashPay,
-        scanCode: scanCode.value,
-      });
-      clientScanResult = scanOutcome.clientScanResult;
+      try {
+        const scanOutcome = await submitScanPayment({
+          paymentDraftId: draftId,
+          amount: payCash,
+          scanCode: scanCode.value,
+        });
+        clientScanResult = scanOutcome.clientScanResult;
+      } catch (scanError) {
+        if (chs2207BeforeScanDone) {
+          try {
+            await httpCompensateInsuranceSettlementsByPayment({
+              paymentDraftId: draftId,
+            });
+            ElMessage.warning('银联支付失败，已冲正医保结算；请重新缴费');
+          } catch {
+            ElMessage.error('银联支付失败，且医保冲正未完成，请联系医保办，勿重复收费');
+          }
+        }
+        throw scanError;
+      }
     }
     const payDetails =
-      cashPay > 0.001
+      payCash > 0.001
         ? [
             {
-              payAmount: cashPay,
+              payAmount: payCash,
               payChannelCode: payChannelCode.value,
             },
           ]
@@ -649,9 +720,10 @@ async function executeChargeRegister() {
       return;
     }
     const { code, message } = resolvePayError(error);
+    // INS-015：拦截器已跳过重复 toast，本页展示重读提示
     if (isInsuranceCredentialExpiredError(code, message)) {
       historyCredentialExpiredHint.value = true;
-      ElMessage.warning(formatInsuranceCredentialExpiredHint());
+      ElMessage.warning(message || formatInsuranceCredentialExpiredHint());
     } else if (message) {
       ElMessage.error(message);
     }
@@ -670,7 +742,36 @@ function historyPayableCashAmount(row: RegisterHistoryTableRow): number {
 }
 
 /**
- * 打开退号核对弹窗：拉取原支付渠道并展示应退金额 / 退费渠道（原路返回）。
+ * 退号弹窗渠道行：金额只认挂号费支付明细，同一渠道已由后端汇总。
+ * 不用就诊预结算个人现金，避免未收费处方的 2206 现金盖住挂号费。
+ */
+function buildCancelRefundChannelItems(
+  details: OriginalPayChannelAmountDto[],
+  options: PayChannelOption[],
+): RefundChannelDisplayItem[] {
+  const items: RefundChannelDisplayItem[] = [];
+  for (const detail of details) {
+    const code = String(detail?.payChannelCode ?? '').trim();
+    // 无渠道码无法对应原路退回
+    if (!code) {
+      continue;
+    }
+    const amount = Number(detail.amount);
+    // 非正数不是本次应退实付
+    if (!Number.isFinite(amount) || amount <= 0.001) {
+      continue;
+    }
+    const label = resolvePayChannelDisplayLabel(code, options);
+    items.push({
+      amount,
+      label: label || '原支付渠道',
+    });
+  }
+  return items;
+}
+
+/**
+ * 打开退号核对弹窗：渠道金额取挂号费支付明细，与退号逆向单同源。
  */
 async function handleCancel(row: RegisterHistoryTableRow) {
   historyActionMode.value = 'cancel';
@@ -680,18 +781,26 @@ async function handleCancel(row: RegisterHistoryTableRow) {
   historyActionDialogVisible.value = true;
 
   const paymentId = String(row.paymentId ?? '').trim();
-  const fund = Number(row.ybFundPaySumamt ?? 0);
-  const acct = Number(row.ybAcctPay ?? 0);
-  const hasInsurancePay =
-    Boolean(row.insurancePreSettled) ||
-    (Number.isFinite(fund) && fund > 0.001) ||
-    (Number.isFinite(acct) && acct > 0.001);
-  const selfPay = hasInsurancePay ? Number(row.ybPsnCashPay ?? 0) : Number(row.amount ?? 0);
 
   cancelDialogLoadingChannels.value = true;
   try {
     await ensurePayChannelsLoaded();
-    if (paymentId) {
+    // 无挂号支付流水时不展示渠道金额，避免拿就诊预结算顶上
+    if (!paymentId) {
+      return;
+    }
+    try {
+      const rows = await httpListOriginalPayChannelAmounts({ paymentId });
+      const details = Array.isArray(rows) ? rows : [];
+      cancelOriginalPayChannelCodes.value = details
+        .map((item) => String(item?.payChannelCode ?? '').trim())
+        .filter(Boolean);
+      cancelRefundChannelItems.value = buildCancelRefundChannelItems(
+        details,
+        payChannelOptions.value,
+      );
+    } catch {
+      // 金额接口失败时只保留渠道码供银联判断，渠道行不填金额
       try {
         const codes = await httpListOriginalPayChannelCodes({ paymentId });
         cancelOriginalPayChannelCodes.value = Array.isArray(codes)
@@ -701,15 +810,68 @@ async function handleCancel(row: RegisterHistoryTableRow) {
         cancelOriginalPayChannelCodes.value = [];
       }
     }
-    cancelRefundChannelItems.value = buildRefundChannelDisplayItems({
-      originalPayChannelCodes: cancelOriginalPayChannelCodes.value,
-      payChannelOptions: payChannelOptions.value,
-      selfPayAmount: Number.isFinite(selfPay) ? selfPay : 0,
-      ybAcctPay: hasInsurancePay ? acct : undefined,
-      ybFundPaySumamt: hasInsurancePay ? fund : undefined,
-    });
   } finally {
     cancelDialogLoadingChannels.value = false;
+  }
+}
+
+/**
+ * 打开改科室弹窗，科室下拉与挂号表单同源。
+ */
+async function handleChangeDepartment(row: RegisterHistoryTableRow) {
+  departmentChangeRow.value = row;
+  departmentChangeTargetId.value = String(row.organizationId ?? '');
+  departmentChangeVisible.value = true;
+  if (departmentChangeOptions.value.length > 0) {
+    return;
+  }
+  try {
+    const init = await loadRegisterFormInit({});
+    departmentChangeOptions.value = [...init.departmentOptions];
+  } catch (error) {
+    const message = resolveLocalActionErrorMessage(error, '科室列表加载失败');
+    if (message) {
+      ElMessage.error(message);
+    }
+  }
+}
+
+/**
+ * 提交改科室。已医保挂号时后端会重挂，失败信息直接展示。
+ */
+async function confirmChangeDepartment() {
+  const row = departmentChangeRow.value;
+  const departmentId = departmentChangeTargetId.value.trim();
+  if (!row || !departmentId) {
+    ElMessage.warning('请选择目标科室');
+    return;
+  }
+  if (departmentId === String(row.organizationId ?? '')) {
+    ElMessage.warning('挂号科室未变化');
+    return;
+  }
+  departmentChangeSubmitting.value = true;
+  try {
+    const result = await changeRegistrationDepartment({
+      departmentId,
+      encounterId: row.encounterId,
+    });
+    departmentChangeVisible.value = false;
+    departmentChangeRow.value = null;
+    if (result?.insurancePlatformChanged) {
+      ElMessage.success('科室已修改，医保挂号已按新科室重挂');
+    } else {
+      ElMessage.success('科室已修改');
+    }
+    await handleQuery();
+    emit('recordsChanged');
+  } catch (error) {
+    const message = resolveLocalActionErrorMessage(error, '修改科室失败，请稍后重试');
+    if (message) {
+      ElMessage.error(message);
+    }
+  } finally {
+    departmentChangeSubmitting.value = false;
   }
 }
 
@@ -950,6 +1112,14 @@ defineExpose({
             @click="handleReprintReceipt(row)"
           >
             补打
+          </ElButton>
+          <ElButton
+            v-if="canShowChangeDepartment(row)"
+            type="primary"
+            link
+            @click="handleChangeDepartment(row)"
+          >
+            改科室
           </ElButton>
           <ElButton v-if="canShowVoid(row)" type="danger" link @click="handleVoid(row)">
             取消
@@ -1211,6 +1381,52 @@ defineExpose({
         </div>
       </template>
     </AppDialog>
+
+    <AppDialog
+      v-model="departmentChangeVisible"
+      title="修改挂号科室"
+      width="480px"
+      append-to-body
+      destroy-on-close
+    >
+      <div v-if="departmentChangeRow" class="register-history-action-dialog__body">
+        <div class="register-history-action-dialog__meta">
+          <div class="register-history-action-dialog__meta-row">
+            <span>患者</span>
+            <span>{{ departmentChangeRow.patientName }}</span>
+          </div>
+          <div class="register-history-action-dialog__meta-row">
+            <span>当前科室</span>
+            <span>{{ departmentChangeRow.organizationName }}</span>
+          </div>
+        </div>
+        <div class="register-history-department-change__field">
+          <span>目标科室</span>
+          <ElSelect
+            v-model="departmentChangeTargetId"
+            filterable
+            placeholder="请选择门诊科室"
+            style="width: 100%"
+          >
+            <ElOption
+              v-for="item in departmentChangeOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="String(item.value)"
+            />
+          </ElSelect>
+        </div>
+        <p class="register-history-department-change__hint">
+          只改挂号科室。已在医保挂号且尚未上传费用时，会按新科室重新挂号；已结算请先退号。
+        </p>
+      </div>
+      <template #footer>
+        <ElButton @click="departmentChangeVisible = false">取消</ElButton>
+        <ElButton type="primary" :loading="departmentChangeSubmitting" @click="confirmChangeDepartment">
+          确认修改
+        </ElButton>
+      </template>
+    </AppDialog>
   </div>
 </template>
 
@@ -1337,6 +1553,26 @@ defineExpose({
   flex-wrap: nowrap;
   align-items: center;
   white-space: nowrap;
+}
+
+.register-history-department-change__field {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.register-history-department-change__field > span {
+  color: var(--el-text-color-secondary);
+}
+
+.register-history-department-change__hint {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
 }
 
 .register-history-action-dialog__body {

@@ -3,10 +3,10 @@ import type { NotificationItem } from './types';
 
 import { useRouter } from 'vue-router';
 
-import { Bell, CircleCheckBig, CircleX, MailCheck } from '@vben/icons';
-import { $t } from '@vben/locales';
+import { Bell, CircleCheckBig, CircleX, MailCheck } from '@zxplat/icons';
+import { $t } from '@zxplat/locales';
 
-import { VbenButton, VbenIconButton, VbenPopover, VbenScrollbar } from '@vben-core/shadcn-ui';
+import { VbenButton, VbenIconButton, VbenPopover, VbenScrollbar } from '@zxplat-core/shadcn-ui';
 
 import { useToggle } from '@vueuse/core';
 

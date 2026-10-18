@@ -5,8 +5,8 @@ import type { PageProps } from './types';
 
 import { computed, nextTick, onMounted, ref, useTemplateRef } from 'vue';
 
-import { CSS_VARIABLE_LAYOUT_CONTENT_HEIGHT } from '@vben-core/shared/constants';
-import { cn } from '@vben-core/shared/utils';
+import { CSS_VARIABLE_LAYOUT_CONTENT_HEIGHT } from '@zxplat-core/shared/constants';
+import { cn } from '@zxplat-core/shared/utils';
 
 defineOptions({
   name: 'Page',

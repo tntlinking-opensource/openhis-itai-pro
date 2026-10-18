@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import type { MenuRecordBadgeRaw } from '@vben-core/typings';
+import type { MenuRecordBadgeRaw } from '@zxplat-core/typings';
 
 import { computed } from 'vue';
 
-import { isValidColor } from '@vben-core/shared/color';
+import { isValidColor } from '@zxplat-core/shared/color';
 
 import BadgeDot from './menu-badge-dot.vue';
 

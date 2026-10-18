@@ -3,7 +3,7 @@ import type { InpatientDispenseQueuePatient } from './types';
 
 import { ref } from 'vue';
 
-import { RotateCw, Search } from '@vben/icons';
+import { RotateCw, Search } from '@zxplat/icons';
 
 import {
   ElButton,

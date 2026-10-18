@@ -1,5 +1,5 @@
 {
-  "name": "@vben/access",
+  "name": "@zxplat/access",
   "version": "5.5.9",
   "homepage": "https://github.com/vbenjs/vue-vben-admin",
   "bugs": "https://github.com/vbenjs/vue-vben-admin/issues",
@@ -24,10 +24,10 @@
     }
   },
   "dependencies": {
-    "@vben/preferences": "workspace:*",
-    "@vben/stores": "workspace:*",
-    "@vben/types": "workspace:*",
-    "@vben/utils": "workspace:*",
+    "@zxplat/preferences": "workspace:*",
+    "@zxplat/stores": "workspace:*",
+    "@zxplat/types": "workspace:*",
+    "@zxplat/utils": "workspace:*",
     "vue": "catalog:"
   }
 }

@@ -1,1 +1,1 @@
-export { default } from '@vben/tailwind-config/postcss';
+export { default } from '@zxplat/tailwind-config/postcss';

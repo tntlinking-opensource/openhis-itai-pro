@@ -5,6 +5,7 @@ import type { TableInstance } from 'element-plus/es/components/table';
 import type {
   OrderBillingCategory,
   OrderBillingTableRow,
+  SurgeryAnesthBillingKind,
 } from '../services/map-nurse-station-inpatient-billing';
 
 import { adviceTherapyTypeClass } from '../../../doctor-station/advice/services/advice-list';
@@ -16,12 +17,18 @@ interface SelectOptionItem {
 }
 
 interface Props {
+  /** 是否允许补费子行冲销 */
+  canOperateBilling?: boolean;
   category?: OrderBillingCategory;
   dept?: string;
   deptOptions?: SelectOptionItem[];
   filteredRows?: OrderBillingTableRow[];
   keyword?: string;
+  /** 手麻计费：手术/麻醉筛选值 */
+  kind?: SurgeryAnesthBillingKind;
   loading?: boolean;
+  /** 手麻计费工具栏：手术/麻醉筛选，不展示长临与科室 */
+  surgeryAnesthFilter?: boolean;
 }
 
 defineOptions({
@@ -29,21 +36,26 @@ defineOptions({
 });
 
 const props = withDefaults(defineProps<Props>(), {
+  canOperateBilling: false,
   category: 'all',
   dept: '',
   deptOptions: () => [],
   filteredRows: () => [],
   keyword: '',
+  kind: 'all',
   loading: false,
+  surgeryAnesthFilter: false,
 });
 
 const emit = defineEmits<{
+  onCancelChildClick: [row: OrderBillingTableRow];
   onChargeDetailClick: [row: OrderBillingTableRow];
   onQuery: [];
   onSupplementFeeClick: [row: OrderBillingTableRow];
   'update:category': [value: OrderBillingCategory];
   'update:dept': [value: string];
   'update:keyword': [value: string];
+  'update:kind': [value: SurgeryAnesthBillingKind];
 }>();
 
 const tableRef = ref<TableInstance>();
@@ -60,8 +72,12 @@ const deptModel = computed({
   get: () => props.dept,
   set: (value: string) => emit('update:dept', value),
 });
+const kindModel = computed({
+  get: () => props.kind,
+  set: (value: SurgeryAnesthBillingKind) => emit('update:kind', value),
+});
 
-const EXPAND_CHILD_SCROLL_THRESHOLD = 4;
+const EXPAND_CHILD_SCROLL_THRESHOLD = 6;
 
 /** 补费类型展示文案（过长时缩短为「补费」） */
 function resolveSupplementCategoryDisplay(categoryText: string | undefined) {
@@ -70,6 +86,11 @@ function resolveSupplementCategoryDisplay(categoryText: string | undefined) {
     return '补费';
   }
   return text;
+}
+
+/** 补费子行是否展示冲销 */
+function canCancelSupplementChild(child: OrderBillingTableRow) {
+  return Boolean(props.canOperateBilling && child.canCancel);
 }
 
 /** 补费明细超过阈值时启用滚动 */
@@ -154,7 +175,12 @@ watch(
   <div class="billing-list-card order-billing-page">
     <div class="billing-list-card__toolbar order-billing-toolbar">
       <div class="billing-list-card__query-actions order-billing-toolbar__query-actions">
-        <ElRadioGroup v-model="categoryModel">
+        <ElRadioGroup v-if="surgeryAnesthFilter" v-model="kindModel">
+          <ElRadioButton label="all">全部</ElRadioButton>
+          <ElRadioButton label="surgery">手术</ElRadioButton>
+          <ElRadioButton label="anesthesia">麻醉</ElRadioButton>
+        </ElRadioGroup>
+        <ElRadioGroup v-else v-model="categoryModel">
           <ElRadioButton label="all">全部</ElRadioButton>
           <ElRadioButton label="long">长期</ElRadioButton>
           <ElRadioButton label="temp">临时</ElRadioButton>
@@ -162,11 +188,13 @@ watch(
         <ElInput
           v-model="keywordModel"
           clearable
-          placeholder="医嘱名称"
+          :placeholder="surgeryAnesthFilter ? '术式/麻醉项目名称' : '医嘱名称'"
           class="order-billing-toolbar__input"
+          :class="{ 'order-billing-toolbar__input--wide': surgeryAnesthFilter }"
           @keyup.enter="emit('onQuery')"
         />
         <ElSelect
+          v-if="!surgeryAnesthFilter"
           v-model="deptModel"
           clearable
           placeholder="开方科室"
@@ -225,11 +253,16 @@ watch(
                       {{ resolveSupplementCategoryDisplay(child.categoryText) }}
                     </ElTag>
                   </span>
-                  <div class="order-billing-table__expand-detail" :title="child.content">
-                    <span class="order-billing-table__expand-detail-name">
-                      {{ child.content }}
-                    </span>
-                    <span class="order-billing-table__expand-detail-meta">
+                  <div class="order-billing-table__expand-detail">
+                    <div class="order-billing-table__expand-detail-main" :title="child.content">
+                      <span class="order-billing-table__expand-detail-name">
+                        {{ child.content }}
+                      </span>
+                      <span class="order-billing-table__expand-detail-operator">
+                        补费人：{{ child.requesterName?.trim() || '—' }}
+                      </span>
+                    </div>
+                    <div class="order-billing-table__expand-detail-meta">
                       <span class="order-billing-table__expand-detail-qty">{{ child.dosage }}</span>
                       <span
                         class="order-billing-table__expand-detail-status"
@@ -240,7 +273,18 @@ watch(
                       <span class="order-billing-table__expand-detail-time">
                         {{ child.startStopAt }}
                       </span>
-                    </span>
+                    </div>
+                  </div>
+                  <div class="order-billing-table__expand-actions">
+                    <ElButton
+                      v-if="canCancelSupplementChild(child)"
+                      link
+                      type="danger"
+                      @click="emit('onCancelChildClick', child)"
+                    >
+                      冲销
+                    </ElButton>
+                    <span v-else class="order-billing-table__expand-actions-placeholder">—</span>
                   </div>
                 </div>
               </div>
@@ -343,6 +387,10 @@ watch(
 
 .order-billing-toolbar__input {
   width: 160px;
+}
+
+.order-billing-toolbar__input--wide {
+  width: 220px;
 }
 
 .order-billing-toolbar__select {
@@ -452,18 +500,18 @@ watch(
 }
 
 .order-billing-table__expand-body--scroll {
-  max-height: 140px;
+  max-height: 280px;
   overflow-y: auto;
 }
 
 .order-billing-table__expand-row {
   align-items: center;
   box-sizing: border-box;
-  column-gap: 8px;
+  column-gap: 12px;
   display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  min-height: 32px;
-  padding: 4px 12px;
+  grid-template-columns: 96px minmax(0, 1fr) 72px;
+  min-height: 52px;
+  padding: 10px 16px;
   width: 100%;
 }
 
@@ -478,52 +526,56 @@ watch(
 }
 
 .order-billing-table__expand-detail {
-  align-items: center;
   display: flex;
-  font-size: 14px;
-  gap: 16px;
+  flex-direction: column;
+  gap: 6px;
   min-width: 0;
   width: 100%;
 }
 
+.order-billing-table__expand-detail-main {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-width: 0;
+}
+
 .order-billing-table__expand-detail-name {
   color: var(--el-text-color-primary);
-  flex: 0 0 350px;
+  flex: 1 1 220px;
   font-size: 14px;
-  max-width: 350px;
+  font-weight: 500;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  width: 350px;
+}
+
+.order-billing-table__expand-detail-operator {
+  color: var(--el-text-color-regular);
+  flex: 0 0 auto;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .order-billing-table__expand-detail-meta {
   align-items: center;
   color: var(--el-text-color-secondary);
   display: flex;
-  flex: 0 0 auto;
-  font-size: 14px;
-  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  gap: 16px;
 }
 
 .order-billing-table__expand-detail-qty {
   color: var(--el-text-color-regular);
-  flex: 0 0 56px;
   font-weight: 500;
-  overflow: hidden;
-  text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  width: 56px;
+  min-width: 56px;
 }
 
 .order-billing-table__expand-detail-status {
-  flex: 0 0 72px;
-  overflow: hidden;
-  text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  width: 72px;
+  min-width: 72px;
 }
 
 .order-billing-table__expand-detail-status.is-warning {
@@ -540,12 +592,18 @@ watch(
 
 .order-billing-table__expand-detail-time {
   color: var(--el-text-color-secondary);
-  flex: 0 0 156px;
-  overflow: hidden;
-  text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  width: 156px;
+  min-width: 156px;
+}
+
+.order-billing-table__expand-actions {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+.order-billing-table__expand-actions-placeholder {
+  color: var(--el-text-color-placeholder);
 }
 
 .order-billing-table__compact-tag {
@@ -592,7 +650,7 @@ watch(
 
 .order-billing-page :deep(.el-table__expanded-cell) {
   background: var(--el-fill-color-lighter);
-  padding: 4px 0;
+  padding: 8px 0;
 }
 
 .order-billing-page :deep(.el-table__expanded-cell:hover) {

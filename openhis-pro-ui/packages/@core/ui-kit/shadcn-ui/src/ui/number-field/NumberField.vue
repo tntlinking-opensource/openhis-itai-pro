@@ -3,7 +3,7 @@ import type { NumberFieldRootEmits, NumberFieldRootProps } from 'reka-ui';
 
 import { computed } from 'vue';
 
-import { cn } from '@vben-core/shared/utils';
+import { cn } from '@zxplat-core/shared/utils';
 
 import { NumberFieldRoot, useForwardPropsEmits } from 'reka-ui';
 

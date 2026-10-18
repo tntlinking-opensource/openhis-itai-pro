@@ -3,7 +3,7 @@ import type { RegisterRightPanelExpose } from './services';
 
 import { ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import { getDateRangeQuick } from '#/utils/format/date-range-quick';
 

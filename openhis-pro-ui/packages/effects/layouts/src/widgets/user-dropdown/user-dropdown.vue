@@ -1,18 +1,18 @@
 <script setup lang="ts">
 import type { Component } from 'vue';
 
-import type { AnyFunction } from '@vben/types';
+import type { AnyFunction } from '@zxplat/types';
 
 import { computed, useTemplateRef, watch } from 'vue';
 
-import { useHoverToggle } from '@vben/hooks';
-import { LockKeyhole, LogOut } from '@vben/icons';
-import { $t } from '@vben/locales';
-import { preferences, usePreferences } from '@vben/preferences';
-import { useAccessStore } from '@vben/stores';
-import { isWindowsOs } from '@vben/utils';
+import { useHoverToggle } from '@zxplat/hooks';
+import { LockKeyhole, LogOut } from '@zxplat/icons';
+import { $t } from '@zxplat/locales';
+import { preferences, usePreferences } from '@zxplat/preferences';
+import { useAccessStore } from '@zxplat/stores';
+import { isWindowsOs } from '@zxplat/utils';
 
-import { useVbenModal } from '@vben-core/popup-ui';
+import { useVbenModal } from '@zxplat-core/popup-ui';
 import {
   Badge,
   DropdownMenu,
@@ -24,7 +24,7 @@ import {
   DropdownMenuTrigger,
   VbenAvatar,
   VbenIcon,
-} from '@vben-core/shadcn-ui';
+} from '@zxplat-core/shadcn-ui';
 
 import { useMagicKeys, whenever } from '@vueuse/core';
 

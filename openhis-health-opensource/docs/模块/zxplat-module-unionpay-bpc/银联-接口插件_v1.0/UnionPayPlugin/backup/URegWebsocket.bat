@@ -1,0 +1,1 @@
+Reg DELETE "HKCU\software\Microsoft\Windows\CurrentVersion\Run" /V "ums_websocket" /F

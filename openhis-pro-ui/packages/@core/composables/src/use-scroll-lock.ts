@@ -1,4 +1,4 @@
-import { getScrollbarWidth, needsScrollbar } from '@vben-core/shared/utils';
+import { getScrollbarWidth, needsScrollbar } from '@zxplat-core/shared/utils';
 
 import { useScrollLock as _useScrollLock, tryOnBeforeUnmount, tryOnMounted } from '@vueuse/core';
 

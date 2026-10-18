@@ -9,7 +9,7 @@ import type { ApiOptionItem } from '#/types/api-response';
 
 import { computed, nextTick, reactive, ref, watch } from 'vue';
 
-import { useVbenModal } from '@vben/common-ui';
+import { useVbenModal } from '@zxplat/common-ui';
 
 import dayjs from 'dayjs';
 import {
@@ -33,6 +33,8 @@ import { createPatientApi, editPatientApi } from '#/api/basic/patient';
 import { loadArchiveApi, saveArchiveApi } from '#/api/peis/health-archive';
 import SelectArea from '#/components/select-area.vue';
 import { isAcceptableChineseIdCardInput, parseChineseIdCard18 } from '#/utils/format/id-card-cn';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { PATIENT_ARCHIVE_ID_CARD_REQUIRED } from '#/views/basic/patient/constants/patient-id-card.config';
 
 const props = withDefaults(defineProps<Props>(), {
   visible: false,
@@ -98,6 +100,13 @@ const peisForm = reactive({
   remark: '',
 });
 
+/**
+ * 是否改过「体检」页档案字段。未改则确定时只写患者主档，不调 PEIS——
+ * 患者管理与体检业务无关，避免附属接口拖垮/误报主档保存。
+ */
+const peisArchiveDirty = ref(false);
+
+/** 重置体检页表单，并清掉脏标记 */
 function resetPeisForm() {
   peisForm.educationLevelCode = '';
   peisForm.pastHistory = '';
@@ -106,6 +115,12 @@ function resetPeisForm() {
   peisForm.habitSummary = '';
   peisForm.tagCode = '';
   peisForm.remark = '';
+  peisArchiveDirty.value = false;
+}
+
+/** 体检页任一档案字段被用户改过时打脏标记（学历走患者主档，不计入） */
+function markPeisArchiveDirty() {
+  peisArchiveDirty.value = true;
 }
 
 async function loadPeisArchive(patientId?: string | number) {
@@ -120,21 +135,76 @@ async function loadPeisArchive(patientId?: string | number) {
     peisForm.habitSummary = res.habitSummary || '';
     peisForm.tagCode = res.tagCode || '';
     peisForm.remark = res.remark || '';
+    // 回显不算用户改动
+    peisArchiveDirty.value = false;
   } catch {
     // 无档案时保持空表
   }
 }
 
+/**
+ * 从附属接口错误中取出可读文案（软失败时拦截器不 toast）。
+ *
+ * @param error 捕获的未知错误
+ */
+function pickSoftFailMsg(error: unknown): string {
+  const err = error as {
+    data?: { message?: string };
+    message?: string;
+    msg?: string;
+    response?: { data?: { message?: string } };
+  };
+  const fromBody = err?.response?.data?.message || err?.data?.message || err?.msg || err?.message;
+  if (fromBody && String(fromBody).trim()) {
+    return String(fromBody).trim();
+  }
+  return '体检档案保存失败';
+}
+
+/**
+ * 将体检页字段写入 PEIS 健康档案（仅 peisArchiveDirty 时由主流程调用）。
+ * patientId 以 string 提交，避免雪花 Long 经 Number 丢精度；softFail 避免误报整单失败。
+ *
+ * @param patientId 患者主键（adm_patient.id）
+ */
 async function savePeisArchive(patientId: string | number) {
-  await saveArchiveApi({
-    patientId,
-    pastHistory: peisForm.pastHistory.trim() || undefined,
-    allergySummary: peisForm.allergySummary.trim() || undefined,
-    familyHistory: peisForm.familyHistory.trim() || undefined,
-    habitSummary: peisForm.habitSummary.trim() || undefined,
-    tagCode: peisForm.tagCode || undefined,
-    remark: peisForm.remark.trim() || undefined,
-  });
+  const safePatientId = preserveApiIdForRequest(patientId);
+  if (!safePatientId) {
+    // 无合法主键则跳过体检档案，避免误写
+    return;
+  }
+  await saveArchiveApi(
+    {
+      patientId: safePatientId,
+      pastHistory: peisForm.pastHistory.trim() || undefined,
+      allergySummary: peisForm.allergySummary.trim() || undefined,
+      familyHistory: peisForm.familyHistory.trim() || undefined,
+      habitSummary: peisForm.habitSummary.trim() || undefined,
+      tagCode: peisForm.tagCode || undefined,
+      remark: peisForm.remark.trim() || undefined,
+    },
+    { softFailToast: true },
+  );
+}
+
+/**
+ * 仅当用户改过体检页时才写 PEIS；未改则跳过（与患者主档无关）。
+ *
+ * @param patientId 患者主键
+ * @returns 未写或成功时 null；写失败时返回可读原因
+ */
+async function trySavePeisArchiveAfterPatient(patientId: string | number): Promise<null | string> {
+  if (!peisArchiveDirty.value) {
+    // 只改基本信息：不碰体检接口
+    return null;
+  }
+  try {
+    await savePeisArchive(patientId);
+    return null;
+  } catch (error: unknown) {
+    console.error('保存体检健康档案失败（患者主档已保存）:', error);
+    return pickSoftFailMsg(error);
+  }
 }
 
 /** 供 schema 内异步回调使用（useVbenForm 初始化后赋值） */
@@ -268,9 +338,12 @@ async function handleSubmit() {
   try {
     const values = await formApi.getValues();
     const regionCodes = (values.regionCodes || []) as string[];
+    // 空证件号归一为 undefined，与领域「可空、禁止假证」一致
+    const idCardTrimmed = String((values as CreatePatientParams).idCard ?? '').trim();
 
     const baseParams = {
       ...(values as CreatePatientParams),
+      idCard: idCardTrimmed || undefined,
       addressProvince: regionCodes[0] as string,
       addressCity: regionCodes[1] as string,
       addressDistrict: regionCodes[2] as string,
@@ -287,23 +360,35 @@ async function handleSubmit() {
         ...baseParams,
         id: props.formData.id,
       };
+      // 主档先落库；体检页失败不得表现为「编辑失败」
       await editPatientApi(params);
-      await savePeisArchive(props.formData.id);
-      ElMessage.success('编辑患者成功');
+      const peisFail = await trySavePeisArchiveAfterPatient(props.formData.id);
+      if (peisFail == null) {
+        ElMessage.success('编辑患者成功');
+      } else {
+        ElMessage.warning(`患者已保存，但体检档案未写入：${peisFail}`);
+      }
       emit('success');
     } else {
       const created = await createPatientApi(baseParams);
+      let peisFail: null | string = null;
       if (created?.id != null) {
-        await savePeisArchive(created.id);
+        peisFail = await trySavePeisArchiveAfterPatient(created.id);
       }
-      ElMessage.success('创建患者成功');
+      if (peisFail == null) {
+        ElMessage.success('创建患者成功');
+      } else {
+        ElMessage.warning(`患者已创建，但体检档案未写入：${peisFail}`);
+      }
       emit('success', created);
     }
     modalApi.close();
   } catch (error: unknown) {
+    // 仅主档 create/edit 失败进入此处；PEIS 已软隔离
     console.error('保存患者失败:', error);
-    const err = error as { msg?: string };
-    ElMessage.error(err?.msg || '保存患者失败，请稍后重试');
+    const err = error as { msg?: string; message?: string };
+    const tip = err?.msg || err?.message || '保存患者失败，请稍后重试';
+    ElMessage.error(tip);
   } finally {
     modalApi.unlock();
   }
@@ -456,9 +541,12 @@ const formConfig = reactive({
       component: 'Input',
       fieldName: 'idCard',
       label: '证件号',
-      required: true,
+      // 必填仅由院点开关控制；空串放行，填了则校 15/18 位（与门诊挂号同口径）
+      required: PATIENT_ARCHIVE_ID_CARD_REQUIRED,
       componentProps: {
-        placeholder: '请输入证件号（填后自动解析性别、出生日期与年龄）',
+        placeholder: PATIENT_ARCHIVE_ID_CARD_REQUIRED
+          ? '请输入证件号（填后自动解析性别、出生日期与年龄）'
+          : '可不填（无证须填年龄与出生日期）',
         onBlur: (e: FocusEvent) => {
           const el = e.target as HTMLInputElement | null;
           syncBirthAgeFromIdCardInput(el?.value ?? '');
@@ -473,12 +561,9 @@ const formConfig = reactive({
       },
       rules: z.preprocess(
         (v) => (v === null || v === undefined ? '' : String(v)).trim(),
-        z
-          .string()
-          .min(1, { message: '请输入证件号' })
-          .refine((t) => isAcceptableChineseIdCardInput(t), {
-            message: '请输入正确的身份证号格式（15位或18位）',
-          }),
+        z.string().refine((t) => isAcceptableChineseIdCardInput(t), {
+          message: '请输入正确的身份证号格式（15位或18位）',
+        }),
       ),
     },
     {
@@ -876,6 +961,7 @@ watch(
               clearable
               placeholder="请选择"
               style="width: 220px"
+              @change="markPeisArchiveDirty"
             >
               <ElOption
                 v-for="opt in TAG_OPTIONS"
@@ -891,6 +977,7 @@ watch(
               type="textarea"
               :rows="2"
               placeholder="如：高血压；无则填「无」"
+              @input="markPeisArchiveDirty"
             />
           </ElFormItem>
           <ElFormItem label="过敏史">
@@ -899,6 +986,7 @@ watch(
               type="textarea"
               :rows="2"
               placeholder="如：青霉素过敏；无则填「无」"
+              @input="markPeisArchiveDirty"
             />
           </ElFormItem>
           <ElFormItem label="家族史">
@@ -907,13 +995,26 @@ watch(
               type="textarea"
               :rows="2"
               placeholder="选填"
+              @input="markPeisArchiveDirty"
             />
           </ElFormItem>
           <ElFormItem label="生活习惯">
-            <ElInput v-model="peisForm.habitSummary" type="textarea" :rows="2" placeholder="选填" />
+            <ElInput
+              v-model="peisForm.habitSummary"
+              type="textarea"
+              :rows="2"
+              placeholder="选填"
+              @input="markPeisArchiveDirty"
+            />
           </ElFormItem>
           <ElFormItem label="备注">
-            <ElInput v-model="peisForm.remark" type="textarea" :rows="2" placeholder="选填" />
+            <ElInput
+              v-model="peisForm.remark"
+              type="textarea"
+              :rows="2"
+              placeholder="选填"
+              @input="markPeisArchiveDirty"
+            />
           </ElFormItem>
         </ElForm>
       </ElTabPane>

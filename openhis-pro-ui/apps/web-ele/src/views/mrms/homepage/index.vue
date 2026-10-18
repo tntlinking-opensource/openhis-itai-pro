@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { HomepageFormModel } from './homepage-form.types';
 import type { HomepageListQuery, HomepageListRow } from './homepage-list.types';
@@ -13,12 +13,12 @@ import type { MrmsInpatientClinicalKind } from '../components/mrms-inpatient-cli
 import { computed, onActivated, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
-import { useTabs } from '@vben/hooks';
-import { useUserStore } from '@vben/stores';
-import { formatDateTime } from '@vben/utils';
+import { Page } from '@zxplat/common-ui';
+import { useTabs } from '@zxplat/hooks';
+import { useUserStore } from '@zxplat/stores';
+import { formatDateTime } from '@zxplat/utils';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { ElButton, ElLoading, ElMessage, ElMessageBox, ElTag, ElTooltip } from 'element-plus';
 
@@ -53,6 +53,7 @@ import {
 } from '#/utils/format/preserve-api-id';
 import { PRINT_SCENARIO_LABELS } from '#/utils/print/constants/print-scenario-labels';
 import { resolveInpatientHomepagePrintScenario } from '#/utils/print/resolve-inpatient-homepage-scenario';
+import { validateHomepageProcedureRowTimes } from '#/utils/inpatient/surgery-anesth-time-bounds';
 import {
   resolvePrintHospitalName,
   resolvePrintOrgCode,
@@ -428,8 +429,14 @@ const tableColumns = computed<TableColumn[]>(() => {
 
 const clinicalHostRef = ref<InstanceType<typeof MrmsInpatientClinicalHost> | null>(null);
 
-/** 草稿/退回可编辑保存；4401 成功自动归档后只读 */
-const canEditForm = computed(() => editStatusCode.value === 'DRAFT');
+/** 草稿、待审、已归档都可改表单并提交；已归档不能单独保存 */
+const canEditForm = computed(() => {
+  const code = editStatusCode.value;
+  return code === 'DRAFT' || code === 'PENDING_ARCHIVE' || code === 'ARCHIVED';
+});
+
+/** 首次归档审核通过后不再提供保存，只能重新提交归档 */
+const canSaveForm = computed(() => editStatusCode.value !== 'ARCHIVED' && canEditForm.value);
 
 const { run: runPage, loading: pageLoading } = useRequest(queryCaseRecordPageApi, {
   manual: true,
@@ -1017,6 +1024,19 @@ async function handleSave() {
   if (!formModel.value) {
     return;
   }
+  // 病案编辑第二关：手术/麻醉时间须落在入院～出院，且麻醉起止有序
+  const procedures = formModel.value.procedures ?? [];
+  const stayBounds = {
+    admissionTime: formModel.value.admTime,
+    dischargeTime: formModel.value.dscgTime,
+  };
+  for (const row of procedures) {
+    const timeError = validateHomepageProcedureRowTimes(row, stayBounds);
+    if (timeError) {
+      ElMessage.warning(timeError);
+      return;
+    }
+  }
   await runSave(toSaveHomepageParams(formModel.value));
 }
 
@@ -1115,9 +1135,16 @@ async function handleSubmit() {
     await handleSave();
   }
   try {
-    await ElMessageBox.confirm('确认提交病案首页？提交后医生侧不可再编辑。', '提交确认', {
-      type: 'warning',
-    });
+    const resubmit = editStatusCode.value !== 'DRAFT';
+    await ElMessageBox.confirm(
+      resubmit
+        ? '确认重新提交病案首页归档？提交后进入待审。'
+        : '确认提交病案首页归档？提交后进入归档审批，仍可继续修改并再次提交。',
+      resubmit ? '重新提交归档' : '提交归档',
+      {
+        type: 'warning',
+      },
+    );
   } catch {
     return;
   }
@@ -1126,7 +1153,7 @@ async function handleSubmit() {
     const detail = await submitHomepageApi(formModel.value.caseRecordId!);
     editStatusCode.value = detail.statusCode || 'PENDING_ARCHIVE';
     formDirty.value = false;
-    ElMessage.success('已提交');
+    ElMessage.success('已提交归档');
   } finally {
     saving.value = false;
   }
@@ -1223,7 +1250,7 @@ watch(
       :medcasno="editRow?.medcasno"
       :return-reason="returnReason"
       :readonly="!canEditForm"
-      :can-save="canEditForm"
+      :can-save="canSaveForm"
       :can-import="canEditForm"
       :can-submit="canEditForm"
       :saving="saving"

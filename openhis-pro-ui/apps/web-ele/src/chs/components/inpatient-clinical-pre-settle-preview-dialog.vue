@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import type { TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { InpatientSettleChargeLineDto } from '#/api/inpatient-settle';
+import type { AuditViolation } from '#/chs/api/detail-audit-try';
 
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 
-import { ElButton, ElDescriptions, ElDescriptionsItem, ElTag } from 'element-plus';
+import { ElButton, ElDescriptions, ElDescriptionsItem, ElTabPane, ElTable, ElTableColumn, ElTabs, ElTag } from 'element-plus';
 
 import AppDialog from '#/components/app-dialog.vue';
+import { formatSevDeg } from '#/chs/constants/detail-audit-try';
 import RegisterStyleTableLayout from '#/components/layouts/register-style-table-layout.vue';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
@@ -26,6 +28,10 @@ defineOptions({
 const props = withDefaults(
   defineProps<{
     chargeLines?: InpatientSettleChargeLineDto[];
+    /** 3101 违规提醒；有内容时预结算弹窗增加页签 */
+    auditViolations?: AuditViolation[];
+    /** 3101 调用失败说明；与违规列表一并放入事前提醒页签 */
+    auditRemindNote?: string;
     displayAmount?: number | string;
     insuranceBreakdownItems?: InsuranceBreakdownItem[];
     insurancePreSettled?: boolean;
@@ -42,6 +48,8 @@ const props = withDefaults(
   }>(),
   {
     chargeLines: () => [],
+    auditViolations: () => [],
+    auditRemindNote: '',
     displayAmount: 0,
     insuranceBreakdownItems: () => [],
     insurancePreSettled: false,
@@ -55,6 +63,39 @@ const props = withDefaults(
 );
 
 const visible = defineModel<boolean>({ required: true });
+
+/** 有提醒或调用失败说明时才出现「事前提醒」页签。 */
+const showAuditTab = computed(
+  () => (props.auditViolations?.length ?? 0) > 0 || Boolean(props.auditRemindNote?.trim()),
+);
+
+const auditTabLabel = computed(() => {
+  const count = props.auditViolations?.length ?? 0;
+  if (count > 0) {
+    return `事前提醒（${count}）`;
+  }
+  return '事前提醒';
+});
+
+const activeTab = ref('settle');
+
+const selectedViolation = ref<AuditViolation | null>(null);
+
+const selectedViolationDetails = computed(() => selectedViolation.value?.details ?? []);
+
+const selectedVolaCont = computed(() => String(selectedViolation.value?.volaCont ?? '').trim());
+
+/** 弹窗打开或提醒列表变化时，默认看预结算，并选中第一条提醒。 */
+function syncAuditSelection() {
+  activeTab.value = 'settle';
+  selectedViolation.value = props.auditViolations?.[0] ?? null;
+}
+
+watch(visible, (open) => {
+  if (open) {
+    syncAuditSelection();
+  }
+});
 
 /** 弹窗费用表分页占位（无服务端分页）。 */
 const chargeLineQueryParams = ref({ pageNo: 1, pageSize: 100 });
@@ -201,7 +242,11 @@ function resolveFeeDetailRowClass(item: { key: string; value: number }) {
 
 <template>
   <AppDialog v-model="visible" title="住院完整预结算" width="860px" destroy-on-close>
-    <div class="clinical-pre-settle-body">
+    <ElTabs v-if="showAuditTab" v-model="activeTab" class="clinical-pre-settle-tabs">
+      <ElTabPane label="预结算" name="settle" />
+      <ElTabPane :label="auditTabLabel" name="audit" />
+    </ElTabs>
+    <div v-show="!showAuditTab || activeTab === 'settle'" class="clinical-pre-settle-body">
       <div class="clinical-pre-settle-tags">
         <ElTag type="warning" effect="plain">仅预览 · 不落账</ElTag>
         <ElTag v-if="insurancePreSettled" type="success" effect="plain">医保预结算（2303）</ElTag>
@@ -271,6 +316,44 @@ function resolveFeeDetailRowClass(item: { key: string; value: number }) {
         正式收费请到住院收费处确认结算。关闭本窗不影响收费处再次预结算。
       </p>
     </div>
+    <div v-show="showAuditTab && activeTab === 'audit'" class="clinical-pre-settle-audit">
+      <p v-if="auditRemindNote?.trim()" class="clinical-pre-settle-audit__note">
+        {{ auditRemindNote }}
+      </p>
+      <p
+        v-if="(auditViolations?.length ?? 0) > 0"
+        class="text-sm text-[var(--el-text-color-regular)]"
+      >
+        发现 {{ auditViolations?.length }} 条规则提醒。本页只展示，不拦截预结算。
+      </p>
+      <ElTable
+        v-if="(auditViolations?.length ?? 0) > 0"
+        :data="auditViolations"
+        highlight-current-row
+        max-height="220"
+        stripe
+        @current-change="(row: AuditViolation | null) => (selectedViolation = row)"
+      >
+        <ElTableColumn label="严重程度" width="110">
+          <template #default="{ row }">{{ formatSevDeg(row.sevDeg) }}</template>
+        </ElTableColumn>
+        <ElTableColumn label="规则名称" min-width="220" prop="ruleName" show-overflow-tooltip />
+        <ElTableColumn label="违规金额" width="110" prop="volaAmt" align="right" />
+      </ElTable>
+      <div v-if="selectedVolaCont" class="clinical-pre-settle-audit__content">
+        {{ selectedVolaCont }}
+      </div>
+      <ElTable
+        v-if="selectedViolationDetails.length > 0"
+        :data="selectedViolationDetails"
+        max-height="200"
+        stripe
+      >
+        <ElTableColumn label="药品/项目" min-width="200" prop="itemName" show-overflow-tooltip />
+        <ElTableColumn label="处方/医嘱" min-width="140" prop="rxId" show-overflow-tooltip />
+        <ElTableColumn label="金额" width="96" prop="volaAmt" align="right" />
+      </ElTable>
+    </div>
     <template #footer>
       <ElButton type="primary" @click="visible = false">关闭</ElButton>
     </template>
@@ -321,5 +404,36 @@ function resolveFeeDetailRowClass(item: { key: string; value: number }) {
 
 .clinical-pre-settle-fee-list :deep(.el-descriptions__content.is-nonzero) {
   color: var(--el-color-primary);
+}
+
+.clinical-pre-settle-tabs :deep(.el-tabs__content) {
+  display: none;
+}
+
+.clinical-pre-settle-audit {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.clinical-pre-settle-audit__note {
+  margin: 0;
+  color: var(--el-color-warning);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.clinical-pre-settle-audit__content {
+  max-height: 160px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background: var(--el-fill-color-light);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 </style>

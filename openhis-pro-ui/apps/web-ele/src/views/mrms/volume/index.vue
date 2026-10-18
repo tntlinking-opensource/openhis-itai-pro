@@ -4,8 +4,8 @@ import type { VolumeItemDto } from '#/api/mrms/types';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
-import { formatDateTime } from '@vben/utils';
+import { Page } from '@zxplat/common-ui';
+import { formatDateTime } from '@zxplat/utils';
 
 import {
   ElButton,

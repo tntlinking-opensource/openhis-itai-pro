@@ -1,6 +1,0 @@
-﻿{
-  "moduleId": "unionpay-bpc",
-  "enabledProperty": "openhis.modules.unionpay-bpc.enabled",
-  "locations": "classpath:db/migration/unionpay_bpc",
-  "historyTable": "flyway_schema_history_unionpay_bpc"
-}

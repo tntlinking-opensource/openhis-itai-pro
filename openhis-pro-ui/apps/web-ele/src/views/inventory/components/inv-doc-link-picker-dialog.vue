@@ -2,12 +2,12 @@
   库房关联单据选择弹窗：AppDialog + TableLayout，与系统 T2/T3 列表样式一致。
 -->
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 import type { ApiOptionItem } from '#/types/api-response';
 
 import { computed, useSlots, watch } from 'vue';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import AppDialog from '#/components/app-dialog.vue';
 import {

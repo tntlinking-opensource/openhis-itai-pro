@@ -1,0 +1,9 @@
+-- =============================================================================
+-- 病历正文：就诊科室数据元 deptName「中医科」→「中医内科」
+-- 范围：科室合并迁出的就诊（_bak_20260820f_encounter）关联文书
+-- 已于 whale-pro 执行；回滚见 V20260820g__rollback_emr_deptname.sql
+-- bak：_bak_20260820g_emr_document_deptname
+-- =============================================================================
+-- 说明：
+-- emr_document 无 organization_id，列表科室跟 encounter；
+-- 正文 content 内 emrDataElement deptName 为开立时快照，需单独替换。

@@ -1,0 +1,45 @@
+{
+  "output": {
+    "result": [
+      {
+        "judge_result_detail_dtos": [
+          {
+            "vola_item_type": "2",
+            "mdtrt_id": "744852_3",
+            "jrd_id": "33b7e37e-c5ab-4fbb-a9e4-f5b92bd36657",
+            "patn_id": "744852_3",
+            "rx_id": "28667186",
+            "vola_amt": 0.0
+          },
+          {
+            "vola_item_type": "1",
+            "mdtrt_id": "744852_3",
+            "jrd_id": "26cd02e7-5c57-4362-a525-26872e073d66",
+            "patn_id": "744852_3",
+            "rx_id": "28667187",
+            "vola_amt": 6.0
+          }
+        ],
+        "rule_id": "220000202404231632051000041006",
+        "vola_evid": "根据本地《医保诊疗项目收费标准》中的项目内涵及其含义解读，两个项目同时收费属于重复收费",
+        "mdtrt_id": "744852_3",
+        "rule_name": "单次就诊诊疗项目重复收费_事前提醒",
+        "vola_amt_stas": "1",
+        "jr_id": "845d8687-a24e-4528-8c0a-731f3369e95f",
+        "patn_id": "744852_3",
+        "sev_deg": "2",
+        "vola_amt": 6.0,
+        "vola_bhvr_type": "2",
+        "vola_cont": "〖普通二维超声心动图/普通二维超声心动图〗与〖普通心脏M型超声检查/普通心脏M型超声检查〗属同类型项目，已构成项目重复使用"
+      }
+    ]
+  },
+  "infcode": 0,
+  "warn_msg": null,
+  "cainfo": null,
+  "err_msg": "成功",
+  "refmsg_time": "20250815152539184",
+  "signtype": null,
+  "respond_time": "20250815152539375",
+  "inf_refmsgid": "220000202508151525390000095087"
+}

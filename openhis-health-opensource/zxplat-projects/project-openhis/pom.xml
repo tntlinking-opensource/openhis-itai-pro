@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.zxplat</groupId>
+        <artifactId>zxplat-projects</artifactId>
+        <version>2.0.9</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>project-openhis</artifactId>
+    <packaging>jar</packaging>
+
+    <name>OpenHIS Project</name>
+    <description>OpenHIS 产品演示院点（SiteId=openhis）：主线能力基线，无定点定制业务</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.zxplat</groupId>
+            <artifactId>zxplat-starter</artifactId>
+        </dependency>
+
+        <!-- 发药费用性质等依赖医保域模型；运行时仍须 -Pwith-chs 注册 DomainService -->
+        <dependency>
+            <groupId>com.zxplat</groupId>
+            <artifactId>module-chs-jilin-domain</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.mapstruct</groupId>
+            <artifactId>mapstruct</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+
+    <profiles>
+        <profile>
+            <id>with-chs</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.zxplat</groupId>
+                    <artifactId>module-chs-jilin-starter</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>with-work-injury</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.zxplat</groupId>
+                    <artifactId>module-wi-jilin-starter</artifactId>
+                    <version>${project.version}</version>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>with-emr</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.zxplat</groupId>
+                    <artifactId>module-emr-starter</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>with-elep</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.zxplat</groupId>
+                    <artifactId>module-elep-jilin-starter</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>with-booking</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.zxplat</groupId>
+                    <artifactId>module-booking-starter</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>with-peis</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.zxplat</groupId>
+                    <artifactId>module-peis-starter</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>with-pacs</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.zxplat</groupId>
+                    <artifactId>module-pacs-starter</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>with-lis</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.zxplat</groupId>
+                    <artifactId>module-lis-starter</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>with-einvoice-boss</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.zxplat</groupId>
+                    <artifactId>module-einv-boss-starter</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>with-unionpay-bpc</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.zxplat</groupId>
+                    <artifactId>module-bpc-starter</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+    </profiles>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>openhis.application.OpenHisApplication</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

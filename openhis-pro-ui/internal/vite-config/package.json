@@ -1,5 +1,5 @@
 {
-  "name": "@vben/vite-config",
+  "name": "@zxplat/vite-config",
   "version": "5.5.9",
   "private": true,
   "homepage": "https://github.com/vbenjs/vue-vben-admin",
@@ -42,7 +42,7 @@
     "@pnpm/workspace.read-manifest": "catalog:",
     "@types/archiver": "catalog:",
     "@types/html-minifier-terser": "catalog:",
-    "@vben/node-utils": "workspace:*",
+    "@zxplat/node-utils": "workspace:*",
     "@vitejs/plugin-vue": "catalog:",
     "@vitejs/plugin-vue-jsx": "catalog:",
     "dayjs": "catalog:",

@@ -116,3 +116,78 @@ export function defaultTotalAmountUnitCode(
   if (preferredKind === 'SPLIT' && split) return split;
   return pkg || sales || split || '';
 }
+
+/**
+ * 落库 quantity/unitCode 归一：须落在目录 unitBands 内（与发药拆零换算同口径）。
+ *
+ * 成组临嘱偶发把溶媒「袋」等异品单位带到本药；若有单次剂量则按 dose÷ratio→拆零纠正，
+ * 否则抛错阻止脏数据入库。
+ */
+export function resolvePersistMedicationQuantityUnit(params: {
+  quantity: number;
+  unitCode: string;
+  bands?: DoctorStationMedicationUnitBandDto[] | null;
+  dose?: number;
+  doseUnitCode?: string;
+  drugName?: string;
+}): { quantity: number; unitCode: string } {
+  const bands = params.bands ?? [];
+  const qtyRaw = Number(params.quantity);
+  const quantity = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
+  const unitCode = String(params.unitCode ?? '').trim();
+  if (!unitCode) {
+    throw new Error('药品开立单位不能为空');
+  }
+  if (!bands.length) {
+    return { quantity, unitCode };
+  }
+  if (findBandByUnitCode(bands, unitCode)) {
+    return { quantity, unitCode };
+  }
+  // 总量槽偶存展示名：按 unitName 反查 code
+  const byName = bands.find((b) => String(b.unitName ?? '').trim() === unitCode);
+  const namedCode = String(byName?.unitCode ?? '').trim();
+  if (namedCode && findBandByUnitCode(bands, namedCode)) {
+    return { quantity, unitCode: namedCode };
+  }
+  const corrected = tryCorrectQuantityUnitFromDose(bands, params.dose, params.doseUnitCode);
+  if (corrected) {
+    return corrected;
+  }
+  const label = String(params.drugName ?? '').trim() || '该药品';
+  throw new Error(
+    `开立单位不在「${label}」目录可换算单位内，请重新选择总量/发药单位后再保存`,
+  );
+}
+
+/** 非法开立单位时：用 dose（计量）÷ dose.ratioToSplit 得到拆零量。 */
+function tryCorrectQuantityUnitFromDose(
+  bands: DoctorStationMedicationUnitBandDto[],
+  dose?: number,
+  doseUnitCode?: string,
+): { quantity: number; unitCode: string } | undefined {
+  const splitCode = unitCodeByBandKind(bands, 'SPLIT');
+  const doseCode = unitCodeByBandKind(bands, 'DOSE');
+  const doseQty = Number(dose);
+  if (!splitCode || !Number.isFinite(doseQty) || doseQty <= 0) {
+    return undefined;
+  }
+  const doseUnit = String(doseUnitCode ?? '').trim();
+  // 剂量码即拆零：剂量数量直接落拆零
+  if (doseUnit === splitCode || (doseCode && doseCode === splitCode)) {
+    return { quantity: roundMedicationSplitQty(doseQty), unitCode: splitCode };
+  }
+  if (doseCode && doseUnit && doseUnit !== doseCode) {
+    return undefined;
+  }
+  const doseBand = findBandByUnitCode(bands, doseCode || doseUnit);
+  const ratio = ratioToSplitOf(doseBand);
+  if (ratio === undefined || ratio <= 0) {
+    return undefined;
+  }
+  // 1 拆零 = ratio 计量 → 拆零量 = 计量 ÷ ratio
+  return {
+    quantity: roundMedicationSplitQty(doseQty / ratio),
+    unitCode: splitCode,
+  };
+}

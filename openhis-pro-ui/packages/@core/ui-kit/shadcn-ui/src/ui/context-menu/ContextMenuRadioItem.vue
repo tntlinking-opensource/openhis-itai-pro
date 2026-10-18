@@ -3,7 +3,7 @@ import type { ContextMenuRadioItemEmits, ContextMenuRadioItemProps } from 'reka-
 
 import { computed } from 'vue';
 
-import { cn } from '@vben-core/shared/utils';
+import { cn } from '@zxplat-core/shared/utils';
 
 import { Circle } from 'lucide-vue-next';
 import { ContextMenuItemIndicator, ContextMenuRadioItem, useForwardPropsEmits } from 'reka-ui';

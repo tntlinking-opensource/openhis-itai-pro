@@ -12,7 +12,7 @@ import type { ApiOptionItem } from '#/types/api-response';
 
 import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import { Download, Refresh, Search } from '@element-plus/icons-vue';
 import {

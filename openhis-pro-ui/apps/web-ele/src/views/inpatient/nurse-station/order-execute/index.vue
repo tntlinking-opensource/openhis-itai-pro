@@ -9,7 +9,17 @@ import type {
 
 import type { NurseStationOrderExecuteTab } from '#/api/inpatient/nurse-station/inpatient-nurse-station-order-execute.types';
 
-import { computed, h, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import {
+  computed,
+  h,
+  inject,
+  nextTick,
+  onActivated,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from 'vue';
 
 import { ArrowRight } from '@element-plus/icons-vue';
 import dayjs from 'dayjs';
@@ -36,23 +46,25 @@ import {
   adviceTherapyTypeClass,
   getAdviceStatusTagType,
 } from '#/views/inpatient/doctor-station/advice/services/advice-list';
-import {
-  SERVICE_CATEGORY_ANESTHESIA,
-  SERVICE_CATEGORY_PROCEDURE,
-  SERVICE_CATEGORY_PROOF,
-} from '#/utils/print/constants/service-request-category-codes';
+import { SERVICE_CATEGORY_PROOF } from '#/utils/print/constants/service-request-category-codes';
+import { NURSE_STATION_DEFAULT_SELECT_ALL_PLAN_SLOTS } from '#/views/inpatient/nurse-station/nurse-station-plan-slot-select.config';
+import { PRINT_CENTER_HIDDEN_DOC_TYPES } from '#/views/inpatient/nurse-station/print-center/print-center-doc.config';
 import { INPATIENT_SURGERY_ANESTH_ENABLED } from '#/views/inpatient/surgery-anesth/inpatient-surgery-anesth.config';
-import { resolveSpecimenBarcodeLabelCount } from '#/utils/print/nurse-station-print-targets';
+import {
+  isBloodCollectionFeePrintItem,
+  resolveSpecimenBarcodeLabelCount,
+  resolveSpecimenBarcodeValue,
+} from '#/utils/print/nurse-station-print-targets';
 import { printInfusionLabel, printSpecimenBarcode } from '#/utils/print/print-nurse-station';
 import { print, PRINT_SCENARIO } from '#/utils/print/runtime';
 
 import NurseStationPatientOrderCollapseTitle from '../components/nurse-station-patient-order-collapse-title.vue';
-import SurgeryRowSupplementDialog from './components/surgery-row-supplement-dialog.vue';
 import { nurseStationPatientListPanelContextKey } from '../components/patient-list-panel.context';
 import OrderExecutePrintDrawer from './components/order-execute-print-drawer.vue';
 import {
   applyLongTermBindQtyMemoryToIndex,
   filterExecuteIndexByProjectTypes,
+  hasExecuteRowPlanSlots,
   indexExecuteGroupsByEncounterId,
   mapSelectedSlotsToCancelProcedureIds,
   mapSelectedSlotsToSkipItems,
@@ -108,7 +120,7 @@ interface Props {
   patients?: NurseStationModulePatient[];
 }
 
-/** 项目类型多选选项（value=code，label 仅展示） */
+/** 项目类型多选选项（value=code，label 仅展示；麻醉申请走独立开关） */
 const projectTypeOptions: Array<{ label: string; value: NurseStationOrderExecuteProjectType }> = [
   { label: '西药', value: 'west' },
   { label: '中药', value: 'tcm' },
@@ -116,12 +128,8 @@ const projectTypeOptions: Array<{ label: string; value: NurseStationOrderExecute
   { label: '检查', value: 'exam' },
   { label: '治疗', value: 'treatment' },
   { label: '手术', value: 'surgery' },
-  { label: '麻醉', value: 'anesthesia' },
   { label: '嘱托', value: 'entrust' },
-].filter(
-  (item) =>
-    INPATIENT_SURGERY_ANESTH_ENABLED || (item.value !== 'surgery' && item.value !== 'anesthesia'),
-);
+].filter((item) => INPATIENT_SURGERY_ANESTH_ENABLED || item.value !== 'surgery');
 
 const listPanelContext = inject(nurseStationPatientListPanelContextKey, null);
 
@@ -135,43 +143,11 @@ const statusTabs: Array<{ label: string; value: ExecuteTab }> = [
 const activeStatus = ref<ExecuteTab>('pending');
 /** 项目类型多选；默认不选（空选按全选拉取并过滤） */
 const selectedProjectTypes = ref<NurseStationOrderExecuteProjectType[]>([]);
-const supplementVisible = ref(false);
-const supplementPatient = ref<NurseStationModulePatient | null>(null);
-const supplementRow = ref<NurseStationOrderExecuteTableRow | null>(null);
-
-/** 手术类目行打开补费，挂到该条服务申请 */
-function openSurgerySupplement(
-  patient: NurseStationModulePatient,
-  row: NurseStationOrderExecuteTableRow,
-) {
-  if (String(row.categoryEnum ?? '').trim() !== SERVICE_CATEGORY_PROCEDURE) {
-    return;
-  }
-  supplementPatient.value = patient;
-  supplementRow.value = row;
-  supplementVisible.value = true;
-}
-
-/** 手术/麻醉计划时间：只展示医生拟手术时间，不提供时点勾选 */
-function isSurgeryOrAnesthScheduleRow(row: NurseStationOrderExecuteTableRow): boolean {
-  const cat = String(row.categoryEnum ?? '').trim();
-  return cat === SERVICE_CATEGORY_PROCEDURE || cat === SERVICE_CATEGORY_ANESTHESIA;
-}
-
-/** 手术/麻醉计划时间展示：YYYY-MM-DD HH:mm */
-function resolveSurgeryOrAnesthPlanDisplay(slot: NurseStationOrderExecutePlanSlot): string {
-  const plan = dayjs(slot.planTime);
-  if (plan.isValid()) {
-    return plan.format('YYYY-MM-DD HH:mm');
-  }
-  const label = String(slot.timeLabel ?? '').trim();
-  return label || '—';
-}
-
-/** 补费成功后刷新列表 */
-function onSurgerySupplementSuccess() {
-  void loadExecuteList();
-}
+/**
+ * 麻醉申请：默认关（普通护士看不到麻醉内容）；勾选后仅看麻醉申请项目与药品。
+ * 手术/麻醉执行与普通临嘱一致：勾选槽位后走 EXE-02，不再弹窗填信息。
+ */
+const anesthesiaApplyOnly = ref(false);
 const activeTimeType = ref<TimeTypeFilter>('all');
 /** 列表拉取 loading（可并行 west/tcm 两次请求） */
 const listFetching = ref(false);
@@ -221,6 +197,12 @@ const encounterIds = computed(() =>
   props.patients.map((p) => String(p.id).trim()).filter((id) => id.length > 0),
 );
 
+/**
+ * 稳定就诊集合键：左侧静默轮询只改「校/执」时 props 会换新数组，
+ * 若直接 watch encounterIds 数组引用会误触发整表重拉并清空勾选。
+ */
+const encounterIdsKey = computed(() => encounterIds.value.join('\0'));
+
 /** 就诊 id → 住院账户 id（来自左侧患者队列） */
 const accountIdByEncounterId = computed(() => {
   const map = new Map<string, string>();
@@ -234,32 +216,53 @@ const accountIdByEncounterId = computed(() => {
   return map;
 });
 
-/** 选中患者处于出院结算轨（待结算/已结算/已离院）：禁止执行/不执行/取消执行 */
+/** 选中患者中是否存在出院结算轨（提示条用；勿据此全局关掉时点勾选） */
 const hasEncounterClinicalOrderBlocked = computed(() =>
   props.patients.some((p) => isEncounterClinicalOrderMutationBlocked(p.statusEnum)),
 );
 
-/** 待执行 / 取消执行 Tab：批量正向执行 */
+/** 选中患者中是否存在可操作就诊（未进出院结算轨） */
+const hasOperableSelectedPatient = computed(() =>
+  props.patients.some((p) => !isEncounterClinicalOrderMutationBlocked(p.statusEnum)),
+);
+
+/** 当前 Tab 是否属于可勾选时点的状态（不含就诊门禁） */
+const slotSelectionTabEnabled = computed(
+  () =>
+    activeStatus.value === 'pending' ||
+    activeStatus.value === 'cancelled' ||
+    activeStatus.value === 'executed',
+);
+
+/** 待执行 / 取消执行 Tab：批量正向执行（至少一名可操作患者） */
 const executeActionsEnabled = computed(
   () =>
-    !hasEncounterClinicalOrderBlocked.value &&
+    hasOperableSelectedPatient.value &&
     (activeStatus.value === 'pending' || activeStatus.value === 'cancelled'),
 );
 
 /** 待执行 Tab：批量不执行 */
 const skipActionsEnabled = computed(
-  () => !hasEncounterClinicalOrderBlocked.value && activeStatus.value === 'pending',
+  () => hasOperableSelectedPatient.value && activeStatus.value === 'pending',
 );
 
 /** 已执行 Tab：批量取消执行 */
 const cancelActionsEnabled = computed(
-  () => !hasEncounterClinicalOrderBlocked.value && activeStatus.value === 'executed',
+  () => hasOperableSelectedPatient.value && activeStatus.value === 'executed',
 );
 
-/** 待执行 / 已执行 / 取消执行 Tab 允许勾选槽位 */
+/** 工具栏全选时点开关：当前 Tab 可勾选且存在可操作患者 */
 const slotSelectionEnabled = computed(
-  () => executeActionsEnabled.value || skipActionsEnabled.value || cancelActionsEnabled.value,
+  () => slotSelectionTabEnabled.value && hasOperableSelectedPatient.value,
 );
+
+/** 单个患者卡片是否允许勾选时点（门禁患者只读，不影响其他人） */
+function isCardSlotSelectionEnabled(patient: NurseStationModulePatient): boolean {
+  return (
+    slotSelectionTabEnabled.value &&
+    !isEncounterClinicalOrderMutationBlocked(patient.statusEnum)
+  );
+}
 
 const visibleCards = computed<ExecutePatientCard[]>(() => {
   const index = ordersByEncounterId.value;
@@ -276,12 +279,42 @@ const expandedPatientIds = ref<string[]>([]);
 /** 时间列标题：待执行/不执行/取消=计划时间；已执行=执行时间 */
 const scheduleColumnLabel = computed(() => resolveExecuteScheduleColumnLabel(activeStatus.value));
 
-/** 当前 Tab 下全部可勾选槽位（用于全选）；手术/麻醉不参与时点勾选 */
+/** 当前状态 Tab 文案（待执行/已执行…），用于患者行医嘱数量标签 */
+const activeStatusLabel = computed(
+  () => statusTabs.find((item) => item.value === activeStatus.value)?.label ?? '待执行',
+);
+
+/**
+ * 当前 Tab 下「有时点」的医嘱条数。
+ * 待执行：无计划时点的行视为当前截止范围内已执行完，不计入待执行医嘱。
+ */
+function countOrdersWithPlanSlotsOnCard(card: ExecutePatientCard): number {
+  let count = 0;
+  for (const row of card.orders) {
+    if (hasExecuteRowPlanSlots(row)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+/** 单个患者卡片的计划时间点合计 */
+function countPlanSlotsOnCard(card: ExecutePatientCard): number {
+  let count = 0;
+  for (const row of card.orders) {
+    for (const schedule of row.planSchedules ?? []) {
+      count += schedule.slots?.length ?? 0;
+    }
+  }
+  return count;
+}
+
+/** 当前 Tab 下全部可勾选槽位（用于全选）；门禁患者不参与 */
 const allVisiblePlanSlots = computed(() => {
   const slots: NurseStationOrderExecutePlanSlot[] = [];
   for (const card of visibleCards.value) {
+    if (!isCardSlotSelectionEnabled(card.patient)) continue;
     for (const row of card.orders) {
-      if (isSurgeryOrAnesthScheduleRow(row)) continue;
       for (const schedule of row.planSchedules) {
         slots.push(...schedule.slots);
       }
@@ -351,16 +384,41 @@ function handleSelectedAllChange(on: boolean) {
   selectAllVisiblePlanSlots();
 }
 
+/**
+ * 患者集合变化时的折叠策略：
+ * - 已展开的保持展开，已折叠的不强制再展开；
+ * - 单增一名患者时默认展开新人；
+ * - 批量全选（一次新增多人）时新人保持折叠，避免一次挂载多张大表导致时点勾选渲染异常。
+ */
 watch(
   visibleCards,
-  (cards) => {
-    expandedPatientIds.value = cards.map((item) => item.patient.id);
+  (cards, prevCards) => {
+    const nextIds = cards.map((item) => item.patient.id);
+    const prevList = prevCards ?? [];
+    const prevIdSet = new Set(prevList.map((item) => item.patient.id));
+    const prevExpanded = new Set(expandedPatientIds.value);
+    if (prevList.length === 0) {
+      // 首屏：多人时只展开第一人
+      expandedPatientIds.value = nextIds.length > 1 ? nextIds.slice(0, 1) : [...nextIds];
+      return;
+    }
+    const kept = nextIds.filter((id) => prevExpanded.has(id));
+    const newlyAdded = nextIds.filter((id) => !prevIdSet.has(id));
+    const expandNew = newlyAdded.length === 1 ? newlyAdded : [];
+    expandedPatientIds.value = [...kept, ...expandNew];
   },
   { immediate: true },
 );
 
 watch(
-  [encounterIds, activeStatus, selectedProjectTypes, activeTimeType, executeDeadline],
+  [
+    encounterIdsKey,
+    activeStatus,
+    selectedProjectTypes,
+    activeTimeType,
+    executeDeadline,
+    anesthesiaApplyOnly,
+  ],
   () => {
     void loadExecuteList();
   },
@@ -540,22 +598,38 @@ function closeSlotContextMenu() {
   slotContextMenuFromSlot.value = false;
 }
 
-/** 当前右键行可打的打印类型（贴签 / 检查单 / 检验单） */
+const hiddenNursePrintDocTypeSet = new Set<string>(PRINT_CENTER_HIDDEN_DOC_TYPES);
+
+/** 当前右键行可打的打印类型（贴签 / 检查单 / 检验单；院点隐藏的单据不出现） */
 const contextMenuRowPrintDocType = computed(() => {
   const row = slotContextMenuRow.value;
   if (!row) {
     return null;
   }
-  return resolveExecuteRowPrintDocType(row);
+  const docType = resolveExecuteRowPrintDocType(row);
+  if (!docType) {
+    return null;
+  }
+  if (hiddenNursePrintDocTypeSet.has(docType)) {
+    return null;
+  }
+  return docType;
 });
 
-/** 右键行是否可打采血贴（检验 categoryEnum=22） */
+/** 右键行是否可打采血贴（检验 categoryEnum=22，排除合管派生采血费） */
 const contextMenuCanPrintSpecimenBarcode = computed(() => {
   const row = slotContextMenuRow.value;
   if (!row || row.orderType !== 'SERVICE_REQUEST') {
     return false;
   }
-  return String(row.categoryEnum ?? '').trim() === SERVICE_CATEGORY_PROOF;
+  if (String(row.categoryEnum ?? '').trim() !== SERVICE_CATEGORY_PROOF) {
+    return false;
+  }
+  // 采血费只计费，右键不提供采血贴
+  if (isBloodCollectionFeePrintItem(row.content)) {
+    return false;
+  }
+  return true;
 });
 
 /** 右键打印菜单文案 */
@@ -1203,23 +1277,28 @@ async function loadExecuteList() {
     return;
   }
 
+  // 麻醉申请模式：只拉 west（含诊疗+西药），不再按项目类型二次过滤
+  const anesthOnly = anesthesiaApplyOnly.value === true;
   // 空选=单次 medicineCategoryTab=all（后端折叠中药+含诊疗）；勾选再 west/tcm
   const selected = selectedProjectTypes.value;
-  const quickFilterOn = selected.length > 0;
-  const needTcm = !quickFilterOn || selected.includes('tcm');
-  const needWest = !quickFilterOn || selected.some((t) => t !== 'tcm');
+  const quickFilterOn = !anesthOnly && selected.length > 0;
+  const needTcm = !anesthOnly && (!quickFilterOn || selected.includes('tcm'));
+  const needWest = anesthOnly || !quickFilterOn || selected.some((t) => t !== 'tcm');
 
   const base = {
     encounterIds: encounterIds.value,
     executeTab: activeStatus.value,
     therapyType: activeTimeType.value,
     executionDeadline: deadline,
+    anesthesiaApplyOnly: anesthOnly,
   };
 
   listFetching.value = true;
   try {
     const tasks: Array<ReturnType<typeof httpListNurseStationOrderExecute>> = [];
-    if (!quickFilterOn) {
+    if (anesthOnly) {
+      tasks.push(httpListNurseStationOrderExecute({ ...base, medicineCategoryTab: 'west' }));
+    } else if (!quickFilterOn) {
       tasks.push(httpListNurseStationOrderExecute({ ...base, medicineCategoryTab: 'all' }));
     } else {
       if (needWest) {
@@ -1237,10 +1316,14 @@ async function loadExecuteList() {
     const indexed = indexExecuteGroupsByEncounterId(mergedGroups, activeStatus.value);
     // 长期带出量：本地记忆覆盖模板（与后端上次执行回显互补）
     const withMemory = applyLongTermBindQtyMemoryToIndex(indexed);
-    // 空选原样传 []：仅排除护理/转科/出院，不按快捷白名单二次过滤
-    ordersByEncounterId.value = filterExecuteIndexByProjectTypes(withMemory, selected);
-    // 列表加载后默认全选当前 Tab 可操作时点（护士可再取消个别点）
-    selectAllVisiblePlanSlots();
+    // 空选原样传 []：仅排除护理/转科/出院；麻醉申请模式跳过项目类型过滤
+    ordersByEncounterId.value = anesthOnly
+      ? withMemory
+      : filterExecuteIndexByProjectTypes(withMemory, selected);
+    // 红旗默认全选可操作时点；国基 override 为加载后不勾选
+    if (NURSE_STATION_DEFAULT_SELECT_ALL_PLAN_SLOTS === true) {
+      selectAllVisiblePlanSlots();
+    }
   } finally {
     listFetching.value = false;
   }
@@ -1419,6 +1502,7 @@ async function handleContextMenuPrintSpecimenBarcode() {
       items: [
         {
           serviceRequestId,
+          barcode: resolveSpecimenBarcodeValue(row.busNo, serviceRequestId),
           itemName: String(row.content ?? '').trim(),
           // 开立数量（如「2次」）→ 对应贴数；与检验单数量列同源
           labelCount: resolveSpecimenBarcodeLabelCount(row.perDoseDisplay || row.dosage),
@@ -1686,6 +1770,19 @@ onMounted(() => {
   document.addEventListener('keydown', handleGlobalCloseSlotContextMenu, true);
 });
 
+/**
+ * KeepAlive 再次进入执行页时重拉列表，拿到最新计划时点。
+ * 首次进入已由筛选 watch 的 immediate 拉取，这里跳过避免重复请求。
+ */
+let executeListActivatedOnce = false;
+onActivated(() => {
+  if (!executeListActivatedOnce) {
+    executeListActivatedOnce = true;
+    return;
+  }
+  void loadExecuteList();
+});
+
 onBeforeUnmount(() => {
   document.removeEventListener('mousedown', handleGlobalCloseSlotContextMenu, true);
   document.removeEventListener('scroll', handleGlobalCloseSlotContextMenu, true);
@@ -1782,6 +1879,7 @@ onBeforeUnmount(() => {
       <ElCheckboxGroup
         v-model="selectedProjectTypes"
         class="execute-project-type-checkboxes inline-flex min-w-0 flex-wrap items-center gap-x-3"
+        :disabled="anesthesiaApplyOnly"
       >
         <ElCheckbox
           v-for="opt in projectTypeOptions"
@@ -1792,6 +1890,13 @@ onBeforeUnmount(() => {
           {{ opt.label }}
         </ElCheckbox>
       </ElCheckboxGroup>
+      <ElCheckbox
+        v-if="INPATIENT_SURGERY_ANESTH_ENABLED"
+        v-model="anesthesiaApplyOnly"
+        class="shrink-0"
+      >
+        麻醉申请
+      </ElCheckbox>
       <span class="execute-toolbar__divider" aria-hidden="true"></span>
       <ElRadioGroup
         v-model="activeTimeType"
@@ -1820,10 +1925,15 @@ onBeforeUnmount(() => {
           v-for="card in visibleCards"
           :key="card.patient.id"
           :name="card.patient.id"
-          class="patient-order-card mb-2.5 overflow-hidden rounded-lg border border-solid border-[var(--el-border-color-lighter)] bg-[var(--el-bg-color)] last:mb-0"
+          class="patient-order-card mb-2.5 rounded-lg border border-solid border-[var(--el-border-color-lighter)] bg-[var(--el-bg-color)] last:mb-0"
         >
           <template #title>
-            <NurseStationPatientOrderCollapseTitle :patient="card.patient" />
+            <NurseStationPatientOrderCollapseTitle
+              :patient="card.patient"
+              :order-count="countOrdersWithPlanSlotsOnCard(card)"
+              :order-count-label="activeStatusLabel"
+              :plan-slot-count="countPlanSlotsOnCard(card)"
+            />
           </template>
 
           <div class="card-table-wrap">
@@ -1983,23 +2093,6 @@ onBeforeUnmount(() => {
                   </div>
                 </template>
               </ElTableColumn>
-              <ElTableColumn
-                v-if="INPATIENT_SURGERY_ANESTH_ENABLED"
-                align="center"
-                label="补费"
-                width="72"
-              >
-                <template #default="{ row }">
-                  <ElButton
-                    v-if="String(row.categoryEnum ?? '').trim() === SERVICE_CATEGORY_PROCEDURE"
-                    link
-                    type="primary"
-                    @click="openSurgerySupplement(card.patient, row)"
-                  >
-                    补费
-                  </ElButton>
-                </template>
-              </ElTableColumn>
               <ElTableColumn align="center" label="执行科室" min-width="120">
                 <template #default="{ row }">
                   <span class="execute-dept-cell">{{ row.executeDeptDisplay }}</span>
@@ -2037,69 +2130,58 @@ onBeforeUnmount(() => {
                           :key="`${row.id}-${schedule.date}`"
                           class="execute-schedule-row"
                         >
-                          <template v-if="isSurgeryOrAnesthScheduleRow(row)">
-                            <span
-                              v-for="slot in schedule.slots"
-                              :key="slot.slotKey"
-                              class="execute-slot-readonly execute-slot-readonly--surgery"
-                            >
-                              {{ resolveSurgeryOrAnesthPlanDisplay(slot) }}
-                            </span>
-                          </template>
-                          <template v-else>
-                            <span class="execute-schedule-date">{{ schedule.date }}</span>
-                            <div class="execute-schedule-slots">
-                              <template v-if="slotSelectionEnabled">
-                                <template v-for="slot in schedule.slots" :key="slot.slotKey">
-                                  <span
-                                    v-if="slotTimeEditingByKey[slot.slotKey]"
-                                    class="execute-slot-time-edit-wrap"
-                                  >
-                                    <ElTimePicker
-                                      :ref="(el) => bindSlotTimePickerRef(slot.slotKey, el)"
-                                      :model-value="resolveSlotCurrentHHmm(slot)"
-                                      format="HH:mm"
-                                      value-format="HH:mm"
-                                      size="small"
-                                      :clearable="false"
-                                      teleported
-                                      class="execute-slot-time-edit"
-                                      style="width: 64px; height: 24px"
-                                      @update:model-value="
-                                        (v: string | null) => handleSlotInlineTimeChange(slot, v)
-                                      "
-                                      @visible-change="
-                                        (open: boolean) => handleSlotTimePickerVisible(slot, open)
-                                      "
-                                    />
-                                  </span>
-                                  <ElCheckbox
-                                    v-else
-                                    :model-value="!!slotSelectionByKey[slot.slotKey]"
-                                    border
-                                    size="small"
-                                    @update:model-value="
-                                      (v: boolean) => toggleSlotSelection(slot, v)
-                                    "
-                                    @contextmenu="
-                                      (e: MouseEvent) => openSlotContextMenu(e, slot, row)
-                                    "
-                                  >
-                                    <span>{{ resolveSlotCheckboxLabel(slot) }}</span>
-                                  </ElCheckbox>
-                                </template>
-                              </template>
-                              <template v-else>
+                          <span class="execute-schedule-date">{{ schedule.date }}</span>
+                          <div class="execute-schedule-slots">
+                            <template v-if="isCardSlotSelectionEnabled(card.patient)">
+                              <template v-for="slot in schedule.slots" :key="slot.slotKey">
                                 <span
-                                  v-for="slot in schedule.slots"
-                                  :key="slot.slotKey"
-                                  class="execute-slot-readonly"
+                                  v-if="slotTimeEditingByKey[slot.slotKey]"
+                                  class="execute-slot-time-edit-wrap"
                                 >
-                                  {{ slot.timeLabel }}
+                                  <ElTimePicker
+                                    :ref="(el) => bindSlotTimePickerRef(slot.slotKey, el)"
+                                    :model-value="resolveSlotCurrentHHmm(slot)"
+                                    format="HH:mm"
+                                    value-format="HH:mm"
+                                    size="small"
+                                    :clearable="false"
+                                    teleported
+                                    class="execute-slot-time-edit"
+                                    style="width: 64px; height: 24px"
+                                    @update:model-value="
+                                      (v: string | null) => handleSlotInlineTimeChange(slot, v)
+                                    "
+                                    @visible-change="
+                                      (open: boolean) => handleSlotTimePickerVisible(slot, open)
+                                    "
+                                  />
                                 </span>
+                                <ElCheckbox
+                                  v-else
+                                  :model-value="!!slotSelectionByKey[slot.slotKey]"
+                                  border
+                                  size="small"
+                                  @update:model-value="
+                                    (v: boolean) => toggleSlotSelection(slot, v)
+                                  "
+                                  @contextmenu="
+                                    (e: MouseEvent) => openSlotContextMenu(e, slot, row)
+                                  "
+                                >
+                                  <span>{{ resolveSlotCheckboxLabel(slot) }}</span>
+                                </ElCheckbox>
                               </template>
-                            </div>
-                          </template>
+                            </template>
+                            <template v-else>
+                              <span
+                                v-for="slot in schedule.slots"
+                                :key="slot.slotKey"
+                                class="execute-slot-readonly"
+                              >
+                                {{ slot.timeLabel }}
+                              </span>
+                            </template>
+                          </div>
                         </div>
                       </template>
                     </div>
@@ -2220,12 +2302,6 @@ onBeforeUnmount(() => {
       :patients="patients"
       :execution-deadline="executeDeadline"
     />
-    <SurgeryRowSupplementDialog
-      v-model="supplementVisible"
-      :patient="supplementPatient"
-      :row="supplementRow"
-      @success="onSurgerySupplementSuccess"
-    />
   </div>
 </template>
 
@@ -2339,14 +2415,6 @@ onBeforeUnmount(() => {
   border-radius: var(--el-border-radius-small);
   font-size: 14px;
   color: var(--el-text-color-regular);
-}
-
-.execute-slot-readonly--surgery {
-  border: none;
-  padding: 0;
-  height: auto;
-  color: var(--el-text-color-primary);
-  white-space: nowrap;
 }
 
 /*

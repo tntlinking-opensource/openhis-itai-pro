@@ -20,7 +20,7 @@ export interface RunWorkInjuryPhaseOptions {
 
 /**
  * prepare → Win invoke → submit 循环，直至 COMPLETED / FAILED。
- * 对齐 whale-doc/whale-module-work-injury/11-客户端invoke会话-详细设计.md §7。
+ * 对齐 docs/zxplat-module-work-injury/11-客户端invoke会话-详细设计.md §7。
  */
 export async function runWorkInjuryPhase(
   options: RunWorkInjuryPhaseOptions,

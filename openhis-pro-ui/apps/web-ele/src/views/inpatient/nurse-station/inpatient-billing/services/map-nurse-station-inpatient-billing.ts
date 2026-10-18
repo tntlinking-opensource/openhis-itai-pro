@@ -10,7 +10,7 @@ import type {
   NurseStationSupplementParentOrderRowDto,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-inpatient-billing.types';
 
-import { formatDateTime } from '@vben/utils';
+import { formatDateTime } from '@zxplat/utils';
 
 import { calcMoneyLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
@@ -63,6 +63,9 @@ export interface PricingUnitBandSelectOption {
 
 export type OrderBillingCategory = 'all' | 'long' | 'temp';
 
+/** 手麻计费筛选：全部 / 手术 / 麻醉 */
+export type SurgeryAnesthBillingKind = 'all' | 'anesthesia' | 'surgery';
+
 /** 医嘱计费 Tab 表格行（父行可含 children 子项） */
 export interface OrderBillingTableRow {
   id: string;
@@ -74,11 +77,17 @@ export interface OrderBillingTableRow {
   isChild: boolean;
   category: Exclude<OrderBillingCategory, 'all'>;
   categoryText: string;
+  /** 诊疗类目 code（手术 24 / 麻醉 25；手麻计费筛选用） */
+  serviceCategoryEnum?: string;
   content: string;
   dosage: string;
   executionCount: string;
   chargeStatusEnum?: string;
   startStopAt: string;
+  /** 补费/划价操作人姓名（子行） */
+  requesterName?: string;
+  /** 子行是否可冲销（待结算 nurse-pricing） */
+  canCancel?: boolean;
   children?: OrderBillingTableRow[];
 }
 
@@ -586,6 +595,7 @@ function mapSupplementChildOrderToTableRow(
     isChild: true,
     category: 'temp',
     categoryText: String(dto.pricingModeDisplay ?? '').trim() || '补费项',
+    serviceCategoryEnum: String(dto.categoryEnum ?? '').trim() || undefined,
     content: String(dto.productDisplayName ?? dto.adviceDisplayName ?? '').trim() || '—',
     dosage: buildSupplementChildDosage(dto),
     executionCount: String(dto.chargeStatusDisplay ?? dto.statusDisplay ?? '').trim() || '—',
@@ -624,6 +634,7 @@ export function mapSupplementParentOrderToTableRow(
     category: resolveOrderBillingCategory(dto.therapyEnum),
     categoryText:
       therapyDisplay || (resolveOrderBillingCategory(dto.therapyEnum) === 'long' ? '长期' : '临时'),
+    serviceCategoryEnum: String(dto.categoryEnum ?? '').trim() || undefined,
     content: buildSupplementParentContent(dto),
     dosage: String(dto.dosageDisplay ?? '').trim() || '—',
     executionCount: String(dto.frequencyDisplay ?? dto.statusDisplay ?? '').trim() || '—',
@@ -709,6 +720,127 @@ export function filterOrderBillingTree(
   return filtered;
 }
 
+/** 手麻计费父行来源（手术/麻醉申请明细，不含嘱托与历史加收） */
+export interface SurgeryAnesthBillingLineSource {
+  serviceRequestId: string;
+  content: string;
+  quantity?: number | string;
+  unitCode?: string;
+  statusEnum?: string;
+  /** 诊疗类目：手术 24 / 麻醉 25 */
+  serviceCategoryEnum: string;
+  plannedTime?: string;
+  requesterName?: string;
+  encounterId: string;
+  patientId: string;
+}
+
+const SURGERY_ANESTH_REQUEST_STATUS_LABEL: Record<string, string> = {
+  DRAFT: '待签发',
+  ACTIVE: '已发送',
+  VERIFIED: '已校对',
+  HOLD: '暂挂',
+  CANCELLED: '已取消',
+  STOPPED: '已停嘱',
+  COMPLETED: '已完成',
+  MIXED: '状态不一致',
+};
+
+/** 嘱托、历史加收不作为计费父行（已划价明细走子行） */
+export function isSurgeryAnesthBillingParentLine(lineKindCode: string | undefined) {
+  const kind = String(lineKindCode ?? '')
+    .trim()
+    .toUpperCase();
+  if (kind === 'ENTRUST' || kind === 'SURCHARGE') {
+    return false;
+  }
+  return true;
+}
+
+/** 申请行状态码 → 与医嘱计费「频次/状态」列同位置的展示文案 */
+function resolveSurgeryAnesthStatusText(statusEnum: string | undefined) {
+  const code = String(statusEnum ?? '')
+    .trim()
+    .toUpperCase();
+  if (!code) {
+    return '—';
+  }
+  return SURGERY_ANESTH_REQUEST_STATUS_LABEL[code] ?? code;
+}
+
+/** 申请行数量展示 */
+function buildSurgeryAnesthDosage(
+  quantity: number | string | undefined,
+  unitCode: string | undefined,
+) {
+  const unit = String(unitCode ?? '').trim();
+  if (quantity === null || quantity === undefined || quantity === '') {
+    return unit || '—';
+  }
+  return unit ? `${quantity} ${unit}` : String(quantity);
+}
+
+/** 拟手术/麻醉时间 + 开单人，对齐医嘱计费时间列 */
+function buildSurgeryAnesthTime(plannedTime: string | undefined, requesterName: string | undefined) {
+  const planned = String(plannedTime ?? '').trim();
+  const requester = String(requesterName ?? '').trim();
+  const timeText = planned ? formatDateTime(planned) : '';
+  if (timeText && requester) {
+    return `${timeText} ${requester}`;
+  }
+  return timeText || requester || '—';
+}
+
+/** 当前患者手术/麻醉申请行 + 已挂靠划价 → 与医嘱计费相同的父子树。 */
+export function mapSurgeryAnesthApplyLinesToBillingTree(
+  lines: SurgeryAnesthBillingLineSource[],
+  pricedGroups: NurseStationPricingPatientGroupDto[] | undefined,
+): OrderBillingTableRow[] {
+  const parentRows: OrderBillingTableRow[] = [];
+  const parentIds = new Set<string>();
+  for (const line of lines) {
+    const requestId = preserveApiIdForRequest(line.serviceRequestId) ?? '';
+    if (!requestId || parentIds.has(requestId)) {
+      continue;
+    }
+    parentIds.add(requestId);
+    const encounterId = preserveApiIdForRequest(line.encounterId) ?? '';
+    parentRows.push({
+      id: `${requestId}\u0001SERVICE_REQUEST`,
+      requestId,
+      orderType: 'SERVICE_REQUEST',
+      encounterId,
+      patientId: preserveApiIdForRequest(line.patientId) ?? '',
+      isChild: false,
+      category: 'temp',
+      categoryText: '临时',
+      serviceCategoryEnum: String(line.serviceCategoryEnum ?? '').trim() || undefined,
+      content: String(line.content ?? '').trim() || '—',
+      dosage: buildSurgeryAnesthDosage(line.quantity, line.unitCode),
+      executionCount: resolveSurgeryAnesthStatusText(line.statusEnum),
+      startStopAt: buildSurgeryAnesthTime(line.plannedTime, line.requesterName),
+      children: [],
+    });
+  }
+
+  const flatRows: OrderBillingTableRow[] = [...parentRows];
+  const seenChildIds = new Set<string>();
+  for (const group of pricedGroups ?? []) {
+    const encounterId = preserveApiIdForRequest(group.encounterId) ?? '';
+    for (const pricedOrder of group.pricedOrders ?? []) {
+      const childRow = mapPricedOrderRowToOrderBillingChildRow(pricedOrder, encounterId);
+      const basedOnId = preserveApiIdForRequest(childRow?.basedOnId);
+      if (!childRow || !basedOnId || !parentIds.has(basedOnId) || seenChildIds.has(childRow.id)) {
+        continue;
+      }
+      flatRows.push(childRow);
+      seenChildIds.add(childRow.id);
+    }
+  }
+
+  return buildOrderBillingTree(flatRows);
+}
+
 /** 补费父医嘱分组 → 二级展开表格行 */
 export function mapSupplementParentGroupsToTableRows(
   groups: NurseStationSupplementParentGroupDto[] | undefined,
@@ -785,7 +917,38 @@ export function mapPricedOrderRowToOrderBillingChildRow(
     executionCount: statusText,
     chargeStatusEnum: String(dto.chargeStatusEnum ?? '').trim() || undefined,
     startStopAt: pricedRaw ? formatDateTime(pricedRaw) : '—',
+    requesterName: String(dto.requesterName ?? '').trim() || undefined,
+    canCancel: resolvePricingRowCanCancel(dto),
   };
+}
+
+/**
+ * 医嘱计费补费子行 → 冲销入参（与划价确费 IF-IP-PRC-06 同构）。
+ *
+ * @param row 医嘱计费子行
+ */
+export function mapOrderBillingChildRowToCancelItem(
+  row: OrderBillingTableRow,
+): NurseStationPricingCancelItemDto | null {
+  if (!row?.isChild || !row.canCancel) {
+    return null;
+  }
+  return mapPricingTableRowToCancelItem({
+    id: row.id,
+    encounterId: row.encounterId,
+    requestId: row.requestId,
+    orderType: row.orderType,
+    canCancel: true,
+    chargeStatusEnum: row.chargeStatusEnum,
+    pricingContent: row.content,
+    quantityText: row.dosage,
+    unitPrice: 0,
+    totalPrice: 0,
+    pricingTime: row.startStopAt,
+    statusText: row.executionCount,
+    pricingModeDisplay: row.categoryText,
+    parentAdviceDisplayName: '',
+  });
 }
 
 /** 父医嘱列表 + 已划价列表 → 二级展开表格 */

@@ -193,10 +193,10 @@ defineExpose({ reload });
 
 .doc-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 640px), 1fr));
   gap: 16px;
   align-items: stretch;
-  max-width: 1200px;
+  max-width: 1480px;
   margin: 0 auto;
 }
 

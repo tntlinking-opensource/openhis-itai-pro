@@ -2,8 +2,8 @@
 import { onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
-import { Profile } from '@vben/common-ui';
-import { useUserStore } from '@vben/stores';
+import { Profile } from '@zxplat/common-ui';
+import { useUserStore } from '@zxplat/stores';
 
 import { getApplicationConfigurationApi } from '#/api/core/auth';
 

@@ -1,0 +1,10 @@
+{
+  "doc_kind": "CATALOG_DELTA",
+  "category": "SERVICE_F",
+  "title": "附件1：F服务目录29-33号文数据更新目录",
+  "source_filename": "附件1：F服务目录29-33号文数据更新目录.xlsx",
+  "notice_date": null,
+  "effective_date": null,
+  "wash_note": "F服务局发目录更新；Sheet=['停用318', '新增188', '变更7']；服务ADD仅写project_code(01*)；价格/超限等进ext_json；",
+  "wash_tool": "cursor-ai"
+}

@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { BatchAddConfirmPayload } from './batch-add-dialog.vue';
 
@@ -14,9 +14,9 @@ import type { ApiOptionItem } from '#/types/api-response';
 
 import { computed, onActivated, onMounted, reactive, ref, watch } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { ElMessage, ElMessageBox } from 'element-plus';
 
@@ -25,6 +25,7 @@ import {
   createExecuteLocationApi,
   deleteExecuteLocationApi,
   initExecuteLocationApi,
+  listActivityTypeOptionsByCategoryApi,
   pageActivityDefinitionForExecuteLocationApi,
   pageExecuteLocationApi,
   updateExecuteLocationApi,
@@ -53,6 +54,7 @@ interface ExecuteLocationTableRow extends ExecuteLocationItem {
 /** 跨科室复制时暂存的规则模板（不含开立科室与主键） */
 interface CopiedRuleTemplate {
   activityCategoryCode?: string;
+  activityTypeCode?: string;
   activityDefinitionId?: string;
   activityDefinitionName?: string;
   executionOrgId?: string;
@@ -81,9 +83,17 @@ const queryParams = reactive<PageExecuteLocationParams>({
 });
 
 const activityCategoryOptions = ref<ApiOptionItem[]>([]);
+/** 全量业务类型（仅 enrich/兼容）；行内下拉按大类联动 */
+const activityTypeOptions = ref<ApiOptionItem[]>([]);
+/** 行内业务类型下拉（按诊疗大类从目录汇总） */
+const rowActivityTypeOptions = ref<Record<string, ApiOptionItem[]>>({});
+/** 行内业务类型下拉 loading */
+const rowActivityTypeLoading = ref<Record<string, boolean>>({});
 /** 执行科室下拉（扁平，供行内与批量弹窗） */
 const executionOrgOptions = ref<ApiOptionItem[]>([]);
 const rowActivityDefinitionOptions = ref<Record<string, ApiOptionItem[]>>({});
+/** 行内项目下拉远程检索 loading（按 _clientKey） */
+const rowActivityDefinitionLoading = ref<Record<string, boolean>>({});
 const batchDialogVisible = ref(false);
 const batchSaving = ref(false);
 const copyLoading = ref(false);
@@ -351,14 +361,21 @@ const tableColumns: TableColumn[] = [
   {
     prop: 'activityCategoryCode',
     label: '诊疗大类',
-    width: '14%',
+    width: '12%',
     align: 'center',
     slot: 'activityCategory',
   },
   {
+    prop: 'activityTypeCode',
+    label: '业务类型',
+    width: '12%',
+    align: 'center',
+    slot: 'activityType',
+  },
+  {
     prop: 'activityDefinitionId',
     label: '项目名称',
-    width: '16%',
+    width: '14%',
     align: 'center',
     slot: 'activityDefinition',
   },
@@ -407,13 +424,17 @@ async function initPage() {
         .filter((item) => item.value.length > 0 && !hospitalRootIds.has(item.value));
     }
     activityCategoryOptions.value = initData.activityCategoryOptions || [];
+    activityTypeOptions.value = initData.activityTypeOptions || [];
   } finally {
     treeLoading.value = false;
   }
 }
 
-/** 按开立科室 + 诊疗大类拉取可选项目 */
-async function loadActivityDefinitionsForRow(row: ExecuteLocationTableRow) {
+/** 按开立科室 + 诊疗大类拉取可选项目；keyword 下推后端，避免只筛本地前 100 条 */
+async function loadActivityDefinitionsForRow(
+  row: ExecuteLocationTableRow,
+  keyword?: string,
+) {
   if (!currentOrgId.value || !row.activityCategoryCode) {
     clearRowActivityDefinitionOptions(row);
     return;
@@ -421,23 +442,94 @@ async function loadActivityDefinitionsForRow(row: ExecuteLocationTableRow) {
   const params: PageActivityDefinitionParams = {
     organizationId: currentOrgId.value,
     activityCategoryCode: row.activityCategoryCode,
+    activityTypeCode: row.activityTypeCode,
     pageNo: 1,
     pageSize: 100,
   };
-  const resp = await pageActivityDefinitionForExecuteLocationApi(params);
-  const options = normalizeActivityDefinitionOptions(resp.content || []);
-  const defId = toActivityDefinitionIdString(row.activityDefinitionId);
-  // 当前选中项若不在分页结果中，用列表接口返回的名称回显
-  if (defId && !options.some((item) => item.value === defId)) {
-    options.unshift({
-      value: defId,
-      label: row.activityDefinitionName?.trim() || defId,
-    });
+  const trimmedKeyword = keyword?.trim();
+  if (trimmedKeyword) {
+    params.keyword = trimmedKeyword;
   }
-  setRowActivityDefinitionOptions(row, options);
+  rowActivityDefinitionLoading.value = {
+    ...rowActivityDefinitionLoading.value,
+    [row._clientKey]: true,
+  };
+  try {
+    const resp = await pageActivityDefinitionForExecuteLocationApi(params);
+    const options = normalizeActivityDefinitionOptions(resp.content || []);
+    const defId = toActivityDefinitionIdString(row.activityDefinitionId);
+    // 当前选中项若不在分页结果中，用列表接口返回的名称回显
+    if (defId && !options.some((item) => item.value === defId)) {
+      options.unshift({
+        value: defId,
+        label: row.activityDefinitionName?.trim() || defId,
+      });
+    }
+    setRowActivityDefinitionOptions(row, options);
+  } finally {
+    const { [row._clientKey]: _removed, ...rest } = rowActivityDefinitionLoading.value;
+    rowActivityDefinitionLoading.value = rest;
+  }
 }
 
-function onActivityCategoryChange(row: ExecuteLocationTableRow) {
+/**
+ * 按行当前诊疗大类加载业务类型下拉（该大类目录实际用过的类型，如检查→CT/DR）。
+ *
+ * @param row 表格行
+ */
+async function loadActivityTypeOptionsForRow(row: ExecuteLocationTableRow) {
+  const category = String(row.activityCategoryCode ?? '').trim();
+  if (!category) {
+    rowActivityTypeOptions.value = {
+      ...rowActivityTypeOptions.value,
+      [row._clientKey]: [],
+    };
+    return;
+  }
+  rowActivityTypeLoading.value = {
+    ...rowActivityTypeLoading.value,
+    [row._clientKey]: true,
+  };
+  try {
+    const options = (await listActivityTypeOptionsByCategoryApi(category)) || [];
+    const normalized = options.map((item) => ({
+      value: String(item.value ?? ''),
+      label: String(item.label ?? item.value ?? ''),
+    }));
+    // 当前已选类型若不在汇总结果中，补一条以便回显历史配置
+    const currentType = String(row.activityTypeCode ?? '').trim();
+    if (currentType && !normalized.some((item) => item.value === currentType)) {
+      const fallbackLabel =
+        activityTypeOptions.value.find((item) => String(item.value) === currentType)?.label ||
+        row.activityTypeCode_dictText ||
+        currentType;
+      normalized.unshift({ value: currentType, label: String(fallbackLabel) });
+    }
+    rowActivityTypeOptions.value = {
+      ...rowActivityTypeOptions.value,
+      [row._clientKey]: normalized,
+    };
+  } finally {
+    const { [row._clientKey]: _removed, ...rest } = rowActivityTypeLoading.value;
+    rowActivityTypeLoading.value = rest;
+  }
+}
+
+/** 取行内业务类型下拉选项 */
+function getActivityTypeOptionsForRow(row: ExecuteLocationTableRow) {
+  return rowActivityTypeOptions.value[row._clientKey] || [];
+}
+
+/** 大类变更后清空类型与单品，并重拉该大类下的业务类型 */
+async function onActivityCategoryChange(row: ExecuteLocationTableRow) {
+  row.activityTypeCode = undefined;
+  row.activityDefinitionId = undefined;
+  clearRowActivityDefinitionOptions(row);
+  await loadActivityTypeOptionsForRow(row);
+}
+
+/** 业务类型变更后重拉单品候选（类型层筛选，可不选） */
+function onActivityTypeChange(row: ExecuteLocationTableRow) {
   row.activityDefinitionId = undefined;
   clearRowActivityDefinitionOptions(row);
 }
@@ -465,8 +557,13 @@ async function getList() {
     list.value = (resp.content || []).map((item) => toTableRow(item));
     total.value = resp.totalCount || 0;
     rowActivityDefinitionOptions.value = {};
+    rowActivityTypeOptions.value = {};
     for (const row of list.value) {
       hydrateRowActivityDefinitionOption(row);
+      // 有大类则预拉业务类型下拉，便于行内编辑
+      if (row.activityCategoryCode) {
+        void loadActivityTypeOptionsForRow(row);
+      }
     }
   } catch {
     if (requestSeq !== listRequestSeq) {
@@ -545,6 +642,7 @@ function buildSavePayload(
     organizationId: String(row.organizationId ?? ''),
     activityDefinitionId: row.activityDefinitionId,
     activityCategoryCode: String(row.activityCategoryCode ?? ''),
+    activityTypeCode: row.activityTypeCode,
     executionOrgId: String(row.executionOrgId ?? ''),
     executionLocationId: row.executionLocationId,
     startTime: String(row.startTime ?? ''),
@@ -554,6 +652,7 @@ function buildSavePayload(
   };
 }
 
+/** 在当前开立科室表格顶部插入一条未落库草稿（大类必填，类型与单品可选） */
 function handleAddRow() {
   if (!currentOrgId.value) {
     ElMessage.warning('请先在左侧选择开立科室');
@@ -563,6 +662,7 @@ function handleAddRow() {
     _clientKey: nextClientKey(),
     organizationId: currentOrgId.value,
     activityCategoryCode: undefined,
+    activityTypeCode: undefined,
     activityDefinitionId: undefined,
     executionOrgId: undefined,
     startTime: '00:00:00',
@@ -645,11 +745,12 @@ async function handleBatchSave() {
       }
     }
 
-    // 新建行按大类+执行科室+时段+地点分组：有项目 ID 走 batchCreate，大类默认行走单条 create
+    // 新建行按大类+业务类型+执行科室+时段+地点分组：有项目 ID 走 batchCreate，未绑单品行走单条 create
     const groups = new Map<string, ExecuteLocationTableRow[]>();
     for (const row of createRows) {
       const groupKey = [
         row.activityCategoryCode ?? '',
+        row.activityTypeCode ?? '',
         row.executionOrgId ?? '',
         row.startTime ?? '',
         row.endTime ?? '',
@@ -674,6 +775,7 @@ async function handleBatchSave() {
             organizationId: currentOrgId.value,
             executionOrgId: String(first.executionOrgId ?? ''),
             activityCategoryCode: String(first.activityCategoryCode ?? ''),
+            activityTypeCode: first.activityTypeCode,
             activityDefinitionIds: withDefinition.map((row) => String(row.activityDefinitionId)),
             executionLocationId: first.executionLocationId,
             startTime: String(first.startTime ?? ''),
@@ -756,6 +858,7 @@ function handleBatchConfirm(payload: BatchAddConfirmPayload) {
       _clientKey: nextClientKey(),
       organizationId: currentOrgId.value,
       activityCategoryCode: payload.activityCategoryCode,
+      activityTypeCode: payload.activityTypeCode,
       activityDefinitionId: option.value,
       activityDefinitionName: option.label,
       executionOrgId: payload.executionOrgId,
@@ -774,6 +877,7 @@ function buildRuleConfigKey(
   row: Pick<
     ExecuteLocationItem,
     | 'activityCategoryCode'
+    | 'activityTypeCode'
     | 'activityDefinitionId'
     | 'executionOrgId'
     | 'executionLocationId'
@@ -783,6 +887,7 @@ function buildRuleConfigKey(
 ): string {
   return [
     String(row.activityCategoryCode ?? ''),
+    String(row.activityTypeCode ?? ''),
     toActivityDefinitionIdString(row.activityDefinitionId),
     String(row.executionOrgId ?? ''),
     String(row.executionLocationId ?? ''),
@@ -795,6 +900,7 @@ function buildRuleConfigKey(
 function toCopiedTemplates(rows: ExecuteLocationItem[]): CopiedRuleTemplate[] {
   return rows.map((row) => ({
     activityCategoryCode: row.activityCategoryCode,
+    activityTypeCode: row.activityTypeCode,
     activityDefinitionId: toOptionalIdString(row.activityDefinitionId),
     activityDefinitionName: row.activityDefinitionName,
     executionOrgId: toOptionalIdString(row.executionOrgId),
@@ -914,6 +1020,7 @@ async function handlePaste() {
         _clientKey: nextClientKey(),
         organizationId: currentOrgId.value,
         activityCategoryCode: template.activityCategoryCode,
+        activityTypeCode: template.activityTypeCode,
         activityDefinitionId: template.activityDefinitionId,
         activityDefinitionName: template.activityDefinitionName,
         executionOrgId: template.executionOrgId,
@@ -985,7 +1092,7 @@ onActivated(() => {
             <span class="font-semibold text-[var(--el-text-color-primary)]">{{
               currentOrgName
             }}</span>
-            ；按诊疗大类/项目配置执行科室。可「复制全部配置」（含所有分页）后切换到其他科室粘贴。
+            ；按诊疗大类 / 可选业务类型 / 可选项目配置执行科室。可「复制全部配置」（含所有分页）后切换到其他科室粘贴。
           </span>
           <ElTag v-if="hasCopiedRules" type="info">
             已复制 {{ copiedRuleTemplates.length }} 条{{
@@ -1048,13 +1155,38 @@ onActivated(() => {
             </ElSelect>
           </template>
 
+          <template #activityType="{ row }">
+            <ElSelect
+              v-model="row.activityTypeCode"
+              placeholder="可选，随大类联动"
+              clearable
+              filterable
+              class="cell-control"
+              :disabled="!row.activityCategoryCode"
+              :loading="!!rowActivityTypeLoading[row._clientKey]"
+              @visible-change="(visible: boolean) => visible && loadActivityTypeOptionsForRow(row)"
+              @change="() => onActivityTypeChange(row)"
+            >
+              <ElOption
+                v-for="item in getActivityTypeOptionsForRow(row)"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </ElSelect>
+          </template>
+
           <template #activityDefinition="{ row }">
             <ElSelect
               v-model="row.activityDefinitionId"
               filterable
+              remote
+              reserve-keyword
               clearable
-              placeholder="可选，不选表示大类默认"
+              placeholder="可选，不选则按大类/类型"
               class="cell-control"
+              :loading="!!rowActivityDefinitionLoading[row._clientKey]"
+              :remote-method="(q: string) => loadActivityDefinitionsForRow(row, q)"
               @visible-change="(visible: boolean) => visible && loadActivityDefinitionsForRow(row)"
             >
               <ElOption

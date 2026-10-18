@@ -8,7 +8,7 @@ import type {
 
 import { computed, onMounted, ref, watch } from 'vue';
 
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 import { ElEmpty, ElMessage, ElMessageBox } from 'element-plus';
 
 import {

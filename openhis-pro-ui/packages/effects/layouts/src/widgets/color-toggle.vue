@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import type { BuiltinThemeType } from '@vben/types';
+import type { BuiltinThemeType } from '@zxplat/types';
 
-import { Palette } from '@vben/icons';
-import { COLOR_PRESETS, preferences, updatePreferences } from '@vben/preferences';
+import { Palette } from '@zxplat/icons';
+import { COLOR_PRESETS, preferences, updatePreferences } from '@zxplat/preferences';
 
-import { VbenIconButton } from '@vben-core/shadcn-ui';
+import { VbenIconButton } from '@zxplat-core/shadcn-ui';
 
 defineOptions({
   name: 'AuthenticationColorToggle',

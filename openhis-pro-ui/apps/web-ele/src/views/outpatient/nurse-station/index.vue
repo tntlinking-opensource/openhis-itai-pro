@@ -26,7 +26,7 @@ import type { PatientInfoBarPayload } from '#/components/outpatient/patient-card
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 import { useDebounceFn } from '@vueuse/core';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -66,12 +66,17 @@ import {
   printTreatmentSheet,
 } from '#/utils/print/print-nurse-station';
 import {
+  hasPrintableNurseServiceApply,
+  printServiceApplyFromNurseTreatmentLines,
+} from '#/utils/print/print-service-apply';
+import {
   groupMedicationExecuteRequestIds,
   groupMedicationLabelPrintTargets,
-  groupProcedureApplyPrintTargets,
   groupSpecimenBarcodePrintTargets,
   isLabSpecimenExecuteRow,
 } from '#/utils/print/nurse-station-print-targets';
+import type { ServiceApplyKind } from '#/views/outpatient/doctor-station/service-apply/service-apply.types';
+import { SERVICE_APPLY_KIND_LABEL } from '#/views/outpatient/doctor-station/service-apply/service-apply.constants';
 
 import NurseActionRecordDrawer from './components/nurse-action-record-drawer.vue';
 import NurseCancelProcedureDialog from './components/nurse-cancel-procedure-dialog.vue';
@@ -91,6 +96,7 @@ import {
   parseTreatmentSheetFromApiData,
   resolveSupplyDispenseIdForApi,
 } from './services/map-nurse-station-api';
+import { OUTPATIENT_NURSE_SERVICE_APPLY_PRINT_ENABLED } from '#/views/outpatient/nurse-station/constants/nurse-print-apply.config';
 import {
   NURSE_PRINT_ACTION,
   NURSE_PRINT_ACTION_LABEL,
@@ -254,6 +260,17 @@ const showExecuteFooter = computed(() => activeWorkbenchTab.value === 'execute')
 
 const showSupplySection = computed(() => activeWorkbenchTab.value === 'execute');
 
+/** 侧栏检查/检验/治疗申请单按钮红点：有可打印行时显示 */
+const printableExamApply = computed(() =>
+  hasPrintableNurseServiceApply(treatmentSheetRaw.value.serviceLines, 'exam'),
+);
+const printableLabApply = computed(() =>
+  hasPrintableNurseServiceApply(treatmentSheetRaw.value.serviceLines, 'lab'),
+);
+const printableTreatmentApply = computed(() =>
+  hasPrintableNurseServiceApply(treatmentSheetRaw.value.serviceLines, 'treatment'),
+);
+
 const clearExecuteTableCheckbox = async () => {
   await workstationCenterRef.value?.clearTableSelection();
 };
@@ -272,6 +289,7 @@ const totalSelectedCount = computed(() => {
 const totalPendingCount = computed(() => {
   const pendingExecute = executeItems.value.filter(
     (item) =>
+      !isLabSpecimenExecuteRow(item) &&
       !isNurseExecuteMedicationRow(item) &&
       !(item.statusEnum && isNurseExecuteRowCompleted(item.statusEnum)),
   ).length;
@@ -436,10 +454,12 @@ const debouncedReloadQueueByKeyword = useDebounceFn(() => {
   void loadPatientQueue();
 }, 350);
 
+/** 默认勾选：待执行非药品，且排除检验（检验仅下方采血贴列表） */
 function defaultSelectableExecuteKeys(): string[] {
   return executeItems.value
     .filter(
       (row) =>
+        !isLabSpecimenExecuteRow(row) &&
         !isNurseExecuteMedicationRow(row) &&
         !(row.statusEnum && isNurseExecuteRowCompleted(row.statusEnum)),
     )
@@ -909,7 +929,16 @@ const PRINT_ACTION_TO_RECORD_CODE: Record<NursePrintActionCode, NurseActionRecor
   [NURSE_PRINT_ACTION.SPECIMEN_BARCODE]: 'PRINT_SPECIMEN_BARCODE',
   [NURSE_PRINT_ACTION.SKIN_TEST_LABEL]: 'PRINT_SKIN_TEST_LABEL',
   [NURSE_PRINT_ACTION.NEBULIZATION_LABEL]: 'PRINT_NEBULIZATION_LABEL',
-  [NURSE_PRINT_ACTION.PROCEDURE_APPLY]: 'PRINT_PROCEDURE_APPLY',
+  [NURSE_PRINT_ACTION.EXAM_APPLY]: 'PRINT_EXAM_APPLY',
+  [NURSE_PRINT_ACTION.LAB_APPLY]: 'PRINT_LAB_APPLY',
+  [NURSE_PRINT_ACTION.TREATMENT_APPLY]: 'PRINT_TREATMENT_APPLY',
+};
+
+/** 侧栏申请单打印动作 → 申请种类 */
+const PRINT_ACTION_TO_APPLY_KIND: Partial<Record<NursePrintActionCode, ServiceApplyKind>> = {
+  [NURSE_PRINT_ACTION.EXAM_APPLY]: 'exam',
+  [NURSE_PRINT_ACTION.LAB_APPLY]: 'lab',
+  [NURSE_PRINT_ACTION.TREATMENT_APPLY]: 'treatment',
 };
 
 /** 从处置单药品行中解析当前执行行对应的输液组（同 groupId 打一张瓶贴） */
@@ -1029,9 +1058,11 @@ async function handlePrintLabRows(rows: NurseAdviceExecuteRow[]) {
       ageText: ctx.ageText,
       items: targets.map((target) => ({
         serviceRequestId: target.serviceRequestId,
+        barcode: target.barcode,
         itemName: target.itemName,
         labelCount: target.labelCount,
         priorityEnum: target.priorityEnum,
+        memberServiceRequestIds: target.memberServiceRequestIds,
       })),
     });
     if (result.ok) {
@@ -1181,9 +1212,11 @@ async function handlePrint(actionCode: NursePrintActionCode) {
         ageText: ctx.ageText,
         items: targets.map((target) => ({
           serviceRequestId: target.serviceRequestId,
+          barcode: target.barcode,
           itemName: target.itemName,
           labelCount: target.labelCount,
           priorityEnum: target.priorityEnum,
+          memberServiceRequestIds: target.memberServiceRequestIds,
         })),
       });
       if (result.ok) {
@@ -1224,13 +1257,50 @@ async function handlePrint(actionCode: NursePrintActionCode) {
     return;
   }
 
-  if (actionCode === NURSE_PRINT_ACTION.PROCEDURE_APPLY) {
-    const target = groupProcedureApplyPrintTargets(executeItems.value, selectedKeys);
-    if (!target) {
-      ElMessage.warning('没有可打印的治疗/处置医嘱');
+  const applyKind = PRINT_ACTION_TO_APPLY_KIND[actionCode];
+  if (applyKind) {
+    if (!OUTPATIENT_NURSE_SERVICE_APPLY_PRINT_ENABLED) {
+      ElMessage.warning('当前院点不支持打印检查/检验/治疗申请单');
       return;
     }
-    ElMessage.warning('处置申请单打印模板暂未接入，请联系管理员配置');
+    // 检查/检验/治疗申请单：不按勾选，直接打当前患者该类目全部项目
+    printSubmitting.value = true;
+    try {
+      const ctx = buildNursePrintContext();
+      const results = await printServiceApplyFromNurseTreatmentLines({
+        applyKind,
+        encounterId,
+        patient: {
+          patientName: ctx.patientName,
+          genderText: ctx.genderEnumText,
+          ageText: ctx.ageText,
+          encounterNo: ctx.encounterBusNo,
+          feeNatureText: ctx.feeNatureText,
+        },
+        serviceLines: treatmentSheetRaw.value.serviceLines,
+        printMeta: {
+          hospitalName: ctx.hospitalName,
+          orderingPractitionerName: ctx.orderingPractitionerName,
+        },
+        orderDateText: ctx.orderDateText,
+      });
+      const successCount = results.filter((item) => item.ok).length;
+      if (successCount <= 0) {
+        ElMessage.warning(`没有可打印的${SERVICE_APPLY_KIND_LABEL[applyKind]}申请单`);
+        return;
+      }
+      appendRecord({
+        type: 'PRINT',
+        actionCode: recordActionCode,
+        action: actionLabel,
+        target: `${patientName} · ${successCount} 张`,
+      });
+      ElMessage.success(
+        `已提交 ${successCount} 张${SERVICE_APPLY_KIND_LABEL[applyKind]}申请单打印`,
+      );
+    } finally {
+      printSubmitting.value = false;
+    }
     return;
   }
 
@@ -1337,6 +1407,9 @@ async function handleCancelProcedureDialogConfirm(procedureIds: string[]) {
         v-model:supply-room-id="selectedSupplyRoomId"
         :show-supply-section="showSupplySection"
         :can-print="Boolean(currentPatient)"
+        :printable-exam-apply="printableExamApply"
+        :printable-lab-apply="printableLabApply"
+        :printable-treatment-apply="printableTreatmentApply"
         :supply-items="supplyItems"
         :selected-supply-ids="selectedSupplyIds"
         :supply-room-options="supplyRoomOptions"

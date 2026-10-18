@@ -1,8 +1,8 @@
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 import { useAuthStore } from '#/store';
 
-const STORAGE_PREFIX = 'openhis:rpt:print-cols';
+const STORAGE_PREFIX = 'zxplat:rpt:print-cols';
 
 /** 报表打印纸张方向 */
 export type ReportPrintOrientation = 'landscape' | 'portrait';

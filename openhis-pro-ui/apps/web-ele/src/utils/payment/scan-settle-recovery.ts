@@ -2,12 +2,12 @@ import type { ClientScanResultDto } from '#/api/payment/payment.types';
 
 import { ElMessageBox } from 'element-plus';
 
-import { isUnionPayWinReady } from '#/api/local/openhisWin';
+import { isUnionPayWinReady } from '#/api/local/zxplatWin';
 import { refundApi, toClientRefundResultDto, UnionPayWinError } from '#/api/local/unionPayWin';
 import { httpApplyClientRefundResult } from '#/api/payment/union-pay-bpc';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
 
-import { clearCachedClientScanResult } from './scan-settle-cache';
+import { cacheClientScanResult, clearCachedClientScanResult } from './scan-settle-cache';
 
 /** 银联已成功但本地 settle 未完成（用户取消补结算且未退货） */
 export class ScanSettleIncompleteError extends Error {
@@ -83,7 +83,7 @@ async function refundHalfSuccessScan(
   }
   const winReady = await isUnionPayWinReady();
   if (!winReady) {
-    throw new Error('请启动本地客户端（OpenHIS.Win）后再发起银联退货');
+    throw new Error('请启动本地客户端（Zxplat.Win）后再发起银联退货');
   }
   const winResult = await refundApi({
     merTradeNo,
@@ -104,6 +104,111 @@ async function refundHalfSuccessScan(
     // Win 已退成功：即便 BPC 收口失败也清缓存，避免收银员再次补结算误用已退单
   }
   clearCachedClientScanResult(paymentDraftId);
+}
+
+export interface RecoverApplyClientScanOptions {
+  /** 支付草稿主键：补落账重试 apply / 退货收口 */
+  paymentDraftId: number | string;
+  /** 明细下标，与首次 apply 一致 */
+  detailIndex?: number;
+  /** 院内扫码行金额（元），写入 apply.amount */
+  amountYuan: number | string;
+  /** 医院账金额兜底（元）；渠道实付为 0 时退货用此值 */
+  refundAmountYuan?: number | string;
+  /** 首次 apply 失败文案（展示给收款员） */
+  applyErrorMessage?: string;
+}
+
+/**
+ * Win 已扣款但 applyClientScanResult 失败：收款员自助「补落账 / 银联退货」，禁止重扫。
+ *
+ * <p>典型场景：支付宝全额券回传 txnAmtFen=0，旧版服务端拒收后事务回滚；
+ * 本机仍持有 tradeNo，可重试落 BPC 或原路退货。</p>
+ *
+ * @param clientScanResult Win 成功回传（须含 merTradeNo/tradeNo）
+ * @param applyAgain       再次调用 applyClientScanResult（同凭证，不重扫）
+ * @param options          草稿与金额
+ */
+export async function recoverApplyClientScanFailure(
+  clientScanResult: ClientScanResultDto,
+  applyAgain: () => Promise<void>,
+  options: RecoverApplyClientScanOptions,
+): Promise<ClientScanResultDto> {
+  const paymentDraftId = options.paymentDraftId;
+  const normalized: ClientScanResultDto = {
+    ...clientScanResult,
+    merTradeNo: String(clientScanResult.merTradeNo ?? '').trim(),
+    tradeNo: String(clientScanResult.tradeNo ?? '').trim(),
+    respCode: String(clientScanResult.respCode ?? '00').trim() || '00',
+  };
+  // Pre：先落本机凭证，关闭弹窗后仍可空码补结算，避免收款员重扫二次扣款
+  cacheClientScanResult(paymentDraftId, normalized);
+
+  const detail = String(options.applyErrorMessage ?? '').trim();
+  const tip = detail
+    ? `银联已扣款，但本院收单落库失败：${detail}`
+    : '银联已扣款，但本院收单落库失败';
+
+  let action: 'retry' | 'refund' | 'abort' = 'abort';
+  try {
+    await ElMessageBox.confirm(
+      `${tip}。请选「补落账」（不会重复扣款），或「银联退货」取消本笔；切勿再次扫码。`,
+      '银联已扣款',
+      {
+        confirmButtonText: '补落账',
+        cancelButtonText: '银联退货',
+        distinguishCancelAndClose: true,
+        type: 'warning',
+        closeOnClickModal: false,
+        closeOnPressEscape: false,
+      },
+    );
+    action = 'retry';
+  } catch (boxError) {
+    if (boxError === 'cancel') {
+      action = 'refund';
+    } else {
+      action = 'abort';
+    }
+  }
+
+  // Cmd：同凭证重试 apply（后端已允许实付 0 分）
+  if (action === 'retry') {
+    await applyAgain();
+    cacheClientScanResult(paymentDraftId, normalized);
+    return normalized;
+  }
+
+  if (action === 'refund') {
+    const refundAmountYuan = resolveRefundAmountYuan(
+      normalized,
+      options.refundAmountYuan ?? options.amountYuan,
+    );
+    try {
+      await refundHalfSuccessScan(paymentDraftId, normalized, refundAmountYuan);
+    } catch (refundError) {
+      const refundMessage = refundError instanceof Error ? refundError.message : '银联退货失败';
+      const already =
+        refundError instanceof UnionPayWinError &&
+        /已全额退款|订单已全额退款|订单已退货|已经退货|重复退货|重复退款/.test(refundMessage);
+      if (!already) {
+        throw new ScanSettleIncompleteError(
+          `${tip}。尝试银联退货失败：${refundMessage}。请保留本窗口再次点收费（空付款码可补落账），或联系信息科；勿重复扫码。`,
+          normalized,
+        );
+      }
+      clearCachedClientScanResult(paymentDraftId);
+    }
+    throw new ScanSettleRefundedError(
+      `本院收单失败，已对银联发起退货 ¥${refundAmountYuan}。请重新预结算后再收费，勿直接重扫原码。`,
+      normalized,
+    );
+  }
+
+  throw new ScanSettleIncompleteError(
+    `${tip}。凭证已保存在本机：请再次点「收费」并保持付款码为空以补落账，或联系信息科做银联退货；勿重复扫码。`,
+    normalized,
+  );
 }
 
 /**

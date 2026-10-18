@@ -1,0 +1,6 @@
+{
+  "moduleId": "campus",
+  "enabledProperty": "zxplat.modules.campus.enabled",
+  "locations": "classpath:db/migration/campus",
+  "historyTable": "flyway_schema_history_campus"
+}

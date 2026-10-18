@@ -2,13 +2,13 @@ import type { FormState, GenericObject, ResetFormOpts, ValidationOptions } from 
 
 import type { ComponentPublicInstance } from 'vue';
 
-import type { Recordable } from '@vben-core/typings';
+import type { Recordable } from '@zxplat-core/typings';
 
 import type { FormActions, FormSchema, VbenFormProps } from './types';
 
 import { isRef, toRaw } from 'vue';
 
-import { Store } from '@vben-core/shared/store';
+import { Store } from '@zxplat-core/shared/store';
 import {
   bindMethods,
   createMerge,
@@ -19,7 +19,7 @@ import {
   isObject,
   mergeWithArrayOverride,
   StateHandler,
-} from '@vben-core/shared/utils';
+} from '@zxplat-core/shared/utils';
 
 function getDefaultState(): VbenFormProps {
   return {

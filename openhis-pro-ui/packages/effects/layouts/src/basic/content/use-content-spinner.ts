@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { preferences } from '@vben/preferences';
+import { preferences } from '@zxplat/preferences';
 
 function useContentSpinner() {
   const spinning = ref(false);

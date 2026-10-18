@@ -231,11 +231,19 @@ export function mergeCatalogIntoAdviceDrugItemForEdit(
     unitBands: catalog.unitBands ?? catalogPatch.unitBands,
   });
 
-  const totalUnit = String(seed.totalAmountUnit ?? '').trim() || catalogPatch.totalAmountUnit;
+  // 总量单位须在本药 unitBands；成组/历史脏值回落目录默认
+  const unitBands = catalog.unitBands ?? catalogPatch.unitBands;
+  const seedTotalUnit = String(seed.totalAmountUnit ?? '').trim();
+  const totalUnitInBands =
+    seedTotalUnit &&
+    (unitBands ?? []).some((b) => String(b.unitCode ?? '').trim() === seedTotalUnit);
+  const totalUnit = totalUnitInBands
+    ? seedTotalUnit
+    : String(catalogPatch.totalAmountUnit ?? '').trim() || seedTotalUnit;
   let selectedDrugPrice = catalogPatch.selectedDrugPrice ?? catalog.price ?? seed.selectedDrugPrice;
   if (totalUnit) {
     const linePrice = resolveAdviceLineUnitPrice({
-      bands: catalog.unitBands ?? catalogPatch.unitBands,
+      bands: unitBands,
       catalogUnitPrice: catalogPatch.catalogUnitPrice ?? catalog.catalogUnitPrice,
       totalAmountUnit: totalUnit,
     });

@@ -20,7 +20,10 @@ import {
   ElTimePicker,
 } from 'element-plus';
 
-import { pageActivityDefinitionForExecuteLocationApi } from '#/api/basic/execute-location';
+import {
+  listActivityTypeOptionsByCategoryApi,
+  pageActivityDefinitionForExecuteLocationApi,
+} from '#/api/basic/execute-location';
 
 defineOptions({ name: 'ExecuteLocationBatchAddDialog' });
 
@@ -45,6 +48,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 export interface BatchAddConfirmPayload {
   activityCategoryCode: string;
+  activityTypeCode?: string;
   executionOrgId: string;
   items: ApiOptionItem[];
   startTime: string;
@@ -58,6 +62,10 @@ const emit = defineEmits<{
 
 const tableRef = ref<InstanceType<typeof ElTable> | null>(null);
 const activityCategoryCode = ref<string>();
+const activityTypeCode = ref<string>();
+/** 随大类联动的业务类型选项 */
+const activityTypeOptions = ref<ApiOptionItem[]>([]);
+const activityTypeLoading = ref(false);
 const executionOrgId = ref<string>();
 const keyword = ref('');
 const selectedRows = ref<ApiOptionItem[]>([]);
@@ -78,20 +86,10 @@ const selectableItemOptions = computed(() =>
   ),
 );
 
-/** 关键字过滤后的项目列表 */
-const filteredItems = computed(() => {
-  const kw = keyword.value.trim().toLowerCase();
-  if (!kw) {
-    return selectableItemOptions.value;
-  }
-  return selectableItemOptions.value.filter((item) =>
-    String(item.label ?? '')
-      .toLowerCase()
-      .includes(kw),
-  );
-});
+/** 当前可选项目（后端已按关键字检索，前端只做已配置去重） */
+const filteredItems = computed(() => selectableItemOptions.value);
 
-/** 按诊疗大类加载可选项目 */
+/** 按诊疗大类 + 关键字拉取可选项目（关键字下推后端，避免只筛本地前 500 条） */
 async function loadItemOptions() {
   if (!props.organizationId || !activityCategoryCode.value) {
     itemOptions.value = [];
@@ -99,11 +97,14 @@ async function loadItemOptions() {
   }
   itemLoading.value = true;
   try {
+    const trimmedKeyword = keyword.value.trim();
     const resp = await pageActivityDefinitionForExecuteLocationApi({
       organizationId: props.organizationId,
       activityCategoryCode: activityCategoryCode.value,
+      activityTypeCode: activityTypeCode.value,
       pageNo: 1,
       pageSize: 500,
+      keyword: trimmedKeyword || undefined,
     });
     itemOptions.value = resp.content || [];
   } finally {
@@ -111,11 +112,43 @@ async function loadItemOptions() {
   }
 }
 
-/** 诊疗大类变更时重置筛选与勾选 */
+/** 按当前大类加载业务类型（目录实际用过的类型） */
+async function loadActivityTypeOptions() {
+  if (!activityCategoryCode.value) {
+    activityTypeOptions.value = [];
+    return;
+  }
+  activityTypeLoading.value = true;
+  try {
+    const options = (await listActivityTypeOptionsByCategoryApi(activityCategoryCode.value)) || [];
+    activityTypeOptions.value = options.map((item) => ({
+      value: String(item.value ?? ''),
+      label: String(item.label ?? item.value ?? ''),
+    }));
+  } finally {
+    activityTypeLoading.value = false;
+  }
+}
+
+/** 诊疗大类变更时重置类型/筛选与勾选，并重拉类型与项目 */
 async function onCategoryChange() {
   keyword.value = '';
+  activityTypeCode.value = undefined;
   selectedRows.value = [];
   itemOptions.value = [];
+  await loadActivityTypeOptions();
+  await loadItemOptions();
+  await nextTick();
+  tableRef.value?.clearSelection();
+}
+
+/** 业务类型变更时按类型重拉候选单品 */
+async function onTypeChange() {
+  // 未选大类时无法拉项目，仅记下类型等用户再选大类。
+  if (!activityCategoryCode.value) {
+    return;
+  }
+  selectedRows.value = [];
   await loadItemOptions();
   await nextTick();
   tableRef.value?.clearSelection();
@@ -153,6 +186,8 @@ function clearSelection() {
 function handleClose() {
   dialogVisible.value = false;
   activityCategoryCode.value = undefined;
+  activityTypeCode.value = undefined;
+  activityTypeOptions.value = [];
   executionOrgId.value = undefined;
   keyword.value = '';
   selectedRows.value = [];
@@ -177,6 +212,7 @@ function handleConfirm() {
   }
   emit('confirm', {
     activityCategoryCode: activityCategoryCode.value,
+    activityTypeCode: activityTypeCode.value,
     executionOrgId: executionOrgId.value,
     items: selectedRows.value,
     startTime: startTime.value,
@@ -185,11 +221,27 @@ function handleConfirm() {
   handleClose();
 }
 
+let keywordSearchTimer: ReturnType<typeof setTimeout> | undefined;
+
+watch(keyword, () => {
+  if (!activityCategoryCode.value) {
+    return;
+  }
+  if (keywordSearchTimer) {
+    clearTimeout(keywordSearchTimer);
+  }
+  keywordSearchTimer = setTimeout(() => {
+    void loadItemOptions();
+  }, 300);
+});
+
 watch(
   () => props.visible,
   (open) => {
     if (open) {
       activityCategoryCode.value = undefined;
+      activityTypeCode.value = undefined;
+      activityTypeOptions.value = [];
       executionOrgId.value = undefined;
       keyword.value = '';
       selectedRows.value = [];
@@ -231,6 +283,25 @@ watch(
             >
               <ElOption
                 v-for="item in activityCategoryOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </ElSelect>
+          </ElFormItem>
+          <ElFormItem label="业务类型" class="!mb-0">
+            <ElSelect
+              v-model="activityTypeCode"
+              placeholder="可选，随大类联动"
+              clearable
+              filterable
+              class="w-full"
+              :disabled="!activityCategoryCode"
+              :loading="activityTypeLoading"
+              @change="onTypeChange"
+            >
+              <ElOption
+                v-for="item in activityTypeOptions"
                 :key="item.value"
                 :label="item.label"
                 :value="item.value"

@@ -2,7 +2,7 @@
   单个医生工作量明细弹窗：紧凑汇总 + 固定高度医嘱明细表格。
 -->
 <script setup lang="ts">
-import type { TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type {
   PractitionerWorkloadDetailLineDto,
@@ -14,7 +14,7 @@ import type {
 
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { Download } from '@element-plus/icons-vue';
 import { ElButton, ElMessage, ElPagination } from 'element-plus';
@@ -36,6 +36,7 @@ defineOptions({ name: 'PractitionerWorkloadDoctorDetailDialog' });
 
 interface Props {
   baseFilter: PractitionerWorkloadQueryFilter;
+  discountFeatureEnabled?: boolean;
   practitionerId: string;
   practitionerName: string;
   /** 卡片墙已带的外显合计；弹窗打开后会用 IF-02 补全实收/挂号等。 */
@@ -52,7 +53,9 @@ interface MetricItem {
   value: string;
 }
 
-const props = defineProps<Props>();
+const props = withDefaults(defineProps<Props>(), {
+  discountFeatureEnabled: false,
+});
 const visible = defineModel<boolean>({ default: false });
 
 const detailRows = ref<DetailTableRow[]>([]);
@@ -92,10 +95,12 @@ const { run: runExport, loading: exportLoading } = useRequest(exportPractitioner
   manual: true,
 });
 
+const showDiscount = computed(() => Boolean(props.discountFeatureEnabled));
+
 /** 汇总区第一行：工作量指标。 */
 const workloadSummaryMetrics = computed<MetricItem[]>(() => {
   const t = resolvedSummaryTotals.value;
-  return [
+  const rows: MetricItem[] = [
     {
       label: '挂号人次',
       value: String(t.registrationNetCountTotal ?? t.encounterCountTotal ?? 0),
@@ -108,15 +113,33 @@ const workloadSummaryMetrics = computed<MetricItem[]>(() => {
       highlight: true,
     },
   ];
+  if (showDiscount.value) {
+    rows.push({
+      label: '优惠合计',
+      value: fmtReportNumber(t.discountAmountTotal),
+      highlight: true,
+    });
+    rows.push({
+      label: '实收合计',
+      value: fmtReportNumber(t.actualReceivedAmountTotal),
+      highlight: true,
+    });
+  }
+  return rows;
 });
 
 /** 汇总区第二行：费用指标。 */
 const financialSummaryMetrics = computed<MetricItem[]>(() => {
   const t = resolvedSummaryTotals.value;
-  return [
+  const rows: MetricItem[] = [
     { label: '售价', value: fmtReportNumber(t.saleAmountTotal) },
-    { label: '进价', value: fmtReportPurchaseMoney(t.purchaseAmountTotal) },
   ];
+  if (showDiscount.value) {
+    rows.push({ label: '优惠', value: fmtReportNumber(t.discountAmountTotal) });
+    rows.push({ label: '实收', value: fmtReportNumber(t.actualReceivedAmountTotal) });
+  }
+  rows.push({ label: '进价', value: fmtReportPurchaseMoney(t.purchaseAmountTotal) });
+  return rows;
 });
 
 const hasBreakdown = computed(
@@ -125,27 +148,48 @@ const hasBreakdown = computed(
 
 const panelLoading = computed(() => detailLoading.value || summaryLoading.value);
 
-const detailColumns: TableColumn[] = [
-  { prop: 'catalogTypeDisplay', label: '类型', minWidth: 72 },
-  { prop: 'productName', label: '项目名称', minWidth: 200 },
-  { prop: 'requestingOrgName', label: '开立科室', minWidth: 100 },
-  { prop: 'enteredDate', label: '开立时间', minWidth: 158 },
-  {
-    prop: 'saleAmount',
-    label: '售价',
-    minWidth: 96,
-    align: 'right',
-    formatter: (row) => fmtReportNumber((row as PractitionerWorkloadDetailLineDto).saleAmount),
-  },
-  {
+const detailColumns = computed<TableColumn[]>(() => {
+  const columns: TableColumn[] = [
+    { prop: 'catalogTypeDisplay', label: '类型', minWidth: 72 },
+    { prop: 'productName', label: '项目名称', minWidth: 200 },
+    { prop: 'requestingOrgName', label: '开立科室', minWidth: 100 },
+    { prop: 'enteredDate', label: '开立时间', minWidth: 158 },
+    {
+      prop: 'saleAmount',
+      label: '售价',
+      minWidth: 96,
+      align: 'right',
+      formatter: (row) => fmtReportNumber((row as PractitionerWorkloadDetailLineDto).saleAmount),
+    },
+  ];
+  if (showDiscount.value) {
+    columns.push({
+      prop: 'discountAmount',
+      label: '优惠',
+      minWidth: 96,
+      align: 'right',
+      formatter: (row) =>
+        fmtReportNumber((row as PractitionerWorkloadDetailLineDto).discountAmount),
+    });
+    columns.push({
+      prop: 'actualReceivedAmount',
+      label: '实收',
+      minWidth: 96,
+      align: 'right',
+      formatter: (row) =>
+        fmtReportNumber((row as PractitionerWorkloadDetailLineDto).actualReceivedAmount),
+    });
+  }
+  columns.push({
     prop: 'purchaseAmount',
     label: '进价',
     minWidth: 96,
     align: 'right',
     formatter: (row) =>
       fmtReportPurchaseMoney((row as PractitionerWorkloadDetailLineDto).purchaseAmount),
-  },
-];
+  });
+  return columns;
+});
 
 /** 组装带医生 id 的明细查询条件。 */
 function buildDoctorDetailFilter() {
@@ -176,7 +220,7 @@ async function loadDetailPage() {
 async function handleExportDetail() {
   // TableColumn.prop → Excel 导出行 field
   const exportColumns = buildExcelExportColumns(
-    detailColumns
+    detailColumns.value
       .filter((col) => Boolean(col.prop))
       .map((col) => ({
         field: String(col.prop),
@@ -348,7 +392,11 @@ watch(
               <span v-if="index > 0" class="practitioner-workload-doctor-detail__breakdown-sep"
                 >·</span
               >
-              <span>{{ row.finTypeDisplay }} {{ fmtReportNumber(row.saleAmount) }}</span>
+              <span>{{ row.finTypeDisplay }} {{ fmtReportNumber(row.saleAmount)
+              }}<template v-if="showDiscount && Number(row.discountAmount ?? 0) !== 0"
+                >（优惠 {{ fmtReportNumber(row.discountAmount) }}，实收
+                {{ fmtReportNumber(row.actualReceivedAmount) }}）</template
+              ></span>
             </template>
           </div>
           <div

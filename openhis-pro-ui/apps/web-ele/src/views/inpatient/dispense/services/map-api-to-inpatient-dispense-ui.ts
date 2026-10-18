@@ -3,7 +3,7 @@ import type {
   PendingDispenseInpatientEncounterQueueRowDto,
 } from '#/api/inpatient-pharmacy-dispense/inpatient-pharmacy-dispense.types';
 
-import { formatDateTime } from '@vben/utils';
+import { formatDateTime } from '@zxplat/utils';
 
 import { decimalAdd } from '#/utils/format/decimal-util';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
@@ -198,6 +198,7 @@ export function mapInpatientSlipRowsToPrescriptionBlocks(
           unitText: head.unitText,
           packageUnitCode: head.packageUnitCode,
           packageUnitRatio: head.packageUnitRatio,
+          packageSplitRatioText: head.packageSplitRatioText,
           splitUnitCode: head.splitUnitCode,
           doseUnitCode: head.doseUnitCode,
           doseUnitText: head.doseUnitText,

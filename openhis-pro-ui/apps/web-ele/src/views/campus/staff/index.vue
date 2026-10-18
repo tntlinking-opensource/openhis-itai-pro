@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { ArchiveChangeLogDto, ArchiveTransferDto } from '#/api/campus/campus-student';
 import type { CampusDepartmentDto } from '#/api/campus/campus-department';
@@ -8,8 +8,8 @@ import type { CampusStaffDto, StaffDetailDto } from '#/api/campus/campus-staff';
 
 import { computed, onMounted, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { Page } from '@zxplat/common-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { listDepartmentsApi } from '#/api/campus/campus-department';
 import { listActiveCampusSitesApi } from '#/api/campus/campus-site';
@@ -330,7 +330,7 @@ onMounted(async () => {
         <ElButton type="primary" @click="openCreate">新建</ElButton>
       </template>
       <template #activeFlag="{ row }">
-        <ElTag :type="row.activeFlag ? 'success' : 'info'">
+        <ElTag :type="row.activeFlag ? 'success' : 'warning'">
           {{ row.activeFlag ? '启用' : '停用' }}
         </ElTag>
       </template>

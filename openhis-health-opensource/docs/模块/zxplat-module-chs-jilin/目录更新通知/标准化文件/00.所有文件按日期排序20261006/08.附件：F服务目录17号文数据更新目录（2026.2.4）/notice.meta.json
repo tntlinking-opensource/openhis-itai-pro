@@ -1,0 +1,10 @@
+{
+  "doc_kind": "CATALOG_DELTA",
+  "category": "SERVICE_F",
+  "title": "附件：F服务目录17号文数据更新目录（2026.2.4）",
+  "source_filename": "附件：F服务目录17号文数据更新目录（2026.2.4）_      .xlsx",
+  "notice_date": "2026-02-04",
+  "effective_date": "2026-02-04",
+  "wash_note": "F服务局发目录更新；Sheet=['变更3', '停用1']；服务ADD仅写project_code(01*)；价格/超限等进ext_json；",
+  "wash_tool": "cursor-ai"
+}

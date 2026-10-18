@@ -3,7 +3,7 @@ import type { FormInstance, FormRules } from 'element-plus';
 
 import { computed, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import {
   ElButton,

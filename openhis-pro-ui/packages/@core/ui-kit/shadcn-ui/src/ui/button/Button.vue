@@ -3,7 +3,7 @@ import type { PrimitiveProps } from 'reka-ui';
 
 import type { ButtonVariants, ButtonVariantSize } from './types';
 
-import { cn } from '@vben-core/shared/utils';
+import { cn } from '@zxplat-core/shared/utils';
 
 import { Primitive } from 'reka-ui';
 

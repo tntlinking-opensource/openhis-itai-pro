@@ -2,7 +2,7 @@ import type { FormItemDependencies, FormSchemaRuleType, MaybeComponentProps } fr
 
 import { computed, ref, watch } from 'vue';
 
-import { isBoolean, isFunction } from '@vben-core/shared/utils';
+import { isBoolean, isFunction } from '@zxplat-core/shared/utils';
 
 import { useFormValues } from 'vee-validate';
 

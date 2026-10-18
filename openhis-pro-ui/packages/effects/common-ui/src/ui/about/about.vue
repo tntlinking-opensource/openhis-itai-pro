@@ -3,9 +3,9 @@ import type { AboutProps, DescriptionItem } from './about';
 
 import { h } from 'vue';
 
-import { VBEN_DOC_URL, VBEN_GITHUB_URL, VBEN_PREVIEW_URL } from '@vben/constants';
+import { VBEN_DOC_URL, VBEN_GITHUB_URL, VBEN_PREVIEW_URL } from '@zxplat/constants';
 
-import { VbenRenderContent } from '@vben-core/shadcn-ui';
+import { VbenRenderContent } from '@zxplat-core/shadcn-ui';
 
 import { Page } from '../../components';
 

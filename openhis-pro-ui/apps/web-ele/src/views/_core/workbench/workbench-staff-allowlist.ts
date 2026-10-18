@@ -1,5 +1,5 @@
 /**
- * 非平台管理员工作台快捷入口白名单（whale_menus.code / 路由 name）。
+ * 非平台管理员工作台快捷入口白名单（zxplat_menus.code / 路由 name）。
  * 仅这些菜单可出现在工作台；展示时再与个人菜单权限求交，并按侧栏父级分组。
  */
 export const WORKBENCH_STAFF_ALLOWLIST = new Set<string>([

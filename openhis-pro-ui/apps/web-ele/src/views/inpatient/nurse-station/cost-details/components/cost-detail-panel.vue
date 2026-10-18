@@ -26,6 +26,8 @@ import {
 type CostDetailQuickDay = '' | 'today' | 'yesterday';
 
 interface Props {
+  /** 麻醉统计：仅麻醉申请执行费用 + 挂麻醉申请父项的手麻计费 */
+  anesthesiaStatisticsOnly?: boolean;
   dateRange?: string[];
   detailLines?: NurseStationCostDetailLineDto[];
   keyword?: string;
@@ -37,6 +39,8 @@ interface Props {
   presentationMode?: NurseStationCostDetailPresentationMode;
   presentationOptions?: NurseStationCostDetailPresentationOptionDto[];
   quickDay?: CostDetailQuickDay;
+  /** 是否展示「麻醉统计」勾选（手麻功能开关） */
+  showAnesthesiaStatistics?: boolean;
   statusEnum?: NurseStationCostDetailStatusFilter;
   statusFilterOptions?: NurseStationCostDetailPresentationOptionDto[];
   summaryLines?: NurseStationCostSummaryLineDto[];
@@ -48,6 +52,7 @@ defineOptions({
 });
 
 const props = withDefaults(defineProps<Props>(), {
+  anesthesiaStatisticsOnly: false,
   dateRange: () => [],
   detailLines: () => [],
   keyword: '',
@@ -57,6 +62,7 @@ const props = withDefaults(defineProps<Props>(), {
   presentationMode: 'DETAIL',
   presentationOptions: () => [],
   quickDay: '',
+  showAnesthesiaStatistics: false,
   statusEnum: 'PENDING_SETTLEMENT',
   statusFilterOptions: () => [],
   summaryLines: () => [],
@@ -64,12 +70,14 @@ const props = withDefaults(defineProps<Props>(), {
 });
 
 const emit = defineEmits<{
+  onAnesthesiaStatisticsChange: [value: boolean];
   onPrint: [];
   onPrintDetail: [];
   onQuery: [];
   onQuickDayChange: [day: CostDetailQuickDay];
   onPresentationModeChange: [mode: NurseStationCostDetailPresentationMode];
   onReset: [];
+  'update:anesthesiaStatisticsOnly': [value: boolean];
   'update:dateRange': [value: string[]];
   'update:keyword': [value: string];
   'update:statusEnum': [value: NurseStationCostDetailStatusFilter];
@@ -88,6 +96,16 @@ const keywordModel = computed({
 const statusEnumModel = computed({
   get: () => props.statusEnum,
   set: (value: NurseStationCostDetailStatusFilter) => emit('update:statusEnum', value),
+});
+
+const anesthesiaStatisticsOnlyModel = computed({
+  get: () => props.anesthesiaStatisticsOnly === true,
+  set: (value: boolean) => {
+    const next = value === true;
+    emit('update:anesthesiaStatisticsOnly', next);
+    // 勾选即筛：与医嘱执行「麻醉申请」不同，本页默认全量费用，点选后立刻重查
+    emit('onAnesthesiaStatisticsChange', next);
+  },
 });
 
 const presentationModeModel = computed({
@@ -125,11 +143,12 @@ function isRefundHighlightRow(row: NurseStationCostDetailLineDto) {
 }
 
 /**
- * 护士划价冲销留痕行（BR-IP-CDT-018）：来源仍为 nurse-pricing，
- * 以退费态或数量/金额为负识别，整行标红（不可用「护士冲销」文案判断）。
+ * 护士站划价族冲销留痕行（BR-IP-CDT-018）：来源为 nurse-pricing / anesthesia-pricing，
+ * 以退费态或数量/金额为负识别，整行标红（不可用冲销文案判断）。
  */
 function isNurseOffsetHighlightRow(row: NurseStationCostDetailLineDto) {
-  if (String(row.generateSourceEnum ?? '').trim() !== 'nurse-pricing') {
+  const source = String(row.generateSourceEnum ?? '').trim();
+  if (source !== 'nurse-pricing' && source !== 'anesthesia-pricing') {
     return false;
   }
   const status = String(row.statusEnum ?? '')
@@ -233,6 +252,13 @@ function splitRowDisplayDateTime(row: {
             :value="option.code"
           />
         </ElSelect>
+        <ElCheckbox
+          v-if="showAnesthesiaStatistics"
+          v-model="anesthesiaStatisticsOnlyModel"
+          class="cost-detail-filter__anesth"
+        >
+          麻醉统计
+        </ElCheckbox>
       </div>
       <div class="cost-detail-filter__actions">
         <ElButton @click="emit('onReset')">重置</ElButton>
@@ -257,6 +283,12 @@ function splitRowDisplayDateTime(row: {
           </ElTabs>
           <div class="cost-detail-card__header-right">
             <div v-if="totals" class="cost-detail-card__totals">
+              <span class="cost-detail-total-item cost-detail-total-item--prepay">
+                <span class="cost-detail-total-item__label">预交金合计</span>
+                <span class="cost-detail-total-item__value">{{
+                  formatCostDetailMoney(totals.prepayNetBalance)
+                }}</span>
+              </span>
               <span class="cost-detail-total-item">
                 <span class="cost-detail-total-item__label">药品合计</span>
                 <span class="cost-detail-total-item__value">{{
@@ -427,6 +459,13 @@ function splitRowDisplayDateTime(row: {
                   <ElTableColumn label="数量" min-width="96" align="center">
                     <template #default="{ row: activityRow }">
                       {{ formatCostSummaryActivityQuantity(activityRow) }}
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn label="总价" min-width="96" align="right">
+                    <template #default="{ row: activityRow }">
+                      <span class="cost-detail-money cost-detail-money--amount">{{
+                        formatCostDetailMoney(activityRow.totalPrice)
+                      }}</span>
                     </template>
                   </ElTableColumn>
                 </ElTable>

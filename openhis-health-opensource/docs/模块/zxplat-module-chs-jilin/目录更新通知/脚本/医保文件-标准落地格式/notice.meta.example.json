@@ -1,0 +1,10 @@
+{
+  "doc_kind": "CATALOG_DELTA",
+  "category": "SERVICE",
+  "title": "服务目录数据更新目录（2026.5.19）",
+  "source_filename": "附件：服务目录数据更新目录（2026.5.19）.xlsx",
+  "notice_date": "2026-05-19",
+  "effective_date": "2026-05-25",
+  "wash_note": "样例：常规局发 xlsx 亦可直接写标准包，便于系统只吃固定列",
+  "wash_tool": "cursor-ai"
+}

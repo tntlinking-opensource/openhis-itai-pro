@@ -1,4 +1,4 @@
-import type { TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@zxplat-core/table-layout-ui';
 import type { ApiOptionItem } from '#/types/api-response';
 
 import { formatInventoryTotalAmountDisplay } from '#/utils/inventory/inventory-qty-unit-display';

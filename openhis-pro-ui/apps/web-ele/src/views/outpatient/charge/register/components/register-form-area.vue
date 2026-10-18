@@ -112,6 +112,8 @@ const emit = defineEmits<{
   contractChange: [category: string];
   departmentChange: [organizationId: string];
   doctorChange: [practitionerId: string];
+  /** 改了姓名/证件/性别/生日，不再沿用选中患者主键 */
+  patientIdentityDetach: [{ idCardChanged: boolean }];
   serviceTypeChange: [serviceTypeId: string];
 }>();
 
@@ -151,7 +153,7 @@ const contractMatch = ref<null | RegisterContractMatchDto>(null);
 /** IF-REG-01 号源类型（OptionDto.value 即 serviceTypeId） */
 const serviceTypeOptions = ref<OptionDto[]>([]);
 
-/** 号源类型主键 → 挂号费销售价（元），来自初始化接口 */
+/** 号源类型主键 → 挂号费销售价（元），来自初始化接口（全量 ACTIVE，不随医师收窄） */
 const serviceTypeFeeById = ref<Record<string, number | string>>({});
 
 /** 初始化接口下发的患者性别字典（Radio 选项） */
@@ -159,6 +161,15 @@ const genderOptions = ref<OptionDto[]>([]);
 
 /** 预约带入后锁定科室/医生/号源类型 */
 const bookingLocked = ref(false);
+
+/**
+ * 号源类型下拉是否可选（须先选科室或医生；预约锁定时不可改）。
+ * 放进 computed schema，避免写死 disabled:true 被 options 刷新冲掉 updateSchema。
+ */
+const serviceTypeSelectEnabled = ref(false);
+
+/** 号源类型下拉占位文案 */
+const serviceTypeSelectPlaceholder = ref('请先选择科室或医生');
 
 /** 表单区展示用金额占位（实际金额以预结算 / 正式结算接口为准） */
 const registerFeeAmount = ref(0);
@@ -324,7 +335,7 @@ async function handleDepartmentChange(value: string) {
 }
 
 /**
- * 按科室/医师重拉号源类型（后端按 BR-REG-014：医师可接诊号源；与排班/放号无关）。
+ * 按科室/医师重拉号源类型（下拉按 BR-REG-014 收窄；费用 map 为全量，合并写入以免丢价）。
  */
 async function refreshServiceTypeOptions(organizationId?: string, practitionerId?: string) {
   const init = await loadRegisterFormInit({
@@ -332,8 +343,15 @@ async function refreshServiceTypeOptions(organizationId?: string, practitionerId
     practitionerId: practitionerId || undefined,
   });
   serviceTypeOptions.value = [...init.serviceTypeOptions];
-  serviceTypeFeeById.value = { ...init.serviceTypeFeeById };
+  // 合并全量费用 map，避免收窄下拉后页旁查不到已绑诊查费价格
+  serviceTypeFeeById.value = {
+    ...serviceTypeFeeById.value,
+    ...(init.serviceTypeFeeById ?? {}),
+  };
   await syncServiceTypeFieldState();
+  // 费用 map 刷新后按当前选中号源重算页旁金额
+  const values = await registerFormApi.getValues();
+  updateRegisterFeeDisplay(String(values.serviceTypeId ?? '').trim() || undefined);
 }
 
 /** 须先选科室或医生后才允许选号源（预约锁定除外）。 */
@@ -342,21 +360,18 @@ async function syncServiceTypeFieldState() {
   const hasDepartment = String(values.departmentId ?? '').trim() !== '';
   const hasDoctor = String(values.doctorId ?? '').trim() !== '';
   const canSelectServiceType = bookingLocked.value || hasDepartment || hasDoctor;
-  registerFormApi.updateSchema([
-    {
-      fieldName: 'serviceTypeId',
-      componentProps: {
-        disabled: !canSelectServiceType || bookingLocked.value,
-        placeholder: canSelectServiceType ? '请选择号源类型' : '请先选择科室或医生',
-        options: serviceTypeOptions.value,
-        onChange: handleServiceTypeChange,
-      },
-    },
-  ]);
+  // 写 ref 驱动 computed schema，禁止再写死 disabled:true 与 updateSchema 互踩
+  serviceTypeSelectEnabled.value = canSelectServiceType && !bookingLocked.value;
+  if (canSelectServiceType) {
+    serviceTypeSelectPlaceholder.value = '请选择号源类型';
+  } else {
+    serviceTypeSelectPlaceholder.value = '请先选择科室或医生';
+  }
 }
 
 /**
  * 更新挂号区三要素字段的禁用态（预约带入后锁定）。
+ * 号源类型禁用态走 serviceTypeSelectEnabled，与 computed schema 同源。
  */
 function syncBookingFieldLockState() {
   const disabled = bookingLocked.value;
@@ -377,15 +392,13 @@ function syncBookingFieldLockState() {
         onChange: handleDoctorChange,
       },
     },
-    {
-      fieldName: 'serviceTypeId',
-      componentProps: {
-        disabled,
-        options: serviceTypeOptions.value,
-        onChange: handleServiceTypeChange,
-      },
-    },
   ]);
+  // 预约锁定时号源不可改；解锁后由 syncServiceTypeFieldState 按科/医重算
+  if (disabled) {
+    serviceTypeSelectEnabled.value = false;
+  } else {
+    void syncServiceTypeFieldState();
+  }
 }
 
 /**
@@ -477,23 +490,157 @@ function clearBookingLock() {
   syncBookingFieldLockState();
 }
 
-/** 按号源类型刷新展示用挂号费（不触发右侧筛选同步） */
-function updateRegisterFeeDisplay(value: string | undefined) {
-  if (!value) {
+/**
+ * 按号源类型刷新展示用挂号费（不触发右侧筛选同步）。
+ * 用 String + isSameBookingId 匹配 map 键，避免 ElSelectV2 传 number 时 Snowflake 精度丢失误显 0。
+ *
+ * @param value 号源类型主键（OptionDto.value；允许 number 运行时）
+ */
+function updateRegisterFeeDisplay(value: null | number | string | undefined) {
+  const key = value === null || value === undefined ? '' : String(value).trim();
+  if (!key) {
     registerFeeAmount.value = 0;
     return;
   }
-  const raw = serviceTypeFeeById.value[value];
+  let raw: number | string | undefined;
+  // 先精确键；再按 Snowflake 主键宽松匹配（与下拉 isSameBookingId 同口径）
+  if (Object.prototype.hasOwnProperty.call(serviceTypeFeeById.value, key)) {
+    raw = serviceTypeFeeById.value[key];
+  } else {
+    for (const [mapKey, fee] of Object.entries(serviceTypeFeeById.value)) {
+      if (isSameBookingId(mapKey, key)) {
+        raw = fee;
+        break;
+      }
+    }
+  }
   const fee = Number(raw);
-  registerFeeAmount.value = Number.isFinite(fee) ? fee : 0;
+  // 查不到或非数字时归零，确认弹窗仍以预结算 totalAmount 为准
+  if (Number.isFinite(fee)) {
+    registerFeeAmount.value = fee;
+  } else {
+    registerFeeAmount.value = 0;
+  }
 }
 
 /**
  * 号源类型变更：按初始化下发的销售价映射刷新展示用挂号费。
  */
-function handleServiceTypeChange(value: string | undefined) {
-  emit('serviceTypeChange', value || '');
-  updateRegisterFeeDisplay(value);
+function handleServiceTypeChange(value: null | number | string | undefined) {
+  const normalized = value === null || value === undefined ? '' : String(value).trim();
+  emit('serviceTypeChange', normalized);
+  updateRegisterFeeDisplay(normalized);
+}
+
+/** 选中或读卡写入时的身份快照；提交时一致才沿用患者主键 */
+interface BoundPatientIdentity {
+  birthday: string;
+  gender: string;
+  idCard: string;
+  name: string;
+}
+
+const PATIENT_IDENTITY_FIELDS = [
+  'patientName',
+  'patientIdCard',
+  'patientGender',
+  'patientBirthday',
+] as const;
+
+const boundPatientIdentity = ref<BoundPatientIdentity | null>(null);
+
+/** 出生日期统一成 YYYY-MM-DD，避免接口带时间后被当成改过生日。 */
+function normalizeIdentityDate(value: unknown): string {
+  const text = String(value ?? '').trim();
+  if (text.length >= 10 && text[4] === '-' && text[7] === '-') {
+    return text.slice(0, 10);
+  }
+  return text;
+}
+
+/** 从表单或回填记录取出可比对的身份字段。 */
+function toBoundPatientIdentity(source: {
+  birthday?: unknown;
+  gender?: unknown;
+  idCard?: unknown;
+  name?: unknown;
+}): BoundPatientIdentity {
+  return {
+    birthday: normalizeIdentityDate(source.birthday),
+    gender: String(source.gender ?? '').trim(),
+    idCard: String(source.idCard ?? '')
+      .trim()
+      .toUpperCase(),
+    name: String(source.name ?? '').trim(),
+  };
+}
+
+/**
+ * 记住回填身份。
+ * 选患者/读卡重绑；补姓名或地址时证件号已变则保留原快照，避免把改过的人又绑回失败那次。
+ */
+function rememberBoundPatientIdentity(patient: RegisterPatientRecord, rebind: boolean) {
+  const next = toBoundPatientIdentity({
+    birthday: patient.patientBirthday,
+    gender: patient.patientGender,
+    idCard: patient.patientIdCard,
+    name: patient.patientName,
+  });
+  const bound = boundPatientIdentity.value;
+  const idCardDiverged = Boolean(
+    bound && bound.idCard !== '' && next.idCard !== '' && bound.idCard !== next.idCard,
+  );
+  if (!rebind && idCardDiverged) {
+    return;
+  }
+  boundPatientIdentity.value = next;
+}
+
+/** 清空、提交成功或身份已变时丢掉绑定快照。 */
+function clearBoundPatientIdentity() {
+  boundPatientIdentity.value = null;
+}
+
+/**
+ * 身份字段与快照不一致则解除绑定。
+ * 快照生日为空、提交时才按年龄补出生日，不算挂号员改了人。
+ */
+function releaseBoundPatientIfIdentityChanged(
+  values: Record<string, unknown>,
+): { idCardChanged: boolean } | null {
+  const bound = boundPatientIdentity.value;
+  if (!bound) {
+    return null;
+  }
+  const current = toBoundPatientIdentity({
+    birthday: values.patientBirthday,
+    gender: values.patientGender,
+    idCard: values.patientIdCard,
+    name: values.patientName,
+  });
+  const idCardChanged = bound.idCard !== current.idCard;
+  const nameChanged = bound.name !== current.name;
+  const genderChanged = bound.gender !== current.gender;
+  const birthdayChanged = bound.birthday !== '' && bound.birthday !== current.birthday;
+  if (!idCardChanged && !nameChanged && !genderChanged && !birthdayChanged) {
+    return null;
+  }
+  clearBoundPatientIdentity();
+  return { idCardChanged };
+}
+
+/** 挂号员改了身份字段时通知父页丢掉患者主键。 */
+function handlePatientValuesChange(values: Record<string, unknown>, fieldsChanged: string[]) {
+  const identityTouched = fieldsChanged.some((field) =>
+    (PATIENT_IDENTITY_FIELDS as readonly string[]).includes(field),
+  );
+  if (!identityTouched) {
+    return;
+  }
+  const released = releaseBoundPatientIfIdentityChanged(values);
+  if (released) {
+    emit('patientIdentityDetach', released);
+  }
 }
 
 const [PatientForm, patientFormApi] = useVbenForm(
@@ -504,6 +651,7 @@ const [PatientForm, patientFormApi] = useVbenForm(
       },
     },
     compact: true,
+    handleValuesChange: handlePatientValuesChange,
     layout: 'vertical',
     wrapperClass: patientFormWrapperClass,
     schema: computed(() => [
@@ -665,8 +813,8 @@ const [RegisterForm, registerFormApi] = useVbenForm(
         label: '号源类型',
         required: true,
         componentProps: {
-          placeholder: '请先选择科室或医生',
-          disabled: true,
+          placeholder: serviceTypeSelectPlaceholder.value,
+          disabled: !serviceTypeSelectEnabled.value,
           options: serviceTypeOptions.value,
           onChange: handleServiceTypeChange,
         },
@@ -981,6 +1129,7 @@ function getServiceTypeLabel(serviceTypeId: unknown): string | undefined {
 async function resetForSubmitSuccess() {
   bookingLocked.value = false;
   lastSlotSelection.value = null;
+  clearBoundPatientIdentity();
   patientFormApi.resetForm();
   registerFormApi.resetForm();
   registerFeeAmount.value = 0;
@@ -1000,6 +1149,7 @@ async function resetForSubmitSuccess() {
 function resetForClear() {
   bookingLocked.value = false;
   lastSlotSelection.value = null;
+  clearBoundPatientIdentity();
   patientFormApi.resetForm();
   registerFormApi.resetForm();
   benefitInfo.value = emptyBenefitInfo();
@@ -1017,6 +1167,7 @@ function resetForClear() {
  */
 function clearPatientFields() {
   historyPatientKeyword.value = '';
+  clearBoundPatientIdentity();
   patientFormApi.setValues({
     patientName: '',
     patientPhone: '',
@@ -1032,8 +1183,9 @@ function clearPatientFields() {
  * 把父页选中的患者写入患者信息表单。
  * <p>{@code patientAddress} 为 undefined 时不覆盖表单已有地址（待遇回写姓名等场景）。</p>
  */
-function applyPatientRecord(patient: RegisterPatientRecord) {
+function applyPatientRecord(patient: RegisterPatientRecord, options?: { rebind?: boolean }) {
   historyPatientKeyword.value = (patient.patientIdCard ?? '').trim();
+  rememberBoundPatientIdentity(patient, options?.rebind !== false);
   patientFormApi.setValues({
     patientName: patient.patientName,
     patientPhone: patient.patientPhone,
@@ -1067,6 +1219,7 @@ defineExpose<RegisterFormAreaExpose>({
   getDoctorLabel,
   getServiceTypeLabel,
   getSubmitValues,
+  releaseBoundPatientIfIdentityChanged,
   resetForClear,
   resetForSubmitSuccess,
   validateForSubmit,
@@ -1086,7 +1239,7 @@ onMounted(async () => {
   contractCategoryById.value = { ...init.contractCategoryById };
   contractInsuranceProfileById.value = { ...init.contractInsuranceProfileById };
   serviceTypeOptions.value = [...init.serviceTypeOptions];
-  serviceTypeFeeById.value = { ...init.serviceTypeFeeById };
+  serviceTypeFeeById.value = { ...(init.serviceTypeFeeById ?? {}) };
   genderOptions.value = [...init.genderOptions];
   await refreshDoctorOptions();
   patientFormApi.updateSchema([
@@ -1097,13 +1250,8 @@ onMounted(async () => {
       },
     },
   ]);
+  // 科室/医生/费用性质 options 已由 computed schema 绑定 ref；此处仅补院点必填态
   registerFormApi.updateSchema([
-    {
-      fieldName: 'departmentId',
-      componentProps: {
-        options: departmentOptions.value,
-      },
-    },
     {
       fieldName: 'doctorId',
       required: REGISTRATION_DOCTOR_REQUIRED,
@@ -1111,29 +1259,6 @@ onMounted(async () => {
         placeholder: REGISTRATION_DOCTOR_REQUIRED ? '请选择医生' : '可不选（挂到科室）',
         clearable: !REGISTRATION_DOCTOR_REQUIRED,
         filterable: true,
-        options: doctorOptions.value,
-        onChange: handleDoctorChange,
-      },
-    },
-    {
-      fieldName: 'contractId',
-      componentProps: {
-        clearable: true,
-        filterable: true,
-        options: contractOptions.value,
-        onChange: handleContractChange,
-      },
-    },
-    {
-      fieldName: 'serviceTypeId',
-      componentProps: {
-        options: serviceTypeOptions.value,
-        onChange: handleServiceTypeChange,
-      },
-    },
-    {
-      fieldName: 'doctorId',
-      componentProps: {
         options: doctorOptions.value,
         onChange: handleDoctorChange,
       },

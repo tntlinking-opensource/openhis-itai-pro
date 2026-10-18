@@ -136,6 +136,27 @@
   white-space: nowrap;
 }
 
+.print-center-filters__hint.is-printer-warn {
+  color: var(--el-color-danger);
+  font-weight: 600;
+}
+
+/* 未选打印机点打印：下拉框红框高亮，替代 toast */
+.print-center-filters__printer.is-printer-warn :deep(.el-select__wrapper) {
+  background: var(--el-color-danger-light-9);
+  box-shadow: 0 0 0 1px var(--el-color-danger) inset;
+}
+
+.print-center-filters__printer.is-printer-warn :deep(.el-select__placeholder) {
+  color: var(--el-color-danger);
+}
+
+.print-center-footer__printer-warn {
+  color: var(--el-color-danger);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 /* —— 条件工具栏 —— */
 .print-center-filters {
   align-items: center;
@@ -156,6 +177,10 @@
 .print-center-filters__hint {
   color: var(--el-text-color-regular);
   font-size: 13px;
+}
+
+.print-center-filters__printer {
+  width: 220px;
 }
 
 .print-center-btn.el-button {
@@ -251,6 +276,63 @@
   overflow: visible;
   white-space: normal;
   word-break: break-word;
+}
+
+/* 输液贴按患者合并床号/姓名：合并格略加重，方便扫读分界 */
+.print-center-register-table--patient-group .vxe-body--column[colid='bedNo'] .vxe-cell,
+.print-center-register-table--patient-group .vxe-body--column[colid='patientName'] .vxe-cell {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+/* 采血贴合管折叠行：项目名可折行，行高跟内容走 */
+.print-center-register-table--specimen-merge .vxe-body--column[colid='title'] .vxe-cell {
+  line-height: 1.4;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.print-center-register-table--specimen-merge .vxe-body--row {
+  height: auto !important;
+}
+
+.print-center-register-table--specimen-merge .vxe-body--column {
+  vertical-align: middle;
+}
+
+/* —— 打印进度（内嵌底栏上方，无全屏遮罩） —— */
+.print-center-progress {
+  background: #f5f9ff;
+  border-top: 1px solid #d6e6ff;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 12px;
+}
+
+.print-center-progress__head {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.print-center-progress__title {
+  color: var(--el-color-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.print-center-progress__count {
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.print-center-progress__label {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 
 /* —— 底栏 —— */

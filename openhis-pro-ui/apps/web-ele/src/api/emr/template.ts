@@ -1,5 +1,5 @@
 /**
- * 模板 API（whale-emr TemplateAppService）
+ * 模板 API（zxplat-emr TemplateAppService）
  */
 
 import type { PageApiResponse } from '#/types/api-response';

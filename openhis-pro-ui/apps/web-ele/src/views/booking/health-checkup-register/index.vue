@@ -5,7 +5,7 @@ import type { ContractRowDto } from '#/api/peis/group-check';
 
 import { computed, ref, watch } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import { toBookingId } from '#/api/booking/booking-id';
 import { pagePatientsForSelectApi } from '#/api/booking/booking-register';

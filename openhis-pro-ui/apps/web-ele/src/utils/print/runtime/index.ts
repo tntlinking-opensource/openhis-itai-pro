@@ -371,6 +371,8 @@ async function executePreparedPrint<TSource>(
     showPaperKind: options.showPaperKind,
     initialPaperKind: options.formPaperKind,
     initialTripleSpec: options.formTripleSpec,
+    showServiceApplyPaperSize: options.showServiceApplyPaperSize,
+    initialServiceApplyPaperSize: options.serviceApplyPaperSize,
   });
   if (resolvedPrinter.cancelled) {
     return {
@@ -481,6 +483,8 @@ async function runPrint<TSource>(options: PrintOptions<TSource>): Promise<PrintR
     showPaperKind: options.showPaperKind,
     initialPaperKind: options.formPaperKind,
     initialTripleSpec: options.formTripleSpec,
+    showServiceApplyPaperSize: options.showServiceApplyPaperSize,
+    initialServiceApplyPaperSize: options.serviceApplyPaperSize,
   });
   if (resolvedPrinter.cancelled) {
     return {
@@ -493,10 +497,32 @@ async function runPrint<TSource>(options: PrintOptions<TSource>): Promise<PrintR
   let printOptions = options;
   if (options.showPaperKind && resolvedPrinter.paperKind) {
     printOptions = {
-      ...options,
+      ...printOptions,
       formPaperKind: resolvedPrinter.paperKind,
       formTripleSpec: resolvedPrinter.tripleSpec,
       repeatPrintData: isInvFormTriplePaper(resolvedPrinter.paperKind),
+    };
+  }
+  // 申请单弹窗改纸张：按最终纸张切换 A4/A5 场景后再 prepare
+  if (
+    options.showServiceApplyPaperSize &&
+    resolvedPrinter.resolvedScenarioCode &&
+    resolvedPrinter.resolvedScenarioCode !== scenarioCode
+  ) {
+    printOptions = {
+      ...printOptions,
+      scenarioCode: resolvedPrinter.resolvedScenarioCode,
+    };
+  }
+  if (options.showServiceApplyPaperSize && resolvedPrinter.serviceApplyPaperSize) {
+    printOptions = {
+      ...printOptions,
+      serviceApplyPaperSize: resolvedPrinter.serviceApplyPaperSize,
+      bizRef: {
+        ...(printOptions.bizRef ?? {}),
+        paperSize: resolvedPrinter.serviceApplyPaperSize,
+        scenarioCode: printOptions.scenarioCode,
+      },
     };
   }
 

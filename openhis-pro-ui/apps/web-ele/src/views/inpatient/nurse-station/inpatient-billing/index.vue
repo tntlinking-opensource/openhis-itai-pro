@@ -6,6 +6,8 @@ import type {
   OrderChargeDetailRow,
   PricingCatalogCategory,
   PricingConfirmationTableRow,
+  SurgeryAnesthBillingKind,
+  SurgeryAnesthBillingLineSource,
 } from './services/map-nurse-station-inpatient-billing';
 
 import type { OrderTemplateHeaderItem } from '#/api/basic/order-template';
@@ -20,6 +22,12 @@ import { computed, h, ref, watch } from 'vue';
 import dayjs from 'dayjs';
 import { ElDatePicker, ElMessage, ElMessageBox } from 'element-plus';
 
+import {
+  httpGetAnesthesiaApplyFormDetail,
+  httpGetSurgeryApplyFormDetail,
+  httpListAnesthesiaApplyForms,
+  httpListSurgeryApplyForms,
+} from '#/api/inpatient/doctor-station/inpatient-doctor-station-surgery-anesth.http';
 import {
   httpCancelNurseStationPricing,
   httpChangeNurseStationPricingBusinessTime,
@@ -45,11 +53,16 @@ import {
   isEncounterClinicalOrderMutationBlocked,
 } from '#/utils/inpatient/encounter-clinical-order-gate';
 import { validateChangeOpenedBusinessTime } from '#/utils/inpatient/encounter-order-time-bounds';
+import {
+  SERVICE_CATEGORY_ANESTHESIA,
+  SERVICE_CATEGORY_PROCEDURE,
+} from '#/utils/print/constants/service-request-category-codes';
 
 import {
   INPATIENT_BILLING_DEFAULT_TAB,
   INPATIENT_BILLING_TABS,
 } from '#/views/inpatient/nurse-station/inpatient-billing/inpatient-billing-tab.config';
+import { INPATIENT_SURGERY_ANESTH_ENABLED } from '#/views/inpatient/surgery-anesth/inpatient-surgery-anesth.config';
 
 import AutoRollPanel from './components/auto-roll-panel.vue';
 import BatchPricingDialog from './components/batch-pricing-dialog.vue';
@@ -65,13 +78,16 @@ import {
   buildSupplementPricingWriteItem,
   convertPricingQtyBetweenBandKinds,
   filterOrderBillingTree,
+  isSurgeryAnesthBillingParentLine,
   listDirectPricingWriteItemMissingFields,
   listSupplementPricingWriteItemMissingFields,
+  mapOrderBillingChildRowToCancelItem,
   mapPricedOrderGroupsToTableRows,
   mapPricedOrderRowToChargeDetailRow,
   mapPricingDateRangeToQuery,
   mapPricingTableRowToCancelItem,
   mapSelectedPricingRowsToCancelItems,
+  mapSurgeryAnesthApplyLinesToBillingTree,
   mergeOrderBillingTreeFromApiResponses,
   normalizePricingCatalogRow,
   PRICING_CANCEL_BATCH_LIMIT,
@@ -119,8 +135,15 @@ const selectedPricingRowIds = ref<string[]>([]);
 const pricingTableKey = ref(0);
 const pricingTimeRange = ref<string[]>([]);
 const activeTab = ref(INPATIENT_BILLING_DEFAULT_TAB);
-const inpatientBillingTabs = INPATIENT_BILLING_TABS;
+/** 手麻关闭时隐藏「手麻计费」页签 */
+const inpatientBillingTabs = INPATIENT_BILLING_TABS.filter(
+  (tab) => tab.name !== 'surgery-anesth-billing' || INPATIENT_SURGERY_ANESTH_ENABLED,
+);
 const autoRollPanelRef = ref<InstanceType<typeof AutoRollPanel> | null>(null);
+const surgeryAnesthBillingRows = ref<OrderBillingTableRow[]>([]);
+const surgeryAnesthBillingKeyword = ref('');
+const surgeryAnesthBillingKind = ref<SurgeryAnesthBillingKind>('all');
+const surgeryAnesthBillingLoading = ref(false);
 const batchDialogVisible = ref(false);
 const pricingOrderTemplateApplying = ref(false);
 const projectKeyword = ref('');
@@ -190,6 +213,27 @@ const activeOrderChargeTotal = computed(() =>
 const filteredOrderBillingRows = computed(() =>
   filterOrderBillingTree(orderBillingRows.value, orderBillingKeyword.value),
 );
+/** 手麻计费筛选对应的诊疗类目；全部时不过滤。 */
+function resolveSurgeryAnesthKindCategory(kind: SurgeryAnesthBillingKind) {
+  if (kind === 'surgery') {
+    return SERVICE_CATEGORY_PROCEDURE;
+  }
+  if (kind === 'anesthesia') {
+    return SERVICE_CATEGORY_ANESTHESIA;
+  }
+  return '';
+}
+
+/** 手麻计费：按手术/麻醉筛选后，再按关键字过滤。 */
+const filteredSurgeryAnesthBillingRows = computed(() => {
+  const categoryCode = resolveSurgeryAnesthKindCategory(surgeryAnesthBillingKind.value);
+  const kindRows = categoryCode
+    ? surgeryAnesthBillingRows.value.filter(
+        (row) => String(row.serviceCategoryEnum ?? '').trim() === categoryCode,
+      )
+    : surgeryAnesthBillingRows.value;
+  return filterOrderBillingTree(kindRows, surgeryAnesthBillingKeyword.value);
+});
 /** 批量划价弹窗是否为医嘱补费模式。 */
 const isSupplementFeeDialog = computed(() => supplementFeeOrderRow.value !== null);
 /** 批量划价弹窗标题。 */
@@ -302,6 +346,145 @@ async function handleQueryOrderBillingRows() {
     return;
   }
   await loadOrderBillingRows();
+}
+
+/** 申请明细行 → 手麻计费父行来源（跳过嘱托与历史加收） */
+function collectSurgeryAnesthBillingLines(
+  lines: Array<{
+    activityName?: string;
+    lineKindCode?: string;
+    procedureName?: string;
+    quantity?: number | string;
+    serviceRequestId?: string;
+    statusEnum?: string;
+    unitCode?: string;
+  }> | undefined,
+  meta: {
+    encounterId: string;
+    fallbackContent: string;
+    patientId: string;
+    plannedTime?: string;
+    requesterName?: string;
+    serviceCategoryEnum: string;
+  },
+): SurgeryAnesthBillingLineSource[] {
+  const collected: SurgeryAnesthBillingLineSource[] = [];
+  for (const line of lines ?? []) {
+    if (!isSurgeryAnesthBillingParentLine(line.lineKindCode)) {
+      continue;
+    }
+    const serviceRequestId = preserveApiIdForRequest(line.serviceRequestId) ?? '';
+    if (!serviceRequestId) {
+      continue;
+    }
+    const content =
+      String(line.procedureName ?? line.activityName ?? '').trim() || meta.fallbackContent;
+    collected.push({
+      serviceRequestId,
+      content,
+      quantity: line.quantity,
+      unitCode: line.unitCode,
+      statusEnum: line.statusEnum,
+      serviceCategoryEnum: meta.serviceCategoryEnum,
+      plannedTime: meta.plannedTime,
+      requesterName: meta.requesterName,
+      encounterId: meta.encounterId,
+      patientId: meta.patientId,
+    });
+  }
+  return collected;
+}
+
+/** 加载当前患者的手术/麻醉申请，并挂上已划价子行。 */
+async function loadSurgeryAnesthBillingRows() {
+  const encounterId = encounterIds.value.length === 1 ? encounterIds.value[0] : '';
+  if (!INPATIENT_SURGERY_ANESTH_ENABLED || !encounterId) {
+    surgeryAnesthBillingRows.value = [];
+    return;
+  }
+  const patientId = preserveApiIdForRequest(selectedBillingPatient.value?.patientId) ?? '';
+  surgeryAnesthBillingLoading.value = true;
+  try {
+    const [surgeryList, anesthList, pricedRes] = await Promise.all([
+      httpListSurgeryApplyForms({ encounterId }),
+      httpListAnesthesiaApplyForms({ encounterId }),
+      httpListNurseStationPricedOrders({ encounterIds: [encounterId] }),
+    ]);
+    const surgeryDetails = await Promise.all(
+      (surgeryList.forms ?? []).map(async (form) => {
+        const prescriptionNo = String(form.prescriptionNo ?? '').trim();
+        if (!prescriptionNo) {
+          return null;
+        }
+        try {
+          return await httpGetSurgeryApplyFormDetail({ encounterId, prescriptionNo });
+        } catch {
+          return null;
+        }
+      }),
+    );
+    const anesthDetails = await Promise.all(
+      (anesthList.forms ?? []).map(async (form) => {
+        const prescriptionNo = String(form.prescriptionNo ?? '').trim();
+        if (!prescriptionNo) {
+          return null;
+        }
+        try {
+          return await httpGetAnesthesiaApplyFormDetail({ encounterId, prescriptionNo });
+        } catch {
+          return null;
+        }
+      }),
+    );
+    const lines: SurgeryAnesthBillingLineSource[] = [];
+    for (const detail of surgeryDetails) {
+      if (!detail) {
+        continue;
+      }
+      lines.push(
+        ...collectSurgeryAnesthBillingLines(detail.lines, {
+          encounterId,
+          patientId,
+          serviceCategoryEnum: SERVICE_CATEGORY_PROCEDURE,
+          fallbackContent: String(detail.header?.mainProcedureName ?? '').trim() || '手术申请',
+          plannedTime: String(
+            detail.planned?.procedureTime ?? detail.header?.plannedProcedureTime ?? '',
+          ).trim(),
+          requesterName: String(detail.header?.requesterName ?? '').trim(),
+        }),
+      );
+    }
+    for (const detail of anesthDetails) {
+      if (!detail) {
+        continue;
+      }
+      lines.push(
+        ...collectSurgeryAnesthBillingLines(detail.lines, {
+          encounterId,
+          patientId,
+          serviceCategoryEnum: SERVICE_CATEGORY_ANESTHESIA,
+          fallbackContent: '麻醉申请',
+          plannedTime: String(detail.planned?.procedureTime ?? '').trim(),
+          requesterName: String(detail.header?.requesterName ?? '').trim(),
+        }),
+      );
+    }
+    surgeryAnesthBillingRows.value = mapSurgeryAnesthApplyLinesToBillingTree(
+      lines,
+      pricedRes.groups,
+    );
+  } finally {
+    surgeryAnesthBillingLoading.value = false;
+  }
+}
+
+/** 查询当前患者的手术/麻醉申请。 */
+async function handleQuerySurgeryAnesthBillingRows() {
+  if (!canViewBilling.value) {
+    ElMessage.warning('住院记账仅支持单选患者，请在左侧只勾选 1 位患者');
+    return;
+  }
+  await loadSurgeryAnesthBillingRows();
 }
 
 /** 加载指定父医嘱下的已划价费用明细。 */
@@ -633,6 +816,47 @@ function handlePricingSelectionChange(ids: string[]) {
   selectedPricingRowIds.value = ids;
 }
 
+/**
+ * 医嘱计费补费子行冲销（与划价确费 IF-IP-PRC-06 同 API）。
+ *
+ * @param childRow 展开区补费子行
+ */
+async function handleCancelOrderBillingChild(childRow: OrderBillingTableRow) {
+  if (!canOperateBilling.value) {
+    if (isEncounterChargeMutationBlocked.value) {
+      ElMessage.warning(ENCOUNTER_CLINICAL_ORDER_MUTATION_BLOCKED_MESSAGE);
+      return;
+    }
+    ElMessage.warning('住院记账仅支持单选患者，请在左侧只勾选 1 位患者');
+    return;
+  }
+  const item = mapOrderBillingChildRowToCancelItem(childRow);
+  if (!item) {
+    ElMessage.warning('当前补费行不可冲销（须待结算）');
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确认冲销「${childRow.content}」？冲销后费用与耗材发放将整行对冲留痕，补费父医嘱不变。`,
+      '冲销',
+      {
+        type: 'warning',
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+      },
+    );
+  } catch {
+    return;
+  }
+  const res = await cancelPricingRequest.run({ items: [item] });
+  const count = res.processedCount ?? 1;
+  ElMessage.success(`已成功冲销 ${count} 条划价记录`);
+  await loadOrderBillingRows();
+  if (activeTab.value === 'surgery-anesth-billing') {
+    await loadSurgeryAnesthBillingRows();
+  }
+}
+
 /** 冲销：勾选待结算行整行冲销留痕 */
 async function handleCancelPricing() {
   if (!canOperateBilling.value) {
@@ -677,6 +901,9 @@ async function handleCancelPricing() {
   await loadPricedOrders();
   if (activeTab.value === 'order-billing') {
     await loadOrderBillingRows();
+  }
+  if (activeTab.value === 'surgery-anesth-billing') {
+    await loadSurgeryAnesthBillingRows();
   }
 }
 
@@ -784,6 +1011,9 @@ async function submitChangePricingBusinessTime(
   await loadPricedOrders();
   if (activeTab.value === 'order-billing') {
     await loadOrderBillingRows();
+  }
+  if (activeTab.value === 'surgery-anesth-billing') {
+    await loadSurgeryAnesthBillingRows();
   }
 }
 
@@ -933,6 +1163,9 @@ async function submitBatchPricing() {
     if (activeTab.value === 'order-billing') {
       await loadOrderBillingRows();
     }
+    if (activeTab.value === 'surgery-anesth-billing') {
+      await loadSurgeryAnesthBillingRows();
+    }
   } finally {
     saving.value = false;
   }
@@ -956,7 +1189,7 @@ function handleCatalogPageChange(page: number) {
   void loadPricingCatalog();
 }
 
-/** 目录关键字查询（回车 / 查询按钮 / 清空）。 */
+/** 目录关键字查询（输入防抖 / 回车 / 清空）。 */
 function handleCatalogSearch() {
   catalogPageNo.value = 1;
   void loadPricingCatalog();
@@ -971,6 +1204,9 @@ watch(
       if (activeTab.value === 'order-billing') {
         void loadOrderBillingRows();
       }
+      if (activeTab.value === 'surgery-anesth-billing') {
+        void loadSurgeryAnesthBillingRows();
+      }
       if (activeTab.value === 'auto-roll') {
         void autoRollPanelRef.value?.reload();
       }
@@ -978,6 +1214,7 @@ watch(
     }
     pricingRows.value = [];
     orderBillingRows.value = [];
+    surgeryAnesthBillingRows.value = [];
     void autoRollPanelRef.value?.reload();
   },
   { deep: true, immediate: true },
@@ -989,6 +1226,9 @@ watch(activeTab, (tab) => {
   }
   if (tab === 'order-billing' && canViewBilling.value) {
     void loadOrderBillingRows();
+  }
+  if (tab === 'surgery-anesth-billing' && canViewBilling.value) {
+    void loadSurgeryAnesthBillingRows();
   }
   if (tab === 'auto-roll' && canViewBilling.value) {
     void autoRollPanelRef.value?.reload();
@@ -1049,11 +1289,27 @@ watch(activeTab, (tab) => {
       v-model:category="orderBillingCategory"
       v-model:keyword="orderBillingKeyword"
       v-model:dept="orderBillingDept"
+      :can-operate-billing="canOperateBilling"
       :dept-options="orderBillingDeptOptions"
       :filtered-rows="filteredOrderBillingRows"
       :loading="orderBillingLoading"
+      @on-cancel-child-click="handleCancelOrderBillingChild"
       @on-charge-detail-click="openOrderChargeDetailDialog"
       @on-query="handleQueryOrderBillingRows"
+      @on-supplement-fee-click="openOrderSupplementFeeDialog"
+    />
+
+    <OrderBillingPanel
+      v-else-if="activeTab === 'surgery-anesth-billing'"
+      v-model:keyword="surgeryAnesthBillingKeyword"
+      v-model:kind="surgeryAnesthBillingKind"
+      surgery-anesth-filter
+      :can-operate-billing="canOperateBilling"
+      :filtered-rows="filteredSurgeryAnesthBillingRows"
+      :loading="surgeryAnesthBillingLoading"
+      @on-cancel-child-click="handleCancelOrderBillingChild"
+      @on-charge-detail-click="openOrderChargeDetailDialog"
+      @on-query="handleQuerySurgeryAnesthBillingRows"
       @on-supplement-fee-click="openOrderSupplementFeeDialog"
     />
 

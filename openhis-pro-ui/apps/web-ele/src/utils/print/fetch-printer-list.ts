@@ -1,5 +1,5 @@
 import { connectHiprintClient, resolveHiprintHostAsync } from './runtime/hiprint-client';
-import { isHiprintHealthRecentlyUnavailable } from '#/api/local/openhisWin';
+import { isHiprintHealthRecentlyUnavailable } from '#/api/local/zxplatWin';
 
 const DEFAULT_FETCH_TIMEOUT_MS = 5000;
 const OFFLINE_FETCH_TIMEOUT_MS = 1500;
@@ -91,7 +91,7 @@ export async function fetchHiprintPrinterList(
     : DEFAULT_FETCH_TIMEOUT_MS;
   const connected = await connectHiprintClient(host, connectTimeoutMs);
   if (!connected) {
-    throw new Error(`无法连接 Hiprint 打印客户端（${host}），请确认 OpenHIS.Win 已启动`);
+    throw new Error(`无法连接 Hiprint 打印客户端（${host}），请确认 Zxplat.Win 已启动`);
   }
 
   const hiwebSocket = getHiwebSocket();

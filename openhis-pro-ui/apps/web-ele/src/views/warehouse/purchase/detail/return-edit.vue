@@ -6,7 +6,7 @@ import type { ProductDetail } from '#/types/common';
 
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import { ElMessage } from 'element-plus';
 

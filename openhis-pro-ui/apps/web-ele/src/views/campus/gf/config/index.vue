@@ -3,7 +3,7 @@ import type { GfChargeMode } from '#/api/campus/types';
 
 import { onMounted, ref, watch } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import {
   getMasterSwitchApi,

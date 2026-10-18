@@ -1,14 +1,14 @@
 <script lang="ts" setup>
-import type { NotificationItem } from '@vben/layouts';
+import type { NotificationItem } from '@zxplat/layouts';
 
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { AuthenticationLoginExpiredModal } from '@vben/common-ui';
-import { useWatermark } from '@vben/hooks';
-import { BasicLayout, LockScreen, Notification, UserDropdown } from '@vben/layouts';
-import { preferences } from '@vben/preferences';
-import { useAccessStore, useUserStore } from '@vben/stores';
+import { AuthenticationLoginExpiredModal } from '@zxplat/common-ui';
+import { useWatermark } from '@zxplat/hooks';
+import { BasicLayout, LockScreen, Notification, UserDropdown } from '@zxplat/layouts';
+import { preferences } from '@zxplat/preferences';
+import { useAccessStore, useUserStore } from '@zxplat/stores';
 
 import SelectDepartment from '#/components/select-department.vue';
 import ImpersonationBanner from '#/components/impersonation-banner.vue';

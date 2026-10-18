@@ -232,3 +232,56 @@ export function hasAutoRollNursingReadonly(
 ): boolean {
   return Boolean(nursing?.activityName?.trim());
 }
+
+/** 护理只读表格行（可展开已滚费用） */
+export interface AutoRollNursingTableRow {
+  id: string;
+  serviceRequestId: string;
+  activityName: string;
+  unitPrice?: number | string;
+  quantityText: string;
+  checkTime: string;
+  statusText: string;
+  isActive: boolean;
+}
+
+/** 将护理只读 DTO 转为可展开表格行。 */
+export function mapAutoRollNursingRowToTableRow(
+  row: NurseStationAutoRollNursingReadonlyDto,
+): AutoRollNursingTableRow | null {
+  const serviceRequestId = preserveApiIdForRequest(row.serviceRequestId);
+  if (!serviceRequestId) {
+    return null;
+  }
+  // 数量=护理医嘱 quantity（滚费按此计次，通常 1）；禁止拼接 unitCode（字典码如 14 会显示成「114」）
+  const quantity = row.quantity;
+  let quantityText = '—';
+  if (quantity !== undefined && quantity !== null && String(quantity) !== '') {
+    quantityText = String(quantity);
+  }
+  const statusEnum = String(row.statusEnum ?? '').trim().toUpperCase();
+  return {
+    id: serviceRequestId,
+    serviceRequestId,
+    activityName: row.activityName?.trim() || '—',
+    unitPrice: row.unitPrice,
+    quantityText,
+    checkTime: row.checkTime?.trim() || '—',
+    statusText: row.statusDictText?.trim() || statusEnum || '—',
+    isActive: statusEnum === 'VERIFIED',
+  };
+}
+
+/** 批量映射护理只读列表。 */
+export function mapAutoRollNursingRows(
+  rows: NurseStationAutoRollNursingReadonlyDto[] | undefined | null,
+): AutoRollNursingTableRow[] {
+  const result: AutoRollNursingTableRow[] = [];
+  for (const row of rows ?? []) {
+    const mapped = mapAutoRollNursingRowToTableRow(row);
+    if (mapped) {
+      result.push(mapped);
+    }
+  }
+  return result;
+}

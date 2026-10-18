@@ -17,6 +17,8 @@ export async function printOutpatientTcmPrescription(options: {
   encounterId: string;
   patientId: string;
   prescriptionNo?: string;
+  /** 伴随打印：失败不弹排查指引，由调用方汇总提示 */
+  background?: boolean;
 }): Promise<PrintResult> {
   const encounterId = str(options.encounterId);
   const patientId = str(options.patientId);
@@ -30,6 +32,7 @@ export async function printOutpatientTcmPrescription(options: {
   return print({
     scenarioCode: PRINT_SCENARIO.outpatientTcmRx,
     printData,
+    background: options.background,
     bizRef: {
       scenarioCode: PRINT_SCENARIO.outpatientTcmRx,
       encounterId: encounterId || undefined,

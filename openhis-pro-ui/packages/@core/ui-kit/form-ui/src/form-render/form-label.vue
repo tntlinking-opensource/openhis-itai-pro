@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { CustomRenderType } from '../types';
 
-import { FormLabel, VbenHelpTooltip, VbenRenderContent } from '@vben-core/shadcn-ui';
-import { cn } from '@vben-core/shared/utils';
+import { FormLabel, VbenHelpTooltip, VbenRenderContent } from '@zxplat-core/shadcn-ui';
+import { cn } from '@zxplat-core/shared/utils';
 
 interface Props {
   class?: string;

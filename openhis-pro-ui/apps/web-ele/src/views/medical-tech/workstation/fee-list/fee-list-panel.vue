@@ -8,7 +8,6 @@ import {
   ElEmpty,
   ElInput,
   ElMessage,
-  ElMessageBox,
   ElOption,
   ElSelect,
   ElTabPane,
@@ -18,7 +17,6 @@ import {
 } from 'element-plus';
 
 import {
-  httpConfirmMedicalTechFees,
   httpListMedicalTechFeeItems,
   httpPrintMedicalTechFeeList,
 } from '#/api/medical-tech/medical-tech-fee-list.http';
@@ -30,17 +28,13 @@ import { PRINT_SCENARIO } from '#/utils/print/constants/print-scenario';
 import { medicalTechWorkstationContextKey } from '../workbench-tab.config';
 import {
   buildMedicalTechFeeSummaryLines,
-  formatMedicalTechFeeConfirmLabel,
   formatMedicalTechFeeMoney,
   formatMedicalTechFeeSum,
   matchMedicalTechFeeChargeStatus,
-  matchMedicalTechFeeConfirm,
   matchMedicalTechFeeKeyword,
   MT_FEE_CHARGE_STATUS_OPTIONS,
-  MT_FEE_CONFIRM_OPTIONS,
   MT_FEE_PRESENTATION_OPTIONS,
   type MedicalTechFeeChargeStatusFilter,
-  type MedicalTechFeeConfirmFilter,
   type MedicalTechFeePresentationMode,
   type MedicalTechFeeSummaryLine,
 } from './medical-tech-fee-list.utils';
@@ -55,32 +49,26 @@ if (!ctx) {
   throw new Error('MedicalTechFeeListPanel 须在 MedicalTechWorkstation 壳内使用');
 }
 
-const { encounterScope, selectedEncounterId } = ctx;
+const { encounterScope, selectedEncounterId, contentReloadToken } = ctx;
 
-/** 住院才有确费/划价时间；门诊费用清单不展示这些业务 */
+/** 住院才有计费人/划价时间列；门诊费用清单不展示这些业务 */
 const isInpatient = computed(() => encounterScope.value === 'INPATIENT');
 
 const allFeeRows = ref<MedicalTechFeeItemRowDto[]>([]);
 const sumAmount = ref<null | number | string>(null);
 const keyword = ref('');
 const chargeStatusFilter = ref<MedicalTechFeeChargeStatusFilter>('ALL');
-const confirmFilter = ref<MedicalTechFeeConfirmFilter>('ALL');
 const presentationMode = ref<MedicalTechFeePresentationMode>('DETAIL');
 const appliedKeyword = ref('');
 const appliedChargeStatus = ref<MedicalTechFeeChargeStatusFilter>('ALL');
-const appliedConfirm = ref<MedicalTechFeeConfirmFilter>('ALL');
 
-/** 当前筛后明细 */
+/** 当前筛后明细（确费筛已下线，出院以医技执行为准） */
 const filteredDetailRows = computed(() => {
-  // 门诊只筛项目+收费状态；确费筛仅住院
   return allFeeRows.value.filter((row) => {
     if (!matchMedicalTechFeeKeyword(row, appliedKeyword.value)) {
       return false;
     }
     if (!matchMedicalTechFeeChargeStatus(row, appliedChargeStatus.value)) {
-      return false;
-    }
-    if (isInpatient.value && !matchMedicalTechFeeConfirm(row, appliedConfirm.value)) {
       return false;
     }
     return true;
@@ -112,11 +100,6 @@ const filteredSumDisplay = computed(() => {
   return formatMedicalTechFeeSum(sum);
 });
 
-/** 存在尚未确费行时允许点一键确费（仅住院；对全量本科相关，不限当前筛） */
-const hasUnconfirmed = computed(
-  () => isInpatient.value && allFeeRows.value.some((row) => row && !row.feeConfirmerId),
-);
-
 const showEmptyState = computed(
   () => !listLoading.value && activeLineCount.value === 0 && Boolean(selectedEncounterId.value),
 );
@@ -127,15 +110,6 @@ const { run: runListFee, loading: listLoading } = useRequest(httpListMedicalTech
   onSuccess: (data) => {
     allFeeRows.value = data.rows ?? [];
     sumAmount.value = data.sumAmount ?? null;
-  },
-});
-
-const { run: runConfirm, loading: confirmLoading } = useRequest(httpConfirmMedicalTechFees, {
-  manual: true,
-  showErrorMessage: true,
-  onSuccess: (data) => {
-    ElMessage.success(data.message || `确费成功（${data.confirmedCount ?? 0} 行）`);
-    void loadFeeList();
   },
 });
 
@@ -151,7 +125,9 @@ const { run: runPrint, loading: printLoading } = useRequest(httpPrintMedicalTech
   },
 });
 
-/** 有就诊时拉取费用清单；无就诊或门禁失败则清空 */
+/**
+ * 有就诊时拉取费用清单；无就诊或门禁失败则清空。
+ */
 async function loadFeeList() {
   const encounterId = preserveApiIdForRequest(selectedEncounterId.value);
   if (!encounterId) {
@@ -170,29 +146,34 @@ async function loadFeeList() {
   }
 }
 
-/** 应用项目/收费状态/确费筛并查询（本地过滤；列表已按就诊拉取） */
+/**
+ * 应用项目/收费状态筛并查询（本地过滤；列表已按就诊拉取）。
+ */
 function handleQuery() {
   appliedKeyword.value = keyword.value.trim();
   appliedChargeStatus.value = chargeStatusFilter.value;
-  appliedConfirm.value = confirmFilter.value;
   if (allFeeRows.value.length === 0) {
     void loadFeeList();
   }
 }
 
-/** 重置筛选项为默认 */
+/**
+ * 重置筛选并刷新。
+ */
 function handleReset() {
   keyword.value = '';
   chargeStatusFilter.value = 'ALL';
-  confirmFilter.value = 'ALL';
   appliedKeyword.value = '';
   appliedChargeStatus.value = 'ALL';
-  appliedConfirm.value = 'ALL';
   presentationMode.value = 'DETAIL';
   void loadFeeList();
 }
 
-/** 切换明细/汇总页签 */
+/**
+ * 切换明细/汇总页签。
+ *
+ * @param mode Tab 名
+ */
 function handlePresentationModeChange(mode: string | number) {
   const next = String(mode ?? '');
   if (next === 'DETAIL' || next === 'SUMMARY') {
@@ -200,37 +181,9 @@ function handlePresentationModeChange(mode: string | number) {
   }
 }
 
-/** 一键确费：仅住院；先弹确认，再对本页未确费行批量打戳 */
-async function handleConfirmFees() {
-  if (!isInpatient.value) {
-    return;
-  }
-  const encounterId = preserveApiIdForRequest(selectedEncounterId.value);
-  if (!encounterId) {
-    ElMessage.warning('请先选择患者');
-    return;
-  }
-  const pendingCount = allFeeRows.value.filter((row) => row && !row.feeConfirmerId).length;
-  if (pendingCount <= 0) {
-    ElMessage.warning('没有待确费明细');
-    return;
-  }
-  try {
-    await ElMessageBox.confirm(
-      `确认对本患者 ${pendingCount} 条未确费明细执行一键确费？`,
-      '一键确费',
-      { type: 'warning' },
-    );
-  } catch {
-    return;
-  }
-  await runConfirm({
-    encounterId,
-    encounterScope: encounterScope.value,
-  });
-}
-
-/** 打印当前筛后费用明细（空筛=本科相关全集） */
+/**
+ * 打印当前筛后费用明细（空筛=本科相关全集）。
+ */
 async function handlePrint() {
   const encounterId = preserveApiIdForRequest(selectedEncounterId.value);
   if (!encounterId) {
@@ -258,14 +211,12 @@ async function handlePrint() {
 }
 
 watch(
-  [selectedEncounterId, encounterScope],
+  [selectedEncounterId, encounterScope, contentReloadToken],
   () => {
     keyword.value = '';
     chargeStatusFilter.value = 'ALL';
-    confirmFilter.value = 'ALL';
     appliedKeyword.value = '';
     appliedChargeStatus.value = 'ALL';
-    appliedConfirm.value = 'ALL';
     presentationMode.value = 'DETAIL';
     void loadFeeList();
   },
@@ -292,17 +243,8 @@ watch(
             </span>
           </div>
         </div>
-        <ElButton
-          v-if="isInpatient"
-          type="primary"
-          :loading="confirmLoading"
-          :disabled="!selectedEncounterId || !hasUnconfirmed || listLoading"
-          @click="handleConfirmFees"
-        >
-          一键确费
-        </ElButton>
       </div>
-      <!-- 收费状态独立筛；确费筛仅住院（门诊无确费业务） -->
+      <!-- 收费状态独立筛；一键确费/确费筛已下线（出院以医技执行为准） -->
       <div class="mt-fee-query">
         <label class="mt-fee-field">
           <span>项目查询</span>
@@ -320,17 +262,6 @@ watch(
           <ElSelect v-model="chargeStatusFilter" class="!w-32" @change="handleQuery">
             <ElOption
               v-for="opt in MT_FEE_CHARGE_STATUS_OPTIONS"
-              :key="opt.code"
-              :label="opt.display"
-              :value="opt.code"
-            />
-          </ElSelect>
-        </label>
-        <label v-if="isInpatient" class="mt-fee-field">
-          <span>确费状态</span>
-          <ElSelect v-model="confirmFilter" class="!w-32" @change="handleQuery">
-            <ElOption
-              v-for="opt in MT_FEE_CONFIRM_OPTIONS"
               :key="opt.code"
               :label="opt.display"
               :value="opt.code"
@@ -415,22 +346,6 @@ watch(
           </template>
         </ElTableColumn>
         <ElTableColumn align="center" label="收费状态" prop="chargeStatusEnumText" min-width="88" />
-        <ElTableColumn v-if="isInpatient" align="center" label="确费" min-width="64">
-          <template #default="{ row }">
-            {{ formatMedicalTechFeeConfirmLabel(row) }}
-          </template>
-        </ElTableColumn>
-        <ElTableColumn
-          v-if="isInpatient"
-          align="center"
-          label="确费人"
-          min-width="80"
-          show-overflow-tooltip
-        >
-          <template #default="{ row }">
-            {{ row.feeConfirmerName || '—' }}
-          </template>
-        </ElTableColumn>
         <ElTableColumn
           v-if="isInpatient"
           align="center"
@@ -450,6 +365,30 @@ watch(
           min-width="148"
           show-overflow-tooltip
         />
+        <!-- 医技执行人/执行时间：与计费人分列；未执行显示 — -->
+        <ElTableColumn
+          v-if="isInpatient"
+          align="center"
+          label="（医技）执行人"
+          min-width="100"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">
+            {{ row.medicalTechPerformerName || '—' }}
+          </template>
+        </ElTableColumn>
+        <ElTableColumn
+          v-if="isInpatient"
+          align="center"
+          label="执行时间"
+          prop="medicalTechExecutedTime"
+          min-width="148"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">
+            {{ row.medicalTechExecutedTime || '—' }}
+          </template>
+        </ElTableColumn>
         <ElTableColumn
           align="center"
           label="结算时间"

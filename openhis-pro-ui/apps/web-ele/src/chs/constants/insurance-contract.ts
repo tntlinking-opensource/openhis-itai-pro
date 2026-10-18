@@ -4,7 +4,7 @@
  * 进销存运维另提供「全部」哨兵（{@link INVENTORY_OPS_CONTRACT_ALL}），仍不含自费项。
  */
 
-/** {@link com.openhis.health.domain.share.enums.ContractCategory#SELF_CHARGE} */
+/** {@link com.zxplat.domain.share.enums.ContractCategory#SELF_CHARGE} */
 export const CONTRACT_CATEGORY_SELF_CHARGE = 'SELF_CHARGE';
 
 /** 历史主数据：{@code ChargeTypeCategory} 自费 numeric code */

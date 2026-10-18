@@ -79,6 +79,7 @@ const organizationOptions = ref<ApiOptionItem[]>([]);
 const practitionerOptions = ref<ApiOptionItem[]>([]);
 const doctorCards = ref<DoctorWorkloadCardView[]>([]);
 const summaryTotals = ref<PractitionerWorkloadSummaryTotalsDto>({});
+const discountFeatureEnabled = ref(false);
 const cardsLoading = ref(false);
 const detailDialogVisible = ref(false);
 const selectedDoctor = ref<DoctorWorkloadCardView | null>(null);
@@ -113,6 +114,7 @@ const { run: runInit, loading: initLoading } = useRequest(loadPractitionerWorklo
     }
     queryParams.dateFrom = data?.defaultDateFrom ?? queryParams.dateFrom;
     queryParams.dateTo = data?.defaultDateTo ?? queryParams.dateTo;
+    discountFeatureEnabled.value = Boolean(data?.discountFeatureEnabled);
   },
 });
 
@@ -395,6 +397,8 @@ onMounted(async () => {
     <PractitionerWorkloadTotalsBar
       :summary-totals="summaryTotals"
       :doctor-count="doctorCountLabel"
+      :discount-feature-enabled="discountFeatureEnabled"
+    />
     />
 
     <div class="practitioner-workload-panel__list-wrap">
@@ -412,6 +416,7 @@ onMounted(async () => {
           :key="card.practitionerId"
           :practitioner-name="card.practitionerName"
           :summary-totals="card.summaryTotals"
+          :discount-feature-enabled="discountFeatureEnabled"
           @click="openDoctorDetail(card)"
         />
       </div>
@@ -424,6 +429,7 @@ onMounted(async () => {
       :practitioner-id="selectedDoctor.practitionerId"
       :practitioner-name="selectedDoctor.practitionerName"
       :summary-totals="selectedDoctor.summaryTotals"
+      :discount-feature-enabled="discountFeatureEnabled"
     />
   </div>
 </template>

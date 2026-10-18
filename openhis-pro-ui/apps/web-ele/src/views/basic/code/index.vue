@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import type { TableColumn, TreeNodeData } from '@vben-core/table-layout-ui';
+import type { TableColumn, TreeNodeData } from '@zxplat-core/table-layout-ui';
 
 import type { CodeListParams, CodeListResponse } from '#/api/basic/code';
 
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { ElButton, ElMessage, ElMessageBox } from 'element-plus';
 
@@ -20,10 +20,20 @@ import {
   getEnumDictListApi,
   refreshConceptCacheApi,
 } from '#/api/basic/code';
+import {
+  isPageNoDeleteDeactivateCodeSystem,
+  isPageReadonlyCodeSystem,
+} from '#/constants/domain/terminology-code-system';
 
 import { BASIC_TABLE_MAX_HEIGHT } from '../basic-table-max-height';
 import ConceptEditDialog from './concept-edit-dialog.vue';
 import EditDialog from './edit-dialog.vue';
+
+/** 系统预置字典不可维护时的统一提示文案。 */
+const MSG_READONLY_CODE_SYSTEM = '该字典为系统预置，不允许新增/编辑/删除';
+
+/** 关键字典禁止删除/停用时的统一提示文案。 */
+const MSG_NO_DELETE_DEACTIVATE_CODE_SYSTEM = '该字典为系统关键口径，不允许删除或停用';
 
 defineOptions({
   name: 'CodeList',
@@ -41,8 +51,20 @@ const siderData = ref<TreeNodeData[]>([]);
 const enumSiderData = ref<TreeNodeData[]>([]);
 const sideQueryLoading = ref(false);
 const selectedCodeId = ref<string>('');
+/** 当前选中编码体系 name（机器可读），用于只读预置字典门禁。 */
+const selectedCodeName = ref<string>('');
 const selectedEnumName = ref<string>('');
 const activeSideTab = ref<'codesystem' | 'enum'>('codesystem');
+
+/** 当前选中的字典系统是否为页面只读预置术语。 */
+const isSelectedReadonlyCodeSystem = computed(() =>
+  isPageReadonlyCodeSystem(selectedCodeName.value),
+);
+
+/** 当前选中的字典系统是否禁止删除/停用概念。 */
+const isSelectedNoDeleteDeactivateCodeSystem = computed(() =>
+  isPageNoDeleteDeactivateCodeSystem(selectedCodeName.value),
+);
 
 const allConceptData = ref<ConceptItem[]>([]);
 const tableData = ref<ConceptItem[]>([]);
@@ -169,9 +191,11 @@ const handleSideQuery = async (node: TreeNodeData) => {
   if (activeSideTab.value === 'codesystem') {
     selectedEnumName.value = '';
     selectedCodeId.value = node.id as string;
+    selectedCodeName.value = (node.name as string) || '';
     await loadConceptList(node.id as string);
   } else {
     selectedCodeId.value = '';
+    selectedCodeName.value = '';
     selectedEnumName.value = node.id as string;
     await loadEnumConceptList(node.id as string);
   }
@@ -277,6 +301,10 @@ const handleAddConcept = () => {
     ElMessage.warning('请先选择左侧代码系统');
     return;
   }
+  if (isSelectedReadonlyCodeSystem.value) {
+    ElMessage.warning(MSG_READONLY_CODE_SYSTEM);
+    return;
+  }
   conceptDialogFormData.value = {};
   conceptDialogVisible.value = true;
 };
@@ -348,6 +376,10 @@ const handleRefreshConceptCache = async () => {
 };
 
 const handleEditCodeSystem = (data: TreeNodeData) => {
+  if (isPageReadonlyCodeSystem(data?.name as string)) {
+    ElMessage.warning(MSG_READONLY_CODE_SYSTEM);
+    return;
+  }
   dialogFormData.value = {
     id: data.id as string,
     name: data.name,
@@ -364,6 +396,10 @@ const handleDeleteCodeSystem = async (data: TreeNodeData) => {
     ElMessage.warning('无法获取代码系统ID');
     return;
   }
+  if (isPageReadonlyCodeSystem(data?.name as string)) {
+    ElMessage.warning(MSG_READONLY_CODE_SYSTEM);
+    return;
+  }
   try {
     await ElMessageBox.confirm('确定要删除该代码系统及其下所有编码吗？', '提示', {
       confirmButtonText: '确定',
@@ -377,6 +413,7 @@ const handleDeleteCodeSystem = async (data: TreeNodeData) => {
     // 如果当前选中的代码系统被删除，重置选中和列表数据
     if (selectedCodeId.value === data.id) {
       selectedCodeId.value = '';
+      selectedCodeName.value = '';
       tableData.value = [];
       total.value = 0;
     }
@@ -411,6 +448,10 @@ const handleEdit = (row: ConceptItem) => {
     ElMessage.warning('枚举字典不支持编辑');
     return;
   }
+  if (isSelectedReadonlyCodeSystem.value) {
+    ElMessage.warning(MSG_READONLY_CODE_SYSTEM);
+    return;
+  }
   conceptDialogFormData.value = { ...row };
   conceptDialogVisible.value = true;
 };
@@ -418,6 +459,14 @@ const handleEdit = (row: ConceptItem) => {
 const handleDelete = async (row: ConceptItem) => {
   if (activeSideTab.value === 'enum') {
     ElMessage.warning('枚举字典不支持删除');
+    return;
+  }
+  if (isSelectedReadonlyCodeSystem.value) {
+    ElMessage.warning(MSG_READONLY_CODE_SYSTEM);
+    return;
+  }
+  if (isSelectedNoDeleteDeactivateCodeSystem.value) {
+    ElMessage.warning(MSG_NO_DELETE_DEACTIVATE_CODE_SYSTEM);
     return;
   }
   if (!row.id) {
@@ -485,11 +534,8 @@ onMounted(() => {
       <template #side-header>
         <el-tabs v-model="activeSideTab" class="w-full">
           <el-tab-pane label="字典系统" name="codesystem" />
-          <el-tab-pane label="枚举字典" name="enum" />
         </el-tabs>
-        <ElButton v-if="activeSideTab === 'codesystem'" type="primary" @click="handleAdd"
-          >新增</ElButton
-        >
+        <ElButton type="primary" @click="handleAdd">新增</ElButton>
       </template>
 
       <template #toolbar-actions>
@@ -501,7 +547,11 @@ onMounted(() => {
         >
           刷新缓存
         </ElButton>
-        <ElButton v-if="activeSideTab === 'codesystem'" type="primary" @click="handleAddConcept">
+        <ElButton
+          v-if="activeSideTab === 'codesystem' && !isSelectedReadonlyCodeSystem"
+          type="primary"
+          @click="handleAddConcept"
+        >
           新增
         </ElButton>
       </template>
@@ -514,8 +564,21 @@ onMounted(() => {
       </template>
 
       <template #action="{ row }">
-        <ElButton type="primary" link @click.stop="handleEdit(row)"> 编辑 </ElButton>
-        <ElButton type="danger" link @click.stop="handleDelete(row)"> 删除 </ElButton>
+        <template v-if="isSelectedReadonlyCodeSystem">
+          <span class="readonly-tip">只读</span>
+        </template>
+        <template v-else>
+          <ElButton type="primary" link @click.stop="handleEdit(row)"> 编辑 </ElButton>
+          <ElButton
+            v-if="!isSelectedNoDeleteDeactivateCodeSystem"
+            type="danger"
+            link
+            @click.stop="handleDelete(row)"
+          >
+            删除
+          </ElButton>
+          <span v-else class="readonly-tip">不可删除</span>
+        </template>
       </template>
     </TableLayout>
 
@@ -541,5 +604,10 @@ onMounted(() => {
   overflow: visible;
   text-overflow: unset;
   word-break: break-all;
+}
+
+.readonly-tip {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
 }
 </style>

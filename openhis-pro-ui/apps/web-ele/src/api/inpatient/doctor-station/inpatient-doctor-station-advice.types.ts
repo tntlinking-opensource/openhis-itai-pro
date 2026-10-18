@@ -78,6 +78,14 @@ export interface InpatientDoctorStationAdviceRowDto extends DoctorStationAdviceR
   oralPackageSplitUnitDisplay?: string;
   /** 预计下次领盒日 yyyy-MM-dd */
   oralPackageNextClaimDate?: string;
+  /**
+   * 医技计划执行次数（仅执行科室=TECH 的诊疗行；口径同医技站 plannedExecutionCount）
+   */
+  techPlannedExecutionCount?: number | null;
+  /** 医技侧已完成次数（Procedure.org_id=SR 执行 TECH 科） */
+  techCompletedCount?: number | null;
+  /** 医技侧已取消次数（同 TECH 轴） */
+  techCancelledCount?: number | null;
   /** 出院方式 code（出院医嘱；EncounterHistory 里程碑） */
   outWayCode?: string;
   /** 出院方式展示名 */
@@ -241,6 +249,10 @@ export interface CreateDischargeInpatientDoctorStationAdviceRequest {
   outWayCode: string;
   plannedDischargeTime?: string;
   reasonText?: string;
+  /** 死亡时间（出院方式为死亡时必填；回写患者表） */
+  deceasedDate?: string;
+  /** 死亡原因（出院方式为死亡时选填；回写患者表） */
+  deceasedReason?: string;
   sourceOrgId?: string;
   sourceLocationId?: string;
   targetOrgId?: string;

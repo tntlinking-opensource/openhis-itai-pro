@@ -57,6 +57,7 @@ import {
   totalAmountUnitDisplayLabel,
   unitCodeByBandKind,
 } from './medication-unit-bands';
+import { resolveServiceBillingQuantity } from './service-quantity-calc';
 
 /** 组套套用：药品库存不足明细 */
 export interface OrderTemplateMedicationStockIssue {
@@ -871,7 +872,17 @@ function buildTemplateConfirmRows(
   });
 }
 
-/** 确认弹窗：按保留组套行重建暂存批次并写入修改后的数量 */
+/**
+ * 确认弹窗：按保留组套行重建暂存批次并写入修改后的数量。
+ *
+ * <p>诊疗行弹窗改的是<strong>单次执行数量</strong>；落库 `servicePayload.quantity` 须按
+ * **BR-ORD-036** 乘以已组装的 `executionCount`（计费总量 = 单次 × 次数）。
+ * 药/材行弹窗改的是总量，直接覆盖对应 payload.quantity。</p>
+ *
+ * @param draftLines 预组装暂存批次（诊疗行已带 executionCount 与初算总量）
+ * @param templateRows 确认弹窗保留/改数量后的组套行
+ * @returns 按确认结果重建的暂存批次
+ */
 export function buildDraftLinesFromConfirmedTemplateRows(
   draftLines: DoctorStationAdviceDraftLineRequest[],
   templateRows: OrderTemplateApplyConfirmTemplateRow[],
@@ -884,27 +895,39 @@ export function buildDraftLinesFromConfirmedTemplateRows(
         return undefined;
       }
       const qty = Number.isFinite(row.quantity) && row.quantity > 0 ? row.quantity : 1;
+      // 诊疗：弹窗 quantity=单次量；账单 quantity=单次×执行次数（BR-ORD-036）
       if (row.lineKind === 'SERVICE') {
+        if (!source.servicePayload) {
+          return source;
+        }
+        const executionCount = source.servicePayload.executionCount;
+        const billingQty = resolveServiceBillingQuantity(qty, executionCount);
+        let quantity = qty;
+        if (billingQty !== undefined) {
+          quantity = billingQty;
+        }
         return {
           ...source,
-          servicePayload: source.servicePayload
-            ? { ...source.servicePayload, quantity: qty }
-            : source.servicePayload,
+          servicePayload: { ...source.servicePayload, quantity },
         };
       }
+      // 耗材：弹窗 quantity 即总量
       if (row.lineKind === 'DEVICE') {
+        if (!source.devicePayload) {
+          return source;
+        }
         return {
           ...source,
-          devicePayload: source.devicePayload
-            ? { ...source.devicePayload, quantity: qty }
-            : source.devicePayload,
+          devicePayload: { ...source.devicePayload, quantity: qty },
         };
+      }
+      // 药品：弹窗 quantity 即总量
+      if (!source.medicationPayload) {
+        return source;
       }
       return {
         ...source,
-        medicationPayload: source.medicationPayload
-          ? { ...source.medicationPayload, quantity: qty }
-          : source.medicationPayload,
+        medicationPayload: { ...source.medicationPayload, quantity: qty },
       };
     })
     .filter((line): line is DoctorStationAdviceDraftLineRequest => line !== undefined);
@@ -1042,7 +1065,10 @@ export async function prepareOrderTemplateApplyConfirm(
   };
 }
 
-/** 组套套用至当前就诊草稿（DIRECT_ONLY：不解析用法绑定，避免二次带出） */
+/**
+ * 组套套用至当前就诊草稿（DIRECT_ONLY：暂存不解析用法绑定）。
+ * 签发侧另见 order-template-origin-cache + BR-ORD-038，禁止再调绑定/合管带出。
+ */
 export async function applyOrderTemplateToAdviceDraft(
   params: ApplyOrderTemplateParams,
 ): Promise<ApplyOrderTemplateResult> {

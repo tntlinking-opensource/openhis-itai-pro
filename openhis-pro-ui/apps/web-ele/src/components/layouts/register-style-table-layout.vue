@@ -3,7 +3,7 @@
  * 门诊挂号列表皮肤封装：对齐 `outpatient/charge/register/components/history.vue` 的 TableLayout 视觉。
  * 收费域列表统一使用本组件，避免 ElTable / 默认 TableLayout 边框斑马纹风格漂移。
  */
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { computed, ref, useAttrs, useSlots } from 'vue';
 

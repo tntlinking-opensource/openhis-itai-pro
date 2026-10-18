@@ -35,6 +35,8 @@ export interface LoadPractitionerWorkloadPageInitResponse {
   defaultDateFrom?: string;
   defaultDateTo?: string;
   defaultActiveTab?: string;
+  /** 是否已配置有效折扣内容。 */
+  discountFeatureEnabled?: boolean;
 }
 
 export interface PractitionerWorkloadQueryFilter {
@@ -52,6 +54,8 @@ export interface PractitionerWorkloadFinTypeRowDto {
   finTypeCode?: string;
   finTypeDisplay?: string;
   saleAmount?: number | string;
+  discountAmount?: number | string;
+  actualReceivedAmount?: number | string;
   purchaseAmount?: number | string;
 }
 
@@ -63,6 +67,8 @@ export interface PractitionerWorkloadRegistrationRowDto {
 
 export interface PractitionerWorkloadSummaryTotalsDto {
   saleAmountTotal?: number | string;
+  discountAmountTotal?: number | string;
+  actualReceivedAmountTotal?: number | string;
   purchaseAmountTotal?: number | string;
   registrationNetCountTotal?: number;
   /** 接诊人数（distinct encounter）。 */
@@ -94,6 +100,8 @@ export interface PractitionerWorkloadDetailLineDto {
   practitionerName?: string;
   enteredDate?: string;
   saleAmount?: number | string;
+  discountAmount?: number | string;
+  actualReceivedAmount?: number | string;
   purchaseAmount?: number | string;
 }
 

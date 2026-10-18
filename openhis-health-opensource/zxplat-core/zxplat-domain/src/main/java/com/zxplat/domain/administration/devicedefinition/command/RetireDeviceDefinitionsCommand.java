@@ -1,0 +1,28 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.zxplat.domain.administration.devicedefinition.command;
+
+import com.zxplat.domain.share.command.BatchCommand;
+import lombok.Getter;
+import lombok.Setter;
+
+/**
+ * 批量废止医疗器械目录命令。
+ */
+@Getter
+@Setter
+public class RetireDeviceDefinitionsCommand extends BatchCommand<RetireDeviceDefinitionsCommand.Item> {
+    /** 操作人标识。 */
+    private Long operatorId;
+    /**
+     * 批量命令明细项。
+     */
+    @Getter
+    @Setter
+    public static class Item {
+        /** 待停用目录标识。 */
+        private Long id;
+    }
+}

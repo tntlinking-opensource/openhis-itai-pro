@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { ChargeType } from '#/api/core/common';
 import type {
@@ -14,7 +14,7 @@ import type { DetailCompareViewMode } from './detail-compare';
 
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import {
   classifyDetailMemo,

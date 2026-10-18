@@ -1,8 +1,8 @@
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 import { useAuthStore } from '#/store';
 
-const STORAGE_PREFIX = 'openhis:pharmacy:preparer-preference';
+const STORAGE_PREFIX = 'zxplat:pharmacy:preparer-preference';
 
 /** 当前登录上下文下的 localStorage 键 */
 export function buildPreparerPreferenceStorageKey(tenantId: string, userId: string): string {

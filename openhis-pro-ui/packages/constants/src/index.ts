@@ -1,2 +1,2 @@
 export * from './core';
-export * from '@vben-core/shared/constants';
+export * from '@zxplat-core/shared/constants';

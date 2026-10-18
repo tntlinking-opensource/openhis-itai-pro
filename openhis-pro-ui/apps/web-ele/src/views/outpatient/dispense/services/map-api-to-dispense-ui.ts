@@ -5,7 +5,7 @@ import type {
   PendingDispenseEncounterQueueRowDto,
 } from '#/api/outpatient-pharmacy-dispense/outpatient-pharmacy-dispense.types';
 
-import { formatDateTime } from '@vben/utils';
+import { formatDateTime } from '@zxplat/utils';
 
 import { unionDiagnosisDisplayNamesOrDash } from '#/utils/diagnosis/union-diagnosis-display-names';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
@@ -161,6 +161,7 @@ export function mapSlipRowsToPrescriptionBlocks(
         unitText: line.unitText,
         packageUnitCode: line.packageUnitCode,
         packageUnitRatio: line.packageUnitRatio,
+        packageSplitRatioText: line.packageSplitRatioText,
         splitUnitCode: line.splitUnitCode,
         doseUnitCode: line.doseUnitCode,
         doseUnitText: line.doseUnitText,

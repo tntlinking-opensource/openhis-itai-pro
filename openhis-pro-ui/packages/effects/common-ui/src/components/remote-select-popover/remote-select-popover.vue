@@ -3,8 +3,8 @@ import type { VNode } from 'vue';
 
 import { computed, onMounted, ref, watch } from 'vue';
 
-import { Input } from '@vben-core/shadcn-ui';
-import { cn, isFunction } from '@vben-core/shared/utils';
+import { Input } from '@zxplat-core/shadcn-ui';
+import { cn, isFunction } from '@zxplat-core/shared/utils';
 
 import { ElPopover, ElTable, ElTableColumn } from 'element-plus';
 

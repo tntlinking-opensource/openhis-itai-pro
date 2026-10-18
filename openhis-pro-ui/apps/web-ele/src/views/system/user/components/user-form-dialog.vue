@@ -11,7 +11,7 @@ import type { UserInfo } from '#/api/user/user';
 
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
-import { useVbenModal } from '@vben/common-ui';
+import { useVbenModal } from '@zxplat/common-ui';
 
 import { ElButton, ElMessage, ElUpload } from 'element-plus';
 

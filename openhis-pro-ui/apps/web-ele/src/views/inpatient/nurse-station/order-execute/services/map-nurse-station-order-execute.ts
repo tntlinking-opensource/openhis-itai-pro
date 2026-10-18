@@ -12,7 +12,7 @@ import type {
 } from '#/api/doctor-station/advice.types';
 import type { DrugGroupDisplayItem, DrugGroupKey } from '#/utils/doctor-station/drug-group-table';
 
-import { formatDateTime } from '@vben/utils';
+import { formatDateTime } from '@zxplat/utils';
 
 import dayjs from 'dayjs';
 
@@ -83,7 +83,7 @@ export interface NurseStationOrderExecuteTableRow {
   stopTime?: string;
   /** 给药途径 code（打印贴/筛选用，禁止用 usageDisplay） */
   methodCode?: string;
-  /** 是否输液相关（与 methodCode 一并用于贴签判定） */
+  /** 是否输液（瓶贴判定仅看此标记，不按用法 methodCode） */
   infusionFlag?: boolean;
   /**
    * 频次 code（输液贴按每日次数拆张；禁止用 frequencyDisplay）
@@ -111,6 +111,8 @@ export interface NurseStationOrderExecuteTableRow {
   serviceRequestDetails?: ServiceRequestDetailSummaryDto[];
   tcmFlag?: boolean;
   prescriptionNo?: string;
+  /** 申请业务号（采血贴/LIS applyNo） */
+  busNo?: string;
   lineRequestIds?: string[];
   /** 成组括线展示项（同 groupId 合并后） */
   groupItems?: DrugGroupDisplayItem[];
@@ -213,15 +215,27 @@ function orderTypeToShortLabel(orderType: string): string {
   return orderType || '医嘱';
 }
 
-/** 类型列：优先后端 orderKindDisplay，回落类目/orderType（嘱托禁止显示「诊疗」） */
+/**
+ * 类型列：优先后端 orderKindDisplay，回落目录类目（检验/检查/治疗/手术/麻醉…）。
+ *
+ * @param dto 执行行 DTO
+ * @returns 类型列文案
+ */
 function resolveExecuteOrderKindLabel(dto: NurseStationOrderExecuteRowDto): string {
   const fromApi = String(dto.orderKindDisplay ?? '').trim();
+  // 后端已给具体类目文案则直接用
   if (fromApi) return fromApi;
   const category = String(dto.categoryEnum ?? '').trim();
   if (category === '34') return '出院';
   if (category === '32') return '转科';
   if (category === '26') return '护理';
   if (category === '52') return '嘱托';
+  if (category === SERVICE_CATEGORY_PROOF) return '检验';
+  if (category === SERVICE_CATEGORY_TEST) return '检查';
+  if (category === SERVICE_CATEGORY_TREATMENT) return '治疗';
+  if (category === SERVICE_CATEGORY_PROCEDURE) return '手术';
+  if (category === SERVICE_CATEGORY_ANESTHESIA) return '麻醉';
+  // 未识别类目回落 orderType 短文案
   return orderTypeToShortLabel(String(dto.orderType ?? ''));
 }
 
@@ -262,7 +276,12 @@ function buildExecuteContentTitle(dto: NurseStationOrderExecuteRowDto): string {
   }
   const name = String(dto.adviceDisplayName ?? '').trim();
   const spec = String(dto.specificationText ?? '').trim();
-  const title = buildMedicationContentTitleWithPackageSplit(name, spec, dto.packageSplitRatioText);
+  const title = buildMedicationContentTitleWithPackageSplit(
+    name,
+    spec,
+    dto.packageSplitRatioText,
+    dto.infusionFlag === true,
+  );
   return title || '—';
 }
 
@@ -291,6 +310,7 @@ function buildExecuteDosageDisplay(dto: NurseStationOrderExecuteRowDto): string 
       firstDose: dto.firstDose,
       firstDoseUnitCode: dto.firstDoseUnitCode,
       firstDoseUnitName: dto.firstDoseUnitName,
+      injectFlag: dto.infusionFlag === true,
     });
     if (longTermLine) return longTermLine;
   }
@@ -465,7 +485,7 @@ export function resolveExecuteBindQuantityValue(bind: NurseStationOrderExecuteBi
 }
 
 /** 长期医嘱带出数量本地记忆（按医嘱+目标项记住上次手改量） */
-const LONG_TERM_BIND_QTY_MEMORY_KEY = 'openhis.ip.ns.order-execute.long-bind-qty';
+const LONG_TERM_BIND_QTY_MEMORY_KEY = 'zxplat.ip.ns.order-execute.long-bind-qty';
 
 /** 长期带出数量记忆键：orderId + 诊疗/耗材目标 */
 export function buildLongTermBindQtyMemoryKey(
@@ -697,6 +717,7 @@ export function mapExecuteRowDtoToTableRow(
     serviceRequestDetails: dto.serviceRequestDetails ?? undefined,
     tcmFlag: dto.tcmFlag === true ? true : undefined,
     prescriptionNo: String(dto.prescriptionNo ?? '').trim() || undefined,
+    busNo: String(dto.busNo ?? '').trim() || undefined,
     lineRequestIds: mapLineRequestIds(dto.lineRequestIds),
     skinTestFlag: dto.skinTestFlag === true ? true : undefined,
     skinTestOutcomeCode: String(dto.skinTestOutcomeCode ?? '').trim() || undefined,
@@ -719,6 +740,7 @@ function executeDtoToDrugGroupItem(dto: NurseStationOrderExecuteRowDto): DrugGro
           firstDose: dto.firstDose,
           firstDoseUnitCode: dto.firstDoseUnitCode,
           firstDoseUnitName: dto.firstDoseUnitName,
+          injectFlag: dto.infusionFlag === true,
         })
       : '';
   const doseText = longTermDoseLine || String(dto.dosageDisplay ?? '').trim();
@@ -727,6 +749,7 @@ function executeDtoToDrugGroupItem(dto: NurseStationOrderExecuteRowDto): DrugGro
     selectedDrugSpec: mergePackageSplitIntoSpec(
       String(dto.specificationText ?? '').trim(),
       dto.packageSplitRatioText,
+      dto.infusionFlag === true,
     ),
     skinTestOutcomeCode: String(dto.skinTestOutcomeCode ?? '').trim() || undefined,
     skinTestOutcomeText: String(dto.skinTestOutcomeText ?? '').trim() || undefined,
@@ -779,8 +802,129 @@ function pickGroupSpeedFromExecuteSlice(slice: readonly NurseStationOrderExecute
 }
 
 /**
+ * 开立日首次槽默认 actualTime 延后分钟（与后端 FIRST_EXECUTION_DEFAULT_ACTUAL_DELAY_MINUTES / BR-IP-EXE-032 对齐）。
+ */
+const FIRST_EXECUTION_DEFAULT_ACTUAL_DELAY_MINUTES = 2;
+
+/**
+ * 成组/方级开立轴最晚时刻（YYYY-MM-DD HH:mm:ss）；无有效开立时 undefined。
+ *
+ * @param slice 同组连续 DTO
+ */
+function resolveLatestExecuteGroupOpenedTime(
+  slice: readonly NurseStationOrderExecuteRowDto[],
+): string | undefined {
+  let latest: dayjs.Dayjs | null = null;
+  for (const dto of slice) {
+    const raw = String(dto.reqOpenedTime ?? '').trim();
+    if (!raw) {
+      continue;
+    }
+    const parsed = dayjs(raw);
+    if (!parsed.isValid()) {
+      continue;
+    }
+    if (latest === null || parsed.isAfter(latest)) {
+      latest = parsed;
+    }
+  }
+  if (latest === null) {
+    return undefined;
+  }
+  return latest.format('YYYY-MM-DD HH:mm:ss');
+}
+
+/**
+ * 由开立时刻推首次槽建议 actualTime（开立+延后分钟；跨日钳开立日 23:59:59）。
+ *
+ * @param openedTime 开立时刻
+ */
+function resolveFirstSlotDefaultActualFromOpened(openedTime: string): string {
+  const opened = dayjs(openedTime);
+  if (!opened.isValid()) {
+    return String(openedTime ?? '').trim();
+  }
+  const delayed = opened.add(FIRST_EXECUTION_DEFAULT_ACTUAL_DELAY_MINUTES, 'minute');
+  // 跨日则钳开立日末，与 LongTermFirstExecutionSlotSupport 同口径
+  if (!delayed.isSame(opened, 'day')) {
+    return opened.hour(23).minute(59).second(59).format('YYYY-MM-DD HH:mm:ss');
+  }
+  return delayed.format('YYYY-MM-DD HH:mm:ss');
+}
+
+/**
+ * 待执行槽：defaultActualTime 早于组内最晚开立时抬到最晚开立+延后分钟。
+ *
+ * @param slots 槽位列表
+ * @param latestOpened 组内最晚开立
+ * @param floorDefault 抬升目标（最晚开立+2 分钟）
+ */
+function bumpPendingSlotsDefaultActualNotBeforeOpened(
+  slots: NurseStationOrderExecuteSlotDto[] | undefined,
+  latestOpened: dayjs.Dayjs,
+  floorDefault: string,
+): NurseStationOrderExecuteSlotDto[] | undefined {
+  if (!slots || slots.length === 0) {
+    return slots;
+  }
+  return slots.map((slot) => {
+    const defRaw = String(slot.defaultActualTime ?? '').trim();
+    if (!defRaw) {
+      return slot;
+    }
+    const defParsed = dayjs(defRaw);
+    if (!defParsed.isValid()) {
+      return slot;
+    }
+    // 建议执行早于组内最晚开立 → 抬升，避免扩行后 BR-IP-EXE-024 拒批
+    if (defParsed.isBefore(latestOpened)) {
+      return { ...slot, defaultActualTime: floorDefault };
+    }
+    return slot;
+  });
+}
+
+/**
+ * 西药成组合并代表行：展示开立取组内最晚；待执行 defaultActual 不得早于该最晚开立（BR-IP-NUR-004-GRP-001）。
+ *
+ * @param slice 同 groupId 连续行（含首行载体）
+ * @param groupSpeed 组内统一滴速
+ */
+function alignExecuteGroupHeadDtoForOpenedBounds(
+  slice: readonly NurseStationOrderExecuteRowDto[],
+  groupSpeed: { speedCode?: string; speedDisplay?: string },
+): NurseStationOrderExecuteRowDto {
+  const head = slice[0];
+  if (head === undefined) {
+    throw new Error('alignExecuteGroupHeadDtoForOpenedBounds: empty slice');
+  }
+  const latestOpenedText = resolveLatestExecuteGroupOpenedTime(slice);
+  const base: NurseStationOrderExecuteRowDto = {
+    ...head,
+    speedCode: groupSpeed.speedCode ?? head.speedCode,
+    speedDisplay: groupSpeed.speedDisplay ?? head.speedDisplay,
+  };
+  if (!latestOpenedText) {
+    return base;
+  }
+  const latestOpened = dayjs(latestOpenedText);
+  const floorDefault = resolveFirstSlotDefaultActualFromOpened(latestOpenedText);
+  return {
+    ...base,
+    // 仅展示/预检用最晚开立；库内各成员开立不变，写 Gate 仍按各成员自身开立
+    reqOpenedTime: latestOpenedText,
+    pendingSlots: bumpPendingSlotsDefaultActualNotBeforeOpened(
+      head.pendingSlots,
+      latestOpened,
+      floorDefault,
+    ),
+  };
+}
+
+/**
  * 相同 groupId 且连续的西药行合并为一行，挂 groupItems；槽位取代表行（组员同频次）。
  * 写路径回传 lineRequestIds，后端按成组/方级扩行。
+ * 合并后开立展示取组内最晚（与中药方 BR-IP-NUR-004-TCM-002 同口径）。
  */
 function mergeExecuteMedicationRowsForDisplay(
   rows: NurseStationOrderExecuteRowDto[],
@@ -803,24 +947,22 @@ function mergeExecuteMedicationRowsForDisplay(
       const gid = String(headDto.groupId ?? headDto.groupNo ?? '').trim();
       const idPart = lineRequestIds.join('&');
       const groupSpeed = pickGroupSpeedFromExecuteSlice(slice);
+      // 代表行开立/建议执行按组内最晚对齐后再映射槽位，保证预检与展示过 BR-IP-EXE-024
+      const alignedHeadDto = alignExecuteGroupHeadDtoForOpenedBounds(slice, groupSpeed);
+      const alignedHeadMember = mapExecuteRowDtoToTableRow(alignedHeadDto, executeTab);
       const skinTestOutcomeMember = members.find((m) => String(m.skinTestOutcomeText ?? '').trim());
-      const extensionDto: NurseStationOrderExecuteRowDto = {
-        ...headDto,
-        speedCode: groupSpeed.speedCode ?? headDto.speedCode,
-        speedDisplay: groupSpeed.speedDisplay ?? headDto.speedDisplay,
-      };
       return {
-        ...firstMember,
+        ...alignedHeadMember,
         id: gid ? `merged-med-${gid}-${idPart}` : `merged-med-${idPart}`,
         groupItems,
         mergedMedicationMembers: members,
         lineRequestIds,
-        speedCode: groupSpeed.speedCode ?? firstMember.speedCode,
-        speedDisplay: groupSpeed.speedDisplay ?? firstMember.speedDisplay,
+        speedCode: groupSpeed.speedCode ?? alignedHeadMember.speedCode,
+        speedDisplay: groupSpeed.speedDisplay ?? alignedHeadMember.speedDisplay,
         skinTestFlag: members.some((m) => m.skinTestFlag === true) ? true : undefined,
         skinTestOutcomeCode: skinTestOutcomeMember?.skinTestOutcomeCode,
         skinTestOutcomeText: skinTestOutcomeMember?.skinTestOutcomeText,
-        extension: buildExecuteExtensionLine(extensionDto) || undefined,
+        extension: buildExecuteExtensionLine(alignedHeadDto) || undefined,
       };
     },
   });
@@ -872,13 +1014,13 @@ export function indexExecuteGroupsByEncounterId(
 
 /**
  * 医嘱执行「项目类型」快捷筛选（UI code；与后端 medicineCategoryTab 不同）。
- * 检验=22、检查=23、治疗=21、嘱托=52、手术=24、麻醉=25。
+ * 检验=22、检查=23、治疗=21、嘱托=52、手术=24。
  * 空选=查全部（仅排除护理=26/转科=32/出院=34）；勾选才按快捷类型收窄。
+ * 麻醉申请（AA 前缀）不走本多选，见页面「麻醉申请」开关。
  * 会诊等未挂快捷项的医嘱不归类、也不因白名单被抹掉。
  */
 export type NurseStationOrderExecuteProjectType =
   | 'entrust'
-  | 'anesthesia'
   | 'exam'
   | 'lab'
   | 'surgery'
@@ -894,7 +1036,6 @@ export const NURSE_STATION_ORDER_EXECUTE_PROJECT_TYPES: NurseStationOrderExecute
   'exam',
   'treatment',
   'surgery',
-  'anesthesia',
   'entrust',
 ];
 
@@ -937,9 +1078,7 @@ export function resolveExecuteRowProjectType(
   if (category === SERVICE_CATEGORY_PROCEDURE) {
     return 'surgery';
   }
-  if (category === SERVICE_CATEGORY_ANESTHESIA) {
-    return 'anesthesia';
-  }
+  // AA 前缀由后端 anesthesiaApplyOnly 收窄，前端项目类型不再挂「麻醉」
   return null;
 }
 

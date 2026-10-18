@@ -3,7 +3,7 @@ import type { TransferDetailResponse } from '#/api/warehouse/transfer';
 
 import { computed, reactive, ref } from 'vue';
 
-import { useVbenDrawer } from '@vben/common-ui';
+import { useVbenDrawer } from '@zxplat/common-ui';
 
 import { findTransferByBusNo } from '#/api/warehouse/transfer';
 import { useRequest } from '#/hooks/use-request';

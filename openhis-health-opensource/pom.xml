@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
-         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
@@ -12,57 +11,41 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.openhis</groupId>
-    <artifactId>whale</artifactId>
-    <version>2.0.8</version>
+    <groupId>com.zxplat</groupId>
+    <artifactId>zxplat</artifactId>
+    <version>2.0.9</version>
     <packaging>pom</packaging>
 
-    <name>OpenHIS All</name>
-    <description>OpenHIS 项目聚合 - 统一管理 Whale 框架和 Whale Health 应用</description>
+    <name>ZXPlat</name>
+    <description>
+        ZXPlat monorepo 聚合根：zxplat-framework、zxplat-core、plugin、app 与院点 backend；
+        前端 zxplat-ui 使用独立 pnpm workspace，不纳入本 Maven reactor。
+    </description>
 
     <properties>
         <java.version>17</java.version>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-
-        <!-- 统一版本管理：与根 project.version 保持一致 -->
-        <whale.framework.version>${project.version}</whale.framework.version>
-        <whale.health.version>${project.version}</whale.health.version>
-        <whale.emr.version>${project.version}</whale.emr.version>
-        <whale.chs.version>${project.version}</whale.chs.version>
-        <whale.elep.version>${project.version}</whale.elep.version>
-        <whale.booking.version>${project.version}</whale.booking.version>
-        <whale.campus.version>${project.version}</whale.campus.version>
-
-        <lombok.version>1.18.30</lombok.version>
-        <mapstruct.version>1.5.5.Final</mapstruct.version>
-        <spotless.version>2.43.0</spotless.version>
+        <zxplat.version>${project.version}</zxplat.version>
     </properties>
 
-    <!-- 默认构建 BOM + framework + 全部业务 Module（health-app 扩展依赖仍由 with-* Profile 控制） -->
+    <!-- 子模块随合仓进度追加；UI 不在此列表。 -->
     <modules>
-        <module>whale-dependencies</module>
-        <module>whale-framework</module>
-        <module>whale-module-booking</module>
-        <module>whale-module-pacs-imaging</module>
-        <module>whale-module-campus</module>
-        <module>whale-module-miniapp</module>
-        <module>whale-module-emr</module>
-        <module>whale-health</module>
-        <module>whale-module-chs-jilin</module>
-        <module>whale-module-work-injury</module>
-        <module>whale-module-elep-jilin</module>
-        <module>whale-module-einvoice-boss</module>
-        <module>whale-module-unionpay-bpc</module>
+        <module>zxplat-dependencies</module>
+        <module>zxplat-framework</module>
+        <module>zxplat-core</module>
+        <module>zxplat-plugin</module>
+        <module>zxplat-application</module>
+        <module>zxplat-starter</module>
+        <module>zxplat-projects</module>
     </modules>
 
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>com.openhis</groupId>
-                <artifactId>whale-dependencies</artifactId>
+                <groupId>com.zxplat</groupId>
+                <artifactId>zxplat-dependencies</artifactId>
                 <version>${project.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
@@ -70,101 +53,44 @@
         </dependencies>
     </dependencyManagement>
 
-    <profiles>
-        <profile>
-            <id>with-emr</id>
-            <modules>
-                <module>whale-module-emr</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>with-chs</id>
-            <modules>
-                <module>whale-module-chs-jilin</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>with-elep</id>
-            <modules>
-                <module>whale-module-elep-jilin</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>with-booking</id>
-            <modules>
-                <module>whale-module-booking</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>with-campus</id>
-            <modules>
-                <module>whale-module-campus</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>with-miniapp</id>
-            <modules>
-                <module>whale-module-miniapp</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>with-einvoice-boss</id>
-        </profile>
-        <profile>
-            <id>with-unionpay-bpc</id>
-        </profile>
-    </profiles>
-
     <build>
         <pluginManagement>
             <plugins>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
-                    <version>3.11.0</version>
+                    <version>3.13.0</version>
                     <configuration>
-                        <source>${java.version}</source>
-                        <target>${java.version}</target>
-                        <encoding>${project.build.sourceEncoding}</encoding>
-                        <fork>true</fork>
-                        <annotationProcessorPaths>
-                            <path>
-                                <groupId>org.projectlombok</groupId>
-                                <artifactId>lombok</artifactId>
-                                <version>${lombok.version}</version>
-                            </path>
-                        </annotationProcessorPaths>
+                        <release>${maven.compiler.release}</release>
                     </configuration>
                 </plugin>
                 <plugin>
-                    <groupId>com.diffplug.spotless</groupId>
-                    <artifactId>spotless-maven-plugin</artifactId>
-                    <version>${spotless.version}</version>
-                    <configuration>
-                        <java>
-                            <includes>
-                                <include>src/main/java/**/*.java</include>
-                                <include>src/test/java/**/*.java</include>
-                            </includes>
-                            <excludes>
-                                <exclude>**/package-info.java</exclude>
-                            </excludes>
-                            <licenseHeader>
-                                <file>${session.executionRootDirectory}/tools/copyright-prep/java-copyright-header.txt</file>
-                            </licenseHeader>
-                            <removeUnusedImports/>
-                            <trimTrailingWhitespace/>
-                            <endWithNewline/>
-                        </java>
-                    </configuration>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-enforcer-plugin</artifactId>
+                    <version>3.5.0</version>
                 </plugin>
             </plugins>
         </pluginManagement>
         <plugins>
             <plugin>
-                <groupId>com.diffplug.spotless</groupId>
-                <artifactId>spotless-maven-plugin</artifactId>
-                <version>${spotless.version}</version>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>enforce-java-17</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireJavaVersion>
+                                    <version>[17,)</version>
+                                    <message>ZXPlat 须 JDK 17+（D004）。请设置 JAVA_HOME 为 JDK 17 后再构建。</message>
+                                </requireJavaVersion>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

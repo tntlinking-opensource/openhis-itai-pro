@@ -9,6 +9,7 @@ import type { InpatientReturnMedicineDetailRowDto } from '#/api/inpatient-pharma
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 import { useDebounceFn } from '@vueuse/core';
+import dayjs from 'dayjs';
 import { ElMessage, ElMessageBox, ElOption, ElSelect } from 'element-plus';
 
 import { getChargeTypeListApi } from '#/api/core/common';
@@ -25,10 +26,16 @@ import {
   resolveDefaultInsuranceBusNo,
   type ChargeType,
 } from '#/chs/constants/insurance-contract';
+import { MSFX_HIS_SCENE } from '#/msfx/constants';
 import { parseListItemsFromApiData } from '#/utils/api/unwrap-list-response';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
-import { MSFX_HIS_SCENE } from '#/msfx/constants';
+import {
+  readInpatientReturnAutoPrintPreference,
+  writeInpatientReturnAutoPrintPreference,
+} from '#/utils/medication/auto-print-inpatient-preference';
+import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
+import { PRINT_SCENARIO, print } from '#/utils/print/runtime';
 
 import InpatientReturnMedicineDetailCenter from './components/inpatient-return-medicine-detail-center.vue';
 import InpatientReturnMedicineQueuePanel from './components/inpatient-return-medicine-queue-panel.vue';
@@ -63,6 +70,9 @@ const queueLoading = ref(false);
 const detailLoading = ref(false);
 const initLoading = ref(false);
 const submitLoading = ref(false);
+const printLoading = ref(false);
+/** 确认退药成功后是否自动打印本次退药单（按登录用户缓存在本机）。 */
+const autoPrintEnabled = ref(readInpatientReturnAutoPrintPreference());
 const insuranceContractBusNo = ref<string>();
 const insuranceChargeTypeOptions = ref<ChargeType[]>([]);
 
@@ -152,6 +162,16 @@ watch(keyword, () => {
   debouncedReloadQueue();
 });
 
+/** 自动打印开关变更：写入本机缓存，并提示开/关后的退药行为 */
+watch(autoPrintEnabled, (enabled) => {
+  writeInpatientReturnAutoPrintPreference(enabled);
+  if (enabled) {
+    ElMessage.success('已开启退药后自动打印退药单：确认退药成功后将自动打印本次退药单');
+    return;
+  }
+  ElMessage.info('已关闭退药后自动打印退药单：退药成功后需手工打印');
+});
+
 watch(queueScope, () => {
   selectedPatientId.value = null;
   detailRows.value = [];
@@ -171,6 +191,110 @@ function buildSubmitItems() {
   }));
 }
 
+/**
+ * 打印当前患者一张退药单。
+ * @param rows 待打明细
+ * @param options.background 自动打印时失败不打断退药成功
+ * @param options.refunded 确认退药后打单，状态展示为已退药
+ */
+async function printReturnSlip(
+  rows: InpatientReturnMedicineDetailRow[],
+  options?: { background?: boolean; refunded?: boolean },
+): Promise<boolean> {
+  const patient = selectedPatient.value;
+  if (!patient) {
+    if (!options?.background) {
+      ElMessage.warning('请先选择退药患者');
+    }
+    return false;
+  }
+  if (rows.length === 0) {
+    if (!options?.background) {
+      ElMessage.warning(
+        refundQueueStatus.value === 'PENDING_REFUND' ? '请先勾选要打印的退药明细' : '暂无已退药明细',
+      );
+    }
+    return false;
+  }
+  const gender = patient.genderEnumText.trim();
+  const age = patient.ageLabel.trim();
+  const genderAgeText = [gender, age].filter((part) => part && part !== '—').join(' / ');
+  const statusText = options?.refunded ? '已退药' : patient.refundEnumText;
+  const result = await print({
+    scenarioCode: PRINT_SCENARIO.ipReturnMedicinePrint,
+    jobName: `住院退药单-${patient.patientName}`,
+    background: options?.background === true,
+    source: {
+      hospitalName: resolvePrintHospitalName(),
+      documentTitle: '住院退药单',
+      patientName: patient.patientName,
+      genderAgeText,
+      hospitalizationNo: patient.hospitalizationNo,
+      wardName: patient.wardName,
+      bedName: patient.bedName,
+      feeNatureText: patient.feeNatureLabel?.trim() || '自费',
+      statusText,
+      printedAtText: dayjs().format('YYYY-MM-DD HH:mm'),
+      drugRows: rows.map((row, index) => ({
+        seqText: String(index + 1),
+        drugName: row.itemName,
+        lotNumber: row.lotNumber,
+        quantityText: row.quantity,
+        unitText: row.unitText,
+        doctorName: row.doctorName,
+        statusText: options?.refunded ? '已退药' : row.refundEnumText,
+      })),
+    },
+    bizRef: {
+      encounterId: patient.id,
+      hospitalizationNo: patient.hospitalizationNo,
+      refundStatus: options?.refunded ? 'REFUNDED' : refundQueueStatus.value,
+    },
+  });
+  return result.ok;
+}
+
+/** 当前患者一张退药单：待退药打勾选行，已退药打当前列表 */
+async function handlePrintReturn() {
+  const rows =
+    refundQueueStatus.value === 'PENDING_REFUND'
+      ? (detailCenterRef.value?.getSelectedDetailRows() ?? [])
+      : detailRows.value;
+  printLoading.value = true;
+  try {
+    const ok = await printReturnSlip(rows);
+    if (ok) {
+      ElMessage.success('退药单已发送打印');
+    }
+  } finally {
+    printLoading.value = false;
+  }
+}
+
+/**
+ * 确认退药成功后按开关自动打印本次退药单。
+ * 打印失败只软提示，不回滚已成功退药。
+ */
+async function tryAutoPrintReturn(rows: InpatientReturnMedicineDetailRow[]): Promise<void> {
+  if (!autoPrintEnabled.value) {
+    return;
+  }
+  if (rows.length === 0) {
+    ElMessage.warning('退药成功，但未找到可自动打印的退药明细');
+    return;
+  }
+  try {
+    const ok = await printReturnSlip(rows, { background: true, refunded: true });
+    if (ok) {
+      ElMessage.success('已自动打印退药单');
+      return;
+    }
+    ElMessage.warning('退药成功，但退药单未自动打印，请稍后手工打印');
+  } catch {
+    ElMessage.warning('退药成功，但退药单未自动打印，请稍后手工打印');
+  }
+}
+
 /** 确认退药（reason 选填） */
 async function handleConfirmReturn() {
   const items = buildSubmitItems();
@@ -185,6 +309,7 @@ async function handleConfirmReturn() {
   } catch {
     return;
   }
+  const rowsToPrint = [...(detailCenterRef.value?.getSelectedDetailRows() ?? [])];
   submitLoading.value = true;
   try {
     const res = await httpConfirmInpatientMedicineReturn({
@@ -197,6 +322,7 @@ async function handleConfirmReturn() {
     } else {
       ElMessage.success(message);
     }
+    await tryAutoPrintReturn(rowsToPrint);
     await reloadDetail();
     await reloadQueue();
     await nextTick(() => {
@@ -280,13 +406,16 @@ onMounted(async () => {
       <template #center>
         <InpatientReturnMedicineDetailCenter
           ref="detailCenterRef"
+          v-model:auto-print-enabled="autoPrintEnabled"
           :action-disabled="submitLoading"
           :detail-loading="detailLoading"
           :detail-rows="detailRows"
+          :print-loading="printLoading"
           :refund-queue-status="refundQueueStatus"
           :selected-patient="selectedPatient"
           :msfx-his-scene="MSFX_HIS_SCENE.IP_RETURN"
           @confirm-return="handleConfirmReturn"
+          @print-return="handlePrintReturn"
         />
       </template>
     </StationTriPaneLayout>

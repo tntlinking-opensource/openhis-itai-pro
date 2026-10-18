@@ -1,6 +1,6 @@
 import type { AnyZodObject, ZodDefault, ZodEffects, ZodNumber, ZodString, ZodTypeAny } from 'zod';
 
-import { isObject, isString } from '@vben-core/shared/utils';
+import { isObject, isString } from '@zxplat-core/shared/utils';
 
 /**
  * Get the lowest level Zod type.

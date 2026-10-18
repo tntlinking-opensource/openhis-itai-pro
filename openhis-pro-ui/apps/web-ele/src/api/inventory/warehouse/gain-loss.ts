@@ -1,5 +1,5 @@
 /**
- * 药库损益单 — 对接 Whale {@code POST /api/app/inventoryWarehouseGainLoss/<method>}
+ * 药库损益单 — 对接 ZXPlat {@code POST /api/app/inventoryWarehouseGainLoss/<method>}
  */
 import type { ApiOptionItem, ApiResponse } from '#/types/api-response';
 

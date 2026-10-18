@@ -12,7 +12,7 @@ export interface InpatientSpecimenBarcodePrintData {
 
 /**
  * 住院采血贴 mapper 入参
- * P：床号 + 患者信息 + 检验项目名 + 申请主键（条码，禁止 Number）+ 优先级
+ * P：床号 + 患者信息 + 检验项目名 + 条码（与 LIS applyNo=SR.busNo 一致，禁止 Number）+ 优先级
  */
 export interface InpatientSpecimenBarcodePrintSource {
   bedNo?: null | string;
@@ -20,9 +20,9 @@ export interface InpatientSpecimenBarcodePrintSource {
   genderEnumText?: null | string;
   ageText?: null | string;
   itemName?: null | string;
-  /** 检验项目主键，直接作为条码内容 */
+  /** 检验申请主键；仅作条码回落，禁止 Number */
   serviceRequestId?: null | string;
-  /** 显式条码优先；未传时由 serviceRequestId 生成 */
+  /** 显式条码优先（LIS applyNo / SR.busNo）；未传时回落 serviceRequestId */
   barcode?: null | string;
   /** 医嘱优先级 code（EM=急）；也可直接传展示文案 urgencyText */
   priorityEnum?: null | string;
@@ -36,6 +36,40 @@ function str(value: null | number | string | undefined): string {
   return String(value).trim();
 }
 
+/**
+ * 合管项目名截断：按顿号整项装入，超出宽度的项不印（贴面窄，禁止全量堆叠）。
+ * maxChars 约对齐 50×30 模板项目行可视宽度。
+ */
+export function truncateSpecimenBarcodeItemName(
+  raw: null | string | undefined,
+  maxChars = 20,
+): string {
+  const text = str(raw);
+  if (!text) {
+    return '';
+  }
+  if (text.length <= maxChars) {
+    return text;
+  }
+  const parts = text
+    .split('、')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  if (parts.length <= 1) {
+    return text.slice(0, maxChars);
+  }
+  let out = '';
+  for (const part of parts) {
+    const next = out ? `${out}、${part}` : part;
+    if (next.length > maxChars) {
+      break;
+    }
+    out = next;
+  }
+  // 首项本身超长时仍截断，避免贴面撑破
+  return out || parts[0]!.slice(0, maxChars);
+}
+
 /** 住院采血贴 → PrintData */
 export function buildInpatientSpecimenBarcodePrintData(
   source: InpatientSpecimenBarcodePrintSource,
@@ -47,7 +81,7 @@ export function buildInpatientSpecimenBarcodePrintData(
     patientName: str(source.patientName),
     genderEnumText: str(source.genderEnumText),
     ageText: str(source.ageText),
-    itemName: str(source.itemName),
+    itemName: truncateSpecimenBarcodeItemName(source.itemName),
     barcode: str(source.barcode) || str(source.serviceRequestId),
     urgencyText,
   };

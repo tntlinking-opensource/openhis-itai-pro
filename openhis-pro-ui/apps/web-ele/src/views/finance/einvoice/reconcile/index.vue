@@ -3,7 +3,7 @@ import type { CheckDailyTotalResponse, ReconcileDateMode } from '#/api/einvoice-
 
 import { computed, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import {
   ElAlert,
@@ -130,7 +130,7 @@ function handleReset() {
       </ElAlert>
 
       <div class="grid gap-4 md:grid-cols-2">
-        <ElDescriptions title="本地（Whale）" :column="1" border size="small">
+        <ElDescriptions title="本地（ZXPlat）" :column="1" border size="small">
           <ElDescriptionsItem label="已开具笔数">
             {{ result.localIssuedCount ?? 0 }}
           </ElDescriptionsItem>

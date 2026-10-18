@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { PopoverContentProps, PopoverRootEmits, PopoverRootProps } from 'reka-ui';
 
-import type { ClassType } from '@vben-core/typings';
+import type { ClassType } from '@zxplat-core/typings';
 
 import { computed } from 'vue';
 

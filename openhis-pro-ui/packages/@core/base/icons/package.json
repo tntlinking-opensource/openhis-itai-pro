@@ -1,12 +1,12 @@
 {
-  "name": "@vben-core/icons",
+  "name": "@zxplat-core/icons",
   "version": "5.5.9",
   "homepage": "https://github.com/vbenjs/vue-vben-admin",
   "bugs": "https://github.com/vbenjs/vue-vben-admin/issues",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/vbenjs/vue-vben-admin.git",
-    "directory": "packages/@vben-core/base/icons"
+    "directory": "packages/@zxplat-core/base/icons"
   },
   "license": "LGPL-3.0",
   "type": "module",

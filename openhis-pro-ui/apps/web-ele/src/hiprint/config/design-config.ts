@@ -4,8 +4,8 @@ import { hiprint } from 'vue-plugin-hiprint';
 
 import { functionCodeOptionItems, paperSizeOptionItems } from './option-items';
 
-/** OpenHIS 设计器 hiprint.setConfig：保留函数项、隐藏 html 面板配置 */
-export function applyOpenHisDesignConfig(): void {
+/** zxplat 设计器 hiprint.setConfig：保留函数项、隐藏 html 面板配置 */
+export function applyZxplatDesignConfig(): void {
   hiprint.setConfig({
     movingDistance: 2.5,
     showPosition: true,

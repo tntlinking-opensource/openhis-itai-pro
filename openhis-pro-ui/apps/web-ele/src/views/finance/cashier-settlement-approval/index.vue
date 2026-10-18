@@ -12,8 +12,8 @@ import type { ApiOptionItem } from '#/types/api-response';
 
 import { computed, onMounted, reactive, ref } from 'vue';
 
-import { Page, useVbenDrawer } from '@vben/common-ui';
-import { formatDateTime } from '@vben/utils';
+import { Page, useVbenDrawer } from '@zxplat/common-ui';
+import { formatDateTime } from '@zxplat/utils';
 
 import { Refresh, Search } from '@element-plus/icons-vue';
 import {

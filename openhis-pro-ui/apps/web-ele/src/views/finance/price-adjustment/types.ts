@@ -31,11 +31,11 @@ export interface PriceAdjustmentLineRow {
   manufacturer?: string;
   categoryCodeDictText?: string;
   unitName?: string;
-  /** 目录当前进价（选品 enrich；已保存单取自批号快照调前价） */
+  /** 调前进价（选品时写入快照；已保存单取自批号明细 oldPurchaseAmount） */
   currentPurchasePrice?: number;
-  /** 目录当前售价（选品 enrich；诊疗取自调前售价） */
+  /** 调前售价（选品时写入快照；已保存单取自明细 oldSellingAmount） */
   currentSellingPrice?: number;
-  /** 库存数量（物流：批号快照 quantity 合计） */
+  /** 影响数量（物流：制单批号快照 quantity 合计，非实时库存） */
   quantity?: number;
   newPurchaseAmount?: number | string;
   newSellingAmount?: number | string;

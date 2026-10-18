@@ -1,11 +1,12 @@
 import type { InpatientPatientCardPayload } from '#/components/outpatient/patient-card.types';
 
-import { formatDateTime } from '@vben/utils';
+import { formatDateTime } from '@zxplat/utils';
 
 import {
   formatInpatientAccountBalancePrimaryText,
   formatInpatientAccountBalanceSecondaryText,
 } from '#/utils/inpatient/account-balance-display';
+import { isPatientAdmittedToday } from '#/utils/inpatient/is-patient-admitted-today';
 
 import type { InpatientDoctorStationPatient } from '../doctorPatientStore';
 
@@ -51,5 +52,6 @@ export function mapInpatientDoctorStationPatientToCardPayload(
     accountBalanceSummary: formatInpatientAccountBalancePrimaryText(row),
     accountBalanceSub: formatInpatientAccountBalanceSecondaryText(row),
     lowBalanceWarning: row.lowBalanceWarning === true,
+    admittedToday: isPatientAdmittedToday(row),
   };
 }

@@ -1,5 +1,5 @@
 /** 旧版本地模板列表缓存键（已废弃，进入页面时清除） */
-const LEGACY_TEMPLATE_LIST_STORAGE_KEY = 'openhis-emr-templates-v1';
+const LEGACY_TEMPLATE_LIST_STORAGE_KEY = 'zxplat-emr-templates-v1';
 
 const EDITOR_DRAFT_DB_NAME = 'emrEditorDrafts';
 const EDITOR_DRAFT_STORE_NAME = 'drafts';

@@ -2,12 +2,13 @@ import type { PluginOption } from 'vite';
 
 import { createRequire } from 'node:module';
 
-import { defineConfig } from '@vben/vite-config';
+import { defineConfig } from '@zxplat/vite-config';
 
 import AutoImport from 'unplugin-auto-import/vite';
 import ElementPlus from 'unplugin-element-plus/vite';
 
-import { openHisWinDownloadsDevPlugin } from './vite.openhis-win-downloads';
+import { canvasEditorHighlightPatch } from './vite.canvas-editor-patch';
+import { zxplatWinDownloadsDevPlugin } from './vite.zxplat-win-downloads';
 import {
   createOpenHisProjectOverridePlugin,
   hydrateOpenHisProjectEnv,
@@ -68,7 +69,8 @@ export default defineConfig(async () => {
       },
       plugins: [
         ...(projectOverridePlugin ? [projectOverridePlugin] : []),
-        openHisWinDownloadsDevPlugin(),
+        zxplatWinDownloadsDevPlugin(),
+        canvasEditorHighlightPatch(),
         ...extraPlugins,
       ],
       define: {
@@ -85,10 +87,11 @@ export default defineConfig(async () => {
       },
       optimizeDeps: {
         include: ['jquery', 'vue-plugin-hiprint'],
+        exclude: ['@hufe921/canvas-editor'],
       },
       server: {
         warmup: {
-          // 与 @vben/vite-config 一致，但排除 views 内文档类 .md，避免被当作 JS 预转换
+          // 与 @zxplat/vite-config 一致，但排除 views 内文档类 .md，避免被当作 JS 预转换
           clientFiles: [
             './index.html',
             './src/bootstrap.ts',

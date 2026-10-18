@@ -1,5 +1,5 @@
 /**
- * 科室调出单 — 对接 Whale {@code POST /api/app/inventoryDepartmentTransferOut/<method>}
+ * 科室调出单 — 对接 ZXPlat {@code POST /api/app/inventoryDepartmentTransferOut/<method>}
  */
 import type { ApiResponse } from '#/types/api-response';
 

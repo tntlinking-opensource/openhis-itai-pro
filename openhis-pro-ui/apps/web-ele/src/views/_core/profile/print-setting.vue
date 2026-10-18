@@ -11,7 +11,7 @@ import {
   INV_FORM_PRINT_PREF_KEY,
   resolveInvFormPaperDisplayLabel,
 } from '#/utils/print/form-print-preference';
-import { triggerOpenHisWinDownload } from '#/utils/print/openhis-win-download';
+import { triggerZxplatWinDownload } from '#/utils/print/zxplat-win-download';
 import {
   clearPrinterPreference,
   getPrinterPreference,
@@ -109,10 +109,10 @@ function handleClear(scenarioCode: string): void {
   refreshRows();
 }
 
-/** 下载服务器上的 OpenHIS.Win 安装包 */
-async function handleDownloadOpenHisWin(): Promise<void> {
+/** 下载服务器上的 Zxplat.Win 安装包 */
+async function handleDownloadZxplatWin(): Promise<void> {
   try {
-    await triggerOpenHisWinDownload();
+    await triggerZxplatWinDownload();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '下载失败，请稍后重试');
   }
@@ -129,7 +129,7 @@ onMounted(() => {
   <div class="max-w-4xl">
     <div class="mb-2 text-base font-medium text-[var(--el-text-color-primary)]">打印设置</div>
     <p class="mb-4 text-sm text-[var(--el-text-color-regular)]">
-      默认打印机保存在本机浏览器，与当前登录用户绑定。换电脑或清除浏览器数据后需重新设置。
+      默认打印机保存在本机浏览器，本机所有登录用户共用。换电脑或清除浏览器数据后需重新设置。
       库房单据默认三联单三等分，可在此改二等分、整张或改为 A4。
     </p>
     <p
@@ -141,8 +141,8 @@ onMounted(() => {
       {{ clientStatusText }}
     </p>
     <div class="mb-4 flex flex-wrap items-center gap-2">
-      <ElButton type="primary" plain @click="handleDownloadOpenHisWin">
-        下载 OpenHIS.Win 客户端
+      <ElButton type="primary" plain @click="handleDownloadZxplatWin">
+        下载 Zxplat.Win 客户端
       </ElButton>
       <span class="text-xs text-[var(--el-text-color-secondary)]">
         从服务器下载安装包，安装后托盘启动即可连接打印服务

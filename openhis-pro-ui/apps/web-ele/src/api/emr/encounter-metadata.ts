@@ -1,5 +1,5 @@
 /**
- * 就诊元数据值解析 API（whale-emr EncounterMetadataAppService）
+ * 就诊元数据值解析 API（zxplat-emr EncounterMetadataAppService）
  */
 
 import { publicRequestClient } from '#/api/request';

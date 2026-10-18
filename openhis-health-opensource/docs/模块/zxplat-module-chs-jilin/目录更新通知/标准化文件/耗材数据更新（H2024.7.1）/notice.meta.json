@@ -1,0 +1,10 @@
+{
+  "doc_kind": "CATALOG_DELTA",
+  "category": "DEVICE",
+  "title": "耗材数据更新（H2024.7.1）",
+  "source_filename": "耗材数据更新（H2024.7.1）.xls",
+  "notice_date": "2024-07-01",
+  "effective_date": null,
+  "wash_note": "原件为用户另存可解析 .xls（此前伪xlsx/.et失败）；xlrd读取；CATALOG_DELTA/DEVICE；行数=119；actions=ADD:83,STOP:36；hilist_code←国家目录编码；甲乙丙/01/02/03→1/2/3；限价进ext_json",
+  "wash_tool": "cursor-ai"
+}

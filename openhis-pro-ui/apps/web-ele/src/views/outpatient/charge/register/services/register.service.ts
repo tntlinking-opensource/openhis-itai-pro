@@ -19,6 +19,7 @@ import type {
 } from '#/api/outpatient-registration';
 
 import {
+  httpChangeRegistrationDepartment,
   httpCancelPlannedRegistration,
   httpCancelWithRefund,
   httpListBookableSlotHints,
@@ -184,6 +185,17 @@ export async function cancelRegisterEncounter(params: {
     encounterId,
     refundRequestId,
     ...(params.clientRefundResult ? { clientRefundResult: params.clientRefundResult } : {}),
+  });
+}
+
+/** 挂号记录修改科室。已医保挂号且未上传费用时，后端会撤销后按新科室重挂。 */
+export async function changeRegistrationDepartment(params: {
+  departmentId: string;
+  encounterId: string;
+}) {
+  return httpChangeRegistrationDepartment({
+    departmentId: params.departmentId,
+    encounterId: params.encounterId,
   });
 }
 

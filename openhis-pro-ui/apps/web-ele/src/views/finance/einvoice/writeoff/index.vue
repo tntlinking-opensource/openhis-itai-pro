@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { BossDocumentDetailDto, BossDocumentListItemDto } from '#/api/einvoice-boss/document';
 import type { PageWriteOffDocumentsRequest, WriteOffScope } from '#/api/einvoice-boss/writeoff';
 
 import { computed, onMounted, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
-import { useAccess } from '@vben/access';
+import { Page } from '@zxplat/common-ui';
+import { useAccess } from '@zxplat/access';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import {
   ElAlert,

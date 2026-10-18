@@ -450,6 +450,7 @@ watch(
         <ElFormItem label="关系" class="c-2">
           <ElSelect
             v-model="form.conerRltsCode"
+            filterable
             clearable
             :placeholder="HOMEPAGE_EMPTY_DISPLAY"
             :disabled="readonly"

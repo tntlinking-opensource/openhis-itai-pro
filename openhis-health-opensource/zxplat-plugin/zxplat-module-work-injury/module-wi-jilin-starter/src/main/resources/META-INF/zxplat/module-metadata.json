@@ -1,0 +1,7 @@
+{
+  "moduleId": "wi",
+  "displayName": "工伤（WORK_INJURY）",
+  "enabledProperty": "zxplat.modules.work-injury.enabled",
+  "autoConfigurationClass": "com.zxplat.plugin.wi.starter.WiJilinModuleAutoConfiguration",
+  "appServiceNames": []
+}

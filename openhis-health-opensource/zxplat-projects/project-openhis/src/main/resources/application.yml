@@ -1,0 +1,266 @@
+# =============================================================================
+# project-openhis（OpenHIS 产品演示）公共默认
+# 本机改库用同目录 application-local.yml（gitignore）
+# =============================================================================
+
+spring:
+  application:
+    name: zxplat-health
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  datasource:
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:xZ_TTSL123}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 2
+      connection-timeout: 10000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      initialization-fail-timeout: 1
+      connection-test-query: SELECT 1
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        use_sql_comments: true
+    open-in-view: false
+
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  flyway:
+    enabled: false
+    baseline-on-migrate: true
+    baseline-version: 0
+    out-of-order: false
+    schemas: public
+    sql-migration-prefix: V
+    sql-migration-separator: __
+    sql-migration-suffixes: .sql
+    validate-on-migrate: false
+    clean-disabled: true
+
+  devtools:
+    restart:
+      enabled: false
+      exclude: static/**,public/**,templates/**,META-INF/maven/**,META-INF/resources/**
+    livereload:
+      enabled: false
+
+  quartz:
+    job-store-type: jdbc
+    jdbc:
+      initialize-schema: never
+    properties:
+      org:
+        quartz:
+          scheduler:
+            instanceName: ZxplatScheduler
+            instanceId: AUTO
+          threadPool:
+            class: org.quartz.simpl.SimpleThreadPool
+            threadCount: 10
+            threadPriority: 5
+          jobStore:
+            driverDelegateClass: org.quartz.impl.jdbcjobstore.PostgreSQLDelegate
+            tablePrefix: ZXPLAT_QRTZ_
+            isClustered: false
+            useProperties: true
+
+  jackson:
+    time-zone: Asia/Shanghai
+    date-format: yyyy-MM-dd HH:mm:ss
+    serialization:
+      write-dates-as-timestamps: false
+
+server:
+  port: 8081
+  servlet:
+    context-path: /
+
+app:
+  version: @project.version@
+  jwt:
+    secret: ${JWT_SECRET:change-me-zxplat-jwt-secret-key-32chars}
+    access-token-expiration: 7200000
+    refresh-token-expiration: 604800000
+  cache:
+    permission:
+      expire-after-write: 5m
+      maximum-size: 5000
+    setting:
+      expire-after-write: 10m
+      maximum-size: 1000
+    tenant:
+      expire-after-write: 30m
+      maximum-size: 100
+    user:
+      expire-after-write: 15m
+      maximum-size: 2000
+  rate-limit:
+    enabled: false
+    max-requests-per-minute: 100
+  quartz:
+    enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.zxplat.framework: INFO
+    com.zxplat.domain: INFO
+    com.zxplat.application: INFO
+    com.zxplat: INFO
+    org.springframework.boot: WARN
+    org.springframework.jdbc: WARN
+    org.flywaydb: INFO
+    org.hibernate: WARN
+    org.hibernate.orm.connections.pooling: ERROR
+    org.hibernate.engine.jdbc.env.internal: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{requestId}] [%X{tenantId}] [%X{userId}] %logger{36} - %msg%n"
+  file:
+    name: logs/zxplat-health.log
+    max-size: 100MB
+    max-history: 30
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+    enabled: true
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+    config-url: /v3/api-docs/swagger-config
+    try-it-out-enabled: true
+    filter: true
+    disable-swagger-default-url: true
+  show-actuator: false
+  use-management-port: false
+
+zxplat:
+  framework:
+    runtime:
+      sync-token: ${ZXPLAT_FRAMEWORK_RUNTIME_SYNC_TOKEN:}
+  bootstrap:
+    reset-admin-password:
+      enabled: true
+  flyway:
+    modular:
+      enabled: true
+    dev-seed:
+      enabled: false
+  project:
+    flyway:
+      enabled: true
+  chs:
+    deployment:
+      mode: embedded
+      remote:
+        base-url: http://127.0.0.1:8091
+        api-key: ${CHS_API_KEY:}
+    audit:
+      syscode: ${CHS_AUDIT_SYSCODE:ims}
+    notice:
+      canonical-root: ${CHS_NOTICE_CANONICAL_ROOT:}
+  cache:
+    concept:
+      init-on-startup: true
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:zxplat}
+logging:
+  level:
+    com.zxplat.framework: DEBUG
+    com.zxplat.domain: DEBUG
+    com.zxplat.application: DEBUG
+    com.zxplat: DEBUG
+    org.hibernate.SQL: DEBUG
+zxplat:
+  cache:
+    concept:
+      init-on-startup: false
+
+---
+spring:
+  config:
+    activate:
+      on-profile: training
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:zxplat}
+  flyway:
+    validate-on-migrate: false
+  quartz:
+    auto-startup: false
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:zxplat}
+  flyway:
+    validate-on-migrate: true
+  lifecycle:
+    timeout-per-shutdown-phase: 120s
+  quartz:
+    properties:
+      org:
+        quartz:
+          jobStore:
+            isClustered: true
+            clusterCheckinInterval: 15000
+server:
+  shutdown: graceful
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+logging:
+  level:
+    com.zxplat.framework: INFO
+    com.zxplat.domain: INFO
+    com.zxplat.application: INFO
+    com.zxplat: INFO
+    org.hibernate.SQL: WARN
+zxplat:
+  bootstrap:
+    reset-admin-password:
+      enabled: false

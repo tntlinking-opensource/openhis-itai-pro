@@ -3,7 +3,7 @@ import type { RegistrationPolicyDto, ScheduleChangePolicyDto } from '#/api/booki
 
 import { onMounted, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import {
   loadRegistrationPolicyApi,

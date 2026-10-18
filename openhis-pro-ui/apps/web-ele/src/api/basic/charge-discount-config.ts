@@ -6,7 +6,7 @@ import type { ApiOptionItem, PageParams } from '#/types/api-response';
 import { publicRequestClient } from '#/api/request';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
-/** 配置状态 code（仅 ACTIVE 参与门控与命中） */
+/** 配置状态 code（仅 ACTIVE 参与命中与折扣相关显隐） */
 export const CHARGE_DISCOUNT_STATUS = {
   ACTIVE: 'ACTIVE',
   INACTIVE: 'INACTIVE',
@@ -111,16 +111,28 @@ export function discountRateToZhe(rate: null | number | string | undefined): nul
   return Math.round(n * 1000) / 100;
 }
 
-/** 折 → 折扣率（8.5 → 0.85）；非法返回 null */
+/** 折 → 折扣率（8.5 / 「8.5折」 → 0.85）；非法返回 null */
 export function zheToDiscountRate(zhe: null | number | string | undefined): null | number {
   if (zhe === null || zhe === undefined || zhe === '') {
     return null;
   }
-  const n = Number(zhe);
+  const n = Number(normalizeZheInput(zhe));
   if (!Number.isFinite(n) || n <= 0 || n > 10) {
     return null;
   }
   return Math.round(n * 1000) / 10000;
+}
+
+/**
+ * 把下拉/手输文案收成纯折值：去掉「折」和空白。
+ *
+ * @param zhe 下拉 value 或手输「9折」
+ */
+export function normalizeZheInput(zhe: number | string): string {
+  return String(zhe)
+    .trim()
+    .replace(/折\s*$/u, '')
+    .trim();
 }
 
 /** 折扣率展示：空=款员定；有值展示「x折」 */

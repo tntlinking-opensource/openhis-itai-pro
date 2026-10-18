@@ -2,7 +2,7 @@
   药房入库单右侧主区：与药库出库单同构；契约对齐 AS-INV-PHA-001-SDD（枚举以领域 getCode() 字符串提交）。
 -->
 <script setup lang="ts">
-import type { TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { VxeGridProps, VxeGridPropTypes } from '#/adapter/vxe-table';
 import type { WarehouseOptionDto } from '#/api/inventory/pharmacy/stock-in';
@@ -12,9 +12,9 @@ import type { FormInstance } from 'element-plus';
 
 import { computed, nextTick, reactive, ref, watch, onBeforeUnmount, onDeactivated } from 'vue';
 
-import { Trash2 } from '@vben/icons';
-import { useUserStore } from '@vben/stores';
-import { formatDateTime } from '@vben/utils';
+import { Trash2 } from '@zxplat/icons';
+import { useUserStore } from '@zxplat/stores';
+import { formatDateTime } from '@zxplat/utils';
 
 import InvDocActions from '@inventory/components/inv-doc-actions.vue';
 import InvDocGridToolbar from '@inventory/components/inv-doc-grid-toolbar.vue';

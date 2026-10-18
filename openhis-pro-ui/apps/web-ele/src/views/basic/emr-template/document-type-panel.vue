@@ -167,7 +167,7 @@ defineExpose({
       </ElTableColumn>
       <ElTableColumn label="状态" width="56" align="center">
         <template #default="{ row }">
-          <ElTag :type="row.isEnabled !== false ? 'success' : 'info'" size="small">
+          <ElTag :type="row.isEnabled !== false ? 'success' : 'warning'" size="small">
             {{ row.isEnabled !== false ? '启' : '停' }}
           </ElTag>
         </template>

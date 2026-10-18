@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { ServiceCatalogItem } from '#/api';
 
 import { computed } from 'vue';
 
-import { TableSelectDialog } from '@vben/common-ui';
+import { TableSelectDialog } from '@zxplat/common-ui';
 
 import { ElMessage } from 'element-plus';
 

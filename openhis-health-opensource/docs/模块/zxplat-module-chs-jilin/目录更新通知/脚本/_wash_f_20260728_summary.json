@@ -1,0 +1,14 @@
+{
+  "result": "OK",
+  "std_dir": "标准化文件\\F服务目录5类工程师版（2026.7.28）",
+  "rows": 2103,
+  "actions": {
+    "ADD": 779,
+    "STOP": 1323,
+    "MODIFY": 1
+  },
+  "doc_kind": "CATALOG_DELTA",
+  "category": "SERVICE_F",
+  "source_already_in_raw": true,
+  "source": "F服务目录5类工程师版（2026.7.28）.xlsx"
+}

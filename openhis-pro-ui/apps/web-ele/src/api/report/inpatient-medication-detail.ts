@@ -9,7 +9,7 @@ import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 const BASE = '/inpatientPharmacyPatientMedicationUsage';
 
-/** 菜单路由 path（与 whale_menus.path 对齐）。 */
+/** 菜单路由 path（与 zxplat_menus.path 对齐）。 */
 export const INPATIENT_MEDICATION_DETAIL_ROUTE_PATH = '/report/inpatient-medication-detail';
 
 export const PRESENTATION_MODE_DETAIL = 'DETAIL' as const;

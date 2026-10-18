@@ -3,7 +3,7 @@ import type { PractitionerWorkloadSummaryTotalsDto } from '#/api/report/practiti
 
 import { computed } from 'vue';
 
-import { IconifyIcon } from '@vben/icons';
+import { IconifyIcon } from '@zxplat/icons';
 
 import { fmtReportNumber, fmtReportPurchaseMoney } from '#/views/report/shared/report-format';
 
@@ -11,15 +11,20 @@ defineOptions({ name: 'PractitionerWorkloadTotalsBar' });
 
 interface Props {
   doctorCount?: number;
+  discountFeatureEnabled?: boolean;
   summaryTotals?: PractitionerWorkloadSummaryTotalsDto;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   doctorCount: 0,
+  discountFeatureEnabled: false,
   summaryTotals: () => ({}),
 });
 
 const totals = computed(() => props.summaryTotals ?? {});
+
+/** 已配置有效折扣时展示优惠/实收。 */
+const showDiscount = computed(() => Boolean(props.discountFeatureEnabled));
 </script>
 
 <template>
@@ -57,6 +62,40 @@ const totals = computed(() => props.summaryTotals ?? {});
             class="practitioner-workload-stats__value practitioner-workload-stats__value--amount"
           >
             {{ fmtReportNumber(totals.saleAmountTotal) }}
+          </span>
+        </div>
+      </div>
+
+      <div
+        v-if="showDiscount"
+        class="practitioner-workload-stats__card practitioner-workload-stats__card--amount"
+      >
+        <span class="practitioner-workload-stats__icon">
+          <IconifyIcon icon="lucide:percent" />
+        </span>
+        <div class="practitioner-workload-stats__content">
+          <span class="practitioner-workload-stats__label">优惠合计</span>
+          <span
+            class="practitioner-workload-stats__value practitioner-workload-stats__value--amount"
+          >
+            {{ fmtReportNumber(totals.discountAmountTotal) }}
+          </span>
+        </div>
+      </div>
+
+      <div
+        v-if="showDiscount"
+        class="practitioner-workload-stats__card practitioner-workload-stats__card--amount"
+      >
+        <span class="practitioner-workload-stats__icon">
+          <IconifyIcon icon="lucide:wallet" />
+        </span>
+        <div class="practitioner-workload-stats__content">
+          <span class="practitioner-workload-stats__label">实收合计</span>
+          <span
+            class="practitioner-workload-stats__value practitioner-workload-stats__value--amount"
+          >
+            {{ fmtReportNumber(totals.actualReceivedAmountTotal) }}
           </span>
         </div>
       </div>

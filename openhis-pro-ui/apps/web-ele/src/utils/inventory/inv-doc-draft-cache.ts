@@ -5,11 +5,11 @@
  * 切单 / 切菜单 / 刷新均保留；主清理时机：保存落库成功迁键、删除单据、丢弃新建草稿。
  */
 
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
-const STORAGE_PREFIX = 'openhis:inv-doc-draft';
+const STORAGE_PREFIX = 'zxplat:inv-doc-draft';
 const ENTRY_VERSION = 1 as const;
 
 /** 常见场景常量（也可传自定义字符串，只要同页一致、跨业务不撞名） */

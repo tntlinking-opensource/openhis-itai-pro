@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import NurseWorkloadPanel from './nurse-workload-panel.vue';
 

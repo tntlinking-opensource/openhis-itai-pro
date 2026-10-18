@@ -18,6 +18,12 @@ export interface PageMedicationCatalogParams {
   keyDrugType?: string;
   /** 药品性质（NARCOTIC/PSYCH_ONE/PSYCH_TWO）；undefined 表示不限 */
   medicinePropertyCode?: string;
+  /** 发布状态（ACTIVE/INACTIVE）；undefined 表示不限 */
+  statusEnum?: string;
+  /** 医保对码；undefined 表示不限；true=已对码；false=未对码 */
+  ybMatchFlag?: boolean;
+  /** 医保编码模糊；undefined 表示不限 */
+  ybNo?: string;
 }
 
 /**
@@ -267,6 +273,12 @@ export interface ExportMedicationCatalogParams {
   keyDrugType?: string;
   /** 药品性质（NARCOTIC/PSYCH_ONE/PSYCH_TWO）；undefined 表示不限 */
   medicinePropertyCode?: string;
+  /** 发布状态（ACTIVE/INACTIVE）；undefined 表示不限 */
+  statusEnum?: string;
+  /** 医保对码；undefined 表示不限；true=已对码；false=未对码 */
+  ybMatchFlag?: boolean;
+  /** 医保编码模糊；undefined 表示不限 */
+  ybNo?: string;
   /** 导入模板表头序（编号 + COLUMN_HEADERS）；后端按中文表头匹配 */
   exportColumns?: ExcelExportColumnPayload[];
 }

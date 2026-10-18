@@ -45,7 +45,7 @@ export const useRegisterPayChannels = createSharedComposable(() => {
     return loadPromise;
   }
 
-  /** 打开收银弹窗前调用：重拉渠道 + 重探测 OpenHIS.Win（Win 后启动时必需） */
+  /** 打开收银弹窗前调用：重拉渠道 + 重探测 Zxplat.Win（Win 后启动时必需） */
   async function refreshPayChannelsForDialog(): Promise<void> {
     await loadPayChannelOptionsFromServer();
     await refreshUnionPayCapabilities();

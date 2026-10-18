@@ -1,0 +1,6 @@
+{
+  "moduleId": "miniapp",
+  "enabledProperty": "zxplat.modules.miniapp.enabled",
+  "locations": "classpath:db/migration/miniapp",
+  "historyTable": "flyway_schema_history_miniapp"
+}

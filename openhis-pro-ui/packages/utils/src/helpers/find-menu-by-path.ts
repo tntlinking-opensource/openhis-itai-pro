@@ -1,4 +1,4 @@
-import type { MenuRecordRaw } from '@vben-core/typings';
+import type { MenuRecordRaw } from '@zxplat-core/typings';
 
 function findMenuByPath(list: MenuRecordRaw[], path?: string): MenuRecordRaw | null {
   for (const menu of list) {

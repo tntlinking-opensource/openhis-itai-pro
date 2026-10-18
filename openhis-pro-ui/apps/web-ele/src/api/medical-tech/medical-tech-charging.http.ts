@@ -3,12 +3,16 @@ import type {
   CancelMedicalTechDevicePricingResponse,
   ConfirmMedicalTechDevicePricingRequest,
   ConfirmMedicalTechDevicePricingResponse,
+  ConfirmMedicalTechServicePricingRequest,
+  ConfirmMedicalTechServicePricingResponse,
   ListMedicalTechPricedDevicesRequest,
   ListMedicalTechPricedDevicesResponse,
   LoadMedicalTechChargingInitRequest,
   LoadMedicalTechChargingInitResponse,
   PageMedicalTechDeviceCatalogRequest,
   PageMedicalTechDeviceCatalogResponse,
+  PageMedicalTechServiceCatalogRequest,
+  PageMedicalTechServiceCatalogResponse,
 } from './medical-tech-charging.types';
 
 import { publicRequestClient } from '#/api/request';
@@ -44,12 +48,40 @@ export async function httpPageMedicalTechDeviceCatalog(
   };
 }
 
+/** 分页查询医技诊疗选品目录（执行科室=登录 TECH） */
+export async function httpPageMedicalTechServiceCatalog(
+  body: PageMedicalTechServiceCatalogRequest,
+): Promise<PageMedicalTechServiceCatalogResponse> {
+  const data = await publicRequestClient.post<unknown>(
+    `${BASE}/pageMedicalTechServiceCatalog`,
+    body,
+  );
+  const parsed =
+    parsePagedRowsFromApiData<PageMedicalTechServiceCatalogResponse['content'][number]>(data);
+  return {
+    content: parsed.content,
+    totalCount: parsed.totalCount,
+    pageNo: parsed.pageNo,
+    pageSize: parsed.pageSize,
+  };
+}
+
 /** 确认医技耗材划价 */
 export async function httpConfirmMedicalTechDevicePricing(
   body: ConfirmMedicalTechDevicePricingRequest,
 ): Promise<ConfirmMedicalTechDevicePricingResponse> {
   return publicRequestClient.post<ConfirmMedicalTechDevicePricingResponse>(
     `${BASE}/confirmMedicalTechDevicePricing`,
+    body,
+  );
+}
+
+/** 确认医技诊疗划价（来源 medical-tech-pricing） */
+export async function httpConfirmMedicalTechServicePricing(
+  body: ConfirmMedicalTechServicePricingRequest,
+): Promise<ConfirmMedicalTechServicePricingResponse> {
+  return publicRequestClient.post<ConfirmMedicalTechServicePricingResponse>(
+    `${BASE}/confirmMedicalTechServicePricing`,
     body,
   );
 }

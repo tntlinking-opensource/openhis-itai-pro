@@ -1,25 +1,25 @@
 <script lang="ts" setup>
-import type { TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { ServiceLocationItem } from '#/api/basic/service-location';
 import type { ApiOptionItem } from '#/types/api-response';
 
 import { computed, nextTick, onActivated, onMounted, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { CopyDocument, Delete, DocumentCopy, Plus } from '@element-plus/icons-vue';
 
 import {
   ElButton,
+  ElInput,
   ElMessage,
   ElMessageBox,
   ElOption,
   ElSelect,
   ElTag,
-  ElTimePicker,
   ElTree,
 } from 'element-plus';
 
@@ -97,6 +97,36 @@ let clientKeySeed = 0;
 const isDirty = computed(() => serializeRows(draftRows.value) !== savedSnapshot.value);
 
 const hasCopiedRules = computed(() => copiedRuleTemplates.value.length > 0);
+
+/**
+ * 行级 UI 元数据：优先级与上移/下移一次算完。
+ * 禁止在模板里对每行再扫全表（否则 N 行编辑控件重渲时变成 O(N²) 卡死）。
+ */
+const rowUiMetaByKey = computed(() => {
+  const rows = draftRows.value;
+  const groupSeq = new Map<string, number>();
+  const meta = new Map<
+    string,
+    { groupPriority: number | undefined; canMoveUp: boolean; canMoveDown: boolean }
+  >();
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index];
+    if (!row) {
+      continue;
+    }
+    let groupPriority: number | undefined;
+    if (row.itemTable && row.distributionCategoryCode) {
+      const groupKey = buildPriorityGroupKey(row);
+      const next = (groupSeq.get(groupKey) ?? 0) + 1;
+      groupSeq.set(groupKey, next);
+      groupPriority = next;
+    }
+    const canMoveUp = Boolean(findAdjacentRowInSameGroupAt(rows, index, -1));
+    const canMoveDown = Boolean(findAdjacentRowInSameGroupAt(rows, index, 1));
+    meta.set(row._clientKey, { groupPriority, canMoveUp, canMoveDown });
+  }
+  return meta;
+});
 
 const tableColumns: TableColumn[] = [
   { type: 'selection', width: 48, align: 'center', fixed: 'left', headerAlign: 'center' },
@@ -248,33 +278,26 @@ function buildPriorityGroupKey(row: ServiceLocationItem) {
   ].join('|');
 }
 
-/**
- * 展示用组内优先级：同条件多药房时才是 1、2、3；单药房或不同品类/种类均为 1。
- * （匹配先比粒度：单品→种类→用法→仅大类；同粒度才用本数字排候选库房）
- */
-function resolveGroupPriority(row: DraftRow, rows: DraftRow[] = draftRows.value) {
-  if (!row.itemTable || !row.distributionCategoryCode) {
-    return undefined;
-  }
-  const groupKey = buildPriorityGroupKey(row);
-  let groupIndex = 0;
-  for (const item of rows) {
-    if (buildPriorityGroupKey(item) !== groupKey) {
-      continue;
-    }
-    groupIndex += 1;
-    if (item._clientKey === row._clientKey) {
-      return groupIndex;
-    }
-  }
-  return undefined;
+/** 从预计算元数据取组内展示优先级 */
+function resolveGroupPriority(row: DraftRow) {
+  return rowUiMetaByKey.value.get(row._clientKey)?.groupPriority;
 }
 
-/** 查找同竞争组内相邻可交换行 */
-function findAdjacentRowInSameGroup(row: DraftRow, direction: -1 | 1) {
-  const rows = draftRows.value;
-  const index = rows.findIndex((item) => item._clientKey === row._clientKey);
-  if (index < 0) {
+/**
+ * 在给定行数组上查找同竞争组相邻行（供预计算与上移/下移复用）。
+ *
+ * @param rows 当前科室草稿全表
+ * @param index 锚点行下标
+ * @param direction -1 向上 / 1 向下
+ * @returns 同匹配条件下相邻可交换行；无则 undefined
+ */
+function findAdjacentRowInSameGroupAt(
+  rows: DraftRow[],
+  index: number,
+  direction: -1 | 1,
+): DraftRow | undefined {
+  const row = rows[index];
+  if (!row) {
     return undefined;
   }
   const groupKey = buildPriorityGroupKey(row);
@@ -287,6 +310,16 @@ function findAdjacentRowInSameGroup(row: DraftRow, direction: -1 | 1) {
     cursor += direction;
   }
   return undefined;
+}
+
+/** 查找同竞争组内相邻可交换行 */
+function findAdjacentRowInSameGroup(row: DraftRow, direction: -1 | 1) {
+  const rows = draftRows.value;
+  const index = rows.findIndex((item) => item._clientKey === row._clientKey);
+  if (index < 0) {
+    return undefined;
+  }
+  return findAdjacentRowInSameGroupAt(rows, index, direction);
 }
 
 /** 校验 HH:mm:ss */
@@ -344,6 +377,44 @@ function optionLabel(options: ApiOptionItem[], value: string | undefined) {
     return '-';
   }
   return options.find((item) => String(item.value) === String(value))?.label ?? value;
+}
+
+/**
+ * 种类列只读文案（单品行 / 非耗材行：不挂 ElSelect）。
+ *
+ * @param row 规则草稿行
+ */
+function typeCodeReadonlyText(row: DraftRow) {
+  // 非耗材行无种类维
+  if (!isDeviceItemTable(row.itemTable)) {
+    return '仅耗材';
+  }
+  // 空码表示通配种类
+  if (!row.typeCode) {
+    return '不限种类';
+  }
+  return optionLabel(deviceTypeCodeOptions.value, row.typeCode);
+}
+
+/**
+ * 用法列只读文案（单品行 / 非药品行 / 未选发放类别：不挂 ElSelect）。
+ *
+ * @param row 规则草稿行
+ */
+function methodCodeReadonlyText(row: DraftRow) {
+  // 耗材无给药途径维
+  if (!isMedicationItemTable(row.itemTable)) {
+    return '耗材不限';
+  }
+  // 未选发放类别时无法判定中西药用法码表
+  if (!row.distributionCategoryCode) {
+    return '请先选发放类别';
+  }
+  // 空码表示用法通配
+  if (!row.methodCode) {
+    return '不限';
+  }
+  return optionLabel(methodOptionsForRow(row), row.methodCode);
 }
 
 /** 将接口行转为草稿行（含类别默认与指定物品）；主键字段统一 string，避免 ElSelect 对不上 option */
@@ -446,12 +517,12 @@ function toCopiedTemplates(rows: DraftRow[]): CopiedRuleTemplate[] {
 
 /** 判断当前行是否可在竞争组内上移 */
 function canMoveRowUp(row: DraftRow) {
-  return Boolean(findAdjacentRowInSameGroup(row, -1));
+  return Boolean(rowUiMetaByKey.value.get(row._clientKey)?.canMoveUp);
 }
 
 /** 判断当前行是否可在竞争组内下移 */
 function canMoveRowDown(row: DraftRow) {
-  return Boolean(findAdjacentRowInSameGroup(row, 1));
+  return Boolean(rowUiMetaByKey.value.get(row._clientKey)?.canMoveDown);
 }
 
 /** 初始化下拉与科室树 */
@@ -952,7 +1023,8 @@ onActivated(() => {
           :form-items="[]"
           :table-columns="tableColumns"
           :show-top-query="false"
-          :show-pagination="false"
+          :show-pagination="true"
+          :is-all-data="true"
           row-key="_clientKey"
           @selection-change="handleSelectionChange"
         >
@@ -1066,11 +1138,19 @@ onActivated(() => {
           </template>
 
           <template #typeCode="{ row }">
+            <!-- 单品/非耗材只展示文案，避免每行挂一整棵 ElSelect 选项树 -->
+            <span
+              v-if="isItemSpecificRule(row) || !isDeviceItemTable(row.itemTable)"
+              class="slt-readonly-cell"
+              :class="{ 'slt-readonly-cell--muted': !isDeviceItemTable(row.itemTable) }"
+            >
+              {{ typeCodeReadonlyText(row) }}
+            </span>
             <ElSelect
+              v-else
               v-model="row.typeCode"
               clearable
-              :disabled="!isDeviceItemTable(row.itemTable)"
-              :placeholder="isDeviceItemTable(row.itemTable) ? '不限种类' : '仅耗材'"
+              placeholder="不限种类"
               class="cell-control"
             >
               <ElOption
@@ -1083,17 +1163,25 @@ onActivated(() => {
           </template>
 
           <template #methodCode="{ row }">
+            <span
+              v-if="
+                isItemSpecificRule(row) ||
+                !isMedicationItemTable(row.itemTable) ||
+                !row.distributionCategoryCode
+              "
+              class="slt-readonly-cell"
+              :class="{
+                'slt-readonly-cell--muted':
+                  !isMedicationItemTable(row.itemTable) || !row.distributionCategoryCode,
+              }"
+            >
+              {{ methodCodeReadonlyText(row) }}
+            </span>
             <ElSelect
+              v-else
               v-model="row.methodCode"
               clearable
-              :disabled="!isMedicationItemTable(row.itemTable) || !row.distributionCategoryCode"
-              :placeholder="
-                !isMedicationItemTable(row.itemTable)
-                  ? '耗材不限'
-                  : row.distributionCategoryCode
-                    ? '不限'
-                    : '请先选发放类别'
-              "
+              placeholder="不限"
               class="cell-control"
             >
               <ElOption
@@ -1122,22 +1210,19 @@ onActivated(() => {
           </template>
 
           <template #timeRange="{ row }">
+            <!-- 不用 ElTimePicker：每行两个弹层组件会把表格拖死 -->
             <div class="slt-time-row">
-              <ElTimePicker
+              <ElInput
                 v-model="row.startTime"
-                placeholder="开始"
                 clearable
-                format="HH:mm:ss"
-                value-format="HH:mm:ss"
+                placeholder="HH:mm:ss"
                 class="slt-time-input"
               />
               <span class="slt-time-sep">~</span>
-              <ElTimePicker
+              <ElInput
                 v-model="row.endTime"
-                placeholder="结束"
                 clearable
-                format="HH:mm:ss"
-                value-format="HH:mm:ss"
+                placeholder="HH:mm:ss"
                 class="slt-time-input"
               />
             </div>

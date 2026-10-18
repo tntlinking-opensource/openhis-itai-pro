@@ -2,7 +2,7 @@
   单个护士工作量明细弹窗：汇总指标 + 诊疗执行/耗材使用明细表。
 -->
 <script setup lang="ts">
-import type { TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type {
   NurseConsumableDetailRowDto,
@@ -15,7 +15,7 @@ import type {
 
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { Download } from '@element-plus/icons-vue';
 import { ElButton, ElMessage, ElPagination, ElTabPane, ElTabs } from 'element-plus';
@@ -41,12 +41,17 @@ defineOptions({ name: 'NurseWorkloadNurseDetailDialog' });
 
 interface Props {
   baseFilter: NurseWorkloadQueryFilter;
+  consumableDiscountAmountTotal?: number | string;
+  consumableActualReceivedAmountTotal?: number | string;
   consumableItemChips?: NurseConsumableItemChip[];
   consumableItemCount?: number;
   consumablePurchaseAmountTotal?: number | string | null;
   consumableSummaryRows: NurseConsumableSummaryRowDto[];
   consumableSaleAmountTotal?: number | string;
   consumableTotalQuantity?: number | string;
+  discountFeatureEnabled?: boolean;
+  executionDiscountAmountTotal?: number | string;
+  executionActualReceivedAmountTotal?: number | string;
   executionPurchaseAmountTotal?: number | string | null;
   executionSaleAmountTotal?: number | string;
   executionSummaryRows: NurseExecutionSummaryRowDto[];
@@ -56,10 +61,15 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  consumableDiscountAmountTotal: 0,
+  consumableActualReceivedAmountTotal: 0,
   consumableItemChips: () => [],
   consumableItemCount: 0,
   consumableSaleAmountTotal: 0,
   consumableTotalQuantity: 0,
+  discountFeatureEnabled: false,
+  executionDiscountAmountTotal: 0,
+  executionActualReceivedAmountTotal: 0,
   executionPurchaseAmountTotal: null,
   executionSaleAmountTotal: 0,
   executionTotalCount: 0,
@@ -73,32 +83,57 @@ const consumableDetailRows = ref<NurseConsumableDetailRowDto[]>([]);
 const consumableDetailTotal = ref(0);
 const detailPage = reactive({ pageNo: 1, pageSize: 10 });
 
-const workloadMetrics = computed(() => [
-  { label: '处置次数', value: String(props.executionTotalCount ?? 0) },
-  { label: '处置售价', value: fmtReportNumber(props.executionSaleAmountTotal, 2) },
-  { label: '耗材项数', value: String(props.consumableItemCount ?? 0) },
-  {
-    label: '耗材总数量',
-    value: fmtReportNumber(props.consumableTotalQuantity, 2),
-  },
-  {
-    label: '耗材售价',
-    value: fmtReportNumber(props.consumableSaleAmountTotal, 2),
-    highlight: true,
-  },
-  {
-    label: '耗材进价',
-    value: fmtReportPurchaseMoney(props.consumablePurchaseAmountTotal),
-  },
-  {
-    label: '售价合计',
-    value: fmtReportNumber(
-      Number(props.executionSaleAmountTotal ?? 0) + Number(props.consumableSaleAmountTotal ?? 0),
-      2,
-    ),
-    highlight: true,
-  },
-]);
+const showDiscount = computed(() => Boolean(props.discountFeatureEnabled));
+
+const workloadMetrics = computed(() => {
+  const rows = [
+    { label: '处置次数', value: String(props.executionTotalCount ?? 0) },
+    { label: '处置售价', value: fmtReportNumber(props.executionSaleAmountTotal, 2) },
+    { label: '耗材项数', value: String(props.consumableItemCount ?? 0) },
+    {
+      label: '耗材总数量',
+      value: fmtReportNumber(props.consumableTotalQuantity, 2),
+    },
+    {
+      label: '耗材售价',
+      value: fmtReportNumber(props.consumableSaleAmountTotal, 2),
+      highlight: true,
+    },
+    {
+      label: '耗材进价',
+      value: fmtReportPurchaseMoney(props.consumablePurchaseAmountTotal),
+    },
+    {
+      label: '售价合计',
+      value: fmtReportNumber(
+        Number(props.executionSaleAmountTotal ?? 0) + Number(props.consumableSaleAmountTotal ?? 0),
+        2,
+      ),
+      highlight: true,
+    },
+  ];
+  if (showDiscount.value) {
+    rows.push({
+      label: '优惠合计',
+      value: fmtReportNumber(
+        Number(props.executionDiscountAmountTotal ?? 0) +
+          Number(props.consumableDiscountAmountTotal ?? 0),
+        2,
+      ),
+      highlight: true,
+    });
+    rows.push({
+      label: '实收合计',
+      value: fmtReportNumber(
+        Number(props.executionActualReceivedAmountTotal ?? 0) +
+          Number(props.consumableActualReceivedAmountTotal ?? 0),
+        2,
+      ),
+      highlight: true,
+    });
+  }
+  return rows;
+});
 
 const hasExecutionBreakdown = computed(() => props.executionSummaryRows.length > 0);
 const hasConsumableBreakdown = computed(
@@ -131,60 +166,108 @@ const { run: runExport, loading: exportLoading } = useRequest(exportNurseWorkloa
   manual: true,
 });
 
-const executionDetailColumns: TableColumn[] = [
-  { prop: 'itemName', label: '诊疗项目', minWidth: 180 },
-  { prop: 'categoryDisplay', label: '类目', minWidth: 88 },
-  { prop: 'generateSourceDisplay', label: '来源', minWidth: 80 },
-  {
-    prop: 'saleAmount',
-    label: '售价',
-    minWidth: 88,
-    align: 'right',
-    formatter: (row) => fmtReportNumber((row as NurseExecutionDetailRowDto).saleAmount, 2),
-  },
-  {
-    prop: 'purchaseAmount',
-    label: '进价',
-    minWidth: 88,
-    align: 'right',
-    formatter: (row) => fmtReportPurchaseMoney((row as NurseExecutionDetailRowDto).purchaseAmount),
-  },
-  { prop: 'recordedTime', label: '执行时间', minWidth: 150 },
-  { prop: 'encounterBusNo', label: '就诊号', minWidth: 150 },
-  { prop: 'patientName', label: '患者', minWidth: 88 },
-];
+const executionDetailColumns = computed<TableColumn[]>(() => {
+  const columns: TableColumn[] = [
+    { prop: 'itemName', label: '诊疗项目', minWidth: 180 },
+    { prop: 'categoryDisplay', label: '类目', minWidth: 88 },
+    { prop: 'generateSourceDisplay', label: '来源', minWidth: 80 },
+    {
+      prop: 'saleAmount',
+      label: '售价',
+      minWidth: 88,
+      align: 'right',
+      formatter: (row) => fmtReportNumber((row as NurseExecutionDetailRowDto).saleAmount, 2),
+    },
+  ];
+  if (showDiscount.value) {
+    columns.push({
+      prop: 'discountAmount',
+      label: '优惠',
+      minWidth: 88,
+      align: 'right',
+      formatter: (row) =>
+        fmtReportNumber((row as NurseExecutionDetailRowDto).discountAmount, 2),
+    });
+    columns.push({
+      prop: 'actualReceivedAmount',
+      label: '实收',
+      minWidth: 88,
+      align: 'right',
+      formatter: (row) =>
+        fmtReportNumber((row as NurseExecutionDetailRowDto).actualReceivedAmount, 2),
+    });
+  }
+  columns.push(
+    {
+      prop: 'purchaseAmount',
+      label: '进价',
+      minWidth: 88,
+      align: 'right',
+      formatter: (row) =>
+        fmtReportPurchaseMoney((row as NurseExecutionDetailRowDto).purchaseAmount),
+    },
+    { prop: 'recordedTime', label: '执行时间', minWidth: 150 },
+    { prop: 'encounterBusNo', label: '就诊号', minWidth: 150 },
+    { prop: 'patientName', label: '患者', minWidth: 88 },
+  );
+  return columns;
+});
 
-const consumableDetailColumns: TableColumn[] = [
-  { prop: 'deviceName', label: '耗材名称', minWidth: 180 },
-  { prop: 'specText', label: '规格', minWidth: 96 },
-  { prop: 'hvcmDisplay', label: '高/低值', minWidth: 80 },
-  { prop: 'generateSourceDisplay', label: '来源', minWidth: 80 },
-  { prop: 'businessTime', label: '业务时间', minWidth: 150 },
-  {
-    prop: 'quantity',
-    label: '数量',
-    minWidth: 72,
-    align: 'right',
-    formatter: (row) => fmtReportNumber((row as NurseConsumableDetailRowDto).quantity, 2),
-  },
-  {
-    prop: 'saleAmount',
-    label: '售价',
-    minWidth: 80,
-    align: 'right',
-    formatter: (row) => fmtReportNumber((row as NurseConsumableDetailRowDto).saleAmount, 2),
-  },
-  {
-    prop: 'purchaseAmount',
-    label: '进价',
-    minWidth: 80,
-    align: 'right',
-    formatter: (row) => fmtReportPurchaseMoney((row as NurseConsumableDetailRowDto).purchaseAmount),
-  },
-  { prop: 'unitCodeLabel', label: '单位', minWidth: 56 },
-  { prop: 'encounterBusNo', label: '就诊号', minWidth: 150 },
-  { prop: 'patientName', label: '患者', minWidth: 88 },
-];
+const consumableDetailColumns = computed<TableColumn[]>(() => {
+  const columns: TableColumn[] = [
+    { prop: 'deviceName', label: '耗材名称', minWidth: 180 },
+    { prop: 'specText', label: '规格', minWidth: 96 },
+    { prop: 'hvcmDisplay', label: '高/低值', minWidth: 80 },
+    { prop: 'generateSourceDisplay', label: '来源', minWidth: 80 },
+    { prop: 'businessTime', label: '业务时间', minWidth: 150 },
+    {
+      prop: 'quantity',
+      label: '数量',
+      minWidth: 72,
+      align: 'right',
+      formatter: (row) => fmtReportNumber((row as NurseConsumableDetailRowDto).quantity, 2),
+    },
+    {
+      prop: 'saleAmount',
+      label: '售价',
+      minWidth: 80,
+      align: 'right',
+      formatter: (row) => fmtReportNumber((row as NurseConsumableDetailRowDto).saleAmount, 2),
+    },
+  ];
+  if (showDiscount.value) {
+    columns.push({
+      prop: 'discountAmount',
+      label: '优惠',
+      minWidth: 80,
+      align: 'right',
+      formatter: (row) =>
+        fmtReportNumber((row as NurseConsumableDetailRowDto).discountAmount, 2),
+    });
+    columns.push({
+      prop: 'actualReceivedAmount',
+      label: '实收',
+      minWidth: 80,
+      align: 'right',
+      formatter: (row) =>
+        fmtReportNumber((row as NurseConsumableDetailRowDto).actualReceivedAmount, 2),
+    });
+  }
+  columns.push(
+    {
+      prop: 'purchaseAmount',
+      label: '进价',
+      minWidth: 80,
+      align: 'right',
+      formatter: (row) =>
+        fmtReportPurchaseMoney((row as NurseConsumableDetailRowDto).purchaseAmount),
+    },
+    { prop: 'unitCodeLabel', label: '单位', minWidth: 56 },
+    { prop: 'encounterBusNo', label: '就诊号', minWidth: 150 },
+    { prop: 'patientName', label: '患者', minWidth: 88 },
+  );
+  return columns;
+});
 
 /** 组装带护士 id 的明细查询条件。 */
 function buildNurseDetailFilter() {
@@ -215,7 +298,9 @@ async function loadDetailPage() {
 /** 导出当前主 Tab 明细 Excel（列清单与当前表明细列一致）。 */
 async function handleExportDetail() {
   const sourceColumns =
-    mainTab.value === NURSE_MAIN_TAB_EXECUTION ? executionDetailColumns : consumableDetailColumns;
+    mainTab.value === NURSE_MAIN_TAB_EXECUTION
+      ? executionDetailColumns.value
+      : consumableDetailColumns.value;
   // TableColumn.prop → Excel 导出行 field；执行时间/业务时间走 Text 别名
   const exportColumns = buildExcelExportColumns(
     sourceColumns

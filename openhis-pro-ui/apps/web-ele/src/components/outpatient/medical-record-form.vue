@@ -21,10 +21,17 @@ import {
 } from 'vue';
 import { onBeforeRouteLeave } from 'vue-router';
 
-import { ChevronLeft, ChevronRight } from '@vben/icons';
-import { useUserStore } from '@vben/stores';
+import { ChevronLeft, ChevronRight } from '@zxplat/icons';
+import { useUserStore } from '@zxplat/stores';
 
-import { ElButton, ElMessage, ElMessageBox } from 'element-plus';
+import {
+  ElButton,
+  ElDropdown,
+  ElDropdownItem,
+  ElDropdownMenu,
+  ElMessage,
+  ElMessageBox,
+} from 'element-plus';
 
 import {
   createDocumentApi,
@@ -33,9 +40,15 @@ import {
   getDocumentContentApi,
   getDocumentListApi,
   saveDocumentApi,
+  submitRevisedArchiveApi,
+  updateDocumentTitleApi,
 } from '#/api/emr/document';
 import { getDocumentTypeListApi } from '#/api/emr/document-type';
 import { resolveEncounterMetadataApi } from '#/api/emr/encounter-metadata';
+import {
+  submitInpatientDocumentArchiveApi,
+  submitOutpatientDocumentArchiveApi,
+} from '#/api/mrms';
 import {
   createTemplateApi,
   deleteTemplateApi,
@@ -120,6 +133,8 @@ const props = withDefaults(defineProps<Props>(), {
   restrictHistoryToInpatient: false,
   encounterScoped: false,
   initialDocumentId: '',
+  archiveEnabled: true,
+  hostOwnsUnsavedGuard: false,
 });
 
 interface Props {
@@ -142,13 +157,33 @@ interface Props {
   encounterScoped?: boolean;
   /** 打开时自动加载的文书主键（门诊列表行 documentId） */
   initialDocumentId?: string;
+  /**
+   * 是否展示文书归档（提交归档 / 已归档修改）。
+   * 住院医生站关闭；病案首页「病历」、门诊医生站默认开启。
+   */
+  archiveEnabled?: boolean;
+  /**
+   * 宿主自己管未保存确认（多人病历工作台）。
+   * 为 true 时不注册全局 guard、不拦路由离开，避免多实例互相覆盖。
+   */
+  hostOwnsUnsavedGuard?: boolean;
 }
+
+const emit = defineEmits<{
+  dirtyChange: [dirty: boolean];
+}>();
 
 type PageMargins = { bottom: string; left: string; right: string; top: string };
 
 /** 已打开的文书会话（一 Tab 一编辑器） */
 interface EmrOpenTab {
   documentId: string;
+  /** 文书状态：DRAFT / PENDING_ARCHIVE / ARCHIVED */
+  documentStatus: string;
+  /** 已归档：医生确认修改后本地解锁；不能保存，只能提交审核 */
+  revisingArchived?: boolean;
+  /** 文书就诊与当前就诊不一致，不可改 */
+  linkedReadOnly?: boolean;
   documentReadOnly: boolean;
   documentTitle: string;
   documentTypeCode: string;
@@ -172,8 +207,7 @@ interface EmrOpenTab {
   tabAuthorName: string;
 }
 
-const MAX_OPEN_TABS_OUTPATIENT = 4;
-const MAX_OPEN_TABS_INPATIENT = 8;
+/** 文书子 Tab 不再限制同时打开数量 */
 
 const ensureClinicalReception = inject(ENSURE_CLINICAL_RECEPTION_KEY, undefined);
 const userStore = useUserStore();
@@ -195,6 +229,7 @@ function createBlankTab(): EmrOpenTab {
   return {
     key: nextTabKey(),
     documentId: '',
+    documentStatus: '',
     pendingTemplateId: '',
     documentReadOnly: false,
     documentTypeCode: '',
@@ -217,6 +252,7 @@ const openTabs = ref<EmrOpenTab[]>([createBlankTab()]);
 const activeTabKey = ref(openTabs.value[0]!.key);
 const documentLoading = ref(false);
 const saveLoading = ref(false);
+const submitArchiveLoading = ref(false);
 const saveAsTemplateLoading = ref(false);
 const saveAsTemplateDialogOpen = ref(false);
 const saveAsTemplateDialogRef = ref<InstanceType<typeof SaveAsEmrTemplateDialog> | null>(null);
@@ -272,7 +308,7 @@ const activeTab = computed(
 
 const documentId = computed(() => activeTab.value.documentId);
 const pendingTemplateId = computed(() => activeTab.value.pendingTemplateId);
-const documentReadOnly = computed(() => props.forceReadOnly || activeTab.value.documentReadOnly);
+const documentReadOnly = computed(() => isTabReadOnly(activeTab.value));
 const documentTypeCode = computed(() => activeTab.value.documentTypeCode);
 
 const openDocumentIds = computed(() =>
@@ -281,6 +317,16 @@ const openDocumentIds = computed(() =>
 
 /** 子 Tab 脏标（模板可读的响应式映射） */
 const tabDirtyMap = ref<Record<string, boolean>>({});
+const hasUnsavedChangesFlag = computed(() => Object.values(tabDirtyMap.value).some(Boolean));
+
+watch(hasUnsavedChangesFlag, (dirty) => {
+  emit('dirtyChange', dirty);
+});
+
+/** 当前表单是否有未保存文书（供宿主页签圆点 / 关闭确认） */
+function hasUnsavedChanges(): boolean {
+  return hasUnsavedChangesFlag.value;
+}
 
 const leftCollapsed = ref(false);
 const COLLAPSED_WIDTH = 48;
@@ -448,11 +494,26 @@ function pinOutpatientPageChrome(typeCode: string, chrome: EmrPageChrome): EmrPa
   return next;
 }
 
+function sameJson(a: unknown, b: unknown): boolean {
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
+}
+
 /** 从接口 content 读出页眉页脚/页边距，正文去掉侧车字段 */
 function loadEmrContentIntoTab(tab: EmrOpenTab, raw: unknown): JSONContent {
   const sidecar = readEmrDocSidecar(raw);
-  tab.pageChrome = pinOutpatientPageChrome(tab.documentTypeCode, sidecar.pageChrome);
-  tab.pageMargins = { ...sidecar.pageMargins };
+  const nextChrome = pinOutpatientPageChrome(tab.documentTypeCode, sidecar.pageChrome);
+  const nextMargins = { ...sidecar.pageMargins };
+  // 同值也换新对象会触发编辑器分页，视口被顶回第一行
+  if (!sameJson(tab.pageChrome, nextChrome)) {
+    tab.pageChrome = nextChrome;
+  }
+  if (!sameJson(tab.pageMargins, nextMargins)) {
+    tab.pageMargins = nextMargins;
+  }
   const parsed = parseEmrContentToDoc(raw);
   const body = parsed ? stripEmrDocSidecar(parsed) : raw;
   return normalizeEmrRootDoc(body);
@@ -460,11 +521,13 @@ function loadEmrContentIntoTab(tab: EmrOpenTab, raw: unknown): JSONContent {
 
 /** 页眉/页边距写入后强制重算分页，避免第二页起正文与页眉错位 */
 function relayoutEditorForTab(tabKey: string) {
+  const editorComp = getEditor(tabKey);
   const run = () => {
-    const ed = getEditor(tabKey)?.getEditor?.();
+    const ed = editorComp?.getEditor?.();
     if (ed && !ed.isDestroyed) {
       requestEmrPaginationRelayout(ed);
     }
+    editorComp?.restoreScrollPosition?.();
   };
   run();
   // 查看页/弹层冷加载：NodeView、字体、图片未就绪时单次 nextTick 会量错；延迟多拍对齐编辑态
@@ -482,20 +545,31 @@ function relayoutEditorForTab(tabKey: string) {
   }
 }
 
+function restoreOpenEditorViewports() {
+  for (const tab of openTabs.value) {
+    getEditor(tab.key)?.restoreScrollPosition?.();
+  }
+}
+
 function activateTab(key: string) {
   if (openTabs.value.some((t) => t.key === key)) {
     activeTabKey.value = key;
     // v-show 从隐藏切出时几何为 0，须可见后再排
-    void nextTick(() => relayoutEditorForTab(key));
+    void nextTick(() => {
+      relayoutEditorForTab(key);
+      getEditor(key)?.restoreScrollPosition?.();
+    });
   }
 }
 
 /** 存盘/打印：把当前 Tab 的页眉页脚写回 content 侧车 */
 function packTabContentForSave(tab: EmrOpenTab, doc: JSONContent): JSONContent {
   const pageChrome = pinOutpatientPageChrome(tab.documentTypeCode, tab.pageChrome);
-  tab.pageChrome = pageChrome;
+  if (!sameJson(tab.pageChrome, pageChrome)) {
+    tab.pageChrome = pageChrome;
+  }
   return packEmrDocWithSidecar(stripEmrDocSidecar(doc), {
-    pageChrome,
+    pageChrome: tab.pageChrome,
     pageMargins: tab.pageMargins,
   });
 }
@@ -513,7 +587,7 @@ function editorDocIdForTab(tab: EmrOpenTab): string {
 
 /** 只读/可写切换时重建编辑器，避免引用历史后再复用仍沿用不可填的 NodeView */
 function editorInstanceKey(tab: EmrOpenTab): string {
-  const mode = tab.documentReadOnly || props.forceReadOnly ? 'ro' : 'rw';
+  const mode = isTabReadOnly(tab) ? 'ro' : 'rw';
   return `${tab.key}:${mode}`;
 }
 
@@ -558,14 +632,6 @@ function markTabClean(tabKey: string) {
 function isActiveEditorDirty(): boolean {
   refreshTabDirty(activeTabKey.value);
   return isTabDirty(activeTabKey.value) || getEditor(activeTabKey.value)?.isDirty?.() === true;
-}
-
-function isAnyEditorDirty(): boolean {
-  for (const tab of openTabs.value) {
-    refreshTabDirty(tab.key);
-    if (isTabDirty(tab.key) || getEditor(tab.key)?.isDirty?.() === true) return true;
-  }
-  return false;
 }
 
 /** 是否像文书类型编码（全大写+下划线），避免 Tab 显示英文 code */
@@ -718,20 +784,98 @@ function tabShortTitle(tab: EmrOpenTab): string {
 }
 
 function isTabReadOnly(tab: EmrOpenTab): boolean {
-  return props.forceReadOnly || tab.documentReadOnly;
+  if (props.forceReadOnly) return true;
+  if (tab.revisingArchived) return false;
+  return tab.documentReadOnly;
 }
 
-function revertTabToSavedSnapshot(tab: EmrOpenTab) {
-  tab.recordDoc = structuredClone(tab.savedContentSnapshot);
-  void nextTick(() => {
-    getEditor(tab.key)?.markSaved?.();
-    getEditor(tab.key)?.clearDraft?.();
-    markTabClean(tab.key);
-  });
+/** 文书状态展示；空状态（未落库）不展示 */
+function documentStatusLabel(status?: string, revising?: boolean): string {
+  const code = (status ?? '').trim();
+  if (code === 'ARCHIVED' && revising) return '已归档·修改中';
+  if (code === 'ARCHIVED') return '已归档';
+  if (code === 'PENDING_ARCHIVE') return '待归档';
+  return '';
+}
+
+const activeStatusLabel = computed(() =>
+  documentStatusLabel(activeTab.value.documentStatus, activeTab.value.revisingArchived),
+);
+
+/** 已归档且属于本次就诊：确认后可改，改完只能提交审核 */
+const canReviseArchived = computed(() => {
+  if (!props.archiveEnabled) return false;
+  if (props.forceReadOnly) return false;
+  if (activeTab.value.revisingArchived) return false;
+  if (activeTab.value.linkedReadOnly) return false;
+  return (activeTab.value.documentStatus ?? '').trim() === 'ARCHIVED';
+});
+
+async function handleStartArchiveRevision() {
+  try {
+    await ElMessageBox.confirm(
+      '该病历已归档。修改不会直接保存，改完只能提交归档；审核通过后才会成为最新病历。是否继续？',
+      '修改已归档病历',
+      {
+        type: 'warning',
+        confirmButtonText: '继续修改',
+        cancelButtonText: '取消',
+      },
+    );
+  } catch {
+    return;
+  }
+  activeTab.value.revisingArchived = true;
+}
+
+/** 已归档修改：快照当前正式正文后进入同一归档审批队列。 */
+async function handleSubmitArchivedRevision() {
+  const tab = activeTab.value;
+  if (!tab.revisingArchived) return;
+  const documentId = preserveApiIdForRequest(tab.documentId);
+  if (!documentId) {
+    ElMessage.warning('文书尚未落库，无法提交归档');
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      '提交后进入归档审批，和首次归档同一队列。通过前正式病历保持不变；驳回会恢复到提交前的版本。是否提交？',
+      '提交归档',
+      {
+        type: 'warning',
+        confirmButtonText: '提交归档',
+        cancelButtonText: '取消',
+      },
+    );
+  } catch {
+    return;
+  }
+  getActiveEditor()?.exitPageChromeEdit?.();
+  await nextTick();
+  const rawContent = getActiveEditor()?.getJSON?.() ?? tab.recordDoc;
+  if (!rawContent) {
+    ElMessage.warning('没有可提交的内容');
+    return;
+  }
+  const content = packTabContentForSave(tab, rawContent);
+  submitArchiveLoading.value = true;
+  try {
+    await submitRevisedArchiveApi({ documentId, content });
+    tab.revisingArchived = false;
+    ElMessage.success('已提交归档，通过后将成为最新病历');
+    await reloadCurrentDocument({ silent: true });
+  } catch {
+    // 拦截器已提示
+  } finally {
+    submitArchiveLoading.value = false;
+  }
 }
 
 function resetTabContent(tab: EmrOpenTab) {
   tab.documentId = '';
+  tab.documentStatus = '';
+  tab.revisingArchived = false;
+  tab.linkedReadOnly = false;
   tab.pendingTemplateId = '';
   tab.documentReadOnly = false;
   tab.documentTypeCode = '';
@@ -754,57 +898,9 @@ function resetTabContent(tab: EmrOpenTab) {
   });
 }
 
-/** 放弃未保存：离开当前会话 / 切换打开其它模板或历史文书 */
-type EmrDiscardContext = 'leave' | 'replace';
-
-async function applyDiscardAfterConfirm(context: EmrDiscardContext) {
-  if (context === 'replace') {
-    const tab = activeTab.value;
-    if (!tab.documentId && tab.pendingTemplateId) {
-      resetTabContent(tab);
-    }
-    return;
-  }
-  // 离开：逐个恢复已打开文书
-  for (const tab of openTabs.value) {
-    if (tab.documentId) {
-      try {
-        const dto = await getDocumentContentApi({ documentId: tab.documentId });
-        applyDocumentDtoToTab(tab, dto);
-      } catch {
-        revertTabToSavedSnapshot(tab);
-      }
-    } else if (tab.pendingTemplateId) {
-      resetTabContent(tab);
-    } else {
-      revertTabToSavedSnapshot(tab);
-    }
-  }
-}
-
-/** 切换患者/模板/离开前确认未保存 */
-async function confirmDiscardUnsavedIfNeeded(
-  context: EmrDiscardContext = 'leave',
-): Promise<boolean> {
-  const dirty = context === 'replace' ? isActiveEditorDirty() : isAnyEditorDirty();
-  if (!dirty) return true;
-  const message =
-    context === 'replace'
-      ? '当前病历有未保存的修改，放弃后将打开所选内容，是否继续？'
-      : openTabs.value.length > 1
-        ? '有未保存的病历修改，是否放弃修改并继续？'
-        : '当前病历有未保存的修改，是否放弃修改并继续？';
-  try {
-    await ElMessageBox.confirm(message, '未保存提示', {
-      type: 'warning',
-      confirmButtonText: '放弃修改',
-      cancelButtonText: '继续编辑',
-    });
-    await applyDiscardAfterConfirm(context);
-    return true;
-  } catch {
-    return false;
-  }
+/** 换患者、打开其它文书、离开页面：不再弹出未保存确认 */
+async function confirmDiscardUnsavedIfNeeded(): Promise<boolean> {
+  return true;
 }
 
 /** 重置前确认：仅恢复基线，不清 pending（随后由 reload 刷新） */
@@ -836,22 +932,37 @@ function requireEncounterIdForDocument(options?: { silent?: boolean }): boolean 
 
 /** 文书类型 code → 显示名（页眉标题回退） */
 let documentTypeNameByCode: Map<string, string> | null = null;
+/** 文书类型 code → 目录分类（住院调阅判断用；院内自定义编码不在写死名单里） */
+let documentTypeCategoryByCode: Map<string, string> | null = null;
 
 async function ensureDocumentTypeNameByCode(): Promise<Map<string, string>> {
-  if (documentTypeNameByCode) return documentTypeNameByCode;
+  if (documentTypeNameByCode && documentTypeCategoryByCode) return documentTypeNameByCode;
   const map = new Map<string, string>();
+  const categories = new Map<string, string>();
   try {
     const list = await getDocumentTypeListApi({ enabled: true });
     for (const dt of list ?? []) {
       const code = String(dt.code ?? '').trim();
+      if (!code) continue;
       const name = String(dt.name ?? '').trim();
-      if (code && name) map.set(code, name);
+      if (name) map.set(code, name);
+      const category = String(dt.categoryCode ?? '').trim();
+      if (category) categories.set(code, category);
     }
   } catch {
     /* 列表失败时保持空表，由调用方用其它来源兜底 */
   }
   documentTypeNameByCode = map;
+  documentTypeCategoryByCode = categories;
   return map;
+}
+
+/** 按文书类型目录归类；目录没有分类时再按类型编码兜底 */
+async function resolveDocumentDirectoryCategory(typeCode: string): Promise<string> {
+  await ensureDocumentTypeNameByCode();
+  const code = typeCode.trim();
+  const categoryCode = code ? documentTypeCategoryByCode?.get(code) : undefined;
+  return resolveEmrDirectoryCategory(code, categoryCode);
 }
 
 async function resolveDocumentTypeDisplayName(
@@ -880,15 +991,22 @@ function applyDocumentDtoToTab(
     metadataValues?: Record<string, string>;
     readOnly?: boolean;
     sourceTemplateId?: number | string;
+    status?: string;
     title?: string;
     /** 列表 savedByName，用于 Tab 医生展示 */
     authorName?: string;
   },
 ) {
+  const previousDocumentId = tab.documentId;
   const id = preserveApiIdForRequest(dto.id);
   if (id) {
     tab.documentId = id;
     tab.pendingTemplateId = '';
+  }
+  if (dto.status !== undefined) {
+    tab.documentStatus = (dto.status ?? '').trim();
+  } else if (id && !tab.documentStatus) {
+    tab.documentStatus = 'DRAFT';
   }
   if (dto.documentTypeCode) {
     tab.documentTypeCode = dto.documentTypeCode;
@@ -908,12 +1026,23 @@ function applyDocumentDtoToTab(
   const docEncounterId = preserveApiIdForRequest(dto.encounterId) ?? '';
   const linkedPeerReadOnly =
     Boolean(currentEncounterId) && Boolean(docEncounterId) && docEncounterId !== currentEncounterId;
+  tab.linkedReadOnly = linkedPeerReadOnly;
+  tab.revisingArchived = false;
   tab.documentReadOnly = props.forceReadOnly || Boolean(dto.readOnly) || linkedPeerReadOnly;
   if (dto.metadataValues) {
     tab.serverMetadataValues = { ...dto.metadataValues };
   }
+  const nextDocumentId = id || previousDocumentId;
+  const preserveViewport =
+    !previousDocumentId || !nextDocumentId || previousDocumentId === nextDocumentId;
   const doc = loadEmrContentIntoTab(tab, dto.content);
-  tab.recordDoc = doc;
+  const editorComp = getEditor(tab.key);
+  const editorScroll = editorComp?.captureScrollPosition?.();
+  const currentDoc = editorComp?.getJSON?.() ?? tab.recordDoc;
+  const sameBody = sameJson(normalizeEmrRootDoc(currentDoc ?? defaultEmrEditorDoc), doc);
+  if (!sameBody) {
+    tab.recordDoc = doc;
+  }
   captureContentSnapshot(tab, doc);
   tab.editorSurface = 'document';
   syncTabHeader(tab, {
@@ -921,7 +1050,12 @@ function applyDocumentDtoToTab(
     metadataValues: dto.metadataValues ?? tab.serverMetadataValues,
   });
   void nextTick(() => {
-    relayoutEditorForTab(tab.key);
+    if (!sameBody) {
+      relayoutEditorForTab(tab.key);
+    }
+    if (preserveViewport) {
+      getEditor(tab.key)?.restoreScrollPosition?.(editorScroll);
+    }
     getEditor(tab.key)?.markSaved?.();
     getEditor(tab.key)?.clearDraft?.();
     markTabClean(tab.key);
@@ -943,10 +1077,6 @@ function findTabByDocumentId(id: string): EmrOpenTab | undefined {
   return openTabs.value.find((t) => t.documentId === id);
 }
 
-function resolveMaxOpenTabs(): number {
-  return isInpatientStation.value ? MAX_OPEN_TABS_INPATIENT : MAX_OPEN_TABS_OUTPATIENT;
-}
-
 /** 当前 Tab 是否已占用（已有文书、待保存模板或已选类型） */
 function activeTabHasDraftSession(tab: EmrOpenTab): boolean {
   if (tab.documentId) return true;
@@ -955,17 +1085,14 @@ function activeTabHasDraftSession(tab: EmrOpenTab): boolean {
 }
 
 /**
- * 住院：在已有会话的标签上再选模板时，自动新开子 Tab，避免覆盖上一份病历。
+ * 当前标签已有会话时再选模板，自动新开子 Tab，避免覆盖上一份已写病历。
  *
- * @return 套用模板的 Tab；无法新开时返回 null
+ * @return 套用模板的 Tab
  */
-function resolveTabForNewTemplateSession(): EmrOpenTab | null {
+function resolveTabForNewTemplateSession(): EmrOpenTab {
   const current = activeTab.value;
-  if (!isInpatientStation.value || !activeTabHasDraftSession(current)) {
+  if (!activeTabHasDraftSession(current)) {
     return current;
-  }
-  if (!canOpenNewTab()) {
-    return null;
   }
   const blank = createBlankTab();
   openTabs.value = [...openTabs.value, blank];
@@ -974,42 +1101,120 @@ function resolveTabForNewTemplateSession(): EmrOpenTab | null {
 }
 
 function canOpenNewTab(): boolean {
-  const max = resolveMaxOpenTabs();
-  if (openTabs.value.length < max) return true;
-  ElMessage.warning(`最多同时打开 ${max} 份病历，请先关闭部分标签`);
-  return false;
+  return true;
+}
+
+function isTabDirtyNow(tabKey: string): boolean {
+  refreshTabDirty(tabKey);
+  return isTabDirty(tabKey) || getEditor(tabKey)?.isDirty?.() === true;
+}
+
+function disposeClosedTab(tabKey: string) {
+  editorRefMap.delete(tabKey);
+  const nextDirty = { ...tabDirtyMap.value };
+  delete nextDirty[tabKey];
+  tabDirtyMap.value = nextDirty;
+}
+
+async function confirmCloseDirtyTabs(keys: string[]): Promise<boolean> {
+  if (keys.length === 0) return true;
+  const dirty = keys.some((key) => isTabDirtyNow(key));
+  if (!dirty) return true;
+  try {
+    await ElMessageBox.confirm(
+      keys.length > 1
+        ? '选中的病历含未保存修改，关闭后将丢失，是否继续？'
+        : '该病历有未保存的修改，关闭后将丢失，是否继续？',
+      '关闭确认',
+      {
+        type: 'warning',
+        confirmButtonText: '关闭',
+        cancelButtonText: '继续编辑',
+      },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 批量移除页签；全部关掉时留一份空白会话 */
+function closeTabsByKeys(keys: string[], keepActiveKey?: string) {
+  if (keys.length === 0) return;
+  const keySet = new Set(keys);
+  const remaining = openTabs.value.filter((tab) => !keySet.has(tab.key));
+  for (const key of keys) {
+    disposeClosedTab(key);
+  }
+  if (remaining.length === 0) {
+    const blank = createBlankTab();
+    openTabs.value = [blank];
+    activeTabKey.value = blank.key;
+    return;
+  }
+  openTabs.value = remaining;
+  if (keySet.has(activeTabKey.value)) {
+    const next =
+      remaining.find((tab) => tab.key === keepActiveKey) ??
+      remaining[0];
+    activeTabKey.value = next!.key;
+    void nextTick(() => relayoutEditorForTab(next!.key));
+  }
 }
 
 /** 关闭文书子 Tab；最后一页则清空为空白会话 */
 async function closeTab(tabKey: string) {
   const tab = openTabs.value.find((t) => t.key === tabKey);
   if (!tab) return;
-  refreshTabDirty(tabKey);
-  if (isTabDirty(tabKey) || getEditor(tabKey)?.isDirty?.() === true) {
-    try {
-      await ElMessageBox.confirm('该病历有未保存的修改，关闭后将丢失，是否继续？', '关闭确认', {
-        type: 'warning',
-        confirmButtonText: '关闭',
-        cancelButtonText: '继续编辑',
-      });
-    } catch {
-      return;
-    }
-  }
+  const ok = await confirmCloseDirtyTabs([tabKey]);
+  if (!ok) return;
   if (openTabs.value.length <= 1) {
     resetTabContent(tab);
     return;
   }
-  const idx = openTabs.value.findIndex((t) => t.key === tabKey);
-  openTabs.value = openTabs.value.filter((t) => t.key !== tabKey);
-  editorRefMap.delete(tabKey);
-  const nextDirty = { ...tabDirtyMap.value };
-  delete nextDirty[tabKey];
-  tabDirtyMap.value = nextDirty;
-  if (activeTabKey.value === tabKey) {
-    const next = openTabs.value[Math.max(0, idx - 1)] ?? openTabs.value[0];
-    activeTabKey.value = next!.key;
-    void nextTick(() => relayoutEditorForTab(next!.key));
+  closeTabsByKeys([tabKey]);
+}
+
+function canCloseTabsBefore(tabKey: string): boolean {
+  return openTabs.value.findIndex((tab) => tab.key === tabKey) > 0;
+}
+
+function canCloseTabsAfter(tabKey: string): boolean {
+  const idx = openTabs.value.findIndex((tab) => tab.key === tabKey);
+  return idx >= 0 && idx < openTabs.value.length - 1;
+}
+
+/** 页签右键：关闭当前 / 前 / 后 / 全部 */
+async function handleDocTabCommand(command: string, tabKey: string) {
+  const idx = openTabs.value.findIndex((tab) => tab.key === tabKey);
+  if (idx < 0) return;
+  if (command === 'close') {
+    await closeTab(tabKey);
+    return;
+  }
+  if (command === 'closeBefore') {
+    const keys = openTabs.value.slice(0, idx).map((tab) => tab.key);
+    const ok = await confirmCloseDirtyTabs(keys);
+    if (!ok) return;
+    closeTabsByKeys(keys, tabKey);
+    return;
+  }
+  if (command === 'closeAfter') {
+    const keys = openTabs.value.slice(idx + 1).map((tab) => tab.key);
+    const ok = await confirmCloseDirtyTabs(keys);
+    if (!ok) return;
+    closeTabsByKeys(keys, tabKey);
+    return;
+  }
+  if (command === 'closeAll') {
+    const keys = openTabs.value.map((tab) => tab.key);
+    const ok = await confirmCloseDirtyTabs(keys);
+    if (!ok) return;
+    if (openTabs.value.length <= 1) {
+      resetTabContent(openTabs.value[0]!);
+      return;
+    }
+    closeTabsByKeys(keys);
   }
 }
 
@@ -1018,7 +1223,7 @@ async function applyTemplateLocallyToTab(
   tab: EmrOpenTab,
   typeCode: string,
   templateId: string,
-  options?: { silent?: boolean; documentTypeName?: string },
+  options?: { silent?: boolean; documentTypeName?: string; documentTitle?: string },
 ) {
   const tplId = preserveApiIdForRequest(templateId);
   if (!tplId) {
@@ -1031,6 +1236,7 @@ async function applyTemplateLocallyToTab(
     // await 期间接诊/切患者可能重建 Tab：落到仍存活的会话上
     const liveTab = openTabs.value.find((t) => t.key === tab.key) ?? activeTab.value;
     liveTab.documentId = '';
+    liveTab.documentStatus = '';
     // 强制只读场景不应落到可编辑新建态
     liveTab.documentReadOnly = props.forceReadOnly;
     liveTab.documentTypeCode = typeCode;
@@ -1039,7 +1245,10 @@ async function applyTemplateLocallyToTab(
       options?.documentTypeName,
       tpl.documentTypeName,
     );
-    liveTab.documentTitle = '';
+    // 页签用文书/模板名，不用文书类型名（同类型多份才分得清）
+    const titleHint = (options?.documentTitle ?? '').trim();
+    const fromTpl = (tpl.name ?? '').trim();
+    liveTab.documentTitle = titleHint || fromTpl || '';
     liveTab.pendingTemplateId = tplId;
     liveTab.sourceTemplateId = tplId;
     // 本地患者条 + 服务端解析一并落库到 tab，并烘进正文，避免首屏 watch 竞态空白
@@ -1259,6 +1468,19 @@ const canSaveDocument = computed(() => {
   if (pendingTemplateId.value) return true;
   // 历史复用：已有类型与正文、且可编辑
   return !documentReadOnly.value && Boolean(activeTab.value.recordDoc);
+});
+
+/**
+ * 是否可提交归档：已落库草稿、可写、非调阅；且入口允许归档。
+ * 未显式带回 status 时按草稿处理（create/save 后默认可提交）。
+ */
+const canSubmitArchive = computed(() => {
+  if (!props.archiveEnabled) return false;
+  if (props.forceReadOnly) return false;
+  if (!documentId.value) return false;
+  if (documentReadOnly.value) return false;
+  const status = (activeTab.value.documentStatus || 'DRAFT').trim();
+  return status === 'DRAFT';
 });
 
 /** 当前只读文书可复用到本次就诊（历史/关联打开态；调阅除外） */
@@ -1604,6 +1826,10 @@ async function handleSave(): Promise<boolean> {
     return false;
   }
   const tab = activeTab.value;
+  if (tab.revisingArchived) {
+    ElMessage.warning('已归档病历修改后不能保存，请提交归档');
+    return false;
+  }
   // 先退出页眉页脚编辑，保证侧车与正文一并落库
   getActiveEditor()?.exitPageChromeEdit?.();
   await nextTick();
@@ -1611,6 +1837,7 @@ async function handleSave(): Promise<boolean> {
   if (activeEditor?.validateRequired && !activeEditor.validateRequired()) {
     return false;
   }
+  const savedViewport = activeEditor?.captureScrollPosition?.();
   const rawContent = activeEditor?.getJSON?.() ?? tab.recordDoc;
   if (!rawContent) {
     ElMessage.warning('没有可保存的内容');
@@ -1644,14 +1871,70 @@ async function handleSave(): Promise<boolean> {
     if (isInpatientStation.value) {
       await refreshProgressNoteNavList();
     }
-    // 回读服务端正文/元数据，刷新编辑区与页签
-    await reloadCurrentDocument({ silent: true });
+    getActiveEditor()?.restoreScrollPosition?.(savedViewport);
     return true;
   } catch {
     // 未落库：拦截器已提示；已落库：刷新失败不改成功结论
     return persisted;
   } finally {
     saveLoading.value = false;
+  }
+}
+
+/**
+ * 提交归档：DRAFT → PENDING_ARCHIVE。
+ * 有未保存修改时先落库，再调门诊/住院提交归档接口。
+ */
+async function handleSubmitArchive(): Promise<boolean> {
+  if (props.forceReadOnly) {
+    ElMessage.warning('病历调阅仅支持查看，不可提交归档');
+    return false;
+  }
+  if (!canSubmitArchive.value) {
+    ElMessage.warning('仅草稿文书可提交归档');
+    return false;
+  }
+  try {
+    await ElMessageBox.confirm(
+      '提交后文书将进入待归档审批且不可编辑，确认提交归档？',
+      '提交归档',
+      {
+        type: 'warning',
+        confirmButtonText: '确认提交',
+        cancelButtonText: '取消',
+      },
+    );
+  } catch {
+    return false;
+  }
+
+  submitArchiveLoading.value = true;
+  try {
+    if (isTabDirty(activeTabKey.value) || getActiveEditor()?.isDirty?.()) {
+      const saved = await handleSave();
+      if (!saved) return false;
+    }
+    const id = preserveApiIdForRequest(activeTab.value.documentId);
+    if (!id) {
+      ElMessage.warning('文书尚未保存，请先保存再提交归档');
+      return false;
+    }
+    if (isInpatientStation.value) {
+      await submitInpatientDocumentArchiveApi({ documentId: id });
+    } else {
+      await submitOutpatientDocumentArchiveApi({ documentId: id });
+    }
+    const tab = activeTab.value;
+    tab.documentStatus = 'PENDING_ARCHIVE';
+    tab.documentReadOnly = true;
+    ElMessage.success('已提交归档审批');
+    void historyPanelRef.value?.refreshHistory?.();
+    await reloadCurrentDocument({ silent: true });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    submitArchiveLoading.value = false;
   }
 }
 
@@ -1670,14 +1953,15 @@ async function openDocumentFromSummary(
 ) {
   if (documentLoading.value) return;
   // 护士站调阅：仅允许打开住院目录文书；病案只读查阅不限制（可看不可改）
-  if (
-    props.restrictHistoryToInpatient &&
-    resolveEmrDirectoryCategory(row.documentTypeCode ?? '') !== 'INPATIENT'
-  ) {
-    if (!options?.silent) {
-      ElMessage.warning('病历调阅仅支持查看住院病历');
+  // 院内类型码（如 DT_GJ_06）不在写死名单里，须用文书类型目录上的 categoryCode
+  if (props.restrictHistoryToInpatient) {
+    const category = await resolveDocumentDirectoryCategory(row.documentTypeCode ?? '');
+    if (category !== 'INPATIENT') {
+      if (!options?.silent) {
+        ElMessage.warning('病历调阅仅支持查看住院病历');
+      }
+      return;
     }
-    return;
   }
   const id = preserveApiIdForRequest(row.id) ?? '';
   if (!id) {
@@ -1691,7 +1975,7 @@ async function openDocumentFromSummary(
   const existing = findTabByDocumentId(id);
   if (existing) {
     if (activeTabKey.value !== existing.key) {
-      activeTabKey.value = existing.key;
+      activateTab(existing.key);
       if (!options?.silent) {
         ElMessage.success('已切换到已打开的病历');
       }
@@ -1750,15 +2034,12 @@ async function openDocumentFromSummary(
   }
 }
 
-/** 从历史列表打开已有文书：住院且当前 Tab 已有其它会话时自动新标签打开 */
+/** 从历史列表打开已有文书：当前 Tab 已有其它会话时自动新标签打开，避免盖掉已写病历 */
 async function handleSelectDocument(row: DocumentSummaryDto) {
   const rowId = preserveApiIdForRequest(row.id) ?? '';
   const activeId = preserveApiIdForRequest(activeTab.value.documentId) ?? '';
   const openInNewTab =
-    isInpatientStation.value &&
-    activeTabHasDraftSession(activeTab.value) &&
-    rowId &&
-    activeId !== rowId;
+    activeTabHasDraftSession(activeTab.value) && rowId && activeId !== rowId;
   await openDocumentFromSummary(row, openInNewTab ? { openInNewTab: true } : undefined);
 }
 
@@ -1956,6 +2237,50 @@ async function handleDeleteDocument(row: DocumentSummaryDto) {
   }
 }
 
+/** 侧栏右键：修改已写文书显示标题（非模板） */
+async function handleRenameDocument(row: DocumentSummaryDto) {
+  if (props.forceReadOnly) {
+    ElMessage.warning('病历调阅仅支持查看，不可重命名');
+    return;
+  }
+  const id = preserveApiIdForRequest(row.id) ?? '';
+  if (!id) {
+    ElMessage.warning('该病历缺少有效 ID');
+    return;
+  }
+  const currentTitle = stripDocumentTitleTimestamp((row.title ?? '').trim()) || '病历';
+  try {
+    const { value } = await ElMessageBox.prompt('请输入新的病历名称', '重命名病历', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      inputValue: currentTitle,
+      inputPattern: /\S+/,
+      inputErrorMessage: '病历名称不能为空',
+    });
+    const title = String(value ?? '').trim();
+    if (!title) {
+      ElMessage.warning('病历名称不能为空');
+      return;
+    }
+    if (title === currentTitle) return;
+    const updated = await updateDocumentTitleApi({ documentId: id, title });
+    const nextTitle = (updated?.title ?? title).trim();
+    const openTab = findTabByDocumentId(id);
+    // 已打开的 Tab 同步标题与页眉用名
+    if (openTab) {
+      openTab.documentTitle = nextTitle;
+      openTab.tabHead = resolveTabDocumentHead(openTab);
+    }
+    ElMessage.success('已重命名');
+    void historyPanelRef.value?.refreshHistory?.();
+    if (isInpatientStation.value) {
+      await refreshProgressNoteNavList();
+    }
+  } catch {
+    // 取消或业务错误：取消不提示；接口错误由拦截器提示
+  }
+}
+
 /** 住院：静默打开最新病程（侧栏默认「本诊」分页） */
 async function loadInpatientLatestProgressNote(options?: { silent?: boolean }) {
   if (!isInpatientStation.value) return;
@@ -2010,9 +2335,6 @@ async function handleHistorySelect(item: EmrTemplateTreeNode) {
   }
 
   const targetTab = resolveTabForNewTemplateSession();
-  if (!targetTab) {
-    return;
-  }
   const needDiscardConfirm = targetTab.key === activeTabKey.value;
   if (needDiscardConfirm) {
     const proceed = await confirmDiscardUnsavedIfNeeded('replace');
@@ -2035,11 +2357,17 @@ async function handleHistorySelect(item: EmrTemplateTreeNode) {
   await nextTick();
   await applyTemplateLocallyToTab(targetTab, typeCode, tplId, {
     documentTypeName: (item.documentTypeName ?? '').trim(),
+    documentTitle: (item.label ?? item.template?.name ?? '').trim(),
     silent: needDiscardConfirm ? undefined : true,
   });
   if (!needDiscardConfirm) {
     ElMessage.success('已在新标签载入模板，编辑后请点击保存');
   }
+}
+
+/** 住院已打开文书：一患者一实例，换人由宿主换 key，本实例不重置 */
+function hasOpenedDocumentSession(): boolean {
+  return openTabs.value.some((tab) => Boolean(tab.documentId) || Boolean(tab.pendingTemplateId));
 }
 
 /** 切换患者/就诊时清空会话并（住院）加载最新病程 */
@@ -2050,6 +2378,9 @@ const pendingPatientEncounterReload = ref(false);
 watch(
   () => [props.patientId, props.encounterId] as const,
   async ([nextPatientId, nextEncounterId], [prevPatientId, prevEncounterId]) => {
+    if (isInpatientStation.value && hasOpenedDocumentSession()) {
+      return;
+    }
     if (!isTabActive.value) {
       pendingPatientEncounterReload.value = true;
       return;
@@ -2070,11 +2401,35 @@ watch(
   },
 );
 
+/** 仅病历页关浏览器/刷新时提示，其它业务页不拦 */
+function handleEmrBrowserUnload(event: BeforeUnloadEvent) {
+  event.preventDefault();
+  event.returnValue = '';
+}
+
+function bindEmrBrowserUnload() {
+  window.addEventListener('beforeunload', handleEmrBrowserUnload);
+}
+
+function unbindEmrBrowserUnload() {
+  window.removeEventListener('beforeunload', handleEmrBrowserUnload);
+}
+
 onActivated(() => {
   isTabActive.value = true;
+  if (!props.hostOwnsUnsavedGuard) {
+    bindEmrBrowserUnload();
+  }
+  if (isInpatientStation.value && hasOpenedDocumentSession()) {
+    pendingPatientEncounterReload.value = false;
+    void refreshDiagnosisMetadataIntoOpenTabs();
+    restoreOpenEditorViewports();
+    return;
+  }
   // 普通切回病历 Tab：按当前就诊重填空的中/西医诊断槽
   if (!pendingPatientEncounterReload.value && !skipPatientEncounterWatch) {
     void refreshDiagnosisMetadataIntoOpenTabs();
+    restoreOpenEditorViewports();
     return;
   }
   pendingPatientEncounterReload.value = false;
@@ -2098,11 +2453,23 @@ onActivated(() => {
 
 onDeactivated(() => {
   isTabActive.value = false;
+  if (!props.hostOwnsUnsavedGuard) {
+    unbindEmrBrowserUnload();
+  }
 });
 
 onMounted(() => {
-  registerEmrUnsavedGuard(confirmDiscardUnsavedIfNeeded);
+  isTabActive.value = true;
+  if (!props.hostOwnsUnsavedGuard) {
+    registerEmrUnsavedGuard(confirmDiscardUnsavedIfNeeded);
+    bindEmrBrowserUnload();
+  }
   void tryOpenInitialDocument();
+  // 工作台用 v-show 多实例，不走 KeepAlive onActivated；首次挂载也要拉住院病程
+  if (skipPatientEncounterWatch && isInpatientStation.value && props.patientId) {
+    skipPatientEncounterWatch = false;
+    void loadInpatientLatestProgressNote({ silent: true });
+  }
 });
 
 /**
@@ -2138,11 +2505,14 @@ watch(
 );
 
 onUnmounted(() => {
-  registerEmrUnsavedGuard(null);
+  if (!props.hostOwnsUnsavedGuard) {
+    unbindEmrBrowserUnload();
+    registerEmrUnsavedGuard(null);
+  }
 });
 
 onBeforeRouteLeave(async (_to, _from, next) => {
-  if (isForceLogoutSession()) {
+  if (props.hostOwnsUnsavedGuard || isForceLogoutSession()) {
     next(true);
     return;
   }
@@ -2153,9 +2523,12 @@ onBeforeRouteLeave(async (_to, _from, next) => {
 defineExpose({
   applyEmrTemplate,
   confirmDiscardUnsavedIfNeeded,
+  hasUnsavedChanges,
   reload: reloadCurrentDocument,
   refreshTemplateTree: () => historyPanelRef.value?.refreshTemplateTree?.(),
+  restoreViewport: restoreOpenEditorViewports,
   save: handleSave,
+  submitArchive: handleSubmitArchive,
 });
 </script>
 
@@ -2183,6 +2556,7 @@ defineExpose({
           @select-document="handleSelectDocument"
           @open-document-in-new-tab="handleOpenDocumentInNewTab"
           @delete-document="handleDeleteDocument"
+          @rename-document="handleRenameDocument"
           @reuse-document="handleReuseDocument"
           @rename-template="handleRenameTemplate"
           @update-template-content="handleUpdateTemplateContent"
@@ -2203,52 +2577,74 @@ defineExpose({
     </div>
 
     <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <div class="medical-record-form__chrome">
       <div class="medical-record-form__doc-tabs">
-        <div
+        <ElDropdown
           v-for="tab in openTabs"
           :key="tab.key"
-          class="medical-record-form__doc-tab"
-          :class="{
-            'medical-record-form__doc-tab--active': tab.key === activeTabKey,
-            'medical-record-form__doc-tab--readonly': isTabReadOnly(tab),
-          }"
-          :title="tabFullTooltip(tab)"
-          @click="activateTab(tab.key)"
+          trigger="contextmenu"
+          class="medical-record-form__doc-tab-menu"
+          @command="(cmd) => handleDocTabCommand(String(cmd), tab.key)"
         >
-          <div class="medical-record-form__doc-tab-main">
-            <div class="medical-record-form__doc-tab-head-row">
-              <span
-                v-if="isTabDirty(tab.key)"
-                class="medical-record-form__doc-tab-dirty"
-                title="未保存"
-              />
-              <span class="medical-record-form__doc-tab-head">{{ tabShortTitle(tab) }}</span>
-              <span v-if="isTabReadOnly(tab)" class="medical-record-form__doc-tab-badge">
-                只读
-              </span>
-            </div>
-            <div v-if="tabMetaLine(tab)" class="medical-record-form__doc-tab-meta">
-              {{ tabMetaLine(tab) }}
-            </div>
-          </div>
-          <button
-            type="button"
-            class="medical-record-form__doc-tab-close"
-            title="关闭"
-            @click.stop="closeTab(tab.key)"
+          <div
+            class="medical-record-form__doc-tab"
+            :class="{
+              'medical-record-form__doc-tab--active': tab.key === activeTabKey,
+              'medical-record-form__doc-tab--readonly': isTabReadOnly(tab),
+            }"
+            :title="tabFullTooltip(tab)"
+            @click="activateTab(tab.key)"
           >
-            ×
-          </button>
-        </div>
+            <div class="medical-record-form__doc-tab-main">
+              <div class="medical-record-form__doc-tab-head-row">
+                <span
+                  v-if="isTabDirty(tab.key)"
+                  class="medical-record-form__doc-tab-dirty"
+                  title="未保存"
+                />
+                <span class="medical-record-form__doc-tab-head">{{ tabShortTitle(tab) }}</span>
+                <span
+                  v-if="documentStatusLabel(tab.documentStatus, tab.revisingArchived)"
+                  class="medical-record-form__doc-tab-badge"
+                >
+                  {{ documentStatusLabel(tab.documentStatus, tab.revisingArchived) }}
+                </span>
+                <span v-else-if="isTabReadOnly(tab)" class="medical-record-form__doc-tab-badge">
+                  只读
+                </span>
+              </div>
+              <div v-if="tabMetaLine(tab)" class="medical-record-form__doc-tab-meta">
+                {{ tabMetaLine(tab) }}
+              </div>
+            </div>
+            <button
+              type="button"
+              class="medical-record-form__doc-tab-close"
+              title="关闭"
+              @click.stop="closeTab(tab.key)"
+            >
+              ×
+            </button>
+          </div>
+          <template #dropdown>
+            <ElDropdownMenu>
+              <ElDropdownItem command="close">关闭当前</ElDropdownItem>
+              <ElDropdownItem command="closeBefore" :disabled="!canCloseTabsBefore(tab.key)">
+                关闭前
+              </ElDropdownItem>
+              <ElDropdownItem command="closeAfter" :disabled="!canCloseTabsAfter(tab.key)">
+                关闭后
+              </ElDropdownItem>
+              <ElDropdownItem command="closeAll" divided>关闭全部</ElDropdownItem>
+            </ElDropdownMenu>
+          </template>
+        </ElDropdown>
       </div>
 
-      <div
-        class="medical-record-form__toolbar flex h-[42px] flex-shrink-0 flex-wrap items-center gap-1 border-b px-3"
-      >
-        <template v-if="!forceReadOnly">
+      <div class="medical-record-form__toolbar">
+        <div v-if="!forceReadOnly" class="medical-record-form__tool-group">
           <ElButton
-            type="primary"
-            plain
+            size="small"
             :disabled="!canImportClinicalText"
             title="勾选当前就诊诊断，插入到光标、自由文本或辅助检查填写区"
             @mousedown.prevent="freezeImportInsertTargets"
@@ -2257,8 +2653,7 @@ defineExpose({
             插入诊断
           </ElButton>
           <ElButton
-            type="primary"
-            plain
+            size="small"
             :disabled="!canImportClinicalText"
             title="勾选当前就诊医嘱，插入到光标、自由文本或辅助检查填写区"
             @mousedown.prevent="freezeImportInsertTargets"
@@ -2266,67 +2661,65 @@ defineExpose({
           >
             带入医嘱
           </ElButton>
+        </div>
+        <div v-if="showProgressNoteNav" class="medical-record-form__tool-group">
           <ElButton
-            type="primary"
-            :loading="saveAsTemplateLoading"
-            :disabled="!canSaveAsTemplate"
-            @click="handleSaveAsTemplate"
-          >
-            存为模版
-          </ElButton>
-        </template>
-        <template v-if="showProgressNoteNav">
-          <ElButton
+            size="small"
             :disabled="!canProgressNotePrev || documentLoading"
             @click="navigateProgressNote(-1)"
           >
             上一张
           </ElButton>
           <ElButton
+            size="small"
             :disabled="!canProgressNoteNext || documentLoading"
             @click="navigateProgressNote(1)"
           >
             下一张
           </ElButton>
-        </template>
-        <template v-if="!forceReadOnly">
-          <ElButton
-            type="primary"
-            :loading="saveLoading"
-            :disabled="!canSaveDocument || documentReadOnly"
-            @click="handleSave"
-          >
-            保存
+        </div>
+        <div class="medical-record-form__tool-group">
+          <ElButton size="small" :loading="documentLoading" @click="reloadCurrentDocument">
+            刷新
           </ElButton>
-        </template>
-        <span
-          v-if="documentReadOnly || forceReadOnly"
-          class="ml-2 text-xs"
-          style="color: var(--el-text-color-secondary)"
-        >
-          只读
-        </span>
-        <ElButton
-          v-if="canReuseActiveDocument"
-          type="primary"
-          plain
-          :loading="documentLoading || saveLoading"
-          title="将当前历史/关联病历复制到本次就诊新建草稿"
-          @click="handleReuseActiveDocument"
-        >
-          复用到本次就诊
-        </ElButton>
-        <div class="ml-auto flex flex-wrap items-center gap-1">
-          <ElButton :loading="documentLoading" @click="reloadCurrentDocument">刷新</ElButton>
-          <ElButton v-if="!forceReadOnly" :disabled="!canSaveDocument" @click="handleReset">
+          <ElButton
+            v-if="!forceReadOnly"
+            size="small"
+            :disabled="!canSaveDocument"
+            @click="handleReset"
+          >
             重置
           </ElButton>
-          <ElButton :loading="pdfLoading" :disabled="!canPrintDocument" @click="handlePrintPreview">
+          <ElButton
+            v-if="!forceReadOnly"
+            size="small"
+            :loading="saveAsTemplateLoading"
+            :disabled="!canSaveAsTemplate"
+            @click="handleSaveAsTemplate"
+          >
+            存为模版
+          </ElButton>
+          <ElButton
+            v-if="canReuseActiveDocument"
+            size="small"
+            :loading="documentLoading || saveLoading"
+            title="将当前历史/关联病历复制到本次就诊新建草稿"
+            @click="handleReuseActiveDocument"
+          >
+            复用到本次就诊
+          </ElButton>
+        </div>
+        <div class="medical-record-form__tool-group">
+          <ElButton
+            size="small"
+            :loading="pdfLoading"
+            :disabled="!canPrintDocument"
+            @click="handlePrintPreview"
+          >
             打印预览
           </ElButton>
           <ElButton
-            type="primary"
-            plain
+            size="small"
             :loading="pdfLoading"
             :disabled="!canPrintDocument"
             @click="handlePrint"
@@ -2334,11 +2727,63 @@ defineExpose({
             打印
           </ElButton>
         </div>
+        <div class="medical-record-form__tool-group">
+          <span v-if="activeStatusLabel" class="medical-record-form__tool-status">
+            {{ activeStatusLabel }}
+          </span>
+          <span
+            v-else-if="documentReadOnly || forceReadOnly"
+            class="medical-record-form__tool-status"
+          >
+            只读
+          </span>
+          <ElButton
+            v-if="!forceReadOnly && canReviseArchived"
+            size="small"
+            type="warning"
+            plain
+            @click="handleStartArchiveRevision"
+          >
+            修改
+          </ElButton>
+          <ElButton
+            v-if="!forceReadOnly && archiveEnabled && activeTab.revisingArchived"
+            size="small"
+            type="success"
+            plain
+            :loading="submitArchiveLoading"
+            @click="handleSubmitArchivedRevision"
+          >
+            提交归档
+          </ElButton>
+          <ElButton
+            v-else-if="!forceReadOnly && archiveEnabled"
+            size="small"
+            type="success"
+            plain
+            :loading="submitArchiveLoading"
+            :disabled="!canSubmitArchive || saveLoading"
+            @click="handleSubmitArchive"
+          >
+            提交归档
+          </ElButton>
+          <ElButton
+            v-if="!forceReadOnly"
+            size="small"
+            type="primary"
+            :loading="saveLoading"
+            :disabled="!canSaveDocument || documentReadOnly || Boolean(activeTab.revisingArchived)"
+            @click="handleSave"
+          >
+            保存
+          </ElButton>
+        </div>
+      </div>
       </div>
       <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div
           v-loading="documentLoading"
-          class="medical-record-form__editor-wrap h-full border-t p-3"
+          class="medical-record-form__editor-wrap h-full p-3"
           @focusin="onEditorWrapFocusIn"
           @mouseup="onEditorWrapCaretTrack"
           @keyup="onEditorWrapCaretTrack"
@@ -2360,7 +2805,7 @@ defineExpose({
               class="medical-record-form__editor"
               :surface="tab.editorSurface"
               :doc-id="editorDocIdForTab(tab)"
-              :read-only="tab.documentReadOnly || forceReadOnly"
+              :read-only="isTabReadOnly(tab)"
               :remote-save="remoteSaveHandlerForTab(tab)"
               :on-remote-save-error="handleRemoteSaveError"
               :show-toolbar="true"
@@ -2415,6 +2860,64 @@ defineExpose({
 </template>
 
 <style scoped lang="scss">
+.medical-record-form__chrome {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-height: 40px;
+  padding: 4px 10px;
+  background: #f5f7fa;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+.medical-record-form__chrome > .medical-record-form__doc-tabs {
+  flex: 1 1 80px;
+  min-width: 72px;
+  padding: 0;
+  background: transparent;
+  border-bottom: none;
+}
+
+.medical-record-form__toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  max-width: 100%;
+  margin-left: auto;
+}
+
+.medical-record-form__tool-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+}
+
+.medical-record-form__tool-group + .medical-record-form__tool-group {
+  border-left: 1px solid #dcdfe6;
+}
+
+.medical-record-form__tool-status {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.medical-record-form__toolbar :deep(.el-button) {
+  margin-left: 0;
+}
+
+.medical-record-form__doc-tab-menu {
+  display: flex;
+  flex-shrink: 0;
+  max-width: 168px;
+}
+
 .medical-record-form__doc-tabs {
   display: flex;
   flex-shrink: 0;

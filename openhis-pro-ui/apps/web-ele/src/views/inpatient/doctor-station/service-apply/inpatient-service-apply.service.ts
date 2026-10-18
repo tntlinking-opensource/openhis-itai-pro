@@ -18,8 +18,11 @@ import {
   SERVICE_APPLY_ACTIVITY_TABLE,
   SERVICE_APPLY_CATALOG_PAGE_SIZE,
 } from '#/views/outpatient/doctor-station/service-apply/service-apply.constants';
+import type { SaveServiceApplyFormResult } from '#/views/outpatient/doctor-station/service-apply/service-apply.service';
+
 import {
   isValidServiceApplyCatalogRow,
+  normalizeSaveServiceApplyFormResult,
   resolveServiceApplyCategoryEnum,
   signServiceApplyRequests as signServiceApplyRequestsShared,
 } from '#/views/outpatient/doctor-station/service-apply/service-apply.service';
@@ -77,6 +80,8 @@ export async function loadServiceApplyCatalog(params: {
   pageNo?: number;
   pageSize?: number;
   patientId: string;
+  /** 业务类型码；空则不按业务类型收窄 */
+  typeEnum?: string;
 }): Promise<{ rows: DoctorStationAdviceCatalogRowDto[]; totalCount: number }> {
   const res = await httpPageInpatientDoctorStationAdviceCatalog({
     encounterId: params.encounterId,
@@ -87,6 +92,7 @@ export async function loadServiceApplyCatalog(params: {
     pageSize: params.pageSize ?? SERVICE_APPLY_CATALOG_PAGE_SIZE,
     productTableNames: [SERVICE_APPLY_ACTIVITY_TABLE],
     categoryEnum: resolveServiceApplyCategoryEnum(params.applyKind),
+    typeEnum: params.typeEnum?.trim() || undefined,
   });
   const { content, totalCount } = parsePagedRowsFromApiData<DoctorStationAdviceCatalogRowDto>(res);
   const rows = content.filter((row) => isValidServiceApplyCatalogRow(row));
@@ -148,17 +154,12 @@ export async function mergeServiceApplyOrgOptions(params?: {
   return unionPerformOrgOptions(responses.map((res) => res.rules));
 }
 
-/** 保存住院申请单（整张），返回新 AR 号与 requestIds */
+/** 保存住院申请单（可按执行科室拆多张 AR） */
 export async function saveServiceApplyForm(
   request: SaveDoctorStationServiceApplyFormRequest,
-): Promise<{ prescriptionNo: string; requestIds: string[] }> {
+): Promise<SaveServiceApplyFormResult> {
   const res = await httpSaveInpatientDoctorStationServiceApplyForm(request);
-  const prescriptionNo = String(res.prescriptionNo ?? '').trim();
-  const requestIds = (res.requestIds ?? []).map((id) => String(id ?? '').trim()).filter(Boolean);
-  if (!prescriptionNo || requestIds.length === 0) {
-    throw new Error('保存成功但未返回申请单号或医嘱标识');
-  }
-  return { prescriptionNo, requestIds };
+  return normalizeSaveServiceApplyFormResult(res);
 }
 
 /** 签发申请单下全部 ServiceRequest 草稿 */

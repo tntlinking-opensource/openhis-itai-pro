@@ -1,4 +1,5 @@
 import type {
+  AdvicePackageChildItemDto,
   DoctorStationAdviceCatalogRowDto,
   ServiceApplyFormDetailItemRequest,
 } from '#/api/doctor-station/advice.types';
@@ -9,7 +10,7 @@ export type ServiceApplyKind = 'exam' | 'lab' | 'treatment';
 /** 目录行（与 `DoctorStationAdviceCatalogRowDto` 一致，不做字段改名） */
 export type ServiceApplyCatalogRow = DoctorStationAdviceCatalogRowDto;
 
-/** 诊疗模板绑定的带出项（耗材可改；合管采血费只读） */
+/** 诊疗模板绑定的带出项（耗材可改；合管采血费只读，落库为独立 SR） */
 export interface ServiceApplyBoundConsumable {
   key: string;
   targetItemId: string;
@@ -46,6 +47,14 @@ export interface ServiceApplySelectedItem {
   boundConsumables?: ServiceApplyBoundConsumable[];
   /** 医嘱优先级 code（按项目加急=EM；空=非急） */
   priorityEnum?: string;
+  /**
+   * 带子项诊疗的目录子项（列表不展示；国基**检验**申请单打印展开用）。
+   */
+  packageChildren?: AdvicePackageChildItemDto[];
+  /**
+   * 由申请单组套套用加入；签发时跳过绑定/合管自动带出（BR-ORD-038）。
+   */
+  fromOrderTemplate?: boolean;
 }
 
 /** 弹窗顶部患者摘要（展示用，非申请单保存契约） */

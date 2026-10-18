@@ -1,12 +1,12 @@
 import type { ComputedRef } from 'vue';
 import type { RouteLocationNormalized, Router, RouteRecordNormalized } from 'vue-router';
 
-import type { TabDefinition } from '@vben-core/typings';
+import type { TabDefinition } from '@zxplat-core/typings';
 
 import { toRaw } from 'vue';
 
-import { preferences } from '@vben-core/preferences';
-import { openRouteInNewWindow, startProgress, stopProgress } from '@vben-core/shared/utils';
+import { preferences } from '@zxplat-core/preferences';
+import { openRouteInNewWindow, startProgress, stopProgress } from '@zxplat-core/shared/utils';
 
 import { acceptHMRUpdate, defineStore } from 'pinia';
 

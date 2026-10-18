@@ -1,4 +1,5 @@
 import type { InvFormPaperKind, InvFormTripleSpec } from '../form-print-preference';
+import type { ServiceApplyPaperSize } from '../service-apply-paper-preference';
 import type { PrintPageSelection } from './print-page-selection';
 
 export interface PrintTransformContext {
@@ -49,6 +50,10 @@ export interface PrintOptions<TSource = unknown> {
   showFormPaperKind?: boolean;
   /** 库房打印：打印机弹窗同时选纸张 */
   showPaperKind?: boolean;
+  /** 门诊申请单：打印机弹窗同时选 A4 / A5 */
+  showServiceApplyPaperSize?: boolean;
+  /** 门诊申请单初始纸张（缺省读本地偏好） */
+  serviceApplyPaperSize?: ServiceApplyPaperSize;
   /** 预览内选择的打印页与正反（双面） */
   pageSelection?: PrintPageSelection;
 }

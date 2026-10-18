@@ -23,6 +23,7 @@ import type {
 import { computed, nextTick, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue';
 
 import { useDebounceFn } from '@vueuse/core';
+import dayjs from 'dayjs';
 import { ElMessage, ElMessageBox } from 'element-plus';
 
 import { getChargeTypeListApi } from '#/api/core/common';
@@ -55,9 +56,15 @@ import {
   writeDispenseTraceCache,
 } from '#/utils/medication/dispense-trace-cache';
 import {
+  readInpatientDispenseAutoPrintPreference,
+  writeInpatientDispenseAutoPrintPreference,
+} from '#/utils/medication/auto-print-inpatient-preference';
+import {
   resolvePreparerSelection,
   writePreparerPreference,
 } from '#/utils/medication/preparer-preference';
+import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
+import { PRINT_SCENARIO, print } from '#/utils/print/runtime';
 import {
   isDispenseScannedTraceInsufficient,
   loadRemainingSplitByTraceNos,
@@ -68,6 +75,8 @@ import {
   INPATIENT_DISPENSE_DEFAULT_MODE,
   type InpatientDispenseMode,
 } from '#/views/inpatient/dispense/constants/inpatient-dispense-mode.config';
+import type { PrintPendingRow } from '#/views/inpatient/nurse-station/print-center/print-center.types';
+import { printInpatientPrintCenter } from '#/views/inpatient/nurse-station/print-center/print-center-print';
 import DispenseRxCenter from '#/views/outpatient/dispense/components/dispense-rx-center.vue';
 import { flattenPrescriptionBlocks } from '#/views/outpatient/dispense/components/dispense-rx-helpers';
 import TraceScanDialog from '#/views/outpatient/dispense/components/trace-scan-dialog.vue';
@@ -119,6 +128,8 @@ const selectedPatientId = ref<null | string>(null);
 const activeRxKind = ref<'herbal' | 'western'>('western');
 const selectedPrescriptionId = ref<null | string>(null);
 const selectedDispenserId = ref<string | undefined>(undefined);
+/** 核发成功后是否自动打印本次单据（按登录用户缓存在本机；汇总单与按患者共用）。 */
+const autoPrintEnabled = ref(readInpatientDispenseAutoPrintPreference());
 const selectedReceiverId = ref<string | undefined>(undefined);
 const selectedWardId = ref<string | undefined>(undefined);
 
@@ -311,6 +322,16 @@ async function loadPageInit() {
 /** 用户变更调配药师时写入本地偏好，供下次进入页回填 */
 watch(selectedDispenserId, (id) => {
   writePreparerPreference(id);
+});
+
+/** 自动打印开关变更：写入本机缓存，并提示开/关后的发药行为 */
+watch(autoPrintEnabled, (enabled) => {
+  writeInpatientDispenseAutoPrintPreference(enabled);
+  if (enabled) {
+    ElMessage.success('已开启发药后自动打印：核对发药或按患者发药成功后将自动打印对应单据');
+    return;
+  }
+  ElMessage.info('已关闭发药后自动打印：发药成功后需手工打印');
 });
 
 /** 按时间范围、病区、队列类型与关键字拉取在院患者队列 */
@@ -769,11 +790,168 @@ async function handleSummaryBatchDispense() {
       ElMessage.success(message);
     }
     summaryTraceCodeByLineId.value = {};
+    await tryAutoPrintSummary(summaryNo);
     await reloadSummarySlips(true);
   } catch {
     /* 拦截器提示 */
   } finally {
     summaryBatchSubmitting.value = false;
+  }
+}
+
+/** 展示串：空与占位符「—」都视为无内容 */
+function displayOrEmpty(raw: null | number | string | undefined): string {
+  if (raw === null || raw === undefined) {
+    return '';
+  }
+  const text = String(raw).trim();
+  if (!text || text === '—') {
+    return '';
+  }
+  return text;
+}
+
+/**
+ * 药房打印指定汇总领药单（IF-IPS-06：客户端打印，复用护士站汇总领药单模板）。
+ * 取数走药房 IF-IPS-02，避免护士站管辖病区门控把药房账号判成「单不存在」。
+ */
+async function printSummarySheet(summaryNo: string): Promise<boolean> {
+  const today = dayjs().format('YYYY-MM-DD');
+  const selectedRows: PrintPendingRow[] = [
+    {
+      id: `pharmacy-dispense-summary-${summaryNo}`,
+      bedNo: '—',
+      patientName: '—',
+      title: `汇总领药单 ${summaryNo}`,
+      statusCode: 'pending',
+      statusText: '待打',
+      pageHint: '汇总',
+      summaryNo,
+    },
+  ];
+  const result = await printInpatientPrintCenter({
+    docType: 'dispense_summary',
+    patients: [],
+    selectedRows,
+    dateFrom: today,
+    dateTo: today,
+    executionDeadline: `${today} 23:59:59`,
+    dispenseSummaryDataSource: 'pharmacy',
+  });
+  return result.ok;
+}
+
+/**
+ * 药房打印当前汇总领药单。
+ * 待核发 / 已发药均可打印；不依赖护士站患者上下文。
+ */
+async function handleSummaryPrint() {
+  const summaryNo = selectedSummaryNo.value?.trim();
+  if (!summaryNo) {
+    ElMessage.warning('请先选择汇总单');
+    return;
+  }
+  summaryBatchSubmitting.value = true;
+  try {
+    const ok = await printSummarySheet(summaryNo);
+    if (ok) {
+      ElMessage.success('已发送打印：汇总领药单');
+    }
+  } finally {
+    summaryBatchSubmitting.value = false;
+  }
+}
+
+/**
+ * 核对发药成功后按开关自动打印当前汇总单。
+ * 打印失败只软提示，不回滚已成功发药。
+ */
+async function tryAutoPrintSummary(summaryNo: string): Promise<void> {
+  if (!autoPrintEnabled.value) {
+    return;
+  }
+  try {
+    const ok = await printSummarySheet(summaryNo);
+    if (ok) {
+      ElMessage.success('已自动打印汇总单');
+      return;
+    }
+    ElMessage.warning('发药成功，但汇总单未自动打印，请稍后手工打印');
+  } catch {
+    ElMessage.warning('发药成功，但汇总单未自动打印，请稍后手工打印');
+  }
+}
+
+/**
+ * 按患者发药成功后按开关自动打印本次摆药单（字段对齐 ip-dispenseSheet-print）。
+ * 打印失败只软提示，不回滚已成功发药。
+ */
+async function tryAutoPrintPatientSheet(
+  dispenseIds: string[],
+  slipById: Map<string, EncounterMedicationDispenseSlipRowDto>,
+): Promise<void> {
+  if (!autoPrintEnabled.value) {
+    return;
+  }
+  const rows: EncounterMedicationDispenseSlipRowDto[] = [];
+  for (const id of dispenseIds) {
+    const row = slipById.get(id);
+    if (row) {
+      rows.push(row);
+    }
+  }
+  if (rows.length === 0) {
+    ElMessage.warning('发药成功，但未找到可自动打印的发药单');
+    return;
+  }
+  const patient = queuePatients.value.find((item) => item.id === selectedPatientId.value);
+  const patientText = [displayOrEmpty(patient?.bedName), displayOrEmpty(patient?.patientName)]
+    .filter((part) => part !== '')
+    .join(' ');
+  const preparer = dispenserOptions.value.find((opt) => opt.value === selectedDispenserId.value);
+  const days: string[] = [];
+  for (const row of rows) {
+    const day = displayOrEmpty(row.recordedTime).slice(0, 10);
+    if (day && !days.includes(day)) {
+      days.push(day);
+    }
+  }
+  days.sort();
+  const periodText = days.length > 1 ? `${days[0]} ~ ${days[days.length - 1]}` : days[0] ?? '';
+  try {
+    const result = await print({
+      scenarioCode: PRINT_SCENARIO.ipDispenseSheetPrint,
+      jobName: `摆药单-${displayOrEmpty(patient?.patientName) || '住院发药'}`,
+      background: true,
+      source: {
+        hospitalName: resolvePrintHospitalName(),
+        documentTitle: '摆药单',
+        periodText,
+        preparedByName: preparer?.label ?? '',
+        wardName: displayOrEmpty(patient?.wardName),
+        printedAtText: dayjs().format('YYYY-MM-DD HH:mm'),
+        drugRows: rows.map((row) => ({
+          patientText,
+          drugName: displayOrEmpty(row.medicationName),
+          specText: displayOrEmpty(row.specificationText),
+          quantityUnitText: `${displayOrEmpty(row.quantity)}${displayOrEmpty(row.unitText)}`,
+          doseText: `${displayOrEmpty(row.doseValue)}${displayOrEmpty(row.doseUnitText)}`,
+          usageText: displayOrEmpty(row.routeText),
+          freqText: displayOrEmpty(row.frequencyText),
+        })),
+      },
+      bizRef: {
+        encounterId: selectedPatientId.value ?? undefined,
+        dispenseIds,
+      },
+    });
+    if (result.ok) {
+      ElMessage.success('已自动打印发药单');
+      return;
+    }
+    ElMessage.warning('发药成功，但发药单未自动打印，请稍后手工打印');
+  } catch {
+    ElMessage.warning('发药成功，但发药单未自动打印，请稍后手工打印');
   }
 }
 
@@ -1078,6 +1256,7 @@ async function executeDispenseForLineIds(
     } else {
       ElMessage.success(message);
     }
+    await tryAutoPrintPatientSheet(dispenseIds, slipById);
     // 只清本批已发，保留同患者其余待发行的批量扫码
     clearTransientStateForDispensedLines(dispenseIds);
     await reloadSlips();
@@ -1205,6 +1384,7 @@ onMounted(async () => {
           v-model:active-rx-kind="activeRxKind"
           v-model:inventory-pick-by-line-id="inventoryPickByLineId"
           v-model:selected-dispenser-id="selectedDispenserId"
+          v-model:auto-print-prescription-enabled="autoPrintEnabled"
           v-model:selected-prescription-id="selectedPrescriptionId"
           :batch-dispense-disabled="queueScope === 'completed' || batchSubmitting || slipLoading"
           :enable-sheet-view="true"
@@ -1221,6 +1401,8 @@ onMounted(async () => {
           :dispenser-options="dispenserOptions"
           :rx-kind-badge-counts="rxKindBadgeCounts"
           :msfx-his-scene="MSFX_HIS_SCENE.IP_DISPENSE"
+          :show-auto-print-prescription-switch="true"
+          auto-print-switch-label="发药后自动打印发药单"
           @batch-dispense="handleBatchDispense"
           @batch-trace-scan="handleBatchTraceScan"
           @dispense-prescription="handleSingleDaySheetDispense"
@@ -1229,6 +1411,7 @@ onMounted(async () => {
           v-else
           v-model:selected-dispenser-id="selectedDispenserId"
           v-model:selected-receiver-id="selectedReceiverId"
+          v-model:auto-print-enabled="autoPrintEnabled"
           :batch-submitting="summaryBatchSubmitting"
           :detail-loading="summaryDetailRequest.loading.value"
           :dispenser-options="dispenserOptions"
@@ -1242,6 +1425,7 @@ onMounted(async () => {
           @batch-dispense="handleSummaryBatchDispense"
           @batch-reject="handleSummaryBatchReject"
           @batch-trace-scan="handleSummaryBatchTraceScan"
+          @print-summary="handleSummaryPrint"
         />
       </template>
     </StationTriPaneLayout>

@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import type { MenuRecordRaw } from '@vben/types';
+import type { MenuRecordRaw } from '@zxplat/types';
 
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
-import { ArrowDown, ArrowUp, CornerDownLeft, MdiKeyboardEsc, Search } from '@vben/icons';
-import { $t } from '@vben/locales';
-import { isWindowsOs } from '@vben/utils';
+import { ArrowDown, ArrowUp, CornerDownLeft, MdiKeyboardEsc, Search } from '@zxplat/icons';
+import { $t } from '@zxplat/locales';
+import { isWindowsOs } from '@zxplat/utils';
 
-import { useVbenModal } from '@vben-core/popup-ui';
+import { useVbenModal } from '@zxplat-core/popup-ui';
 
 import { useMagicKeys, whenever } from '@vueuse/core';
 

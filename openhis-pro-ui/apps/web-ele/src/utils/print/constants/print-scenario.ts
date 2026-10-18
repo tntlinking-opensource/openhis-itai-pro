@@ -6,6 +6,10 @@ export const PRINT_SCENARIO = {
   outpatientTcmRx: 'op-tcm-rx-print',
   /** 门诊收费小票 */
   chargeReceipt: 'op-charge-print',
+  /** 门诊收费发票（吉林通用机打发票套打 240×150mm 横向） */
+  chargeInvoice: 'op-invoice-print',
+  /** 门诊患者费用清单（A4 横向；慢病标题由 PrintData.documentTitle 切换） */
+  opFeeListPrint: 'op-feeList-print',
   /** 门诊挂号小票 */
   opRegPrint: 'op-reg-print',
   /** 门诊处置单（护士站） */
@@ -20,10 +24,14 @@ export const PRINT_SCENARIO = {
   ipDailySettlementPatientPrint: 'ip-dailySettlement-patient-print',
   /** 药房日结单（门诊/住院共用） */
   pharmacyDailySettlementPrint: 'pharmacy-dailySettlement-print',
-  /** 检查申请单（门诊医生站） */
+  /** 检查申请单（门诊医生站·A4） */
   examinationPrint: 'examination-print',
-  /** 检验申请单（门诊医生站） */
+  /** 检查申请单（门诊医生站·A5） */
+  examinationPrintA5: 'examination-print-a5',
+  /** 检验申请单（门诊医生站·A4） */
   testPrint: 'test-print',
+  /** 检验申请单（门诊医生站·A5） */
+  testPrintA5: 'test-print-a5',
   /** 住院护理记录单（护士站） */
   ipNursingRecordPrint: 'ip-nursingRecord-print',
   /** 住院费用清单（护士站打印中心） */
@@ -50,6 +58,14 @@ export const PRINT_SCENARIO = {
   ipBedCardPrint: 'ip-bedCard-print',
   /** 住院预交金收据（收费处预交金） */
   ipPrepayReceiptPrint: 'ip-prepayReceipt-print',
+  /** 住院预交金找补收据（三联单二等分；收取=补，退费=退） */
+  ipPrepayChangePrint: 'ip-prepayChange-print',
+  /** 住院证（门诊办理入院 / 住院登记；A4） */
+  ipAdmissionCertificatePrint: 'ip-admissionCertificate-print',
+  /** 住院医保结算单（吉林省省医疗保险医疗费用结算单；A4；院点库模板） */
+  ipInsuranceSettlementPrint: 'ip-insuranceSettlement-print',
+  /** 住院退药单（药房住院退药；一名患者一张 A4） */
+  ipReturnMedicinePrint: 'ip-returnMedicine-print',
   /** 住院口服药贴（护士站打印中心；30×40mm，内容旋 90° 横排） */
   ipOralMedLabelPrint: 'ip-oralMedLabel-print',
   /** 住院采血贴（护士站打印中心；30×50mm，内容旋 90° 横排；勿复用门诊 50×30 采血贴） */
@@ -89,9 +105,23 @@ export const INV_PRINT_SCENARIO_CODES: PrintScenario[] = [
   PRINT_SCENARIO.invReturnPrint,
 ];
 
+/** 门诊申请单打印场景（A4/A5 纸张+打印机合一弹窗） */
+export const SERVICE_APPLY_PRINT_SCENARIO_CODES: PrintScenario[] = [
+  PRINT_SCENARIO.examinationPrint,
+  PRINT_SCENARIO.examinationPrintA5,
+  PRINT_SCENARIO.testPrint,
+  PRINT_SCENARIO.testPrintA5,
+];
+
 const INV_PRINT_SCENARIO_SET = new Set<string>(INV_PRINT_SCENARIO_CODES);
+const SERVICE_APPLY_PRINT_SCENARIO_SET = new Set<string>(SERVICE_APPLY_PRINT_SCENARIO_CODES);
 
 /** 是否库房单据打印场景 */
 export function isInvPrintScenario(scenarioCode: string): boolean {
   return INV_PRINT_SCENARIO_SET.has(scenarioCode.trim());
+}
+
+/** 是否门诊申请单打印场景 */
+export function isServiceApplyPrintScenario(scenarioCode: string): boolean {
+  return SERVICE_APPLY_PRINT_SCENARIO_SET.has(scenarioCode.trim());
 }

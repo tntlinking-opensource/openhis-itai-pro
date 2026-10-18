@@ -1,0 +1,167 @@
+<html>
+		<script type="text/javascript">
+		var DUmsocx1;
+		var ws;
+				var flag=0;
+        function ToggleConnectionClicked() {          
+                try {
+          /*
+          //检测当前浏览器是否支持websocket模式
+          window.WebSocket = window.WebSocket || window.MozWebSocket;
+					if (!window.WebSocket){
+								alert("WebSocket not supported by this browser");
+								return;
+					}*/
+         ws = new WebSocket("ws://127.0.0.1:1818");//连接服务器	
+
+					ws.onopen = function(event){
+						//alert("已经与服务器建立了连接\r\n当前连接状态："+this.readyState);
+						flag=0;
+						ws.send(DUmsocx1);
+						//SendData(DUmsocx1);	
+						};
+					ws.onmessage = function(event){
+						alert("接收到服务器发送的数据：\r\n"+event.data);
+						flag=1;
+						};
+					ws.onclose = function(event){
+						//alert("已经与服务器断开连接\r\n当前连接状态："+this.readyState);
+						};
+					ws.onerror = function(event){
+						if (flag!=1)
+						   alert("WebSocket接收异常！");
+						};
+                } catch (ex) {
+                    alert(ex.message);      
+				}
+        };
+
+        function SendData(str) {
+			try{
+				ws.send(str);
+			}catch(ex){
+				alert(ex.message);
+			}
+        };
+        
+        function SocektClose() {
+			try{
+				ws.close();
+			}catch(ex){
+				alert(ex.message);
+			}
+        };
+
+		function seestate(){
+			alert("当前连接状:"+ws.readyState);
+		}
+		
+		function confirm4()
+		{		
+			DUmsocx1=document.getElementById("field6").value +"876543211234567800" + document.getElementById("field2").value + 
+				document.getElementById("field4").value + document.getElementById("field5").value +
+				document.getElementById("field3").value + "YOU"+document.getElementById("field7").value+document.getElementById("field8").value;
+			ToggleConnectionClicked();	
+			//ws.send(DUmsocx1);
+		}
+		function confirm5()
+		{		
+			DUmsocx1=document.getElementById("field6").value +"876543211234567801" + document.getElementById("field2").value + 
+				document.getElementById("field4").value + document.getElementById("field5").value +
+				document.getElementById("field3").value + "YOU"+document.getElementById("field7").value+document.getElementById("field8").value;;
+			ToggleConnectionClicked();	
+		}
+		function confirm6()
+		{		
+			DUmsocx1=document.getElementById("field6").value +"876543211234567802" + document.getElementById("field2").value + 
+				document.getElementById("field4").value + document.getElementById("field5").value +
+				document.getElementById("field3").value + "YOU"+document.getElementById("field7").value+document.getElementById("field8").value;
+			ToggleConnectionClicked();		
+		}
+		function confirm7()
+		{		
+			DUmsocx1=document.getElementById("field6").value +"876543211234567803" + document.getElementById("field2").value + 
+				document.getElementById("field4").value + document.getElementById("field5").value +
+				document.getElementById("field3").value + "YOU";
+			ToggleConnectionClicked();		
+		}
+		function confirm8()
+		{		
+			DUmsocx1=document.getElementById("field6").value +"876543211234567804" + document.getElementById("field2").value + 
+				document.getElementById("field4").value + document.getElementById("field5").value +
+				document.getElementById("field3").value + "YOU";
+			ToggleConnectionClicked();		
+		}
+		function confirm9()
+		{		
+			DUmsocx1=document.getElementById("field6").value +"876543211234567805" + document.getElementById("field2").value + 
+				document.getElementById("field4").value + document.getElementById("field5").value +
+				document.getElementById("field3").value + "YOU";
+			ToggleConnectionClicked();		
+		}
+		function confirm10()
+		{		
+			DUmsocx1=document.getElementById("field6").value +"876543211234567806" + document.getElementById("field2").value + 
+				document.getElementById("field4").value + document.getElementById("field5").value +
+				document.getElementById("field3").value + "YOU";
+			ToggleConnectionClicked();	
+		}
+		
+		function confirm11()
+		{		
+			DUmsocx1=document.getElementById("field6").value +"876543211234567899" + document.getElementById("field2").value + 
+				document.getElementById("field4").value + document.getElementById("field5").value +
+				document.getElementById("field3").value + "YOU";
+			ToggleConnectionClicked();	
+		}
+		
+		function confirm12()
+		{		
+			DUmsocx1=document.getElementById("field6").value +"876543211234567802" + document.getElementById("field2").value + 
+				document.getElementById("field4").value + document.getElementById("field5").value +
+				document.getElementById("field3").value + "YOU"+document.getElementById("field7").value+document.getElementById("field8").value;
+			ToggleConnectionClicked();		
+		}
+	</script>
+		
+	<body>
+		<form>
+
+			<p>－－－－调用posinf测试(ocxbank=1调用bankall,ocxbank=2调用bank)－－－－－－－－－－－－－ </p>
+			<p></p>应用类型<input type="text" name="field6" size=2 maxlength=2 value="00" id="field6"/>
+			；  金额<input type="text" name="field2" size=12 maxlength=12 value="000000000001" id="field2"/>
+			；  原凭证号<input type="text" name="field3" size=6 maxlength=6 value="000000" id="field3"/>
+			；  原交易日期<input type="text" name="field4" size=8 maxlength=8 value="20110000" id="field4"/>
+			；  原交易参考号<input type="text" name="field5" size=12 maxlength=12 value="000000000000" id="field5"/>
+			；  <p></p>串码<input type="text" name="field7" size=50 maxlength=50 value="                                                 " id="field7"/>		
+			；  商户订单号<input type="text" name="field8" size=40 maxlength=40 value="" id="field8"/>		
+			<p id="result4"></p>
+			<input type="button" name="confirmBtn" value="消费" onclick="javascript:confirm4()">
+			<id="result5">
+			<input type="button" name="confirmBtn" value="撤销" onclick="javascript:confirm5()">
+			<id="result6">
+			<input type="button" name="confirmBtn" value="退货" onclick="javascript:confirm6()">
+			<id="result7">
+			<input type="button" name="confirmBtn" value="查余" onclick="javascript:confirm7()">
+			<id="result8">
+			<input type="button" name="confirmBtn" value="重打印" onclick="javascript:confirm8()">
+			<id="result9">
+			<input type="button" name="confirmBtn" value="签到" onclick="javascript:confirm9()">
+			<id="result10">
+			<input type="button" name="confirmBtn" value="结算" onclick="javascript:confirm10()">
+			<id="result12">
+			<input type="button" name="confirmBtn" value="POS通交易查询" onclick="javascript:confirm12()">
+			<id="result11">
+			<input type="button" name="confirmBtn" value="测试连接" onclick="javascript:confirm11()">
+			<p>－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－ </p>
+		</form></p>
+		
+<p>
+		CONNECTING (0)：表示还没建立连接；</br>
+OPEN (1)： 已经建立连接，可以进行通讯；</br>
+CLOSING (2)：通过关闭握手，正在关闭连接；</br>
+CLOSED (3)：连接已经关闭或无法打开；</br>
+			</p>>
+		银联商务有限公司技术开发中心
+	</body>
+</html>

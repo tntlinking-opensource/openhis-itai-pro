@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { PeisConfigDto } from '#/api/peis/module-settings';
 
 import { onMounted, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { Page } from '@zxplat/common-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import {
   PEIS_CONFIG_KEY_OPTIONS,

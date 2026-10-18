@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { CircleX } from '@vben-core/icons';
+import { CircleX } from '@zxplat-core/icons';
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui';
 

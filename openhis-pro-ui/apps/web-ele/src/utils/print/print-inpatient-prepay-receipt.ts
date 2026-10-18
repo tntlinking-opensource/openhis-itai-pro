@@ -1,7 +1,7 @@
 import type { PrepayPaymentRecordDto, PrepayQueueItemDto } from '#/api/inpatient-prepay';
 import type { InpatientPrepayReceiptPrintSource } from '#/utils/print/mappers/inpatient-prepay-receipt';
 
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 import dayjs from 'dayjs';
 

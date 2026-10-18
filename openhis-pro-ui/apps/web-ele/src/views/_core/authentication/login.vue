@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { VbenFormSchema } from '@vben-core/form-ui';
+import type { VbenFormSchema } from '@zxplat-core/form-ui';
 
 import type { AuthApi } from '#/api/core/auth';
 import type { LoginScopeHospital, LoginScopeOrganization } from '#/utils/auth/login-scope-flow';
@@ -12,9 +12,9 @@ import {
   AuthenticationLogin,
   AuthenticationOrganizationList,
   AuthenticationTenantList,
-} from '@vben/common-ui/es/authentication';
-import { $t } from '@vben/locales';
-import { useAccessStore, useUserStore } from '@vben/stores';
+} from '@zxplat/common-ui/es/authentication';
+import { $t } from '@zxplat/locales';
+import { useAccessStore, useUserStore } from '@zxplat/stores';
 
 import { Loading } from '@element-plus/icons-vue';
 import { ElButton, ElIcon, ElMessage } from 'element-plus';
@@ -55,10 +55,10 @@ const QUICK_LOGIN_ACCOUNTS: QuickLoginAccount[] = [
 
 /**
  * 开发辅助登录（admin 预填 + 快捷角色）：主线开发/打包、院点开发均开启；
- * 仅院点生产打包（PROD + VITE_OPENHIS_PROJECT）关闭。
+ * 仅院点生产打包（PROD + VITE_ZXPLAT_PROJECT）关闭。
  */
 const showDevLoginAids =
-  !import.meta.env.PROD || !String(import.meta.env.VITE_OPENHIS_PROJECT ?? '').trim();
+  !import.meta.env.PROD || !String(import.meta.env.VITE_ZXPLAT_PROJECT ?? '').trim();
 
 const authStore = useAuthStore();
 const accessStore = useAccessStore();

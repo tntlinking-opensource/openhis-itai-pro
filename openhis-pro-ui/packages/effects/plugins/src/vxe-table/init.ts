@@ -2,9 +2,9 @@ import type { SetupVxeTable } from './types';
 
 import { defineComponent, watch } from 'vue';
 
-import { usePreferences } from '@vben/preferences';
+import { usePreferences } from '@zxplat/preferences';
 
-import { useVbenForm } from '@vben-core/form-ui';
+import { useVbenForm } from '@zxplat-core/form-ui';
 
 import PluginRenderElement from '@vxe-ui/plugin-render-element';
 import {

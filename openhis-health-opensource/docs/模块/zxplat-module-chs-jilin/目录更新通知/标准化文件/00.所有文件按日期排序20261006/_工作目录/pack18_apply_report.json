@@ -1,0 +1,64 @@
+{
+  "stats": {
+    "lv_same": 177,
+    "hit_codes": 177,
+    "hit_rows": 177
+  },
+  "lv_change": {},
+  "hit_kind": {
+    "SERVICE_F": 177
+  },
+  "miss_n": 0,
+  "miss_sample": [],
+  "catalog": {
+    "SERVICE:ACTIVE": 561,
+    "SERVICE_F:STOPPED": 4152,
+    "SERVICE_F:ACTIVE": 5356,
+    "SERVICE:STOPPED": 7
+  },
+  "total": 10076,
+  "xray": {
+    "catalog_kind": "SERVICE_F",
+    "status": "ACTIVE",
+    "project_code": "012301010010000",
+    "hilist_code": "",
+    "hilist_name": "X线摄影成像",
+    "chrgitm_lv": "1",
+    "list_type": "201",
+    "begin_date": "2025-11-01",
+    "end_date": "",
+    "计价单位": "部位·体位",
+    "定价上限": "50",
+    "地方编码": "",
+    "限制使用标志": "",
+    "限制使用范围": "",
+    "诊疗项目说明": "本指南所称“X线摄影成像”中的“部位”，指颅脑、颅底、眼部、中耳乳突、鼻咽部、口腔颌面、颈部软组织、胸部、心脏、上腹部（包含肝胆胰脾及所涵盖区域）、下腹部（指双肾、肾上腺、双肾上缘至盆腔入口以上所涵盖区域）、盆腔（盆腔入口至肛缘）、颈椎、胸椎、腰椎、骶尾部、单侧肩关节、单侧膝关节、单侧髋关节、单侧上肢、单侧下肢、体表软组织、其他。",
+    "诊疗除外内容": "",
+    "诊疗项目内涵": "通过X线摄影（含数字化），实现对患者投照部位的定位、X线成像及分析。",
+    "last_pack": "18",
+    "last_action": "SET_PAY_CLASS",
+    "last_notice_date": ""
+  },
+  "herb": {
+    "catalog_kind": "SERVICE_F",
+    "status": "ACTIVE",
+    "project_code": "",
+    "hilist_code": "371102020010001",
+    "hilist_name": "门诊诊查费（普通门诊）-儿童（加收）",
+    "chrgitm_lv": "1",
+    "list_type": "201",
+    "begin_date": "2025-11-01",
+    "end_date": "",
+    "计价单位": "次",
+    "定价上限": "2",
+    "地方编码": "",
+    "限制使用标志": "",
+    "限制使用范围": "",
+    "诊疗项目说明": "",
+    "诊疗除外内容": "",
+    "诊疗项目内涵": "",
+    "last_pack": "18",
+    "last_action": "SET_PAY_CLASS",
+    "last_notice_date": ""
+  }
+}

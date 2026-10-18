@@ -3,7 +3,7 @@ import type { DetailAuditStatsHitRow, DetailAuditStatsLineRow } from '#/chs/api/
 
 import { computed, onMounted, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import dayjs from 'dayjs';
 import {

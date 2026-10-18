@@ -2,7 +2,7 @@ import type { PayChannelOption } from '#/utils/payment/payment-channel-options';
 
 import { computed, ref } from 'vue';
 
-import { isUnionPayWinReady } from '#/api/local/openhisWin';
+import { isUnionPayWinReady } from '#/api/local/zxplatWin';
 import { isUnionPayUiEnabled } from '#/utils/project-optional-modules';
 
 const SCAN_PAY_OPTION: PayChannelOption = { label: '银联扫码支付', value: 'SCAN_PAY' };

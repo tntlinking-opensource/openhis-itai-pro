@@ -11,7 +11,7 @@ import type { EncounterMedicationDispenseSlipRowDto } from '#/api/outpatient-pha
 
 import { computed, ref } from 'vue';
 
-import { useVbenDrawer } from '@vben/common-ui';
+import { useVbenDrawer } from '@zxplat/common-ui';
 
 import { Printer } from '@element-plus/icons-vue';
 import {

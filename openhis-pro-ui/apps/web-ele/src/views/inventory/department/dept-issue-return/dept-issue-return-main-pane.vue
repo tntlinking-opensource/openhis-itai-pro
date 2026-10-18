@@ -2,7 +2,7 @@
   科室退领单右侧主区：关联原领用单 originalBusNo + 明细。
 -->
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 import type { VxeGridPropTypes } from '#/adapter/vxe-table';
 import type { FormInstance } from 'element-plus';
 import type {
@@ -15,9 +15,9 @@ import type { ApiOptionItem } from '#/types/api-response';
 
 import { computed, nextTick, ref, watch, onBeforeUnmount, onDeactivated } from 'vue';
 
-import { Trash2 } from '@vben/icons';
-import { useUserStore } from '@vben/stores';
-import { formatDateTime } from '@vben/utils';
+import { Trash2 } from '@zxplat/icons';
+import { useUserStore } from '@zxplat/stores';
+import { formatDateTime } from '@zxplat/utils';
 
 import InvDocActions from '@inventory/components/inv-doc-actions.vue';
 import InvDocDetailGridShell from '@inventory/components/inv-doc-detail-grid-shell.vue';

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue';
 
-import { useVbenDrawer } from '@vben/common-ui';
+import { useVbenDrawer } from '@zxplat/common-ui';
 
 import { getPurchaseById } from '#/api/warehouse/purchase';
 import { useRequest } from '#/hooks/use-request';

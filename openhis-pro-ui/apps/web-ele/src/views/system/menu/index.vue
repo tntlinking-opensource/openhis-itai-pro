@@ -1,15 +1,15 @@
 <script lang="ts" setup>
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { Menu, PageMenuParams, UpdateMenuParams } from '#/api/core/system/menu.types';
 
 import { computed, onMounted, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
-import { useAccessStore } from '@vben/stores';
-import { IconifyIcon } from '@vben/icons';
+import { Page } from '@zxplat/common-ui';
+import { useAccessStore } from '@zxplat/stores';
+import { IconifyIcon } from '@zxplat/icons';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { ElButton, ElMessage, ElMessageBox, ElSwitch, ElTag } from 'element-plus';
 
@@ -399,7 +399,7 @@ onMounted(() => {
       </template>
 
       <template #isEnabled="{ row }">
-        <ElTag :type="row.isEnabled ? 'success' : 'info'">
+        <ElTag :type="row.isEnabled ? 'success' : 'warning'">
           {{ row.isEnabled ? '启用' : '停用' }}
         </ElTag>
       </template>

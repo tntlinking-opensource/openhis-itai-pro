@@ -1,8 +1,8 @@
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 import { useAuthStore } from '#/store';
 
-const STORAGE_PREFIX = 'openhis:workbench:custom-shortcuts';
+const STORAGE_PREFIX = 'zxplat:workbench:custom-shortcuts';
 
 /** 自定义快捷入口最多保存条数 */
 export const WORKBENCH_CUSTOM_SHORTCUT_MAX = 12;

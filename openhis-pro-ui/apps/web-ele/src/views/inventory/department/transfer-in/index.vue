@@ -5,7 +5,7 @@ import type { ApiOptionItem } from '#/types/api-response';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 import {
   loadTransferInFormInitApi,

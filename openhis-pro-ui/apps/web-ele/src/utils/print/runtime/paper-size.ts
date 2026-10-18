@@ -33,13 +33,19 @@ const WRISTBAND_CONTENT_BAND_MM = 23;
 /** 热敏 203dpi 下过小易发糊，用加粗大字 */
 const WRISTBAND_FONT_PT = 12;
 
-/** 业务场景默认纸张（优先于模板 panel.paperType；门诊处方勿写死，以模板为准） */
+/** 业务场景默认纸张（优先于模板 panel.paperType） */
 const SCENARIO_PAGE_SIZE: Partial<Record<PrintScenario, string>> = {
-  [PRINT_SCENARIO.examinationPrint]: 'A5',
-  [PRINT_SCENARIO.testPrint]: 'A5',
+  /** 检查/检验申请单：按场景分 A4 / A5 模板 */
+  [PRINT_SCENARIO.examinationPrint]: 'A4',
+  [PRINT_SCENARIO.testPrint]: 'A4',
+  [PRINT_SCENARIO.examinationPrintA5]: 'A5',
+  [PRINT_SCENARIO.testPrintA5]: 'A5',
+  /** 门诊处方勿写死，以模板 panel 为准 */
   [PRINT_SCENARIO.pharmacyDailySettlementPrint]: 'A4',
   /** 报表列表：纸张固定 A4，横竖靠 panel 宽高推 landscape */
   [PRINT_SCENARIO.reportListPrint]: 'A4',
+  /** 门诊患者费用清单：A4 横向（panel 297×210） */
+  [PRINT_SCENARIO.opFeeListPrint]: 'A4',
 };
 
 export interface HiprintPageSizeOptions {

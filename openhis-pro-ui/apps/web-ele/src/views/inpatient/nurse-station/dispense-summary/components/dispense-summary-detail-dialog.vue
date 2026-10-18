@@ -48,6 +48,7 @@ const headerInfoItems = computed(() => {
     { label: '申请时间', value: formatSummarySlipDateTime(header.applyTime) },
     { label: '发药时间', value: formatSummarySlipDateTime(header.dispenseTime) },
     { label: '汇总药房', value: header.purposeLocationName?.trim() || '—' },
+    { label: '申领科室', value: header.applicantDepartmentName?.trim() || '—' },
     { label: '申请人', value: header.applicantName?.trim() || '—' },
     { label: '领药人', value: header.receiverName?.trim() || '—' },
   ];
@@ -128,11 +129,6 @@ function handleClose() {
               min-width="110"
               show-overflow-tooltip
             />
-            <ElTableColumn label="数量" min-width="96" align="center">
-              <template #default="{ row }">
-                {{ formatSummarySlipLineQuantity(row) }}
-              </template>
-            </ElTableColumn>
             <ElTableColumn prop="unitPrice" label="单价" min-width="88" align="right">
               <template #default="{ row }">
                 {{ formatMoneyCell(row.unitPrice) }}
@@ -141,6 +137,11 @@ function handleClose() {
             <ElTableColumn prop="totalPrice" label="总价" min-width="88" align="right">
               <template #default="{ row }">
                 {{ formatMoneyCell(row.totalPrice) }}
+              </template>
+            </ElTableColumn>
+            <ElTableColumn label="数量" min-width="96" align="center">
+              <template #default="{ row }">
+                {{ formatSummarySlipLineQuantity(row) }}
               </template>
             </ElTableColumn>
           </ElTable>

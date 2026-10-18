@@ -1,0 +1,11 @@
+{
+  "moduleId": "campus",
+  "displayName": "校区组织（Campus）",
+  "enabledProperty": "zxplat.modules.campus.enabled",
+  "autoConfigurationClass": "com.zxplat.plugin.campus.application.config.CampusAutoConfiguration",
+  "appServiceNames": [
+    "campusSite",
+    "campusCollege",
+    "campusDepartment"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "doc_kind": "CATALOG_DELTA",
+  "category": "DRUG",
+  "title": "药品数据更新目录（2025.6.30）",
+  "source_filename": "附件：药品数据更新目录（2025.6.30）.xlsx",
+  "notice_date": "2025-06-30",
+  "effective_date": "2025-06-30",
+  "wash_note": "药品局发目录更新；Sheet前缀映射ADD/STOP/MODIFY/PROVINCE_MODIFY；hilist_code取医疗目录编码/药品代码/目录编码；收费项目等级01/02/03或1/2/3或甲乙丙→1/2/3；限价与其余原列入ext_json；list_type缺省101。",
+  "wash_tool": "cursor-ai"
+}

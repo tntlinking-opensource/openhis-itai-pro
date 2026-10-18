@@ -46,7 +46,7 @@ export interface SubmitWorkInjuryInvokeResultResponse {
   psnCashPay?: number | string;
 }
 
-/** OpenHIS.Win /api/work-injury/invoke 响应。 */
+/** zxplat.Win /api/work-injury/invoke 响应。 */
 export interface WorkInjuryWinInvokeResponse {
   success?: boolean;
   infcode?: string;

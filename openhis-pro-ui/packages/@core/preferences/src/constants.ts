@@ -1,4 +1,4 @@
-import type { BuiltinThemeType, TimezoneOption } from '@vben-core/typings';
+import type { BuiltinThemeType, TimezoneOption } from '@zxplat-core/typings';
 
 interface BuiltinThemePreset {
   color: string;

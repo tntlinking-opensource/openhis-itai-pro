@@ -2,6 +2,7 @@ import type { App } from 'vue';
 
 import type { HiprintPrinterItem } from './fetch-printer-list';
 import type { InvFormPaperKind, InvFormTripleSpec } from './form-print-preference';
+import type { ServiceApplyPaperSize } from './service-apply-paper-preference';
 
 import { createApp } from 'vue';
 
@@ -9,6 +10,7 @@ import ElementPlus from 'element-plus';
 
 import PrinterSelectDialogHost from './components/printer-select-dialog-host.vue';
 import { INV_FORM_PAPER_KIND, INV_FORM_TRIPLE_SPEC } from './form-print-preference';
+import { DEFAULT_SERVICE_APPLY_PAPER_SIZE } from './service-apply-paper-preference';
 
 export interface OpenPrinterSelectDialogOptions {
   bindingLabel?: string;
@@ -22,6 +24,9 @@ export interface OpenPrinterSelectDialogOptions {
   showPaperKind?: boolean;
   initialPaperKind?: InvFormPaperKind;
   initialTripleSpec?: InvFormTripleSpec;
+  /** 门诊申请单：同窗选择 A4 / A5 */
+  showServiceApplyPaperSize?: boolean;
+  initialServiceApplyPaperSize?: ServiceApplyPaperSize;
   showSkipPrompt?: boolean;
 }
 
@@ -30,6 +35,7 @@ export interface PrinterSelectDialogResult {
   skipPrompt: boolean;
   paperKind?: InvFormPaperKind;
   tripleSpec?: InvFormTripleSpec;
+  serviceApplyPaperSize?: ServiceApplyPaperSize;
 }
 
 /** 函数式打开打印机选择弹窗（供 print 运行时调用） */
@@ -41,12 +47,23 @@ export function openPrinterSelectDialog(
     document.body.append(mountEl);
 
     let app: App | null = null;
+    let settled = false;
 
     /** 卸载临时 Vue 实例 */
     function cleanup(): void {
       app?.unmount();
       app = null;
       mountEl.remove();
+    }
+
+    /** 只结算一次，避免确认后 @close 再触发 cancel */
+    function settle(result: null | PrinterSelectDialogResult): void {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve(result);
     }
 
     app = createApp(PrinterSelectDialogHost, {
@@ -60,14 +77,15 @@ export function openPrinterSelectDialog(
       showPaperKind: options.showPaperKind === true,
       initialPaperKind: options.initialPaperKind ?? INV_FORM_PAPER_KIND.triple,
       initialTripleSpec: options.initialTripleSpec ?? INV_FORM_TRIPLE_SPEC.third,
+      showServiceApplyPaperSize: options.showServiceApplyPaperSize === true,
+      initialServiceApplyPaperSize:
+        options.initialServiceApplyPaperSize ?? DEFAULT_SERVICE_APPLY_PAPER_SIZE,
       showSkipPrompt: options.showSkipPrompt !== false,
       onConfirm: (payload: PrinterSelectDialogResult) => {
-        cleanup();
-        resolve(payload);
+        settle(payload);
       },
       onCancel: () => {
-        cleanup();
-        resolve(null);
+        settle(null);
       },
     });
     app.use(ElementPlus);

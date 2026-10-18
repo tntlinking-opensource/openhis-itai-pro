@@ -11,7 +11,7 @@ import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 const BASE = '/outpatientPharmacyPrescriptionQuery';
 
-/** 菜单路由 path（与 whale_menus.path 对齐）。 */
+/** 菜单路由 path（与 zxplat_menus.path 对齐）。 */
 export const OUTPATIENT_PRESCRIPTION_VIEW_ROUTE_PATH = '/report/outpatient-prescription-view';
 
 export interface OptionDto {

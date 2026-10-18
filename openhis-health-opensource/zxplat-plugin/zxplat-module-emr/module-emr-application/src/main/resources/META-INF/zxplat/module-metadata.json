@@ -1,0 +1,13 @@
+{
+  "moduleId": "emr",
+  "displayName": "电子病历（EMR）",
+  "enabledProperty": "zxplat.modules.emr.enabled",
+  "autoConfigurationClass": "com.zxplat.plugin.emr.application.config.EmrAutoConfiguration",
+  "appServiceNames": [
+    "document",
+    "documentType",
+    "template",
+    "encounterMetadata",
+    "metadataField"
+  ]
+}

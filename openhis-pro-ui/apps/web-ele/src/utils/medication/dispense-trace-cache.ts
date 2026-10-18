@@ -4,11 +4,11 @@
  * 与库存单据 inv-doc-draft 缓存前缀隔离，互不影响。
  */
 
-import { useUserStore } from '@vben/stores';
+import { useUserStore } from '@zxplat/stores';
 
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
-const STORAGE_PREFIX = 'openhis:dispense-trace';
+const STORAGE_PREFIX = 'zxplat:dispense-trace';
 const ENTRY_VERSION = 1 as const;
 
 export const DISPENSE_TRACE_CACHE_SCENE = {

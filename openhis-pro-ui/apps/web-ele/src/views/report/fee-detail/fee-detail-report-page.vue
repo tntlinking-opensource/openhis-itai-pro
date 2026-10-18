@@ -17,7 +17,7 @@ import type { ReportPrintColumnDef } from '#/utils/print/print-report-list';
 
 import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import { Download, Printer, Refresh, Search, Setting } from '@element-plus/icons-vue';
 import {
@@ -95,6 +95,32 @@ import { flattenEncounterBlocksToTableRows } from './flatten-encounter-blocks';
 
 defineOptions({ name: 'FeeDetailReportPage' });
 
+/** 明细表一列：表头/打印/导出共用；优惠/实收仅已配置有效折扣时插入。 */
+interface FeeDetailDynamicColumn {
+  prop: string;
+  /** 打印字段；缺省用 prop（来源列打印用 tradeDirectionLabel）。 */
+  printField?: string;
+  label: string;
+  width?: number;
+  minWidth?: number;
+  align: 'center' | 'right';
+  widthWeight: number;
+  className?: string;
+  cellKind: 'text' | 'quantity' | 'trade' | 'purchaseUnit' | 'purchaseMoney' | 'saleMoney';
+}
+
+/** 汇总表一列：与打印目录同序。 */
+interface FeeDetailSummaryColumn {
+  prop: string;
+  label: string;
+  width?: number;
+  minWidth?: number;
+  align: 'center' | 'right';
+  widthWeight: number;
+  className?: string;
+  cellKind: 'dimension' | 'qty' | 'purchaseMoney' | 'saleMoney';
+}
+
 interface Props {
   /** 门诊或住院费用明细报表场景 */
   scope: FeeDetailReportScope;
@@ -120,7 +146,7 @@ interface QueryFormState {
   /** 汇总维度（仅汇总 Tab）。 */
   summaryDimension: string;
   /**
-   * 按患者维度合并（仅住院明细）：true → lineMergeMode=BY_DEFINITION。
+   * 按患者维度合并（仅住院明细）：true → lineMergeMode=BY_DEFINITION（同就诊内同产品品规净合计）。
    */
   mergeByPatientDefinition: boolean;
 }
@@ -128,6 +154,13 @@ interface QueryFormState {
 const props = defineProps<Props>();
 
 const pageInit = ref<LoadFeeDetailReportPageInitResponse | null>(null);
+/**
+ * init 完成后再挂明细 ElTable。默认明细 Tab 会在 init 前先挂表，
+ * ElTableColumn v-if 为 false 时 Element Plus 不会后补优惠/实收列。
+ */
+const pageInitReady = ref(false);
+/** 已配置有效折扣（ACTIVE 配置&gt;0）；init / 明细分页均可回写。 */
+const discountFeatureEnabled = ref(false);
 const summaryRows = ref<FeeDetailReportSummaryRowDto[]>([]);
 const summaryFooter = ref<FeeDetailReportSummaryFooterDto | undefined>();
 const tableData = ref<FeeDetailTableRow[]>([]);
@@ -248,6 +281,29 @@ const summaryDimensionOptions = computed<ApiOptionItem[]>(
   () => pageInit.value?.summaryDimensionOptions ?? [],
 );
 
+/**
+ * 已配置有效折扣（ACTIVE 配置&gt;0）时展示优惠/实收列。
+ * 只认配置，不按行金额猜。
+ */
+const showDiscountAmountColumns = computed(() => discountFeatureEnabled.value);
+
+/**
+ * 把接口折扣显隐落到本地（true / 'true' / 1 视为已配置）。
+ *
+ * @param value init 或明细分页的 discountFeatureEnabled
+ */
+function applyDiscountFeatureEnabled(value: unknown) {
+  // 已配置有效折扣：打开优惠/实收列
+  if (value === true || value === 'true' || value === 'TRUE' || value === 1 || value === '1') {
+    discountFeatureEnabled.value = true;
+    return;
+  }
+  // 明确未配置：关闭列，避免上一轮 true 残留
+  if (value === false || value === 'false' || value === 'FALSE' || value === 0 || value === '0') {
+    discountFeatureEnabled.value = false;
+  }
+}
+
 /** 项目类别：合并药品/诊疗/耗材 fin_type 字典（按 value 去重）。 */
 const subCategoryOptions = computed<ApiOptionItem[]>(() => {
   const init = pageInit.value;
@@ -306,7 +362,12 @@ const footerSummaryItems = computed(() => {
   if (!summary) {
     return [{ label: '明细行数', value: detailTotal.value }];
   }
-  return FEE_DETAIL_SUMMARY_DISPLAY.map((item) => ({
+  return FEE_DETAIL_SUMMARY_DISPLAY.filter((item) => {
+    if (item.key === 'discountAmountTotal' || item.key === 'actualReceivedAmountTotal') {
+      return showDiscountAmountColumns.value;
+    }
+    return true;
+  }).map((item) => ({
     label: item.label,
     value:
       item.key === 'purchaseAmountTotal'
@@ -320,63 +381,305 @@ const showSummaryUnitPriceColumns = computed(
   () => queryParams.summaryDimension === SUMMARY_DIMENSION_ITEM,
 );
 
-/** 汇总 Tab 可打印列（进/售单价仅品规维）。 */
-const summaryPrintColumns = computed<ReportPrintColumnDef[]>(() => {
-  const cols: ReportPrintColumnDef[] = [
-    { field: 'dimensionName', title: '维度', align: 'center', widthWeight: 1.4 },
-    { field: 'quantityTotal', title: '数量', align: 'right', widthWeight: 0.9 },
+/** 汇总表列（品规维才出单价；不含优惠/实收）。 */
+const summaryTableColumns = computed<FeeDetailSummaryColumn[]>(() => {
+  const cols: FeeDetailSummaryColumn[] = [
+    {
+      prop: 'dimensionName',
+      label: '维度',
+      minWidth: 160,
+      align: 'center',
+      widthWeight: 1.4,
+      cellKind: 'dimension',
+    },
+    {
+      prop: 'quantityTotal',
+      label: '数量',
+      minWidth: 100,
+      align: 'right',
+      widthWeight: 0.9,
+      className: REPORT_TABLE_NUM_CELL,
+      cellKind: 'qty',
+    },
   ];
+  // 品规维才展示进/售单价，其它维只有合计
   if (showSummaryUnitPriceColumns.value) {
     cols.push(
-      { field: 'purchaseUnitPrice', title: '进价单价', align: 'right', widthWeight: 1 },
-      { field: 'saleUnitPrice', title: '售价单价', align: 'right', widthWeight: 1 },
-    );
-  }
-  cols.push(
-    { field: 'purchaseAmountTotal', title: '进价合计', align: 'right', widthWeight: 1 },
-    { field: 'saleAmountTotal', title: '售价合计', align: 'right', widthWeight: 1 },
-  );
-  return cols;
-});
-
-/** 明细 Tab 可打印列（与当前表明细列对齐；合并态隐藏逐条差异列）。 */
-const DETAIL_PRINT_COLUMNS = computed<ReportPrintColumnDef[]>(() => {
-  const cols: ReportPrintColumnDef[] = [
-    { field: 'busNo', title: '就诊号', align: 'center', widthWeight: 1.1 },
-    { field: 'patientName', title: '患者', align: 'center', widthWeight: 0.9 },
-    { field: 'registrationDepartmentName', title: '开立科室', align: 'center', widthWeight: 1 },
-    { field: 'encounterDate', title: '就诊日期', align: 'center', widthWeight: 1 },
-    { field: 'feeNatureDisplay', title: '费用性质', align: 'center', widthWeight: 0.9 },
-    { field: 'medTypeDisplay', title: '医疗类别', align: 'center', widthWeight: 0.9 },
-    { field: 'subCategoryDisplay', title: '项目类别', align: 'center', widthWeight: 0.9 },
-    { field: 'productName', title: '项目名称', align: 'center', widthWeight: 1.3 },
-    { field: 'productCode', title: '项目编码', align: 'center', widthWeight: 1 },
-    { field: 'quantityDisplay', title: '数量', align: 'right', widthWeight: 0.9 },
-  ];
-  // 合并态隐藏开单/执行/收费人与业务时间（逐条差异列）
-  if (!isPatientDefinitionMerge.value) {
-    cols.push(
-      { field: 'orderingDoctorName', title: '开单医生', align: 'center', widthWeight: 0.9 },
-      { field: 'performerName', title: '执行人', align: 'center', widthWeight: 0.8 },
-      { field: 'cashierName', title: '收费人', align: 'center', widthWeight: 0.8 },
       {
-        field: 'billDate',
-        title: props.scope === 'inpatient' ? '业务时间' : '结算时间',
-        align: 'center',
-        widthWeight: 1.2,
+        prop: 'purchaseUnitPrice',
+        label: '进价单价',
+        width: 110,
+        align: 'right',
+        widthWeight: 1,
+        className: `${REPORT_TABLE_NUM_CELL} ${REPORT_TABLE_AMOUNT_CELL}`,
+        cellKind: 'purchaseMoney',
+      },
+      {
+        prop: 'saleUnitPrice',
+        label: '售价单价',
+        width: 110,
+        align: 'right',
+        widthWeight: 1,
+        className: REPORT_TABLE_NUM_CELL,
+        cellKind: 'saleMoney',
       },
     );
   }
   cols.push(
-    { field: 'tradeDirectionLabel', title: '来源', align: 'center', widthWeight: 0.7 },
-    { field: 'insuranceLevelDisplay', title: '医保等级', align: 'center', widthWeight: 0.8 },
-    { field: 'purchaseUnitPrice', title: '进价单价', align: 'right', widthWeight: 0.9 },
-    { field: 'purchaseAmount', title: '进价总价', align: 'right', widthWeight: 0.9 },
-    { field: 'saleUnitPrice', title: '售价单价', align: 'right', widthWeight: 0.9 },
-    { field: 'saleAmount', title: '售价总价', align: 'right', widthWeight: 0.9 },
+    {
+      prop: 'purchaseAmountTotal',
+      label: '进价合计',
+      width: 120,
+      align: 'right',
+      widthWeight: 1,
+      className: `${REPORT_TABLE_NUM_CELL} ${REPORT_TABLE_AMOUNT_CELL}`,
+      cellKind: 'purchaseMoney',
+    },
+    {
+      prop: 'saleAmountTotal',
+      label: '售价合计',
+      width: 120,
+      align: 'right',
+      widthWeight: 1,
+      className: REPORT_TABLE_NUM_CELL,
+      cellKind: 'saleMoney',
+    },
   );
   return cols;
 });
+
+/** 汇总 Tab 可打印列（与汇总表同序）。 */
+const summaryPrintColumns = computed<ReportPrintColumnDef[]>(() =>
+  summaryTableColumns.value.map((col) => ({
+    field: col.prop,
+    title: col.label,
+    align: col.align,
+    widthWeight: col.widthWeight,
+  })),
+);
+
+/**
+ * 明细表列：售价/优惠/实收紧挨着往前，进价放最后。
+ * 有有效折扣配置才插入优惠、实收，不写死在模板。
+ */
+const detailTableColumns = computed<FeeDetailDynamicColumn[]>(() => {
+  const cols: FeeDetailDynamicColumn[] = [
+    {
+      prop: 'busNo',
+      label: encounterNoLabel.value,
+      width: 120,
+      align: 'center',
+      widthWeight: 1.1,
+      cellKind: 'text',
+    },
+    {
+      prop: 'patientName',
+      label: '患者',
+      width: 90,
+      align: 'center',
+      widthWeight: 0.9,
+      cellKind: 'text',
+    },
+    {
+      prop: 'registrationDepartmentName',
+      label: departmentColumnLabel,
+      width: 100,
+      align: 'center',
+      widthWeight: 1,
+      cellKind: 'text',
+    },
+    {
+      prop: 'encounterDate',
+      label: '就诊日期',
+      width: 110,
+      align: 'center',
+      widthWeight: 1,
+      cellKind: 'text',
+    },
+    {
+      prop: 'feeNatureDisplay',
+      label: '费用性质',
+      width: 100,
+      align: 'center',
+      widthWeight: 0.9,
+      cellKind: 'text',
+    },
+    {
+      prop: 'medTypeDisplay',
+      label: '医疗类别',
+      width: 100,
+      align: 'center',
+      widthWeight: 0.9,
+      cellKind: 'text',
+    },
+    {
+      prop: 'subCategoryDisplay',
+      label: '项目类别',
+      width: 88,
+      align: 'center',
+      widthWeight: 0.9,
+      cellKind: 'text',
+    },
+    {
+      prop: 'productName',
+      label: '项目名称',
+      minWidth: 120,
+      align: 'center',
+      widthWeight: 1.3,
+      cellKind: 'text',
+    },
+    {
+      prop: 'productCode',
+      label: '项目编码',
+      width: 100,
+      align: 'center',
+      widthWeight: 1,
+      cellKind: 'text',
+    },
+    {
+      prop: 'quantityDisplay',
+      label: '数量',
+      width: 88,
+      align: 'right',
+      widthWeight: 0.9,
+      className: REPORT_TABLE_NUM_CELL,
+      cellKind: 'quantity',
+    },
+  ];
+  // 合并态隐藏开单/执行/收费人与业务时间（逐条差异列）
+  if (!isPatientDefinitionMerge.value) {
+    cols.push(
+      {
+        prop: 'orderingDoctorName',
+        label: '开单医生',
+        width: 88,
+        align: 'center',
+        widthWeight: 0.9,
+        cellKind: 'text',
+      },
+      {
+        prop: 'performerName',
+        label: '执行人',
+        width: 88,
+        align: 'center',
+        widthWeight: 0.8,
+        cellKind: 'text',
+      },
+      {
+        prop: 'cashierName',
+        label: '收费人',
+        width: 88,
+        align: 'center',
+        widthWeight: 0.8,
+        cellKind: 'text',
+      },
+      {
+        prop: 'billDate',
+        label: businessDateLabel.value,
+        width: 160,
+        align: 'center',
+        widthWeight: 1.2,
+        cellKind: 'text',
+      },
+    );
+  }
+  cols.push(
+    {
+      prop: 'tradeDirection',
+      printField: 'tradeDirectionLabel',
+      label: '来源',
+      width: 72,
+      align: 'center',
+      widthWeight: 0.7,
+      cellKind: 'trade',
+    },
+    {
+      prop: 'insuranceLevelDisplay',
+      label: '医保等级',
+      width: 88,
+      align: 'center',
+      widthWeight: 0.8,
+      cellKind: 'text',
+    },
+    {
+      prop: 'saleUnitPrice',
+      label: '售价单价',
+      width: 96,
+      align: 'right',
+      widthWeight: 0.9,
+      className: REPORT_TABLE_NUM_CELL,
+      cellKind: 'saleMoney',
+    },
+    {
+      prop: 'saleAmount',
+      label: '售价总价',
+      width: 96,
+      align: 'right',
+      widthWeight: 0.9,
+      className: REPORT_TABLE_NUM_CELL,
+      cellKind: 'saleMoney',
+    },
+  );
+  // 有有效折扣配置：优惠/实收紧跟售价，避免挤在进价后面要横滚才看见
+  if (showDiscountAmountColumns.value) {
+    cols.push(
+      {
+        prop: 'discountAmount',
+        label: '优惠金额',
+        width: 96,
+        align: 'right',
+        widthWeight: 0.9,
+        className: REPORT_TABLE_NUM_CELL,
+        cellKind: 'saleMoney',
+      },
+      {
+        prop: 'actualReceivedAmount',
+        label: '实收金额',
+        width: 96,
+        align: 'right',
+        widthWeight: 0.9,
+        className: REPORT_TABLE_NUM_CELL,
+        cellKind: 'saleMoney',
+      },
+    );
+  }
+  cols.push(
+    {
+      prop: 'purchaseUnitPrice',
+      label: '进价单价',
+      width: 96,
+      align: 'right',
+      widthWeight: 0.9,
+      className: REPORT_TABLE_NUM_CELL,
+      cellKind: 'purchaseUnit',
+    },
+    {
+      prop: 'purchaseAmount',
+      label: '进价总价',
+      width: 96,
+      align: 'right',
+      widthWeight: 0.9,
+      className: `${REPORT_TABLE_NUM_CELL} ${REPORT_TABLE_AMOUNT_CELL}`,
+      cellKind: 'purchaseMoney',
+    },
+  );
+  return cols;
+});
+
+/** 明细表 :key：列清单变化时整表重挂，避免 ElTable 不刷新表头。 */
+const detailTableColumnKey = computed(() =>
+  detailTableColumns.value.map((col) => col.prop).join('|'),
+);
+
+/** 明细 Tab 可打印列（与当前表明细列对齐）。 */
+const DETAIL_PRINT_COLUMNS = computed<ReportPrintColumnDef[]>(() =>
+  detailTableColumns.value.map((col) => ({
+    field: col.printField ?? col.prop,
+    title: col.label,
+    align: col.align,
+    widthWeight: col.widthWeight,
+  })),
+);
 
 /** 当前 Tab 打印列目录。 */
 const printColumnCatalog = computed<ReportPrintColumnDef[]>(() =>
@@ -432,6 +735,8 @@ function mapDetailPrintRows(source = tableData.value): Record<string, string>[] 
       purchaseAmount: (value) => formatPurchaseMoneyCell(value),
       saleUnitPrice: (value) => formatMoneyCell(value),
       saleAmount: (value) => formatMoneyCell(value),
+      discountAmount: (value) => formatMoneyCell(value),
+      actualReceivedAmount: (value) => formatMoneyCell(value),
     }),
   );
 }
@@ -547,6 +852,8 @@ const { run: runPage, loading: pageLoading } = useRequest(
       }
       // 先展示售价列角；进价合计另 IF 异步回填（null 时页脚显示 —）
       globalSummary.value = data.summary;
+      // 分页回包再带折扣显隐，避免仅 init 丢失时明细列一直不挂
+      applyDiscountFeatureEnabled(data.discountFeatureEnabled);
     },
   },
 );
@@ -890,6 +1197,61 @@ function formatPurchaseUnitPriceCell(value: unknown): string {
   return text ? `${text}元` : '—';
 }
 
+/**
+ * 汇总表单元格：维度名回落 finTypeDisplay；金额走进/售价刻度。
+ *
+ * @param row 汇总行
+ * @param col 当前列
+ */
+function formatSummaryCell(
+  row: FeeDetailReportSummaryRowDto,
+  col: FeeDetailSummaryColumn,
+): string {
+  // 维度列优先 dimensionName，兼容旧 finTypeDisplay
+  if (col.cellKind === 'dimension') {
+    return String(row.dimensionName || row.finTypeDisplay || '—');
+  }
+  if (col.cellKind === 'qty') {
+    return formatQuantity(row.quantityTotal);
+  }
+  const raw = (row as Record<string, unknown>)[col.prop];
+  if (col.cellKind === 'purchaseMoney') {
+    return formatPurchaseMoneyCell(raw);
+  }
+  return formatMoneyCell(raw);
+}
+
+/**
+ * 明细表单元格：数量带单位；来源列由模板画 Tag；金额分进/售价刻度。
+ *
+ * @param row 平铺行
+ * @param col 当前列
+ */
+function formatDetailCell(row: FeeDetailTableRow, col: FeeDetailDynamicColumn): string {
+  // 数量 = 数值 + 单位，如「1次」
+  if (col.cellKind === 'quantity') {
+    return formatQuantityWithUnit(row.quantityValue, row.quantityUnitDisplay);
+  }
+  // 进价单价走中药三位刻度
+  if (col.cellKind === 'purchaseUnit') {
+    return formatPurchaseUnitPriceCell(row.purchaseUnitPrice);
+  }
+  // 进价总价
+  if (col.cellKind === 'purchaseMoney') {
+    return formatPurchaseMoneyCell(row.purchaseAmount);
+  }
+  // 售价/优惠/实收同一结算刻度
+  if (col.cellKind === 'saleMoney') {
+    return formatMoneyCell((row as Record<string, unknown>)[col.prop]);
+  }
+  const raw = (row as Record<string, unknown>)[col.prop];
+  // 空单元格占位
+  if (raw === undefined || raw === null || raw === '') {
+    return '—';
+  }
+  return String(raw);
+}
+
 /** 收退方向标签类型。 */
 function resolveTradeDirectionTagType(tradeDirection?: string): 'danger' | 'info' | 'success' {
   if (tradeDirection === 'REFUND') {
@@ -921,6 +1283,8 @@ function isFeeDetailRefundRow(row: FeeDetailTableRow): boolean {
     'quantityValue',
     'purchaseAmount',
     'saleAmount',
+    'discountAmount',
+    'actualReceivedAmount',
   ]);
 }
 
@@ -963,6 +1327,7 @@ function resolveSummaryRowKey(row: FeeDetailReportSummaryRowDto) {
 async function loadPageInit() {
   const data = await runInit();
   pageInit.value = data;
+  applyDiscountFeatureEnabled(data?.discountFeatureEnabled);
   queryParams.dateFrom =
     normalizeReportDateTime(data.defaultDateFrom, 'start') ||
     dayjs().startOf('day').format('YYYY-MM-DD HH:mm:ss');
@@ -998,6 +1363,9 @@ onMounted(async () => {
     await getList();
   } catch {
     // init 失败时不自动查询
+  } finally {
+    // 无论 init 成败都允许挂表，避免一直空白
+    pageInitReady.value = true;
   }
 });
 </script>
@@ -1190,7 +1558,8 @@ onMounted(async () => {
               class="report-list-page__query-switch-item"
             >
               <div class="report-list-page__query-switch">
-                <span>按患者维度合并</span>
+                <!-- 开启后同住院就诊内相同项目编码（产品）数量/金额净合计；主项与加收项仍分行 -->
+                <span title="开启后：同一住院就诊内相同项目合并为一行，数量与金额相加；关闭后：按收费行原样展示（数量为开立/执行落库值，不一定为 1）">按患者维度合并</span>
                 <ElSwitch
                   v-model="queryParams.mergeByPatientDefinition"
                   :disabled="queryActionBusy"
@@ -1249,6 +1618,7 @@ onMounted(async () => {
           <template #default="{ tableHeight }">
             <ReportElTable
               v-if="isSummaryTab"
+              :key="`fee-detail-summary-${queryParams.summaryDimension}`"
               :loading="tableLoading"
               :data="summaryRows"
               :height="tableHeight"
@@ -1256,83 +1626,26 @@ onMounted(async () => {
               :row-class-name="resolveSummaryRowClassName"
             >
               <ElTableColumn
-                prop="dimensionName"
-                label="维度"
-                min-width="160"
-                align="center"
-                header-align="center"
+                v-for="col in summaryTableColumns"
+                :key="col.prop"
+                :prop="col.prop"
+                :label="col.label"
+                :width="col.width"
+                :min-width="col.minWidth"
+                :align="col.align"
+                :header-align="col.align"
+                :class-name="col.className"
                 show-overflow-tooltip
               >
                 <template #default="{ row }">
-                  {{ row.dimensionName || row.finTypeDisplay || '—' }}
-                </template>
-              </ElTableColumn>
-              <ElTableColumn
-                label="数量"
-                prop="quantityTotal"
-                min-width="100"
-                align="right"
-                header-align="right"
-                :class-name="REPORT_TABLE_NUM_CELL"
-              >
-                <template #default="{ row }">
-                  {{ formatQuantity(row.quantityTotal) }}
-                </template>
-              </ElTableColumn>
-              <ElTableColumn
-                v-if="showSummaryUnitPriceColumns"
-                label="进价单价"
-                prop="purchaseUnitPrice"
-                width="110"
-                align="right"
-                header-align="right"
-                :class-name="`${REPORT_TABLE_NUM_CELL} ${REPORT_TABLE_AMOUNT_CELL}`"
-              >
-                <template #default="{ row }">
-                  {{ formatPurchaseMoneyCell(row.purchaseUnitPrice) }}
-                </template>
-              </ElTableColumn>
-              <ElTableColumn
-                v-if="showSummaryUnitPriceColumns"
-                label="售价单价"
-                prop="saleUnitPrice"
-                width="110"
-                align="right"
-                header-align="right"
-                :class-name="REPORT_TABLE_NUM_CELL"
-              >
-                <template #default="{ row }">
-                  {{ formatMoneyCell(row.saleUnitPrice) }}
-                </template>
-              </ElTableColumn>
-              <ElTableColumn
-                label="进价合计"
-                prop="purchaseAmountTotal"
-                width="120"
-                align="right"
-                header-align="right"
-                :class-name="`${REPORT_TABLE_NUM_CELL} ${REPORT_TABLE_AMOUNT_CELL}`"
-              >
-                <template #default="{ row }">
-                  {{ formatPurchaseMoneyCell(row.purchaseAmountTotal) }}
-                </template>
-              </ElTableColumn>
-              <ElTableColumn
-                label="售价合计"
-                prop="saleAmountTotal"
-                width="120"
-                align="right"
-                header-align="right"
-                :class-name="REPORT_TABLE_NUM_CELL"
-              >
-                <template #default="{ row }">
-                  {{ formatMoneyCell(row.saleAmountTotal) }}
+                  {{ formatSummaryCell(row, col) }}
                 </template>
               </ElTableColumn>
             </ReportElTable>
 
             <ReportElTable
-              v-else
+              v-else-if="pageInitReady"
+              :key="`fee-detail-detail-${detailTableColumnKey}`"
               class="fee-detail-report-table"
               :stripe="false"
               :loading="tableLoading"
@@ -1342,196 +1655,31 @@ onMounted(async () => {
               :row-class-name="resolveRowClassName"
             >
               <ElTableColumn
-                prop="busNo"
-                :label="encounterNoLabel"
-                width="120"
-                align="center"
-                header-align="center"
+                v-for="col in detailTableColumns"
+                :key="col.prop"
+                :prop="col.prop"
+                :label="col.label"
+                :width="col.width"
+                :min-width="col.minWidth"
+                :align="col.align"
+                :header-align="col.align"
+                :class-name="col.className"
                 show-overflow-tooltip
-              />
-              <ElTableColumn
-                prop="patientName"
-                label="患者"
-                width="90"
-                align="center"
-                header-align="center"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                prop="registrationDepartmentName"
-                :label="departmentColumnLabel"
-                width="100"
-                align="center"
-                header-align="center"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                prop="encounterDate"
-                label="就诊日期"
-                width="110"
-                align="center"
-                header-align="center"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                prop="feeNatureDisplay"
-                label="费用性质"
-                width="100"
-                align="center"
-                header-align="center"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                prop="medTypeDisplay"
-                label="医疗类别"
-                width="100"
-                align="center"
-                header-align="center"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                prop="subCategoryDisplay"
-                label="项目类别"
-                width="88"
-                align="center"
-                header-align="center"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                prop="productName"
-                label="项目名称"
-                min-width="120"
-                align="center"
-                header-align="center"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                prop="productCode"
-                label="项目编码"
-                width="100"
-                align="center"
-                header-align="center"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                label="数量"
-                width="88"
-                align="right"
-                header-align="right"
-                :class-name="REPORT_TABLE_NUM_CELL"
               >
                 <template #default="{ row }">
-                  {{ formatQuantityWithUnit(row.quantityValue, row.quantityUnitDisplay) }}
-                </template>
-              </ElTableColumn>
-              <ElTableColumn
-                v-if="!isPatientDefinitionMerge"
-                prop="orderingDoctorName"
-                label="开单医生"
-                width="88"
-                align="center"
-                header-align="center"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                v-if="!isPatientDefinitionMerge"
-                prop="performerName"
-                label="执行人"
-                width="88"
-                align="center"
-                header-align="center"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                v-if="!isPatientDefinitionMerge"
-                prop="cashierName"
-                label="收费人"
-                width="88"
-                align="center"
-                header-align="center"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                v-if="!isPatientDefinitionMerge"
-                prop="billDate"
-                :label="props.scope === 'inpatient' ? '业务时间' : '结算时间'"
-                width="160"
-                align="center"
-                header-align="center"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                prop="tradeDirection"
-                label="来源"
-                width="72"
-                align="center"
-                header-align="center"
-              >
-                <template #default="{ row }">
-                  <template v-if="row.rowType === 'subtotal'">—</template>
-                  <ElTag
-                    v-else
-                    :type="resolveTradeDirectionTagType(row.tradeDirection as string)"
-                    effect="light"
-                  >
-                    {{ resolveTradeDirectionLabel(row.tradeDirection as string) }}
-                  </ElTag>
-                </template>
-              </ElTableColumn>
-              <ElTableColumn
-                prop="insuranceLevelDisplay"
-                label="医保等级"
-                width="88"
-                align="center"
-                header-align="center"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                label="进价单价"
-                prop="purchaseUnitPrice"
-                width="96"
-                align="right"
-                header-align="right"
-                :class-name="REPORT_TABLE_NUM_CELL"
-              >
-                <template #default="{ row }">
-                  {{ formatPurchaseUnitPriceCell(row.purchaseUnitPrice) }}
-                </template>
-              </ElTableColumn>
-              <ElTableColumn
-                label="进价总价"
-                prop="purchaseAmount"
-                width="96"
-                align="right"
-                header-align="right"
-                :class-name="`${REPORT_TABLE_NUM_CELL} ${REPORT_TABLE_AMOUNT_CELL}`"
-              >
-                <template #default="{ row }">
-                  {{ formatPurchaseMoneyCell(row.purchaseAmount) }}
-                </template>
-              </ElTableColumn>
-              <ElTableColumn
-                label="售价单价"
-                prop="saleUnitPrice"
-                width="96"
-                align="right"
-                header-align="right"
-                :class-name="REPORT_TABLE_NUM_CELL"
-              >
-                <template #default="{ row }">
-                  {{ formatMoneyCell(row.saleUnitPrice) }}
-                </template>
-              </ElTableColumn>
-              <ElTableColumn
-                label="售价总价"
-                prop="saleAmount"
-                width="96"
-                align="right"
-                header-align="right"
-                :class-name="REPORT_TABLE_NUM_CELL"
-              >
-                <template #default="{ row }">
-                  {{ formatMoneyCell(row.saleAmount) }}
+                  <template v-if="col.cellKind === 'trade'">
+                    <template v-if="row.rowType === 'subtotal'">—</template>
+                    <ElTag
+                      v-else
+                      :type="resolveTradeDirectionTagType(row.tradeDirection as string)"
+                      effect="light"
+                    >
+                      {{ resolveTradeDirectionLabel(row.tradeDirection as string) }}
+                    </ElTag>
+                  </template>
+                  <template v-else>
+                    {{ formatDetailCell(row, col) }}
+                  </template>
                 </template>
               </ElTableColumn>
             </ReportElTable>

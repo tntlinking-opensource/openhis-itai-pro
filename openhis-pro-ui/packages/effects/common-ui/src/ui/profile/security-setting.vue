@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Recordable } from '@vben/types';
+import type { Recordable } from '@zxplat/types';
 
 import type { SettingProps } from './types';
 
@@ -11,7 +11,7 @@ import {
   FormItem,
   FormLabel,
   Switch,
-} from '@vben-core/shadcn-ui';
+} from '@zxplat-core/shadcn-ui';
 
 withDefaults(defineProps<SettingProps>(), {
   formSchema: () => [],

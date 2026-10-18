@@ -332,16 +332,21 @@ export function handleLineTotalUnitChange(line: MedicationLineDraftSlice, newUni
   line.defaultUnitCode = nextUnit;
 }
 
-/** 从目录项解析划价行默认单位（优先就诊默认单位） */
+/** 从目录项解析划价行默认单位；住院划价优先住院默认单位 */
 export function resolvePricingDefaultUnitCodeFromCatalogItem(
   item: Record<string, unknown>,
+  options?: { preferInhospital?: boolean },
 ): string {
-  for (const key of [
-    'defEncounterUnitCode',
-    'packageUnitCode',
-    'splitUnitCode',
-    'unitCode',
-  ] as const) {
+  const keys = options?.preferInhospital
+    ? ([
+        'defInhospitalUnitCode',
+        'defEncounterUnitCode',
+        'packageUnitCode',
+        'splitUnitCode',
+        'unitCode',
+      ] as const)
+    : (['defEncounterUnitCode', 'packageUnitCode', 'splitUnitCode', 'unitCode'] as const);
+  for (const key of keys) {
     const code = String(item[key] ?? '').trim();
     if (code) {
       return code;
@@ -354,8 +359,9 @@ export function resolvePricingDefaultUnitCodeFromCatalogItem(
 export function applyPricingCatalogSelectionToLine(
   line: Pick<MedicationLineDraftSlice, 'defaultUnitCode'>,
   item: Record<string, unknown>,
+  options?: { preferInhospital?: boolean },
 ) {
-  const unitCode = resolvePricingDefaultUnitCodeFromCatalogItem(item);
+  const unitCode = resolvePricingDefaultUnitCodeFromCatalogItem(item, options);
   if (unitCode) {
     line.defaultUnitCode = unitCode;
   }
@@ -400,7 +406,16 @@ export function getLinePricingUnitOptions(
 }
 
 /** 目录下拉列表中的单位展示文案 */
-export function resolvePricingCatalogUnitDisplayText(item: Record<string, unknown>): string {
+export function resolvePricingCatalogUnitDisplayText(
+  item: Record<string, unknown>,
+  options?: { preferInhospital?: boolean },
+): string {
+  if (options?.preferInhospital) {
+    const inhospital = String(item.defInhospitalUnitCode_dictText ?? '').trim();
+    if (inhospital) {
+      return inhospital;
+    }
+  }
   return String(
     item.defEncounterUnitCode_dictText ??
       item.packageUnitCode_dictText ??

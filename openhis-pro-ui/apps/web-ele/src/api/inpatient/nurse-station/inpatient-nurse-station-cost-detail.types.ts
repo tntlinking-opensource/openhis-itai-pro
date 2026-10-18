@@ -35,6 +35,16 @@ export interface QueryNurseStationInpatientCostDetailRequest {
    * 冲销可在日期窗外仍剔除窗内原行）。页面 Tab 勿传。
    */
   excludeOffsetPairs?: boolean;
+  /**
+   * 业务单据打印：true 时**仅检验**费用清单/明细单出子账单、不出父项。
+   * 检查/治疗仍出父项。页面 Tab 勿传（默认 false）。国基打印入口传 true。
+   */
+  printExpandPackageChildren?: boolean;
+  /**
+   * 麻醉统计：true=仅麻醉申请已执行费用 + 手麻计费中挂麻醉申请父项的划价费用；
+   * 明细/汇总/合计同一口径。未勾选勿传。
+   */
+  anesthesiaStatisticsOnly?: boolean;
 }
 
 /** 查询住院费用明细响应 */
@@ -112,6 +122,8 @@ export interface NurseStationCostSummaryActivityLineDto {
   quantityValue?: number | string;
   quantityUnit?: string;
   quantityUnitDisplay?: string;
+  /** 本次账单行合计（原样；冲销负金额保留） */
+  totalPrice?: number | string;
   activityTypeEnum?: NurseStationCostSummaryActivityType | string;
   activityTypeDisplay?: string;
   cancelHighlight?: boolean;
@@ -122,6 +134,8 @@ export type NurseStationCostSummaryActivityType = 'EXECUTE' | 'PRICING' | 'AUTO_
 
 /** 费用合计 */
 export interface NurseStationCostDetailTotalsDto {
+  /** 预交金合计（库内账户余额；不计入 grandTotal） */
+  prepayNetBalance?: number | string;
   medicationTotal?: number | string;
   serviceTotal?: number | string;
   deviceTotal?: number | string;

@@ -1,5 +1,5 @@
 /**
- * 退库入库单（只读台账）— 对接 Whale {@code POST /api/app/inventoryWarehouseReturnStockIn/<method>}
+ * 退库入库单（只读台账）— 对接 ZXPlat {@code POST /api/app/inventoryWarehouseReturnStockIn/<method>}
  * type_enum=5 (CABINET_RETURN_STOCK_IN)。写 IF 仅后端网关拒写，前端不封装。
  */
 import type { ApiResponse } from '#/types/api-response';

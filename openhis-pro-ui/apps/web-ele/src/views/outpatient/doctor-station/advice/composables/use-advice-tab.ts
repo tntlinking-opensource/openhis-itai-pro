@@ -52,6 +52,7 @@ import { runOpDetailAuditGate } from '#/chs/composables/use-detail-audit-gate';
 import { pickFirstInsuranceContract } from '#/chs/utils/resolve-insurance-contract-bus-no';
 import { getChargeTypeListApi } from '#/api/core/common';
 import { useAuthStore } from '#/store';
+import { notifyEncounterFeeRefresh } from '#/components/outpatient/encounter-fee-summary';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { isStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
 
@@ -101,6 +102,8 @@ import {
   rowLooksWithdrawable,
   validateWesternEditLineItem,
 } from '../services/advice-row';
+import { ADVICE_CATALOG_EXCLUDE_SERVICE_APPLY_CATEGORY_CODES } from '#/views/outpatient/doctor-station/advice/constants/advice-catalog-exclude-service-apply-categories.config';
+
 import {
   ADVICE_ESC_OVERLAY_SELECTOR,
   ADVICE_PRODUCT_COLUMNS,
@@ -416,7 +419,7 @@ export function useAdviceTab(
     const primaryTargets = targets;
     await withAdviceMutationLoading(async () => {
       try {
-        // 签发前统一带出用法/诊疗绑定（弹窗可改量/删行；取消则仅签主医嘱）
+        // 签发前统一带出用法/诊疗绑定（弹窗可改量/删行；取消则不落派生，继续签主医嘱）
         const bindRes = await resolveAndPersistAdviceDraftBindsAtSign({
           encounterId,
           patientId,
@@ -427,12 +430,18 @@ export function useAdviceTab(
           ElMessage.error(String(bindRes.message || '').trim() || '绑定带出失败');
           return;
         }
-        // 刷新列表以拿到派生行 requestId，再扩签发目标
-        await loadAdviceList();
-        const signTargets = expandAdviceSignTargetsWithBoundDrafts(
-          primaryTargets,
-          flattenAdviceRowsForResourceOps(rows.value),
-        );
+        // 确认落派生后才刷新列表拿派生 requestId；取消带出无需刷新，直接签主目标
+        const bindDialogCancelled =
+          String(bindRes.message ?? '').trim() === 'BIND_DIALOG_CANCELLED';
+        if (!bindDialogCancelled) {
+          await loadAdviceList();
+        }
+        const signTargets = bindDialogCancelled
+          ? primaryTargets
+          : expandAdviceSignTargetsWithBoundDrafts(
+              primaryTargets,
+              flattenAdviceRowsForResourceOps(rows.value),
+            );
         const res = await signDoctorStationAdviceBatchWithCrossLotPricingConfirm({
           encounterId,
           patientId,
@@ -785,6 +794,7 @@ export function useAdviceTab(
       const withoutApplyForms = excludeServiceApplyFormAdviceRows(merged);
       // 费用性质：接口文案优先；空时用 init 合同下拉按 contractId 补展示
       rows.value = enrichAdviceListFeeNatureText(withoutApplyForms, feeNatureOptions.value);
+      notifyEncounterFeeRefresh();
     } catch {
       if (loadGeneration !== adviceLoadGeneration) return;
       rows.value = [];
@@ -856,6 +866,8 @@ export function useAdviceTab(
         excludeMedicationCategoryCodes: [
           ...WESTERN_ADVICE_CATALOG_EXCLUDE_MEDICATION_CATEGORY_CODES,
         ],
+        // 院点可排除检验/检查/治疗，迫使仅走申请单（申请单选品不传）
+        excludeCategoryCodes: [...ADVICE_CATALOG_EXCLUDE_SERVICE_APPLY_CATEGORY_CODES],
         positiveQuantityOnly: params.positiveQuantityOnly,
       });
       const { content: rawRows, totalCount } =
@@ -885,6 +897,7 @@ export function useAdviceTab(
         encounterId,
         patientId,
         organizationUnitId,
+        excludeCategoryCodes: [...ADVICE_CATALOG_EXCLUDE_SERVICE_APPLY_CATEGORY_CODES],
       });
       return rawRows.map((item) => mapCatalogRowToOption(item));
     } catch {

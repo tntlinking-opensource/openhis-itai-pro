@@ -14,7 +14,7 @@ import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 const BASE = '/outpatientPharmacyPrescriptionReview';
 
-/** 菜单路由 path（与 whale_menus.path 对齐）。 */
+/** 菜单路由 path（与 zxplat_menus.path 对齐）。 */
 export const PRESCRIPTION_REVIEW_ROUTE_PATH = '/report/prescription-review';
 
 /** 点评展示态 / 落库态 code（逻辑判断用，禁止用文案）。 */

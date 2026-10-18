@@ -1,4 +1,6 @@
 import type {
+  CancelInpatientNurseDischargeRequest,
+  CancelInpatientNurseDischargeResponse,
   ClearDischargedBedRequest,
   ClearDischargedBedResponse,
   ExecuteBedOperationRequest,
@@ -38,6 +40,16 @@ export async function httpExecuteInpatientDischarge(
 ): Promise<ExecuteInpatientDischargeResponse> {
   return publicRequestClient.post<ExecuteInpatientDischargeResponse>(
     `${BASE}/executeInpatientDischarge`,
+    body,
+  );
+}
+
+/** 取消办理出院（待结算 → 待出院/已入科） */
+export async function httpCancelInpatientNurseDischarge(
+  body: CancelInpatientNurseDischargeRequest,
+): Promise<CancelInpatientNurseDischargeResponse> {
+  return publicRequestClient.post<CancelInpatientNurseDischargeResponse>(
+    `${BASE}/cancelInpatientNurseDischarge`,
     body,
   );
 }

@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type {
   ScheduledJobInfo,
@@ -9,10 +9,10 @@ import type {
 
 import { computed, onMounted, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
-import { formatDateTime } from '@vben/utils';
+import { Page } from '@zxplat/common-ui';
+import { formatDateTime } from '@zxplat/utils';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { ElButton, ElMessage, ElMessageBox, ElTabPane, ElTabs, ElTag } from 'element-plus';
 
@@ -268,6 +268,11 @@ const handleToggleStatus = async (row: ScheduledJobInfo) => {
       jobGroup: row.jobGroup,
       status: nextStatus,
     });
+    if (updated?.status !== nextStatus) {
+      ElMessage.error(`${actionLabel}未生效，请刷新后重试`);
+      await loadData();
+      return;
+    }
     ElMessage.success(`${actionLabel}成功`);
     if (updated?.jobName && updated?.jobGroup) {
       const index = tableData.value.findIndex(

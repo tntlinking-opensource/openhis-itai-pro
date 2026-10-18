@@ -3,7 +3,7 @@ import type { InventoryDetailResponse } from '#/api/warehouse/inventory';
 
 import { computed, reactive, ref } from 'vue';
 
-import { useVbenDrawer } from '@vben/common-ui';
+import { useVbenDrawer } from '@zxplat/common-ui';
 
 import { findInventoryByBusNoApi } from '#/api/warehouse/inventory';
 import { useRequest } from '#/hooks/use-request';

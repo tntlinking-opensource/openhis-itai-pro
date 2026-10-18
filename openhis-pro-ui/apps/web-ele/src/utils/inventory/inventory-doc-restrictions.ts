@@ -1,6 +1,6 @@
 /**
  * 进销存单据访问约束：须拉上游 / 只读壳单 / 可自由编辑。
- * 口径见 whale-doc/health/InventoryAppService/INV-inventory-功能清单与改造状态.md §三。
+ * 口径见 docs/health/InventoryAppService/INV-inventory-功能清单与改造状态.md §三。
  */
 import { ElMessage } from 'element-plus';
 

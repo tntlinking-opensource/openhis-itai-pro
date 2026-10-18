@@ -1,5 +1,5 @@
 {
-  "name": "@vben-core/composables",
+  "name": "@zxplat-core/composables",
   "version": "5.5.9",
   "homepage": "https://github.com/vbenjs/vue-vben-admin",
   "bugs": "https://github.com/vbenjs/vue-vben-admin/issues",
@@ -35,7 +35,7 @@
     }
   },
   "dependencies": {
-    "@vben-core/shared": "workspace:*",
+    "@zxplat-core/shared": "workspace:*",
     "@vueuse/core": "catalog:",
     "reka-ui": "catalog:",
     "sortablejs": "catalog:",

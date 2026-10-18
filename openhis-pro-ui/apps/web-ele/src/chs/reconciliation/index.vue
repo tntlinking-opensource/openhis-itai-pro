@@ -10,7 +10,7 @@ import type { ChargeType } from '#/api/core/common';
 
 import { computed, onMounted, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import {
   ElAlert,
@@ -570,7 +570,7 @@ function updateWiStepAfterRecon() {
 /** 1320/1322 前强制 9001 签到，避免 Win 进程内缓存过期 sign_no。 */
 async function ensureWiReconSignIn(): Promise<void> {
   if (!(await isWorkInjuryPluginOnline())) {
-    throw new WorkInjuryPluginError('请启动 OpenHIS.Win 并启用工伤模块');
+    throw new WorkInjuryPluginError('请启动 Zxplat.Win 并启用工伤模块');
   }
   await ensureWorkInjurySignIn();
 }

@@ -7,7 +7,7 @@ import type {
 } from '#/api/doctor-station/advice.types';
 import type { DrugGroupDisplayItem, DrugGroupKey } from '#/utils/doctor-station/drug-group-table';
 
-import { formatDateTime } from '@vben/utils';
+import { formatDateTime } from '@zxplat/utils';
 
 import {
   resolveAdviceChargeStatusTagTypeFromCode,
@@ -413,6 +413,7 @@ export function mapAdviceListRowDto(dto: DoctorStationAdviceRowDto): AdviceRowIt
     catalogCategoryCode:
       String(dto.catalogCategoryCode ?? dto.categoryCode ?? '').trim() || undefined,
     priorityEnum: String(dto.priorityEnum ?? '').trim() || undefined,
+    packageChildren: dto.packageChildren ?? undefined,
     ...(String(dto.chrgitmLvText ?? '').trim()
       ? { chrgitmLvText: String(dto.chrgitmLvText).trim() }
       : {}),

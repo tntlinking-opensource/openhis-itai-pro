@@ -639,6 +639,7 @@ function mapDialogPatientToModulePatient(item: PatientItem): NurseStationModuleP
     feeType: (d?.contractDisplay ?? item.feeType ?? '').trim() || undefined,
     attendingDoctorName:
       (d?.attendingDoctorName ?? item.attendingDoctorName ?? '').trim() || undefined,
+    primaryNurseName: (d?.primaryNurseName ?? item.primaryNurseName ?? '').trim() || undefined,
     diagnosis: item.diagnosis || d?.diagnosisSummary,
     // 入院科室：详情优先，勿漏传到腕带/床头卡打印
     organizationName: (d?.organizationName ?? item.organizationName ?? '').trim() || undefined,
@@ -755,7 +756,11 @@ function resolveWardLocationId(): string {
   return (props.patient?.regionId ?? '').trim();
 }
 
-/** 加载住院医师与责任护士下拉 */
+/**
+ * 加载住院医师与责任护士下拉；院点默认主任/主治/住院医生在空位上回填。
+ *
+ * @returns init 响应（含院点默认主键，供打开表单时带出）
+ */
 async function loadParticipantOptions() {
   const orgId = detail.value?.organizationId;
   const wardLocationId = resolveWardLocationId();
@@ -771,6 +776,42 @@ async function loadParticipantOptions() {
   doctorOptions.value = merged.doctorOptions;
   primaryNurseOptions.value = merged.primaryNurseOptions;
   admCondCodeOptions.value = normalizeTerminologyOptions(res.admCondCodeOptions);
+  return res;
+}
+
+/**
+ * 院点默认医护带入患者体征卡/入科弹窗：有默认主键则覆盖回显（国基固定三角色），
+ * 且须已在医生下拉中（后端会把默认医生并入 options）。
+ *
+ * @param defaults init 响应上的默认主任/主治/住院医生主键
+ */
+function applyDefaultDoctorIds(defaults: {
+  defaultChiefDoctorId?: string;
+  defaultAttendingDoctorId?: string;
+  defaultInpatientDoctorId?: string;
+}) {
+  const optionValues = new Set(
+    (doctorOptions.value ?? []).map((item) => String(item.value ?? '').trim()).filter(Boolean),
+  );
+  const chiefId = preserveApiIdForRequest(defaults.defaultChiefDoctorId) ?? '';
+  const attendingId = preserveApiIdForRequest(defaults.defaultAttendingDoctorId) ?? '';
+  const inpatientId = preserveApiIdForRequest(defaults.defaultInpatientDoctorId) ?? '';
+  // 无任何院点默认：保持详情参与者回显
+  if (!chiefId && !attendingId && !inpatientId) {
+    return;
+  }
+  // 主任：有默认且在下拉内 → 带出（覆盖原值）
+  if (chiefId && optionValues.has(chiefId)) {
+    admissionForm.chiefDoctorId = chiefId;
+  }
+  // 主治：有默认且在下拉内 → 带出（覆盖原值）
+  if (attendingId && optionValues.has(attendingId)) {
+    admissionForm.attendingDoctorId = attendingId;
+  }
+  // 住院医生：有默认且在下拉内 → 带出（覆盖原值）
+  if (inpatientId && optionValues.has(inpatientId)) {
+    admissionForm.inpatientDoctorId = inpatientId;
+  }
 }
 
 /** 打开时拉取患者详情并回填表单 */
@@ -802,7 +843,9 @@ async function loadDetailAndForm() {
     normalizeAdmCondTermCode(row.priorityEnum) || DEFAULT_ADM_COND_CODE_GENERAL;
   applyAdmissionVitalSignsToForm(row.admissionVitalSigns);
   admissionForm.admissionTimeDisplay = resolveAdmissionTimeDisplay(row);
-  await loadParticipantOptions();
+  const initRes = await loadParticipantOptions();
+  // 患者体征卡/入科：命中国基科室映射时强制带出默认主任/主治/住院医生
+  applyDefaultDoctorIds(initRes ?? {});
 }
 
 /** 校验入院信息必填项 */

@@ -1,0 +1,11 @@
+com.zxplat.framework.core.config.ZxplatCoreComponentRegistrationConfiguration
+com.zxplat.framework.core.config.ZxplatCoreAutoConfiguration
+com.zxplat.framework.audit.config.ZxplatAuditAutoConfiguration
+com.zxplat.framework.tenant.config.ZxplatTenantAutoConfiguration
+com.zxplat.framework.identity.config.ZxplatIdentityAutoConfiguration
+com.zxplat.framework.permission.config.ZxplatPermissionAutoConfiguration
+com.zxplat.framework.setting.config.ZxplatSettingAutoConfiguration
+com.zxplat.framework.job.config.ZxplatJobAutoConfiguration
+com.zxplat.framework.menu.config.ZxplatMenuAutoConfiguration
+com.zxplat.framework.runtime.config.ZxplatRuntimeAutoConfiguration
+com.zxplat.framework.web.config.ZxplatFrameworkAutoConfiguration

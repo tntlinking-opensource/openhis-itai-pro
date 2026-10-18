@@ -1,13 +1,13 @@
 <script lang="ts" setup>
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { BodyItem } from '#/api/basic/body';
 
 import { onMounted, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { ElButton, ElMessage, ElMessageBox, ElSpace, ElTag } from 'element-plus';
 
@@ -243,7 +243,7 @@ function statusTagType(statusEnum?: string): 'danger' | 'info' | 'success' | 'wa
     case PublicationStatusCode.ACTIVE: {
       return 'success';
     }
-    case PublicationStatusCode.DRAFT: {
+    case PublicationStatusCode.INACTIVE: {
       return 'warning';
     }
     case PublicationStatusCode.DISCARDED: {

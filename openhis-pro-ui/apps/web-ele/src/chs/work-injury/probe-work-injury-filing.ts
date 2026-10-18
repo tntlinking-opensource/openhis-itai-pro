@@ -301,13 +301,13 @@ async function invoke1101WithRetry(fixmedinsCode?: string): Promise<WorkInjuryWi
 }
 
 /**
- * Win 直查：1101（读卡）→ 9102（审批列表）。不写 Whale anchor。
+ * Win 直查：1101（读卡）→ 9102（审批列表）。不写 ZXPlat anchor。
  * 读卡器上需有社保卡（与 NEUSI idfi_mode=1 一致）。
  */
 export async function probeWorkInjuryFilingViaWin(): Promise<WorkInjuryFilingProbeResult> {
   const run = async (): Promise<WorkInjuryFilingProbeResult> => {
     if (!(await isWorkInjuryPluginOnline())) {
-      throw new Error('请启动 OpenHIS.Win 并启用工伤模块（/api/work-injury/health）');
+      throw new Error('请启动 Zxplat.Win 并启用工伤模块（/api/work-injury/health）');
     }
     let fixmedinsCode: string | undefined;
     try {

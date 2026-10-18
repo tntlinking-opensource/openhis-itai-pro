@@ -1,0 +1,4 @@
+com.zxplat.domain.infrastructure.config.DomainInfrastructureAutoConfiguration
+com.zxplat.domain.infrastructure.integration.noop.config.IntegrationSpiAutoConfiguration
+com.zxplat.domain.infrastructure.integration.config.IntegrationSupportAutoConfiguration
+com.zxplat.domain.infrastructure.platform.config.HealthPlatformAutoConfiguration

@@ -1,5 +1,5 @@
 /**
- * 编辑器图片上传（whale-emr DocumentAppService.uploadEditorImage）
+ * 编辑器图片上传（zxplat-emr DocumentAppService.uploadEditorImage）
  */
 
 import { publicRequestClient } from '#/api/request';

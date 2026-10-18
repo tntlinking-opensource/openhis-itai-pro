@@ -160,8 +160,9 @@ export async function refreshAutoFillApi(params: RefreshAutoFillParams) {
   });
 }
 
+/** 提交病案归档：DRAFT → PENDING_ARCHIVE，进入归档审批 */
 export async function submitHomepageApi(caseRecordId: string) {
-  return publicRequestClient.post<CaseRecordDetailDto>(`${BASE}/submit`, {
+  return publicRequestClient.post<CaseRecordDetailDto>(`${BASE}/submitArchive`, {
     caseRecordId: preserveApiIdForRequest(caseRecordId),
   });
 }

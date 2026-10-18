@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type {
   OpInsurancePreSettleGroupDto,
@@ -9,7 +9,7 @@ import type { RefundChannelDisplayItem } from '#/utils/payment/payment-channel-o
 
 import { computed, ref, watch } from 'vue';
 
-import { getPaymentTypeTagStyles } from '@vben/utils';
+import { getPaymentTypeTagStyles } from '@zxplat/utils';
 
 import {
   ElButton,
@@ -21,6 +21,7 @@ import {
   ElTag,
 } from 'element-plus';
 
+import { formatDiscountRateDisplay } from '#/api/basic/charge-discount-config';
 import AppDialog from '#/components/app-dialog.vue';
 import RegisterStyleTableLayout from '#/components/layouts/register-style-table-layout.vue';
 import SectionTitle from '#/components/layouts/section-title.vue';
@@ -46,6 +47,8 @@ const props = withDefaults(
     /** 弹窗标题（默认：确认收费） */
     dialogTitle?: string;
     displayAmount?: number | string;
+    /** 本批优惠合计（原价−折后） */
+    discountAmountTotal?: number | string;
     /** 医保个人账户支付前余额（1101 balc；无医保时不传） */
     insuranceAccountBalance?: null | number | string;
     /**
@@ -64,7 +67,7 @@ const props = withDefaults(
     projectTableTitle?: string;
     /** 小结/底部高亮金额标签（默认：应收金额） */
     receivableAmountLabel?: string;
-    /** 是否展示银联被扫区（Whale 模块 + Win native 就绪） */
+    /** 是否展示银联被扫区（ZXPlat 模块 + Win native 就绪） */
     scanPayEnabled?: boolean;
     /** 半成功锁定：禁止改付款码/支付方式，仅允许补结算 */
     scanInputLocked?: boolean;
@@ -81,6 +84,7 @@ const props = withDefaults(
   {
     dialogTitle: '确认收费',
     displayAmount: 0,
+    discountAmountTotal: 0,
     insuranceAccountBalance: undefined,
     insuranceCvlservFlag: undefined,
     insuranceBreakdownItems: () => [],
@@ -168,6 +172,30 @@ function resolveFeeNatureTagStyle(row: PreSettleChargeLinePreviewDto) {
   return { backgroundColor: bgColor, color: textColor, border: 'none' };
 }
 
+/** 预览行单价：后端原价口径；缺字段时回落行金额以免空列 */
+function resolvePreviewUnitPrice(row: PreSettleChargeLinePreviewDto) {
+  if (row.unitPrice !== null && row.unitPrice !== undefined && row.unitPrice !== '') {
+    return row.unitPrice;
+  }
+  return row.originalAmount ?? row.lineAmount;
+}
+
+/** 预览行原价金额：勿用折后应收冒充「金额」列 */
+function resolvePreviewOriginalAmount(row: PreSettleChargeLinePreviewDto) {
+  if (row.originalAmount !== null && row.originalAmount !== undefined && row.originalAmount !== '') {
+    return row.originalAmount;
+  }
+  return row.lineAmount;
+}
+
+/** 预览行折后价：打折后为折后应收，未打折与原价相同 */
+function resolvePreviewDiscountedAmount(row: PreSettleChargeLinePreviewDto) {
+  if (row.discountedAmount !== null && row.discountedAmount !== undefined && row.discountedAmount !== '') {
+    return row.discountedAmount;
+  }
+  return row.lineAmount;
+}
+
 /** 数量展示：拼接单位，如「1支」 */
 function formatQuantityWithUnit(row: PreSettleChargeLinePreviewDto) {
   const display = String(row.quantityDisplay ?? '').trim();
@@ -233,81 +261,139 @@ const insuranceGroupColumns: TableColumn[] = [
   },
 ];
 
-const previewColumns: TableColumn[] = [
-  {
-    type: 'index',
-    label: '序号',
-    width: 56,
-    align: 'center',
-    headerAlign: 'center',
-  },
-  {
-    prop: 'itemLabel',
-    label: '项目',
-    minWidth: 170,
-    align: 'left',
-    headerAlign: 'center',
-    slot: 'itemLabel',
-    showOverflowTooltip: true,
-  },
-  {
-    prop: 'category',
-    label: '类别',
-    width: 80,
-    align: 'center',
-    headerAlign: 'center',
-    slot: 'category',
-  },
-  {
-    prop: 'unitPrice',
-    label: '单价',
-    width: 95,
-    align: 'right',
-    headerAlign: 'center',
-    slot: 'unitPrice',
-  },
-  {
-    prop: 'quantityDisplay',
-    label: '数量',
-    width: 70,
-    align: 'center',
-    headerAlign: 'center',
-    slot: 'quantity',
-  },
-  {
-    prop: 'lineAmount',
-    label: '金额',
-    width: 105,
-    align: 'right',
-    headerAlign: 'center',
-    slot: 'lineAmount',
-  },
-  {
+const displayAmountNum = computed(() => Number(props.displayAmount ?? 0));
+
+const discountAmountNum = computed(() => Number(props.discountAmountTotal ?? 0));
+
+const showDiscountAmount = computed(
+  () => Number.isFinite(discountAmountNum.value) && discountAmountNum.value > 0.000001,
+);
+
+const showPreviewDiscountColumn = computed(() =>
+  props.previews.some((row) => {
+    const rate = Number(row.discountRate ?? 0);
+    return Number.isFinite(rate) && rate > 0 && rate <= 1;
+  }),
+);
+
+/** 预览行折扣展示 */
+function formatPreviewDiscount(row: PreSettleChargeLinePreviewDto) {
+  if (row.discountRate === null || row.discountRate === undefined || row.discountRate === '') {
+    return '—';
+  }
+  const display = formatDiscountRateDisplay(row.discountRate);
+  return display === '款员定' ? '—' : display;
+}
+
+const previewColumns = computed<TableColumn[]>(() => {
+  const columns: TableColumn[] = [
+    {
+      type: 'index',
+      label: '序号',
+      width: 56,
+      align: 'center',
+      headerAlign: 'center',
+    },
+    {
+      prop: 'itemLabel',
+      label: '项目',
+      minWidth: 140,
+      align: 'left',
+      headerAlign: 'center',
+      slot: 'itemLabel',
+      showOverflowTooltip: true,
+    },
+    {
+      prop: 'category',
+      label: '类别',
+      width: 80,
+      align: 'center',
+      headerAlign: 'center',
+      slot: 'category',
+    },
+    {
+      prop: 'unitPrice',
+      label: '单价',
+      width: 95,
+      align: 'right',
+      headerAlign: 'center',
+      slot: 'unitPrice',
+    },
+    {
+      prop: 'quantityDisplay',
+      label: '数量',
+      width: 70,
+      align: 'center',
+      headerAlign: 'center',
+      slot: 'quantity',
+    },
+    {
+      prop: 'lineAmount',
+      label: '金额',
+      width: 105,
+      align: 'right',
+      headerAlign: 'center',
+      slot: 'lineAmount',
+    },
+  ];
+  // 本批任一行有折扣率时展示折扣列与折后价；金额列仍为原价
+  if (showPreviewDiscountColumn.value) {
+    columns.push({
+      prop: 'discountRate',
+      label: '折扣',
+      width: 72,
+      align: 'center',
+      headerAlign: 'center',
+      slot: 'discountRate',
+    });
+    columns.push({
+      prop: 'discountedAmount',
+      label: '折后价',
+      width: 105,
+      align: 'right',
+      headerAlign: 'center',
+      slot: 'discountedAmount',
+    });
+  }
+  columns.push({
     prop: 'feeNatureDisplay',
     label: '类型',
     width: 88,
     align: 'center',
     headerAlign: 'center',
     slot: 'feeNature',
-  },
-];
-
-const displayAmountNum = computed(() => Number(props.displayAmount ?? 0));
+  });
+  return columns;
+});
 
 const previewsTotal = computed(() =>
   sumMoneyThenCalc(props.previews.map((row) => Number(row.lineAmount ?? 0))),
 );
 
+/** 打折后预览行金额已是折后；原价合计 = 折后 + 优惠 */
+const originalAmountTotal = computed(() => {
+  // 无优惠时预览合计即原价
+  if (!showDiscountAmount.value) {
+    return previewsTotal.value;
+  }
+  return sumMoneyThenCalc([previewsTotal.value, discountAmountNum.value]);
+});
+
 const receivableAmount = computed(() => scaleMoneySettle(displayAmountNum.value));
 
 const feeDetailDisplayRows = computed(() => {
-  const map = new Map<string, number>();
+  const valueMap = new Map<string, number>();
+  const labelMap = new Map<string, string>();
   for (const item of props.insuranceBreakdownItems) {
-    map.set(item.key, item.value);
+    valueMap.set(item.key, item.value);
+    // 父组件可覆盖文案（如「医保个人账户（含家庭共济）」）
+    if (item.label) {
+      labelMap.set(item.key, item.label);
+    }
   }
   const rows: { key: string; label: string; value: number }[] = [];
   for (const def of OUTPATIENT_CHARGE_FEE_DETAIL_FIELD_DEFS) {
-    const value = map.get(def.key) ?? 0;
+    const value = valueMap.get(def.key) ?? 0;
     // 常显：基金 / 个账 / 个人现金 / 最终应收，便于个账不足时对照
     const alwaysShow =
       def.key === 'fundPay' ||
@@ -319,7 +405,7 @@ const feeDetailDisplayRows = computed(() => {
     }
     rows.push({
       key: def.key,
-      label: def.label,
+      label: labelMap.get(def.key) ?? def.label,
       value,
     });
   }
@@ -332,14 +418,18 @@ const accountPayAmount = computed(() => {
   const value = Number(item?.value ?? 0);
   return Number.isFinite(value) ? value : 0;
 });
-const personalCashPayAmount = computed(() => {
-  const item = props.insuranceBreakdownItems.find((row) => row.key === 'cashPay');
-  const fromBreakdown = Number(item?.value ?? 0);
-  if (Number.isFinite(fromBreakdown) && Math.abs(fromBreakdown) > 0.001) {
-    return fromBreakdown;
-  }
-  return displayAmountNum.value;
+/** 家庭共济分项（含于个账；>0 时费用明细与账户区明示） */
+const mulaidPayAmount = computed(() => {
+  const item = props.insuranceBreakdownItems.find((row) => row.key === 'mulaidPay');
+  const value = Number(item?.value ?? 0);
+  return Number.isFinite(value) ? value : 0;
 });
+/**
+ * 「个人现金待收」提示金额：必须与弹窗底部应收 / props.displayAmount 一致。
+ * 禁止优先用费用明细里的 cashPay（医保口径 ybPsnCashPay）——挂医保户但未进 medfee 的院内差额
+ * 只体现在 displayAmount，若用医保口径会少提示、少扫码（如茶碱 0.75）。
+ */
+const personalCashPayAmount = computed(() => displayAmountNum.value);
 /** 有个人现金应付时展示对照提示（医保个账 ≠ 微信/现金实收） */
 const showPersonalCashHint = computed(
   () => props.insuranceBreakdownItems.length > 0 && personalCashPayAmount.value > 0.001,
@@ -367,9 +457,21 @@ const personalCashHintText = computed(() => {
   const cashText = formatMoney(personalCashPayAmount.value);
   const channelHint = resolveChannelCollectHint(payChannelCode.value);
   if (accountPayAmount.value > 0.001) {
+    // 有共济时把共济金额写进提示，避免只见「个账」不见来源
+    if (mulaidPayAmount.value > 0.001) {
+      return `医保个账 ¥${formatMoney(accountPayAmount.value)}（含家庭共济 ¥${formatMoney(mulaidPayAmount.value)}），个人现金待收 ¥${cashText}${channelHint}`;
+    }
     return `医保个账 ¥${formatMoney(accountPayAmount.value)}，个人现金待收 ¥${cashText}${channelHint}`;
   }
   return `个人现金待收 ¥${cashText}${channelHint}`;
+});
+
+/** 支付前个账余额旁：有共济时补充说明，避免「余额0却扣个账」误判 */
+const insuranceMulaidHintText = computed(() => {
+  if (mulaidPayAmount.value <= 0.001) {
+    return '';
+  }
+  return `本次个账支出含家庭共济 ¥${formatMoney(mulaidPayAmount.value)}`;
 });
 
 const showInsuranceGroups = computed(() => (props.insuranceGroups?.length ?? 0) > 0);
@@ -382,10 +484,9 @@ const showInsuranceAccountBalance = computed(() => {
   return Number.isFinite(Number(value));
 });
 
-/** 公务员标志是否有可展示值（0/1 或平台原文） */
+/** 仅公务员（平台 cvlserv_flag=1）才回显公务员待遇 */
 const showInsuranceCvlservFlag = computed(() => {
-  const value = String(props.insuranceCvlservFlag ?? '').trim();
-  return value.length > 0;
+  return String(props.insuranceCvlservFlag ?? '').trim() === '1';
 });
 
 /** 账户信息区是否展示（余额或公务员任一有值） */
@@ -399,20 +500,6 @@ const insuranceAccountBalanceDisplay = computed(() => {
   }
   return `¥${formatMoney(props.insuranceAccountBalance)}`;
 });
-
-/**
- * 公务员标志展示文案（对齐挂号待遇区：0→否 / 1→是）
- */
-function formatCvlservFlagDisplay(flag?: null | string) {
-  const value = String(flag ?? '').trim();
-  if (value === '1') {
-    return '是';
-  }
-  if (value === '0') {
-    return '否';
-  }
-  return value || '—';
-}
 
 /** 费用明细金额是否非零（用于高亮有实际发生额的项） */
 function isNonZeroFeeAmount(value: number) {
@@ -438,7 +525,12 @@ const handleCancel = () => {
 </script>
 
 <template>
-  <AppDialog v-model="visible" :title="props.dialogTitle" width="860px">
+  <AppDialog
+    v-model="visible"
+    class="charge-settlement-dialog"
+    :title="props.dialogTitle"
+    width="920px"
+  >
     <div class="copy-dialog-body">
       <div class="copy-main-grid">
         <!-- 左上：费用明细 -->
@@ -469,9 +561,12 @@ const handleCancel = () => {
                 <span>医保个账余额（支付前）</span>
                 <strong>{{ insuranceAccountBalanceDisplay }}</strong>
               </div>
+              <p v-if="insuranceMulaidHintText" class="copy-mulaid-hint">
+                {{ insuranceMulaidHintText }}
+              </p>
               <div v-if="showInsuranceCvlservFlag" class="copy-summary-item">
                 <span>公务员待遇</span>
-                <strong>{{ formatCvlservFlagDisplay(props.insuranceCvlservFlag) }}</strong>
+                <strong>是</strong>
               </div>
             </div>
           </div>
@@ -488,6 +583,10 @@ const handleCancel = () => {
                 </div>
                 <div class="copy-summary-item">
                   <span>总金额</span>
+                  <strong>¥{{ formatMoney(originalAmountTotal) }}</strong>
+                </div>
+                <div v-if="showDiscountAmount" class="copy-summary-item">
+                  <span>折后总价</span>
                   <strong>¥{{ formatMoney(previewsTotal) }}</strong>
                 </div>
                 <div class="copy-summary-item">
@@ -497,6 +596,10 @@ const handleCancel = () => {
                 <div class="copy-summary-item">
                   <span>自费金额</span>
                   <strong>¥{{ formatMoney(summarySelfPayAmount) }}</strong>
+                </div>
+                <div v-if="showDiscountAmount" class="copy-summary-item">
+                  <span>优惠金额</span>
+                  <strong>¥{{ formatMoney(discountAmountNum) }}</strong>
                 </div>
                 <div class="copy-summary-item is-highlight">
                   <span>{{ props.receivableAmountLabel }}</span>
@@ -595,13 +698,21 @@ const handleCancel = () => {
           </template>
           <template #medfee="{ row }">¥{{ formatMoney(row.medfeeSumamt) }}</template>
           <template #fund="{ row }">¥{{ formatMoney(row.fundPaySumamt) }}</template>
-          <template #acct="{ row }">¥{{ formatMoney(row.acctPay) }}</template>
+          <template #acct="{ row }">
+            <span>¥{{ formatMoney(row.acctPay) }}</span>
+            <span
+              v-if="Number(row.acctMulaidPay ?? 0) > 0.001"
+              class="copy-group-mulaid"
+            >
+              （含共济 ¥{{ formatMoney(row.acctMulaidPay) }}）
+            </span>
+          </template>
           <template #cash="{ row }">¥{{ formatMoney(row.psnCashPay) }}</template>
         </RegisterStyleTableLayout>
       </div>
 
-      <!-- 中部：收费项目 -->
-      <div class="copy-card">
+      <!-- 中部：收费项目；折扣列加宽后在卡片内横向滚动，避免撑破弹窗把金额小结挤出去 -->
+      <div class="copy-card copy-table-card">
         <SectionTitle class="mb-2.5" :title="props.projectTableTitle" />
         <RegisterStyleTableLayout
           class="!p-0"
@@ -615,10 +726,12 @@ const handleCancel = () => {
           row-key="chargeItemId"
         >
           <template #itemLabel="{ row }">{{ row.itemLabel || '—' }}</template>
-          <template #category>—</template>
-          <template #unitPrice="{ row }">¥{{ formatMoney(row.lineAmount) }}</template>
+          <template #category="{ row }">{{ row.chargeCategoryDisplay || '—' }}</template>
+          <template #unitPrice="{ row }">¥{{ formatMoney(resolvePreviewUnitPrice(row)) }}</template>
           <template #quantity="{ row }">{{ formatQuantityWithUnit(row) }}</template>
-          <template #lineAmount="{ row }">¥{{ formatMoney(row.lineAmount) }}</template>
+          <template #lineAmount="{ row }">¥{{ formatMoney(resolvePreviewOriginalAmount(row)) }}</template>
+          <template #discountedAmount="{ row }">¥{{ formatMoney(resolvePreviewDiscountedAmount(row)) }}</template>
+          <template #discountRate="{ row }">{{ formatPreviewDiscount(row) }}</template>
           <template #feeNature="{ row }">
             <ElTag
               v-if="resolveFeeNatureLabel(row) !== '—'"
@@ -652,19 +765,25 @@ const handleCancel = () => {
 .copy-dialog-body {
   display: grid;
   gap: 12px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .copy-main-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 350px;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
   gap: 12px;
   align-items: start;
+  min-width: 0;
 }
 
 .copy-right-stack {
   display: grid;
   gap: 12px;
   align-content: start;
+  min-width: 0;
 }
 
 .copy-card {
@@ -672,6 +791,11 @@ const handleCancel = () => {
   border-radius: 8px;
   background: #fff;
   padding: 12px;
+  min-width: 0;
+}
+
+.copy-table-card {
+  overflow-x: auto;
 }
 
 .copy-section + .copy-section {
@@ -696,14 +820,25 @@ const handleCancel = () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
   color: #64748b;
   font-size: 13px;
 }
 
+.copy-summary-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .copy-summary-item strong {
+  flex: 0 0 auto;
   color: #0f172a;
   font-size: 15px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .copy-summary-item.is-highlight strong {
@@ -838,6 +973,23 @@ const handleCancel = () => {
   color: #ea580c;
 }
 
+.copy-mulaid-hint {
+  margin: 6px 0 0;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.copy-group-mulaid {
+  display: block;
+  margin-top: 2px;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
 .copy-personal-cash-hint {
   margin: 10px 0 0;
   border-radius: 6px;
@@ -876,5 +1028,17 @@ const handleCancel = () => {
   color: #ea580c;
   font-size: 32px;
   font-weight: 700;
+}
+</style>
+
+<!-- 弹层挂 body，需非 scoped 才能限制 el-dialog 被表格 min-content 撑破 -->
+<style>
+.charge-settlement-dialog.el-dialog {
+  overflow: hidden;
+}
+
+.charge-settlement-dialog .el-dialog__body {
+  max-width: 100%;
+  overflow-x: hidden;
 }
 </style>

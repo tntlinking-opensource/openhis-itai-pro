@@ -1,0 +1,600 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.zxplat.application.report.medicationdispense.inpatient.service;
+
+import com.zxplat.application.report.medicationdispense.inpatient.dto.InpatientMedicationDispenseDetailRowDto;
+import com.zxplat.application.report.medicationdispense.inpatient.dto.InpatientMedicationDispenseExportRowDto;
+import com.zxplat.application.report.medicationdispense.inpatient.dto.InpatientMedicationDispenseSummaryRowDto;
+import com.zxplat.application.report.medicationdispense.inpatient.mapper.InpatientMedicationDispenseReportMapper;
+import com.zxplat.application.report.medicationdispense.inpatient.request.ExportInpatientMedicationDispenseReportRequest;
+import com.zxplat.application.report.medicationdispense.inpatient.request.LoadInpatientMedicationDispenseReportPageInitRequest;
+import com.zxplat.application.report.medicationdispense.inpatient.request.PageInpatientMedicationDispenseReportDetailRequest;
+import com.zxplat.application.report.medicationdispense.inpatient.request.SummarizeInpatientMedicationDispenseReportRequest;
+import com.zxplat.application.report.medicationdispense.inpatient.response.ExportInpatientMedicationDispenseReportResponse;
+import com.zxplat.application.report.medicationdispense.inpatient.response.LoadInpatientMedicationDispenseReportPageInitResponse;
+import com.zxplat.application.report.medicationdispense.inpatient.response.PageInpatientMedicationDispenseReportDetailResponse;
+import com.zxplat.application.report.medicationdispense.inpatient.response.SummarizeInpatientMedicationDispenseReportResponse;
+import com.zxplat.application.report.medicationdispense.inpatient.support.InpatientMedicationDispenseReportQuerySupport;
+import com.zxplat.application.shared.report.ReportDateTimeWindowSupport;
+import com.zxplat.application.shared.report.ReportPatientSettlementContextAssembler;
+import com.zxplat.application.shared.option.TerminologyOptionLoader;
+import com.zxplat.framework.core.application.paging.PageWindowGate;
+import com.zxplat.domain.administration.location.entity.Location;
+import com.zxplat.domain.administration.location.service.LocationQueryService;
+import com.zxplat.domain.administration.organization.entity.Organization;
+import com.zxplat.domain.administration.organization.service.OrganizationQueryService;
+import com.zxplat.domain.administration.practitioner.entity.Practitioner;
+import com.zxplat.domain.administration.practitioner.service.PractitionerQueryService;
+import com.zxplat.domain.medication.medicationdispense.queries.model.MedicationDispenseReportSummaryBundle;
+import com.zxplat.domain.medication.medicationdispense.queries.model.MedicationDispenseReportSummaryRow;
+import com.zxplat.domain.medication.medicationdispense.queries.model.MedicationDispenseSlipQueryModel;
+import com.zxplat.domain.medication.medicationdispense.query.MedicationDispenseRecordPageQuery;
+import com.zxplat.domain.medication.medicationdispense.query.MedicationDispenseReportSummaryQuery;
+import com.zxplat.domain.share.constants.MedicationDispenseReportConstants;
+import com.zxplat.domain.share.constants.InpatientMedicationDispenseReportConstants;
+import com.zxplat.domain.share.constants.PharmacyDispenseRecordConstants;
+import com.zxplat.domain.share.constants.PharmacyDispenseRecordExportConstants;
+import com.zxplat.domain.share.constants.TerminologyCodeSystemNameConstants;
+import com.zxplat.domain.share.enums.KeyDrugType;
+import com.zxplat.domain.workflow.supplyrequest.queries.model.DeptIssueReportLineQueryModel;
+import com.zxplat.domain.workflow.supplyrequest.queries.model.DeptIssueReportSummaryBundle;
+import com.zxplat.domain.workflow.supplyrequest.queries.model.DeptIssueReportSummaryRow;
+import com.zxplat.domain.workflow.supplyrequest.query.DeptIssueReportPageQuery;
+import com.zxplat.framework.core.application.dto.OptionDto;
+import com.zxplat.framework.core.application.exception.BusinessException;
+import com.zxplat.framework.core.application.session.CurrentOperatorResolver;
+import com.zxplat.framework.core.application.util.AnnotatedExcelExporter;
+import com.zxplat.framework.core.application.util.StringUtils;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 住院发药报表应用服务（AS-RPT-004，IF-RPT-IMD-01～04）。
+ *
+ * <p>职责边界：</p>
+ * <ul>
+ *   <li>Gate：登录、日期窗、分页窗口。</li>
+ *   <li>Pre：{@link InpatientMedicationDispenseReportQuerySupport} 两路预解析与装配。</li>
+ *   <li>Asm：Mapper + Excel 导出。</li>
+ * </ul>
+ *
+ * <p>接入：{@code AppServiceControllerRegistrar} →
+ * {@code POST /api/app/inpatientMedicationDispenseReport/{methodName}}；不另写 RestController。</p>
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class InpatientMedicationDispenseReportAppService {
+
+    /** 读路径登录门禁（报表只读亦须会话）。 */
+    private final CurrentOperatorResolver currentOperatorResolver;
+
+    /** 明细分页 pageNo/pageSize 正数门禁。 */
+    private final PageWindowGate pageWindowGate;
+
+    /** 启用药房下拉（报表不按管辖库房收窄）。 */
+    private final LocationQueryService locationQueryService;
+
+    /** 开立/领用科室下拉。 */
+    private final OrganizationQueryService organizationQueryService;
+
+    /** medication_category_code 术语下拉。 */
+    private final TerminologyOptionLoader terminologyOptionLoader;
+
+    /** 发药人（药师岗）下拉主档。 */
+    private final PractitionerQueryService practitionerQueryService;
+
+    /** 患者发放 ∪ 科室领用两路预解析与装配（B.6.4）。 */
+    private final InpatientMedicationDispenseReportQuerySupport inpatientMedicationDispenseReportQuerySupport;
+
+    /** Request/Response 与 Option/导出映射。 */
+    private final InpatientMedicationDispenseReportMapper inpatientMedicationDispenseReportMapper;
+
+    /** 费用性质 / medType 上下文装配。 */
+    private final ReportPatientSettlementContextAssembler reportPatientSettlementContextAssembler;
+
+    /**
+     * IF-RPT-IMD-01：住院发药报表页初始化。
+     *
+     * @param request 占位请求
+     * @return 筛选项与默认日期
+     * @throws BusinessException EX-RPT-IMD-101
+     */
+    public LoadInpatientMedicationDispenseReportPageInitResponse loadInpatientMedicationDispenseReportPageInit(
+        LoadInpatientMedicationDispenseReportPageInitRequest request) {
+        // Gate：须已登录方可加载报表元数据
+        this.currentOperatorResolver.requireOperatorId(
+            InpatientMedicationDispenseReportConstants.EX_IMD_101,
+            "页面初始化失败，请稍后重试");
+        try {
+            // Pre：启用药房、药品类型、发药人与固定筛选项
+            List<Location> pharmacies = this.locationQueryService.listAllActivePharmacies();
+            List<OptionDto> categoryOptions =
+                this.terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.MEDICATION_CATEGORY_CODE);
+            Page<Practitioner> dispenserPage = this.practitionerQueryService.pageActivePractitionersForPosition(
+                null,
+                null,
+                PageRequest.of(0, PharmacyDispenseRecordConstants.DISPENSER_OPTION_PAGE_SIZE),
+                false);
+            List<OptionDto> practitionerOptions = new ArrayList<>();
+            // 发药人下拉：跳过无主键脏行，避免前端 Option 值为空
+            for (Practitioner practitioner : dispenserPage.getContent()) {
+                // 无主键的主档行无法回传筛选，直接丢弃
+                if (practitioner == null || practitioner.getId() == null) {
+                    continue;
+                }
+                OptionDto option = new OptionDto();
+                option.setValue(String.valueOf(practitioner.getId()));
+                option.setLabel(practitioner.getName());
+                practitionerOptions.add(option);
+            }
+            LocalDate today = LocalDate.now();
+            String defaultFrom = ReportDateTimeWindowSupport.formatDayStart(today);
+            String defaultTo = ReportDateTimeWindowSupport.formatDayEnd(today);
+            List<OptionDto> feeNatureOptions = this.reportPatientSettlementContextAssembler.loadFeeNatureOptions();
+            List<OptionDto> organizationOptions = this.buildOrganizationOptions();
+            // Asm：装配初始化响应
+            LoadInpatientMedicationDispenseReportPageInitResponse response =
+                this.inpatientMedicationDispenseReportMapper.toLoadPageInitResponse(
+                pharmacies,
+                categoryOptions,
+                practitionerOptions,
+                this.inpatientMedicationDispenseReportMapper.buildRecordTypeOptions(),
+                this.inpatientMedicationDispenseReportMapper.buildSummaryDimensionOptions(),
+                this.inpatientMedicationDispenseReportMapper.buildSourceOptions(),
+                feeNatureOptions,
+                defaultFrom,
+                defaultTo);
+            response.setOrganizationOptions(organizationOptions);
+            response.setMedicinePropertyOptions(this.buildMedicinePropertyOptions());
+            return response;
+        } catch (RuntimeException ex) {
+            log.warn("住院发药报表页初始化失败", ex);
+            throw new BusinessException(
+                InpatientMedicationDispenseReportConstants.EX_IMD_101,
+                "页面初始化失败，请稍后重试");
+        }
+    }
+
+    /**
+     * IF-RPT-IMD-02：住院发药报表净汇总。
+     *
+     * @param request 筛选条件
+     * @return 汇总行与页脚合计
+     * @throws BusinessException EX-RPT-IMD-102 / 103
+     */
+    public SummarizeInpatientMedicationDispenseReportResponse summarizeInpatientMedicationDispenseReport(
+        SummarizeInpatientMedicationDispenseReportRequest request) {
+        // Gate：登录与日期窗
+        this.currentOperatorResolver.requireOperatorId(
+            InpatientMedicationDispenseReportConstants.EX_IMD_103,
+            "查询失败，请稍后重试");
+        this.validateDispenseDateWindow(request.getDispenseDateFrom(), request.getDispenseDateTo());
+        try {
+            String sourceCode =
+                this.inpatientMedicationDispenseReportQuerySupport.normalizeSourceCode(request.getSourceCode());
+            String summaryDimension =
+                this.inpatientMedicationDispenseReportQuerySupport.normalizeSummaryDimension(
+                    request.getSummaryDimension());
+            List<MedicationDispenseReportSummaryRow> patientRows = List.of();
+            List<DeptIssueReportSummaryRow> deptRows = List.of();
+            List<MedicationDispenseSlipQueryModel> patientSlips = List.of();
+            List<DeptIssueReportLineQueryModel> deptLines = List.of();
+            Map<Long, Long> organizationIdByPurposeLocationId = null;
+            Map<Long, String> categoryCodeByMedicationId = null;
+            // Pre：科室维仅领用侧有组织主键；类型维仅患者侧有 category；按来源+维度决定查哪一路
+            boolean queryPatient = this.inpatientMedicationDispenseReportQuerySupport.includePatientDispense(sourceCode)
+                && !MedicationDispenseReportConstants.SUMMARY_DIMENSION_DEPARTMENT.equals(summaryDimension);
+            boolean queryDept = this.inpatientMedicationDispenseReportQuerySupport.includeDeptIssue(sourceCode)
+                && !MedicationDispenseReportConstants.SUMMARY_DIMENSION_CATEGORY.equals(summaryDimension);
+            // 患者侧：一次扫描净数量分桶 + slip（金额复用 slip，禁止二次 findAll）
+            if (queryPatient) {
+                MedicationDispenseRecordPageQuery recordQuery =
+                    this.inpatientMedicationDispenseReportQuerySupport.buildPatientRecordQuery(
+                        request.getDispenseDateFrom(),
+                        request.getDispenseDateTo(),
+                        request.getRecordTypeCode(),
+                        request.getPharmacyLocationId(),
+                        request.getDispenserPractitionerId(),
+                        request.getMedicationCategoryCodes(),
+                        request.getDrugKeyword(),
+                        request.getPatientKeyword(),
+                        request.getFeeNatureContractNo(),
+                        request.getOrganizationId(),
+                        request.getKeyDrugType(),
+                        1,
+                        PharmacyDispenseRecordExportConstants.EXPORT_MAX_ROWS);
+                MedicationDispenseReportSummaryQuery summaryQuery =
+                    this.inpatientMedicationDispenseReportQuerySupport.buildPatientSummaryQuery(
+                        recordQuery, summaryDimension);
+                MedicationDispenseReportSummaryBundle patientBundle =
+                    this.inpatientMedicationDispenseReportQuerySupport.summarizePatientWithSlips(summaryQuery);
+                patientRows = patientBundle.getSummaryRows();
+                patientSlips = patientBundle.getSlipRows();
+                // CATEGORY：领域按 ITEM 分桶；用同窗 slip 全量解析类型后重分桶（禁止 EXPORT 抽样漏品规）
+                if (MedicationDispenseReportConstants.SUMMARY_DIMENSION_CATEGORY.equals(summaryDimension)) {
+                    categoryCodeByMedicationId =
+                        this.inpatientMedicationDispenseReportQuerySupport.resolveCategoryCodesFromSlips(
+                            patientSlips);
+                    patientRows =
+                        this.inpatientMedicationDispenseReportQuerySupport.rebucketItemSummaryRowsToCategory(
+                            patientRows, categoryCodeByMedicationId);
+                }
+            }
+            // 领用侧：一次扫描净数量 + 事实行
+            if (queryDept) {
+                DeptIssueReportPageQuery deptQuery =
+                    this.inpatientMedicationDispenseReportQuerySupport.buildDeptIssueQuery(
+                        request.getDispenseDateFrom(),
+                        request.getDispenseDateTo(),
+                        request.getPharmacyLocationId(),
+                        request.getMedicationCategoryCodes(),
+                        request.getDrugKeyword(),
+                        request.getOrganizationId(),
+                        request.getKeyDrugType(),
+                        summaryDimension,
+                        1,
+                        PharmacyDispenseRecordExportConstants.EXPORT_MAX_ROWS);
+                DeptIssueReportSummaryBundle deptBundle =
+                    this.inpatientMedicationDispenseReportQuerySupport.summarizeDeptWithLines(deptQuery);
+                deptRows = deptBundle.getSummaryRows();
+                deptLines = deptBundle.getLineRows();
+                organizationIdByPurposeLocationId = deptQuery.getOrganizationIdByPurposeLocationId();
+            }
+            // Asm：同 dimensionKey 净数量相加并回填维度展示名
+            List<InpatientMedicationDispenseSummaryRowDto> rows =
+                this.inpatientMedicationDispenseReportQuerySupport.mergeSummaryRows(
+                    patientRows, deptRows, summaryDimension);
+            this.inpatientMedicationDispenseReportQuerySupport.enrichSummaryPurchaseSaleAmounts(
+                rows,
+                patientSlips,
+                deptLines,
+                summaryDimension,
+                categoryCodeByMedicationId,
+                organizationIdByPurposeLocationId);
+            BigDecimal totalQuantity = BigDecimal.ZERO;
+            BigDecimal purchaseTotalAmount = null;
+            BigDecimal saleTotalAmount = null;
+            // 页脚：净数量必有；进价/售价净额仅累加非空行
+            for (InpatientMedicationDispenseSummaryRowDto row : rows) {
+                if (row.getNetQuantity() != null) {
+                    totalQuantity = totalQuantity.add(row.getNetQuantity());
+                }
+                if (row.getPurchaseNetAmount() != null) {
+                    if (purchaseTotalAmount == null) {
+                        purchaseTotalAmount = BigDecimal.ZERO;
+                    }
+                    purchaseTotalAmount = purchaseTotalAmount.add(row.getPurchaseNetAmount());
+                }
+                BigDecimal saleNet = row.getSaleNetAmount();
+                if (saleNet != null) {
+                    if (saleTotalAmount == null) {
+                        saleTotalAmount = BigDecimal.ZERO;
+                    }
+                    saleTotalAmount = saleTotalAmount.add(saleNet);
+                }
+            }
+            return this.inpatientMedicationDispenseReportMapper.toSummarizeResponse(
+                rows, totalQuantity, purchaseTotalAmount, saleTotalAmount);
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            log.warn("住院发药报表汇总失败", ex);
+            throw new BusinessException(
+                InpatientMedicationDispenseReportConstants.EX_IMD_103,
+                "查询失败，请稍后重试");
+        }
+    }
+
+    /**
+     * IF-RPT-IMD-03：住院发药报表明细分页（单源领域真分页：患者或领用）。
+     *
+     * @param request 筛选与分页
+     * @return 平铺明细分页
+     * @throws BusinessException EX-RPT-IMD-102 / 103；来源 ALL 时「禁止全部来源混查」
+     */
+    public PageInpatientMedicationDispenseReportDetailResponse pageInpatientMedicationDispenseReportDetail(
+        PageInpatientMedicationDispenseReportDetailRequest request) {
+        // Gate：登录、分页、日期窗
+        this.currentOperatorResolver.requireOperatorId(
+            InpatientMedicationDispenseReportConstants.EX_IMD_103,
+            "查询失败，请稍后重试");
+        this.pageWindowGate.requirePositivePageWindow(
+            request,
+            InpatientMedicationDispenseReportConstants.EX_IMD_103,
+            "分页参数无效");
+        this.validateDispenseDateWindow(request.getDispenseDateFrom(), request.getDispenseDateTo());
+        try {
+            // Gate：规范化来源；ALL/未知码在 support 内拒绝
+            String sourceCode =
+                this.inpatientMedicationDispenseReportQuerySupport.normalizeSourceCode(request.getSourceCode());
+            boolean queryPatient =
+                this.inpatientMedicationDispenseReportQuerySupport.includePatientDispense(sourceCode);
+            boolean queryDept = this.inpatientMedicationDispenseReportQuerySupport.includeDeptIssue(sourceCode);
+            int pageNo = request.getPageNo();
+            int pageSize = request.getPageSize();
+            // Pre：患者单源 → slip 领域分页，禁止 pageNo*pageSize 前缀预取
+            if (queryPatient && !queryDept) {
+                MedicationDispenseRecordPageQuery patientQuery =
+                    this.inpatientMedicationDispenseReportQuerySupport.buildPatientRecordQuery(
+                        request.getDispenseDateFrom(),
+                        request.getDispenseDateTo(),
+                        request.getRecordTypeCode(),
+                        request.getPharmacyLocationId(),
+                        request.getDispenserPractitionerId(),
+                        request.getMedicationCategoryCodes(),
+                        request.getDrugKeyword(),
+                        request.getPatientKeyword(),
+                        request.getFeeNatureContractNo(),
+                        request.getOrganizationId(),
+                        request.getKeyDrugType(),
+                        pageNo,
+                        pageSize);
+                Page<MedicationDispenseSlipQueryModel> slipPage =
+                    this.inpatientMedicationDispenseReportQuerySupport.pagePatientSlips(patientQuery);
+                List<InpatientMedicationDispenseDetailRowDto> rows =
+                    this.inpatientMedicationDispenseReportQuerySupport.assemblePatientDetailRows(
+                        slipPage.getContent());
+                // Asm：total 用领域分页元数据
+                return this.inpatientMedicationDispenseReportMapper.toPageDetailResponse(
+                    rows, slipPage.getTotalElements(), pageNo, pageSize);
+            }
+            // Pre：领用单源 → 领域分页
+            if (queryDept && !queryPatient) {
+                DeptIssueReportPageQuery deptQuery =
+                    this.inpatientMedicationDispenseReportQuerySupport.buildDeptIssueQuery(
+                        request.getDispenseDateFrom(),
+                        request.getDispenseDateTo(),
+                        request.getPharmacyLocationId(),
+                        request.getMedicationCategoryCodes(),
+                        request.getDrugKeyword(),
+                        request.getOrganizationId(),
+                        request.getKeyDrugType(),
+                        null,
+                        pageNo,
+                        pageSize);
+                Page<DeptIssueReportLineQueryModel> deptPage =
+                    this.inpatientMedicationDispenseReportQuerySupport.pageDeptLines(deptQuery);
+                List<InpatientMedicationDispenseDetailRowDto> rows =
+                    this.inpatientMedicationDispenseReportQuerySupport.assembleDeptDetailRows(deptPage.getContent());
+                return this.inpatientMedicationDispenseReportMapper.toPageDetailResponse(
+                    rows, deptPage.getTotalElements(), pageNo, pageSize);
+            }
+            // Gate：防御——规范化后仍非单源则拒绝混查
+            throw new BusinessException(
+                InpatientMedicationDispenseReportConstants.EX_IMD_103,
+                "禁止全部来源混查");
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            log.warn("住院发药报表明细分页失败", ex);
+            throw new BusinessException(
+                InpatientMedicationDispenseReportConstants.EX_IMD_103,
+                "查询失败，请稍后重试");
+        }
+    }
+
+    /**
+     * IF-RPT-IMD-04：导出当前 Tab（汇总或明细）。
+     *
+     * @param request 筛选 + presentationMode
+     * @return xlsx 字节流
+     * @throws BusinessException EX-RPT-IMD-102 / 104
+     */
+    public ExportInpatientMedicationDispenseReportResponse exportInpatientMedicationDispenseReport(
+        ExportInpatientMedicationDispenseReportRequest request) {
+        // Gate：登录与日期窗
+        this.currentOperatorResolver.requireOperatorId(
+            InpatientMedicationDispenseReportConstants.EX_IMD_104,
+            "导出失败，请稍后重试");
+        this.validateDispenseDateWindow(request.getDispenseDateFrom(), request.getDispenseDateTo());
+        try {
+            String presentationMode = StringUtils.trimToNull(request.getPresentationMode());
+            // 未传呈现模式时默认明细 Tab，与页面默认「当前 Tab」导出一致
+            if (presentationMode == null) {
+                presentationMode = MedicationDispenseReportConstants.PRESENTATION_MODE_DETAIL;
+            }
+            boolean truncated = false;
+            List<InpatientMedicationDispenseExportRowDto> exportRows = new ArrayList<>();
+            // Pre：按当前 Tab 走汇总全量或明细上限列表（BR-RPT-IMD-008）
+            if (MedicationDispenseReportConstants.PRESENTATION_MODE_SUMMARY.equals(presentationMode)) {
+                SummarizeInpatientMedicationDispenseReportRequest summarizeRequest =
+                    new SummarizeInpatientMedicationDispenseReportRequest();
+                summarizeRequest.setDispenseDateFrom(request.getDispenseDateFrom());
+                summarizeRequest.setDispenseDateTo(request.getDispenseDateTo());
+                summarizeRequest.setRecordTypeCode(request.getRecordTypeCode());
+                summarizeRequest.setPharmacyLocationId(request.getPharmacyLocationId());
+                summarizeRequest.setMedicationCategoryCodes(request.getMedicationCategoryCodes());
+                summarizeRequest.setKeyDrugType(request.getKeyDrugType());
+                summarizeRequest.setDispenserPractitionerId(request.getDispenserPractitionerId());
+                summarizeRequest.setDrugKeyword(request.getDrugKeyword());
+                summarizeRequest.setPatientKeyword(request.getPatientKeyword());
+                summarizeRequest.setSummaryDimension(request.getSummaryDimension());
+                summarizeRequest.setSourceCode(request.getSourceCode());
+                SummarizeInpatientMedicationDispenseReportResponse summaryResponse =
+                    this.summarizeInpatientMedicationDispenseReport(summarizeRequest);
+                for (InpatientMedicationDispenseSummaryRowDto row : summaryResponse.getRows()) {
+                    exportRows.add(
+                        this.inpatientMedicationDispenseReportMapper.toExportRowFromSummary(row));
+                }
+            } else {
+                // 明细导出：两路合并后截断至 EXPORT_MAX_ROWS
+                List<InpatientMedicationDispenseDetailRowDto> detailRows =
+                    this.loadDetailRowsForExport(request);
+                truncated = detailRows.size() >= PharmacyDispenseRecordExportConstants.EXPORT_MAX_ROWS;
+                for (InpatientMedicationDispenseDetailRowDto row : detailRows) {
+                    exportRows.add(
+                        this.inpatientMedicationDispenseReportMapper.toExportRowFromDetail(row));
+                }
+            }
+            // Asm：并集导出行 + 前端 exportColumns 裁剪列头
+            byte[] body = AnnotatedExcelExporter.exportToXlsxBytes(
+                InpatientMedicationDispenseReportConstants.EXPORT_SHEET_NAME,
+                exportRows,
+                InpatientMedicationDispenseExportRowDto.class,
+                request.getExportColumns());
+            return this.inpatientMedicationDispenseReportMapper.toExportResponse(
+                body, exportRows.size(), truncated);
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            log.warn("住院发药报表导出失败", ex);
+            throw new BusinessException(
+                InpatientMedicationDispenseReportConstants.EX_IMD_104,
+                "导出失败，请稍后重试");
+        }
+    }
+
+    /**
+     * 导出明细：按单源 list 至 EXPORT_MAX_ROWS；禁止两路并集。
+     *
+     * @param request 导出请求
+     * @return 明细行
+     */
+    private List<InpatientMedicationDispenseDetailRowDto> loadDetailRowsForExport(
+        ExportInpatientMedicationDispenseReportRequest request) {
+        // Gate：与明细分页同来源口径
+        String sourceCode =
+            this.inpatientMedicationDispenseReportQuerySupport.normalizeSourceCode(request.getSourceCode());
+        boolean queryPatient =
+            this.inpatientMedicationDispenseReportQuerySupport.includePatientDispense(sourceCode);
+        boolean queryDept = this.inpatientMedicationDispenseReportQuerySupport.includeDeptIssue(sourceCode);
+        // 患者单源：有界 list
+        if (queryPatient && !queryDept) {
+            MedicationDispenseRecordPageQuery patientQuery =
+                this.inpatientMedicationDispenseReportQuerySupport.buildPatientRecordQuery(
+                    request.getDispenseDateFrom(),
+                    request.getDispenseDateTo(),
+                    request.getRecordTypeCode(),
+                    request.getPharmacyLocationId(),
+                    request.getDispenserPractitionerId(),
+                    request.getMedicationCategoryCodes(),
+                    request.getDrugKeyword(),
+                    request.getPatientKeyword(),
+                    request.getFeeNatureContractNo(),
+                    request.getOrganizationId(),
+                    request.getKeyDrugType(),
+                    1,
+                    PharmacyDispenseRecordExportConstants.EXPORT_MAX_ROWS);
+            List<MedicationDispenseSlipQueryModel> slips =
+                this.inpatientMedicationDispenseReportQuerySupport.listPatientSlips(patientQuery);
+            return this.inpatientMedicationDispenseReportQuerySupport.assemblePatientDetailRows(slips);
+        }
+        // 领用单源：同上限；退领数量/金额已取负
+        if (queryDept && !queryPatient) {
+            DeptIssueReportPageQuery deptQuery =
+                this.inpatientMedicationDispenseReportQuerySupport.buildDeptIssueQuery(
+                    request.getDispenseDateFrom(),
+                    request.getDispenseDateTo(),
+                    request.getPharmacyLocationId(),
+                    request.getMedicationCategoryCodes(),
+                    request.getDrugKeyword(),
+                    request.getOrganizationId(),
+                    request.getKeyDrugType(),
+                    null,
+                    1,
+                    PharmacyDispenseRecordExportConstants.EXPORT_MAX_ROWS);
+            List<DeptIssueReportLineQueryModel> lines =
+                this.inpatientMedicationDispenseReportQuerySupport.listDeptLines(deptQuery);
+            return this.inpatientMedicationDispenseReportQuerySupport.assembleDeptDetailRows(lines);
+        }
+        throw new BusinessException(
+            InpatientMedicationDispenseReportConstants.EX_IMD_104,
+            "禁止全部来源混查");
+    }
+
+    /**
+     * 构造开立/领用科室下拉（住院入院组织树）。
+     *
+     * @return 科室选项
+     */
+    private List<OptionDto> buildOrganizationOptions() {
+        List<OptionDto> options = new ArrayList<>();
+        List<Organization> organizations =
+            this.organizationQueryService.listOrganizationsForInpatientAdmission();
+        for (Organization organization : organizations) {
+            // 缺主键的脏数据不入下拉
+            if (organization == null || organization.getId() == null) {
+                continue;
+            }
+            OptionDto option = new OptionDto();
+            option.setValue(String.valueOf(organization.getId()));
+            option.setLabel(organization.getName());
+            options.add(option);
+        }
+        return options;
+    }
+
+    /**
+     * 构造药品性质下拉（仅麻醉 / 一类精神 / 二类精神）。
+     *
+     * @return 药品性质选项（value=KeyDrugType code）
+     */
+    private List<OptionDto> buildMedicinePropertyOptions() {
+        List<OptionDto> options = new ArrayList<>();
+        options.add(this.toMedicinePropertyOption(KeyDrugType.NARCOTIC));
+        options.add(this.toMedicinePropertyOption(KeyDrugType.PSYCH_ONE));
+        options.add(this.toMedicinePropertyOption(KeyDrugType.PSYCH_TWO));
+        return options;
+    }
+
+    /**
+     * KeyDrugType → 药品性质 OptionDto。
+     *
+     * @param keyDrugType 重点药/性质类型
+     * @return 下拉选项
+     */
+    private OptionDto toMedicinePropertyOption(KeyDrugType keyDrugType) {
+        OptionDto option = new OptionDto();
+        option.setValue(keyDrugType.getCode());
+        option.setLabel(keyDrugType.getDisplay());
+        return option;
+    }
+
+    /**
+     * Gate：业务日/时刻闭区间合法且起止不颠倒。
+     *
+     * <p>允许 {@code yyyy-MM-dd} 或 {@code yyyy-MM-dd HH:mm:ss}；仅日期时起补 00:00:00、止补 23:59:59。</p>
+     *
+     * @param dispenseDateFrom 日起或日起时刻
+     * @param dispenseDateTo   日止或日止时刻
+     */
+    private void validateDispenseDateWindow(String dispenseDateFrom, String dispenseDateTo) {
+        // Gate：缺日起或日止直接拒绝（BR-RPT-IMD-001）
+        if (StringUtils.isEmpty(dispenseDateFrom) || StringUtils.isEmpty(dispenseDateTo)) {
+            throw new BusinessException(
+                InpatientMedicationDispenseReportConstants.EX_IMD_102,
+                "请选择有效时间范围");
+        }
+        LocalDateTime from;
+        LocalDateTime to;
+        try {
+            from = ReportDateTimeWindowSupport.parseInclusiveStart(dispenseDateFrom);
+            to = ReportDateTimeWindowSupport.parseInclusiveEnd(dispenseDateTo);
+        } catch (DateTimeParseException ex) {
+            // 格式非法按时间范围错误拒绝，避免半解析窗口
+            throw new BusinessException(
+                InpatientMedicationDispenseReportConstants.EX_IMD_102,
+                "请选择有效时间范围");
+        }
+        // Gate：结束时刻早于起始时刻时拒绝，避免空结果误导
+        if (to.isBefore(from)) {
+            throw new BusinessException(
+                InpatientMedicationDispenseReportConstants.EX_IMD_102,
+                "请选择有效时间范围");
+        }
+    }
+}

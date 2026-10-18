@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { cn as mergeClassNames } from '@vben-core/shared/utils';
+import { cn as mergeClassNames } from '@zxplat-core/shared/utils';
 
 const props = defineProps<{
   class?: any;

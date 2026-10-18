@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-import { ChevronDown } from '@vben/icons';
+import { ChevronDown } from '@zxplat/icons';
 
 interface Props {
   title?: string;

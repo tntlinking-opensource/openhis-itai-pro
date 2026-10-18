@@ -1,6 +1,6 @@
 import type { Component, DefineComponent } from 'vue';
 
-import type { AccessModeType, GenerateMenuAndRoutesOptions, RouteRecordRaw } from '@vben/types';
+import type { AccessModeType, GenerateMenuAndRoutesOptions, RouteRecordRaw } from '@zxplat/types';
 
 import { defineComponent, h } from 'vue';
 
@@ -12,7 +12,7 @@ import {
   isFunction,
   isString,
   mapTree,
-} from '@vben/utils';
+} from '@zxplat/utils';
 
 async function generateAccessible(mode: AccessModeType, options: GenerateMenuAndRoutesOptions) {
   const { router } = options;

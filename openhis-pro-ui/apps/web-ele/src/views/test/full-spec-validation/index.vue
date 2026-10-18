@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus';
-import type { TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@zxplat-core/table-layout-ui';
 
 import { computed, reactive, ref } from 'vue';
 
 import { Plus, Refresh } from '@element-plus/icons-vue';
-import { Page } from '@vben/common-ui';
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { Page } from '@zxplat/common-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 import {
   ElButton,
   ElForm,

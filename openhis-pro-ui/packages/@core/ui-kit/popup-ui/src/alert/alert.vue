@@ -5,8 +5,8 @@ import type { AlertProps } from './alert';
 
 import { computed, h, nextTick, ref } from 'vue';
 
-import { useSimpleLocale } from '@vben-core/composables';
-import { CircleAlert, CircleCheckBig, CircleHelp, CircleX, Info, X } from '@vben-core/icons';
+import { useSimpleLocale } from '@zxplat-core/composables';
+import { CircleAlert, CircleCheckBig, CircleHelp, CircleX, Info, X } from '@zxplat-core/icons';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,9 +17,9 @@ import {
   VbenButton,
   VbenLoading,
   VbenRenderContent,
-} from '@vben-core/shadcn-ui';
-import { globalShareState } from '@vben-core/shared/global-state';
-import { cn } from '@vben-core/shared/utils';
+} from '@zxplat-core/shadcn-ui';
+import { globalShareState } from '@zxplat-core/shared/global-state';
+import { cn } from '@zxplat-core/shared/utils';
 
 import { provideAlertContext } from './alert';
 

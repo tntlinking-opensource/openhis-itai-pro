@@ -4,7 +4,7 @@
  * SOURCE：form=P（详情页当前表单）；hospitalName/orgCode=C（登录机构抬头）；variant=C
  * 地址省市区字段在映射时去掉「省/市/区」等后缀，模板已印固定字样。
  */
-import type { FormItemOption } from '@vben-core/table-layout-ui';
+import type { FormItemOption } from '@zxplat-core/table-layout-ui';
 
 import type { DiagnosisLineDto, ProcedureLineDto } from '#/api/mrms/types';
 import type { HomepageFormModel } from '#/views/mrms/homepage/homepage-form.types';

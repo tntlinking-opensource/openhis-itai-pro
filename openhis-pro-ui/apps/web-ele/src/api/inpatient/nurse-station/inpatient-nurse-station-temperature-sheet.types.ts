@@ -77,6 +77,8 @@ export interface GetNurseStationTemperatureSheetDataRequest {
 }
 
 export interface GetNurseStationTemperatureSheetDataResponse {
+  /** 死亡出院：图表竖排显示死亡 */
+  deathDischarge?: boolean | null;
   derivedMeta?: TemperatureSheetDerivedMetaDto | null;
   fillSlots?: TemperatureSheetFillSlotDto[] | null;
   gridRows?: TemperatureSheetGridRowDto[] | null;

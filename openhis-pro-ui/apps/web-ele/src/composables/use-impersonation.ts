@@ -2,7 +2,7 @@ import type { AuthApi } from '#/api/core/auth';
 
 import { computed, ref } from 'vue';
 
-import { useAccessStore, useUserStore } from '@vben/stores';
+import { useAccessStore, useUserStore } from '@zxplat/stores';
 
 import {
   getApplicationConfigurationApi,
@@ -13,8 +13,8 @@ import { canSkipLoginDepartmentSelection } from '#/utils/auth/platform-admin';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { useAuthStore } from '#/store/auth';
 
-const IMPERSONATOR_BACKUP_KEY = 'whale:impersonator:backup';
-const IMPERSONATION_META_KEY = 'whale:impersonation:meta';
+const IMPERSONATOR_BACKUP_KEY = 'zxplat:impersonator:backup';
+const IMPERSONATION_META_KEY = 'zxplat:impersonation:meta';
 
 interface ImpersonatorBackup {
   accessToken: string;

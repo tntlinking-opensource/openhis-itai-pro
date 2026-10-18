@@ -378,20 +378,37 @@ function lineSkinTestOutcomeCode(item: unknown): string {
 </template>
 
 <style scoped>
-/* 药品信息居左，单次剂量+总量居右，便于扫读 */
+/* 药名【规格】居左、剂量居右，同一行对齐；超长药名省略，不把剂量甩到下一行，也不撑出横向滚动 */
 .advice-order-line-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
+  column-gap: 12px;
   width: 100%;
+  max-width: 100%;
   min-width: 0;
 }
 
 .advice-order-line-row .drug-main-text {
-  flex: 1 1 auto;
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   text-align: left;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.advice-order-line-row .drug-main-text--with-tag {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+.advice-order-line-row .drug-main-text--with-tag > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .drug-main-text--with-tag {
@@ -429,9 +446,8 @@ function lineSkinTestOutcomeCode(item: unknown): string {
 }
 
 .advice-order-line-row .group-drug-dose {
-  flex: 0 0 auto;
-  text-align: right;
   white-space: nowrap;
+  text-align: right;
 }
 
 /* 中药方：药名与剂量同芯片，自动换行，避免长剂量 nowrap 挤扁药名 */

@@ -1,0 +1,31 @@
+[
+  {
+    "result": "OK",
+    "source": "耗材数据更新（H2024.7.1）.xls",
+    "std_dir": "标准化文件\\耗材数据更新（H2024.7.1）",
+    "moved_to": "原始文件\\耗材数据更新（H2024.7.1）.xls",
+    "rows": 119,
+    "actions": {
+      "STOP": 36,
+      "ADD": 83
+    },
+    "category": "DEVICE",
+    "doc_kind": "CATALOG_DELTA",
+    "notice_date": "2024-07-01",
+    "remark": "原件为用户另存可解析 .xls（此前伪xlsx/.et失败）；xlrd读取；CATALOG_DELTA/DEVICE；行数=119；actions=ADD:83,STOP:36；hilist_code←国家目录编码；甲乙丙/01/02/03→1/2/3；限价进ext_json"
+  },
+  {
+    "result": "OK",
+    "source": "诊疗目录新增(2024.7.8).xls",
+    "std_dir": "标准化文件\\诊疗目录新增(2024.7.8)",
+    "moved_to": "原始文件\\诊疗目录新增(2024.7.8).xls",
+    "rows": 5,
+    "actions": {
+      "ADD": 5
+    },
+    "category": "SERVICE",
+    "doc_kind": "CATALOG_DELTA",
+    "notice_date": "2024-07-08",
+    "remark": "原件为用户另存可解析 .xls（此前伪xlsx/.et失败）；xlrd读取；CATALOG_DELTA/SERVICE；行数=5；actions=ADD:5；ADD：01*仅进project_code，hilist_code留空；限价进ext_json"
+  }
+]

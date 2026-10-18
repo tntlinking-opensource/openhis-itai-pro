@@ -1,0 +1,213 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.zxplat.application.shared.payment;
+
+import com.zxplat.domain.financial.paymentreconciliation.command.PaymentDetailItemCommand;
+import com.zxplat.domain.share.constants.ErrorCodeConstants;
+import com.zxplat.domain.share.enums.PaymentChannel;
+import com.zxplat.domain.share.payment.BpcPayTypeMapper;
+import com.zxplat.domain.infrastructure.integration.payment.ThirdPartyPaymentExtension;
+import com.zxplat.domain.infrastructure.integration.payment.ExtensionIn.ThirdPartyScanConfirmExtensionIn;
+import com.zxplat.domain.infrastructure.integration.payment.dto.ClientScanResultDto;
+import com.zxplat.domain.infrastructure.integration.payment.ExtensionOut.ThirdPartyScanExtensionOut;
+import com.zxplat.application.shared.validator.PaymentChannelGate;
+import com.zxplat.framework.core.application.exception.BusinessException;
+import lombok.RequiredArgsConstructor;
+import com.zxplat.framework.core.application.util.StringUtils;
+import org.springframework.stereotype.Component;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * settle 前银联被扫挂接：检测 {@code SCAN_PAY} 行 → {@code applyClientScanResult} →
+ * {@link BpcPayTypeMapper} 替换明细 → {@link PaymentChannelGate} 门控。
+ */
+@Component
+@RequiredArgsConstructor
+public class ThirdPartyPaymentSettleOrchestrator {
+
+    /** 银联网关成功响应码。 */
+    private static final String SUCCESS_RESP_CODE = "00";
+
+    /** 第三方收单扩展：被扫确认挂接。 */
+    private final ThirdPartyPaymentExtension thirdPartyPaymentExtension;
+    /** 支付渠道门控：校验可落库 pay_enum。 */
+    private final PaymentChannelGate paymentChannelGate;
+
+    /**
+     * 扫码 settle 前置处理（原地替换 {@code paymentDetails} 中 {@code SCAN_PAY} 行为语义码）。
+     *
+     * @param paymentId HIS 支付单
+     * @param paymentDetails 可变明细（{@code payEnum} 含 {@code SCAN_PAY} 时触发）
+     * @param clientScanResult Win 被扫回传；无扫码行时可 null
+     * @param operatorId 操作员
+     * @param orgId 院区
+     */
+    public void applyScanBeforeSettle(
+        Long paymentId,
+        List<PaymentDetailItemCommand> paymentDetails,
+        ClientScanResultDto clientScanResult,
+        Long operatorId,
+        Long orgId) {
+
+        if (paymentDetails == null || paymentDetails.isEmpty()) {
+            return;
+        }
+
+        List<Integer> scanLineIndexes = findScanPayLineIndexes(paymentDetails);
+        if (scanLineIndexes.isEmpty()) {
+            return;
+        }
+
+        if (clientScanResult == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                "扫码支付须提交 clientScanResult");
+        }
+
+        if (!SUCCESS_RESP_CODE.equals(StringUtils.trimToEmpty(clientScanResult.getRespCode()))) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                "银联被扫未成功，不可结算");
+        }
+
+        if (!thirdPartyPaymentExtension.isEnabled()) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                "第三方收单未开通");
+        }
+
+        if (scanLineIndexes.size() > 1) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                "混合支付仅支持一条扫码支付明细");
+        }
+
+        int detailIndex = scanLineIndexes.get(0);
+        PaymentDetailItemCommand scanLine = paymentDetails.get(detailIndex);
+        validateScanLineAmount(scanLine.getAmount());
+        validateTxnAmtFen(clientScanResult, scanLine.getAmount());
+
+        ThirdPartyScanConfirmExtensionIn command = new ThirdPartyScanConfirmExtensionIn()
+            .setPaymentId(paymentId)
+            .setDetailIndex(detailIndex)
+            .setAmount(scanLine.getAmount())
+            .setMerTradeNo(clientScanResult.getMerTradeNo())
+            .setTradeNo(clientScanResult.getTradeNo())
+            .setPayType(clientScanResult.getPayType())
+            .setRespCode(clientScanResult.getRespCode())
+            .setRespMsg(clientScanResult.getRespMsg())
+            .setTxnAmtFen(clientScanResult.getTxnAmtFen())
+            .setOperatorId(operatorId)
+            .setOrgId(orgId);
+
+        ThirdPartyScanExtensionOut result = thirdPartyPaymentExtension.applyClientScanResult(command);
+        if (result == null || !result.isSuccess()) {
+            String respMsg;
+            if (result != null) {
+                respMsg = result.getRespMsg();
+            } else {
+                respMsg = null;
+            }
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                StringUtils.defaultIfBlank(respMsg, "银联收单确认失败"));
+        }
+
+        String payEnum = BpcPayTypeMapper.toPayEnum(clientScanResult.getPayType());
+        scanLine.setPayEnum(payEnum);
+        paymentChannelGate.requirePersistablePayChannelCode(
+            payEnum,
+            ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+            "支付渠道不合法");
+        this.applyPaidAmountKeepingInsuranceAcct(scanLine, clientScanResult);
+    }
+
+    /**
+     * POS 实付与院内下单分账说明（故意不改写 HIS 扫码行金额）。
+     *
+     * <p>BPC 侧已分账：{@code txn_amt_fen}=院内下单，{@code paid_amt_fen}=POS 实付（可更小）。
+     * HIS 落账须保持扫码行=院内下单金额，才能与收费项/医保分桶勾稽（BR-OPC-024 终态）。
+     * 若此处把行金额压成 POS 实付，明细合计会小于收费项，表现为「银联已扣款、结算失败」半成功弹窗。</p>
+     *
+     * @param scanLine         已替换为微信/支付宝/银行卡的原扫码行
+     * @param clientScanResult Win 被扫回传（实付分仅作校验参考，不改写行额）
+     */
+    private void applyPaidAmountKeepingInsuranceAcct(
+        PaymentDetailItemCommand scanLine,
+        ClientScanResultDto clientScanResult) {
+        // 行金额保持院内下单；POS 实付仅落 BPC.paid_amt_fen（validateTxnAmtFen 已在挂接前校验）
+        if (scanLine == null || clientScanResult == null) {
+            return;
+        }
+    }
+
+    /**
+     * 收集支付明细中 {@link PaymentChannel#SCAN_PAY} 行的下标，供 settle 前单条扫码替换。
+     *
+     * @param paymentDetails 待结算支付明细
+     * @return 扫码行下标列表（保持原序）
+     */
+    private static List<Integer> findScanPayLineIndexes(List<PaymentDetailItemCommand> paymentDetails) {
+        List<Integer> indexes = new ArrayList<>();
+        for (int index = 0; index < paymentDetails.size(); index++) {
+            PaymentDetailItemCommand line = paymentDetails.get(index);
+            if (line == null) {
+                continue;
+            }
+            if (PaymentChannel.SCAN_PAY.getCode().equals(StringUtils.trimToEmpty(line.getPayEnum()))) {
+                indexes.add(index);
+            }
+        }
+        return indexes;
+    }
+
+    /**
+     * 扫码支付行金额 Gate：须为正数方可进入银联确认。
+     *
+     * @param amount 扫码明细金额（元）
+     * @throws BusinessException 金额为空或不大于 0
+     */
+    private static void validateScanLineAmount(BigDecimal amount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                "扫码支付金额须大于0");
+        }
+    }
+
+    /**
+     * 校验银联回传交易金额（分）相对 HIS 扫码行金额（元）合法；回传缺失时跳过。
+     *
+     * <p>POS 实付可小于院内下单（渠道优惠由渠道承担）；实付写入 BPC {@code paid_amt_fen}，
+     * settle 仅拒绝大于下单。HIS 扫码行金额保持院内下单，不随实付压低。
+     * 退货时 Win R 按实付、HIS 冲账按下单，见 BPC 双账口径。</p>
+     *
+     * @param clientScanResult Win 被扫回传
+     * @param amountYuan       待结算扫码行金额（元）
+     * @throws BusinessException 回传分额无效或大于院内下单分额
+     */
+    private static void validateTxnAmtFen(ClientScanResultDto clientScanResult, BigDecimal amountYuan) {
+        Long txnAmtFen = clientScanResult.getTxnAmtFen();
+        if (txnAmtFen == null) {
+            return;
+        }
+        // Gate：实付分须为正；医保账户已扣时允许实付 < 下单，禁止实付 > 下单。
+        if (txnAmtFen <= 0L) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                "银联回传金额无效");
+        }
+        long expectedFen = amountYuan.multiply(BigDecimal.valueOf(100L)).setScale(0, RoundingMode.HALF_UP).longValue();
+        if (txnAmtFen > expectedFen) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                "扫码支付金额与银联回传不一致");
+        }
+    }
+}

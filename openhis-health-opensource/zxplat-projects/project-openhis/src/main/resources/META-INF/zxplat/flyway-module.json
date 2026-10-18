@@ -1,0 +1,6 @@
+{
+  "moduleId": "project-openhis",
+  "enabledProperty": "zxplat.project.flyway.enabled",
+  "locations": "classpath:db/migration/project-openhis",
+  "historyTable": "flyway_schema_history_project_openhis"
+}

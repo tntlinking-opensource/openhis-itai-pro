@@ -17,7 +17,7 @@ async function getAccessRoutes(): Promise<RouteRecordRaw[]> {
   }
   if (!accessRoutesPromise) {
     accessRoutesPromise = (async () => {
-      const { mergeRouteModules } = await import('@vben/utils');
+      const { mergeRouteModules } = await import('@zxplat/utils');
       const modules = await Promise.all(
         Object.values(dynamicRouteFileLoaders).map((load) => load()),
       );

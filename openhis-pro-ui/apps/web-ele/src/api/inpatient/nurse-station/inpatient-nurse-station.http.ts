@@ -23,12 +23,28 @@ export async function httpLoadWardTree(
   return publicRequestClient.post<LoadWardTreeResponse>(`${BASE}/loadWardTree`, body);
 }
 
+/** 与后端 {@code SilentPollHttpHeaders#NAME} 对齐：带此头时跳过访问/入参日志 */
+const SILENT_POLL_HEADER = 'X-Zxplat-Silent-Poll';
+
+export interface PagePatientQueueHttpOptions {
+  /** 静默轮询：不写后端访问日志；前端勿配合 loading */
+  silentPoll?: boolean;
+}
+
 /** 分页查询在院患者队列（任务计数 enrich 偏重，单独放宽超时） */
 export async function httpPagePatientQueue(
   body: PagePatientQueueRequest,
+  options?: PagePatientQueueHttpOptions,
 ): Promise<PagePatientQueueResponse> {
+  const headers =
+    options?.silentPoll === true
+      ? {
+          [SILENT_POLL_HEADER]: '1',
+        }
+      : undefined;
   return publicRequestClient.post<PagePatientQueueResponse>(`${BASE}/pagePatientQueue`, body, {
     timeout: 60_000,
+    headers,
   });
 }
 

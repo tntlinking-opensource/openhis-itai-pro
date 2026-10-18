@@ -1,5 +1,6 @@
 ﻿<script setup lang="ts">
 import type { NurseStationPatientListPanelContext } from './components/patient-list-panel.context';
+import type { NurseStationTaskNotifyCard } from './nurse-station-task-notify.types';
 import type { PatientItem } from './types';
 import type { AdmissionBedOperationIntent } from './services/admission-bed-operation';
 import type { OperationTab } from './workbench-tab.config';
@@ -11,6 +12,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { submitDirectBedOperation } from './services/execute-bed-operation';
 import { isStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
 
+import NurseStationTaskNotifyStack from './components/nurse-station-task-notify-stack.vue';
 import PatientAdmissionBedDialog from './components/patient-admission-bed-dialog.vue';
 import PatientLargeScreen from './components/patient-large-screen.vue';
 import { nurseStationPatientListPanelContextKey } from './components/patient-list-panel.context';
@@ -19,7 +21,9 @@ import { useNurseStationBedBoard } from './use-nurse-station-bed-board';
 import { useNurseStationBedDrag } from './use-nurse-station-bed-drag';
 import { useNurseStationPatientData } from './use-nurse-station-patient-data';
 import { useNurseStationPatientProjections } from './use-nurse-station-patient-projections';
+import { useNurseStationQueuePoll } from './use-nurse-station-queue-poll';
 import { useNurseStationSelection } from './use-nurse-station-selection';
+import { useNurseStationTaskNotify } from './use-nurse-station-task-notify';
 import { isNurseStationBedUnassigned } from './components/nurse-station-module-patient.types';
 import {
   MULTI_PATIENT_OPERATION_TABS,
@@ -42,6 +46,8 @@ function getSelectionPolicyByTab(tab: OperationTab) {
   return operationSelectionPolicyByTab[tab] ?? 'single';
 }
 const activeOperationTab = ref<OperationTab>(OPERATION_TAB.ORDER_EXECUTE);
+/** 队列完整落盘后剔除失效选中（由 selection 注入，避免与 patient-data 循环依赖） */
+let pruneStaleSelectionAfterQueue: (() => void) | undefined;
 const {
   bootstrapPatientWorkbench,
   filteredPatients,
@@ -50,14 +56,18 @@ const {
   patientListPanelDataContext,
   pendingAuditCount,
   pendingExecuteCount,
+  queueLoading,
   refreshPatientFilters,
   regionNameByIdRecord,
   selectedRegionIds,
   selectedWardIds,
+  silentReloadPatientQueue,
   totalPatientCount,
   wardNameByIdRecord,
   wardOptions,
-} = useNurseStationPatientData();
+} = useNurseStationPatientData({
+  onPatientsSettled: () => pruneStaleSelectionAfterQueue?.(),
+});
 const IN_OUT_TRANSFER_TAB = OPERATION_TAB.IN_OUT_TRANSFER;
 const { bedBoardGroups, bedBoardLoading, bedBoardPanel, loadBedBoard } = useNurseStationBedBoard({
   selectedHouseIds: () => selectedWardIds.value,
@@ -70,6 +80,7 @@ const {
   initSelectionState,
   keepFirstSelectedPatient,
   patientListPanelSelectionContext,
+  pruneStaleSelection,
   selectedPatientIds,
   setActivePatient,
   setSelectionPolicy,
@@ -78,7 +89,20 @@ const {
   filteredPatients,
   patients,
 });
+pruneStaleSelectionAfterQueue = pruneStaleSelection;
 const patientQueueBootstrapped = ref(false);
+const {
+  dismiss: dismissTaskNotify,
+  items: taskNotifyItems,
+  pushIncreases: pushTaskNotifyIncreases,
+} = useNurseStationTaskNotify();
+/** 院点配置开启时静默轮询队列（无 loading、保留选中；增量弹浮层）。 */
+useNurseStationQueuePoll({
+  patientQueueBootstrapped,
+  queueLoading,
+  silentReloadPatientQueue,
+  onTaskIncreases: pushTaskNotifyIncreases,
+});
 /** 患者大屏默认隐藏，由左侧队列按钮展开。 */
 const largeScreenVisible = ref(false);
 const admissionBedDialogVisible = ref(false);
@@ -162,6 +186,30 @@ const currentOperationProps = computed<Record<string, unknown>>(() => {
   return {};
 });
 
+/** 页签右上角气泡：校对=待校总数，执行=待执总数；其余不展示。 */
+function resolveOperationTabBadge(tab: OperationTab): number {
+  if (tab === OPERATION_TAB.ORDER_AUDIT) {
+    return pendingAuditCount.value;
+  }
+  if (tab === OPERATION_TAB.ORDER_EXECUTE) {
+    return pendingExecuteCount.value;
+  }
+  return 0;
+}
+
+/** 校对/执行页签始终展示气泡（含 0），与是否勾选患者无关。 */
+function hasOperationTabBadge(tab: OperationTab): boolean {
+  return tab === OPERATION_TAB.ORDER_AUDIT || tab === OPERATION_TAB.ORDER_EXECUTE;
+}
+
+/** 气泡展示：超过 99 显示 99+ */
+function formatOperationTabBadge(count: number): string {
+  if (count > 99) {
+    return '99+';
+  }
+  return String(Math.max(0, count));
+}
+
 /** 目标页签在当前选中下是否会触发未分床门禁。 */
 function isTabBlockedByUnassignedBed(tab: OperationTab): boolean {
   if (!doesNurseStationTabRequireBed(tab)) {
@@ -234,6 +282,26 @@ function handleGoToOrderExecuteFromDischarge() {
     setActivePatient(id);
   }
   void handleOperationTabClick(OPERATION_TAB.ORDER_EXECUTE);
+}
+
+/** 浮层点击：选中患者并跳转校对/执行，不打断其它操作态以外的跳转 */
+function handleTaskNotifyOpen(item: NurseStationTaskNotifyCard) {
+  const encounterId = String(item.encounterId ?? '').trim();
+  if (!encounterId) {
+    dismissTaskNotify(item.id);
+    return;
+  }
+  const patient = patients.value.find((row) => row.id === encounterId);
+  if (!patient) {
+    ElMessage.warning('患者已不在当前队列，请刷新后重试');
+    dismissTaskNotify(item.id);
+    return;
+  }
+  setActivePatient(encounterId);
+  const targetTab =
+    item.targetTab === 'ORDER_AUDIT' ? OPERATION_TAB.ORDER_AUDIT : OPERATION_TAB.ORDER_EXECUTE;
+  dismissTaskNotify(item.id);
+  void handleOperationTabClick(targetTab);
 }
 /** 床位图点击占床：单选该患者并与左侧列表联动。 */
 function handleBedMapSelectPatient(id: string) {
@@ -422,6 +490,12 @@ onMounted(async () => {
   <div class="nurse-workbench">
     <PatientListPanel />
 
+    <NurseStationTaskNotifyStack
+      :items="taskNotifyItems"
+      @open="handleTaskNotifyOpen"
+      @dismiss="dismissTaskNotify"
+    />
+
     <PatientAdmissionBedDialog
       v-model="admissionBedDialogVisible"
       :patient="admissionBedDialogPatient"
@@ -454,7 +528,18 @@ onMounted(async () => {
           :class="{ 'is-active': activeOperationTab === tab }"
           @click="handleOperationTabClick(tab)"
         >
-          {{ OPERATION_TAB_LABEL[tab] }}
+          <span class="nurse-operation-tabs__label">{{ OPERATION_TAB_LABEL[tab] }}</span>
+          <span
+            v-if="hasOperationTabBadge(tab)"
+            class="nurse-operation-tabs__badge"
+            :class="{
+              'is-zero': resolveOperationTabBadge(tab) <= 0,
+              'is-audit': tab === OPERATION_TAB.ORDER_AUDIT,
+              'is-execute': tab === OPERATION_TAB.ORDER_EXECUTE,
+            }"
+          >
+            {{ formatOperationTabBadge(resolveOperationTabBadge(tab)) }}
+          </span>
         </button>
       </div>
       <div class="nurse-operation-content">
@@ -529,9 +614,42 @@ onMounted(async () => {
   line-height: 1;
   margin: 0;
   min-width: 104px;
-  padding: 0 10px;
+  padding: 0 14px;
   position: relative;
   white-space: nowrap;
+}
+
+.nurse-operation-tabs__label {
+  position: relative;
+}
+
+.nurse-operation-tabs__badge {
+  background: var(--el-color-danger);
+  border-radius: 10px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  height: 16px;
+  line-height: 16px;
+  min-width: 16px;
+  padding: 0 4px;
+  position: absolute;
+  right: 2px;
+  top: 4px;
+  text-align: center;
+  z-index: 1;
+}
+
+.nurse-operation-tabs__badge.is-audit {
+  background: #e6a23c;
+}
+
+.nurse-operation-tabs__badge.is-execute {
+  background: var(--el-color-danger);
+}
+
+.nurse-operation-tabs__badge.is-zero {
+  background: #c0c4cc;
 }
 
 .nurse-operation-tabs__item:hover {

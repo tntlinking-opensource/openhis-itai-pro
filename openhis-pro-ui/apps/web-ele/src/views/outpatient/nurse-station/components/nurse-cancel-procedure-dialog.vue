@@ -3,7 +3,7 @@ import type { NetRemainingProcedureRecordItemDto } from '#/api/outpatient-nurse-
 
 import { computed, ref, watch } from 'vue';
 
-import { formatDateTime } from '@vben/utils';
+import { formatDateTime } from '@zxplat/utils';
 
 import { ElButton, ElTable, ElTableColumn } from 'element-plus';
 

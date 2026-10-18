@@ -1,5 +1,5 @@
 /**
- * 文书类型 API（whale-emr DocumentTypeAppService）
+ * 文书类型 API（zxplat-emr DocumentTypeAppService）
  */
 
 import { publicRequestClient } from '#/api/request';

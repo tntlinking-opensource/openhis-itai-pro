@@ -25,16 +25,26 @@ export interface Patient {
   linkTelcom?: string;
   workCompany?: string;
   idCard?: string;
+  /** 民族编码（nationality_code） */
   nationalityCode?: string;
+  /** 国籍编码（country_code） */
+  countryCode?: string;
+  /** 籍贯（可为省市区 code 斜杠串） */
+  nativePlace?: string;
   /** 学历层次字典编码（EducationLevel） */
   educationLevelCode?: string;
+  address?: string;
+  addressProvince?: string;
+  addressCity?: string;
+  addressDistrict?: string;
+  addressStreet?: string;
   bloodAbo?: number;
   bloodAboText?: null | string;
   bloodRh?: number;
   bloodRhText?: null | string;
-  maritalStatusEnum?: number;
+  maritalStatusEnum?: number | string;
   maritalStatusEnumText?: null | string;
-  prfsEnum?: null | number;
+  prfsEnum?: null | number | string;
   prfsEnumText?: null | string;
   linkRelationCode?: number;
   linkRelationCodeText?: null | string;

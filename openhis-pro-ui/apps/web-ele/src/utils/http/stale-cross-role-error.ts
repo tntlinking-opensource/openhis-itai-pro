@@ -15,6 +15,7 @@ const STALE_CROSS_ROLE_ERROR_MESSAGES: Record<string, string> = {
   'EX-IP-EXE-301': '该计划点已执行或已登记不执行，请刷新列表后重试',
   'EX-IP-EXE-303': '仅已校对或已停嘱医嘱允许执行；停嘱后的计划点不可执行，请刷新列表后重试',
   'EX-IP-EXE-307': '患者已办理出院或已结算，不可变更医嘱及费用，请刷新列表后重试',
+  'EX-MT-EXE-206': '患者已办理出院或已结算，不可变更医嘱及费用，请刷新列表后重试',
   'EX-IP-ATD-301': '长期医嘱需要先停嘱，请处理后重试',
   'EX-IP-ATD-302': '存在未执行或未完成的临时医嘱，请处理后重试',
   'EX-IP-ATD-303': '患者有待取或待退药品，请处理后重试',
@@ -63,6 +64,8 @@ export const STALE_CROSS_ROLE_ERROR_CODES = new Set<string>([
   'EX-IP-EXE-301',
   'EX-IP-EXE-303',
   'EX-IP-EXE-307',
+  // 医技执行（住院待结算轨）
+  'EX-MT-EXE-206',
   'EX-IP-ATD-301',
   'EX-IP-ATD-302',
   'EX-IP-ATD-303',
@@ -141,6 +144,10 @@ export function resolveStaleCrossRoleUserMessage(
   const text = String(backendMessage ?? '').trim();
   if (text && isUserFacingStaleBackendMessage(text)) {
     if (/刷新/.test(text)) {
+      return text;
+    }
+    // 开立时间边界 Gate（BR-IP-EXE-024）：非源态冲突，刷新无效，禁止套「请刷新列表后重试」
+    if (text.includes('执行时间不能早于开立时间')) {
       return text;
     }
     return `${text}，请刷新列表后重试`;

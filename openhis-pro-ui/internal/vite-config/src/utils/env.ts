@@ -3,7 +3,7 @@ import type { ApplicationPluginOptions } from '../typing';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { fs } from '@vben/node-utils';
+import { fs } from '@zxplat/node-utils';
 
 import dotenv from 'dotenv';
 
@@ -27,7 +27,7 @@ function getConfFiles() {
   const files = ['.env', '.env.local', `.env.${mode}`, `.env.${mode}.local`];
 
   // 院点：直接读 projects/project-{id} 下 .env（UTF-8），供 HTML title / loading 使用
-  const rawProject = (process.env.OPENHIS_PROJECT ?? process.env.VITE_OPENHIS_PROJECT ?? '').trim();
+  const rawProject = (process.env.ZXPLAT_PROJECT ?? process.env.VITE_ZXPLAT_PROJECT ?? '').trim();
   if (rawProject) {
     const projectId = rawProject.startsWith('project-')
       ? rawProject.slice('project-'.length)
@@ -109,7 +109,7 @@ async function loadAndConvertEnv(
 
   // 院点：优先用 dotenv 读到的 UTF-8 文件值（Windows process.env 中文易乱码，会导致 loading 回退 OpenHis）
   const isOpenHisProject = Boolean(
-    (process.env.OPENHIS_PROJECT ?? process.env.VITE_OPENHIS_PROJECT ?? '').trim(),
+    (process.env.ZXPLAT_PROJECT ?? process.env.VITE_ZXPLAT_PROJECT ?? '').trim(),
   );
 
   return {

@@ -1,6 +1,6 @@
 import type { PluginOption } from 'vite';
 
-import { colors, generatorContentHash, readPackageJSON } from '@vben/node-utils';
+import { colors, generatorContentHash, readPackageJSON } from '@zxplat/node-utils';
 
 import { loadEnv } from '../utils/env';
 

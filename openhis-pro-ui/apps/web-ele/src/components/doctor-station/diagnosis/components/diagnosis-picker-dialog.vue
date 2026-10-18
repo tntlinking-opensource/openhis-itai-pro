@@ -16,7 +16,7 @@ import type {
   EncounterDiagnosisRowDto,
 } from '#/api/doctor-station/diagnosis.types';
 
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
 import { ElMessage } from 'element-plus';
 
@@ -26,9 +26,11 @@ import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { saveEncounterDiagnosisRows } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis.service';
 import {
   formatDiagnosisYbNoDisplay,
+  hasDiagnosisYbNo,
   formatTcmDiagnosisDisplayName,
   mapTcmCatalogRowToConditionDefinitionRow,
   resolveTcmCatalogKindFromRow,
+  resolveTcmCatalogRole,
 } from '#/components/doctor-station/diagnosis/services/tcm-diagnosis-display';
 import {
   appendTcmDiagnosisGroupBatch,
@@ -40,13 +42,10 @@ import './diagnosis-picker-dialog.css';
 
 defineOptions({ name: 'DiagnosisPickerDialog' });
 
-/** 中医合并列表行：带目录角色，便于点选写入病/证 */
+/** 中医目录行：带目录角色，点选写入病或证 */
 interface TcmMergedCatalogRow extends ConditionDefinitionRowResponse {
   tcmCatalogKind: TcmCatalogKind;
 }
-
-/** 中医两侧目录各取上限，本地合并后再分页（关键字检索通常远小于此） */
-const TCM_MERGED_FETCH_SIZE = 100;
 
 const props = withDefaults(
   defineProps<{
@@ -107,15 +106,20 @@ const pageNo = ref(1);
 const pageSize = ref(10);
 const total = ref(0);
 const records = ref<ConditionDefinitionRowResponse[]>([]);
-/** 中医：疾病+证候合并缓存（本地分页） */
-const tcmMergedCache = ref<TcmMergedCatalogRow[]>([]);
 const tableLoading = ref(false);
 const saveLoading = ref(false);
 const selectedRow = ref<ConditionDefinitionRowResponse | null>(null);
 const tcmDiseasePick = ref<null | TcmDiagnosisPick>(null);
 const tcmSyndromePick = ref<null | TcmDiagnosisPick>(null);
+/** 中医目录角色：疾病 / 证候分开展示，避免合并列表把证候挤到后面 */
+const tcmCatalogKind = ref<TcmCatalogKind>('disease');
+const catalogTableRef = ref<{ setCurrentRow: (row?: unknown) => void } | null>(null);
 
 const isTcmMode = computed(() => medicineTypeCode.value === '2');
+
+const tcmSearchPlaceholder = computed(() =>
+  tcmCatalogKind.value === 'syndrome' ? '证候名称或编码' : '疾病名称或编码',
+);
 
 /**
  * 西医国临选码：住院医生站 + 病案首页 pickOnly（后端 inpatient 接口已收敛 clinical_v2）。
@@ -144,61 +148,37 @@ const catalogNameColumnLabel = computed(() => {
   return '诊断名称';
 });
 
-/**
- * 中医合并缓存按当前页切片到表格（不预选，避免误写入病/证）。
- */
-function applyTcmMergedClientPage() {
-  const start = (pageNo.value - 1) * pageSize.value;
-  records.value = tcmMergedCache.value.slice(start, start + pageSize.value);
+/** 表格行主键：中医带上目录角色，避免病/证同 id 时高亮串行 */
+function catalogRowKey(row: ConditionDefinitionRowResponse) {
+  const kind = (row as TcmMergedCatalogRow).tcmCatalogKind ?? 'western';
+  return `${kind}-${row.conditionDefinitionId ?? ''}`;
+}
+
+/** 拉取一页中医病名或证候（IF-DOR-31：按 catalogRole 切换，不合并） */
+async function loadTcmCatalogPage() {
+  const catalogKind = tcmCatalogKind.value;
+  const res = await tcmHttp.value.httpPageTcmConditionDefinitionCatalog({
+    catalogRole: resolveTcmCatalogRole(catalogKind),
+    keyword: keyword.value.trim() || undefined,
+    pageNo: pageNo.value,
+    pageSize: pageSize.value,
+  });
+  records.value = (res.rows ?? []).map((row) => ({
+    ...mapTcmCatalogRowToConditionDefinitionRow(row, catalogKind),
+    tcmCatalogKind: catalogKind,
+  }));
+  total.value = Number(res.total ?? 0);
   selectedRow.value = null;
 }
 
-/**
- * 并行拉取疾病+证候目录并合并为一份缓存（本地分页）。
- */
-async function loadTcmMergedCatalog() {
-  const kw = keyword.value.trim() || undefined;
-  const [diseaseRes, syndromeRes] = await Promise.all([
-    tcmHttp.value.httpPageTcmConditionDefinitionCatalog({
-      catalogRole: 'DISEASE',
-      keyword: kw,
-      pageNo: 1,
-      pageSize: TCM_MERGED_FETCH_SIZE,
-    }),
-    tcmHttp.value.httpPageTcmConditionDefinitionCatalog({
-      catalogRole: 'SYNDROME',
-      keyword: kw,
-      pageNo: 1,
-      pageSize: TCM_MERGED_FETCH_SIZE,
-    }),
-  ]);
-  // 疾病在前、证候在后，点选时按行角色写入病/证表单
-  const diseaseRows: TcmMergedCatalogRow[] = (diseaseRes.rows ?? []).map((row) => ({
-    ...mapTcmCatalogRowToConditionDefinitionRow(row, 'disease'),
-    tcmCatalogKind: 'disease',
-  }));
-  const syndromeRows: TcmMergedCatalogRow[] = (syndromeRes.rows ?? []).map((row) => ({
-    ...mapTcmCatalogRowToConditionDefinitionRow(row, 'syndrome'),
-    tcmCatalogKind: 'syndrome',
-  }));
-  tcmMergedCache.value = [...diseaseRows, ...syndromeRows];
-  const diseaseTotal = Number(diseaseRes.total ?? 0);
-  const syndromeTotal = Number(syndromeRes.total ?? 0);
-  // 总数取两侧合计；若任一侧超出拉取上限，以缓存长度为准避免虚高页码
-  const capped = diseaseTotal > TCM_MERGED_FETCH_SIZE || syndromeTotal > TCM_MERGED_FETCH_SIZE;
-  total.value = capped ? tcmMergedCache.value.length : diseaseTotal + syndromeTotal;
-  applyTcmMergedClientPage();
-}
-
-/** 拉取当前页诊断定义目录（住院/病案首页国临；门诊西医院内医保；中医合并） */
+/** 拉取当前页诊断定义目录（住院/病案首页国临；门诊西医院内医保；中医按病/证切换） */
 async function loadDefinitionPage() {
   tableLoading.value = true;
   try {
     if (isTcmMode.value) {
-      await loadTcmMergedCatalog();
+      await loadTcmCatalogPage();
       return;
     }
-    tcmMergedCache.value = [];
     // 住院站 / pickOnly 走 inpatient 前缀 → 后端仅 clinical_v2；门诊走门诊前缀
     const res = await diagnosisHttp.value.httpGetConditionDefinitionMetadata({
       diagnosisKindCode: '1',
@@ -212,10 +192,12 @@ async function loadDefinitionPage() {
     selectedRow.value = null;
   } finally {
     tableLoading.value = false;
+    await nextTick();
+    catalogTableRef.value?.setCurrentRow();
   }
 }
 
-watch([medicineTypeCode, pageSize], () => {
+watch([medicineTypeCode, tcmCatalogKind, pageSize], () => {
   if (!props.modelValue || !encounterMode.value) return;
   pageNo.value = 1;
   void loadDefinitionPage();
@@ -225,7 +207,6 @@ watch(medicineTypeCode, (next) => {
   if (next === '1') {
     tcmDiseasePick.value = null;
     tcmSyndromePick.value = null;
-    tcmMergedCache.value = [];
   }
 });
 
@@ -240,6 +221,7 @@ const saveAsPersonal = ref(false);
 const saveAsDepartment = ref(false);
 const legacyTcmDiseasePick = ref<null | TcmDiagnosisPick>(null);
 const legacyTcmSyndromePick = ref<null | TcmDiagnosisPick>(null);
+const legacyTcmCatalogKind = ref<TcmCatalogKind>('disease');
 
 const sourceDiagnoses = computed(() => props.patientDiagnoses);
 
@@ -269,17 +251,34 @@ function toTcmPick(row: ConditionDefinitionRowResponse): TcmDiagnosisPick {
   };
 }
 
-/** 就诊模式：按行角色写入疾病或证候（同一列表点选） */
+/** 切到另一侧目录：清空关键字并加载，已选病/证保留 */
+function switchTcmCatalogIfNeeded(next: TcmCatalogKind) {
+  if (tcmCatalogKind.value === next) return;
+  keyword.value = '';
+  pageNo.value = 1;
+  tcmCatalogKind.value = next;
+}
+
+/** 就诊模式：按当前目录角色写入疾病或证候（切换目录不覆盖另一侧） */
 function applyEncounterRowPick(row: ConditionDefinitionRowResponse | null) {
   if (!row) return;
   if (!isTcmMode.value) return;
   const pick = toTcmPick(row);
-  const kind = resolveTcmCatalogKindFromRow(row as TcmMergedCatalogRow);
+  const kind =
+    (row as TcmMergedCatalogRow).tcmCatalogKind ??
+    resolveTcmCatalogKindFromRow(row as TcmMergedCatalogRow) ??
+    tcmCatalogKind.value;
   if (kind === 'syndrome') {
     tcmSyndromePick.value = pick;
+    if (!tcmDiseasePick.value?.conditionDefinitionId) {
+      switchTcmCatalogIfNeeded('disease');
+    }
     return;
   }
   tcmDiseasePick.value = pick;
+  if (!tcmSyndromePick.value?.conditionDefinitionId) {
+    switchTcmCatalogIfNeeded('syndrome');
+  }
 }
 
 /** 重置中医表单候选 */
@@ -305,7 +304,8 @@ function onDialogOpen() {
   pageNo.value = 1;
   selectedRow.value = null;
   selectedId.value = '';
-  tcmMergedCache.value = [];
+  tcmCatalogKind.value = 'disease';
+  legacyTcmCatalogKind.value = 'disease';
   saveAsMainDiagnosis.value = false;
   saveAsPersonal.value = false;
   saveAsDepartment.value = false;
@@ -354,17 +354,18 @@ function handleEncounterSearch() {
 
 function handleEncounterPageChange(p: number) {
   pageNo.value = p;
-  // 中医走本地合并缓存切片，不再打接口
-  if (isTcmMode.value) {
-    applyTcmMergedClientPage();
-    return;
-  }
   void loadDefinitionPage();
 }
 
 function handleEncounterCurrentChange(row: ConditionDefinitionRowResponse | undefined) {
   selectedRow.value = row ?? null;
-  applyEncounterRowPick(row ?? null);
+}
+
+/** 中医用行点击写入病/证：不依赖 current-change，避免高亮行二次点选失效 */
+function handleEncounterRowClick(row: ConditionDefinitionRowResponse) {
+  if (!row) return;
+  selectedRow.value = row;
+  applyEncounterRowPick(row);
 }
 
 function handleEncounterRowDblclick(row: ConditionDefinitionRowResponse) {
@@ -512,6 +513,10 @@ async function handleEncounterConfirmSave(pick?: ConditionDefinitionRowResponse 
     ElMessage.warning('请先在上方列表中选择诊断');
     return;
   }
+  // 西医未对医保码：允许落库（自费），但明确提示结算上传会失败
+  if (!isTcmMode.value && !hasDiagnosisYbNo(append.ybNo)) {
+    ElMessage.warning('该诊断未对照医保码，医保结算将无法上传；请优先选择已对码诊断');
+  }
   if (
     props.existingDiagnosisList.some(
       (r) => r.conditionDefinitionId === append.conditionDefinitionId,
@@ -542,7 +547,7 @@ async function handleEncounterConfirmSave(pick?: ConditionDefinitionRowResponse 
   }
 }
 
-/** 本地候选：按空位依次写入疾病或证候 */
+/** 本地候选：按当前目录角色写入疾病或证候 */
 function applyLegacyRowPick(row: DiagnosisItem | undefined) {
   if (!row || !legacyIsTcmMode.value) return;
   const pick: TcmDiagnosisPick = {
@@ -550,14 +555,17 @@ function applyLegacyRowPick(row: DiagnosisItem | undefined) {
     conditionCode: row.code,
     conditionName: row.name,
   };
-  if (!legacyTcmDiseasePick.value?.conditionDefinitionId) {
-    legacyTcmDiseasePick.value = pick;
+  if (legacyTcmCatalogKind.value === 'syndrome') {
+    legacyTcmSyndromePick.value = pick;
+    if (!legacyTcmDiseasePick.value?.conditionDefinitionId) {
+      legacyTcmCatalogKind.value = 'disease';
+    }
     return;
   }
-  if (legacyTcmDiseasePick.value.conditionDefinitionId === pick.conditionDefinitionId) {
-    return;
+  legacyTcmDiseasePick.value = pick;
+  if (!legacyTcmSyndromePick.value?.conditionDefinitionId) {
+    legacyTcmCatalogKind.value = 'syndrome';
   }
-  legacyTcmSyndromePick.value = pick;
 }
 
 /** 本地候选确认：先落常用模板，再回传选中结果 */
@@ -694,13 +702,21 @@ const legacyConfirmDisabled = computed(() => {
           <ElRadioButton label="1">西医诊断</ElRadioButton>
           <ElRadioButton label="2">中医诊断</ElRadioButton>
         </ElRadioGroup>
+        <ElRadioGroup
+          v-if="isTcmMode"
+          v-model="tcmCatalogKind"
+          class="dx-picker-dialog__tcm-catalog"
+        >
+          <ElRadioButton label="disease">疾病</ElRadioButton>
+          <ElRadioButton label="syndrome">证候</ElRadioButton>
+        </ElRadioGroup>
       </div>
       <div class="dx-picker-dialog__search search-row flex flex-nowrap items-center gap-2">
         <div class="dx-picker-dialog__search-input search-input-wrap w-0 min-w-0 flex-1">
           <ElInput
             v-model="keyword"
             class="w-full"
-            :placeholder="isTcmMode ? '疾病/证候名称或编码' : '请输入'"
+            :placeholder="isTcmMode ? tcmSearchPlaceholder : '请输入'"
             clearable
             @keyup.enter="handleEncounterSearch"
           />
@@ -716,12 +732,15 @@ const legacyConfirmDisabled = computed(() => {
       </div>
       <div class="dx-picker-dialog__table-wrap table-wrap">
         <ElTable
+          ref="catalogTableRef"
           v-loading="tableLoading"
           :data="records"
+          :row-key="catalogRowKey"
           border
           height="320"
           highlight-current-row
           @current-change="handleEncounterCurrentChange"
+          @row-click="handleEncounterRowClick"
           @row-dblclick="handleEncounterRowDblclick"
         >
           <ElTableColumn v-if="isTcmMode" label="类型" width="80" align="center">
@@ -732,7 +751,9 @@ const legacyConfirmDisabled = computed(() => {
           <ElTableColumn prop="conditionCode" :label="catalogCodeColumnLabel" width="160" />
           <ElTableColumn label="医保码" width="160">
             <template #default="{ row }">
-              {{ formatDiagnosisYbNoDisplay(row.ybNo) }}
+              <span :class="{ 'text-red-500': !hasDiagnosisYbNo(row.ybNo) }">
+                {{ formatDiagnosisYbNoDisplay(row.ybNo) }}
+              </span>
             </template>
           </ElTableColumn>
           <ElTableColumn prop="conditionName" :label="catalogNameColumnLabel" min-width="220" />
@@ -748,7 +769,7 @@ const legacyConfirmDisabled = computed(() => {
             class="min-w-0 flex-1"
             readonly
             :model-value="tcmDiseasePick?.conditionName ?? ''"
-            placeholder="在上方列表点选疾病"
+            placeholder="切换到「疾病」后点选"
           />
         </div>
         <div class="dx-picker-dialog__form-row form-row flex items-center gap-2">
@@ -760,7 +781,7 @@ const legacyConfirmDisabled = computed(() => {
             class="min-w-0 flex-1"
             readonly
             :model-value="tcmSyndromePick?.conditionName ?? ''"
-            placeholder="在上方列表点选证候"
+            placeholder="切换到「证候」后点选"
           />
         </div>
       </template>
@@ -798,6 +819,14 @@ const legacyConfirmDisabled = computed(() => {
           <ElRadioButton label="western">西医诊断</ElRadioButton>
           <ElRadioButton label="tcm">中医诊断</ElRadioButton>
         </ElRadioGroup>
+        <ElRadioGroup
+          v-if="legacyIsTcmMode"
+          v-model="legacyTcmCatalogKind"
+          class="dx-picker-dialog__tcm-catalog"
+        >
+          <ElRadioButton label="disease">疾病</ElRadioButton>
+          <ElRadioButton label="syndrome">证候</ElRadioButton>
+        </ElRadioGroup>
         <ElRadioGroup v-model="scopeType" size="small">
           <ElRadio label="all">全部诊断</ElRadio>
           <ElRadio label="common">常用诊断</ElRadio>
@@ -809,7 +838,13 @@ const legacyConfirmDisabled = computed(() => {
           <ElInput
             v-model="keyword"
             class="w-full"
-            :placeholder="legacyIsTcmMode ? '疾病/证候名称或编码' : '请输入'"
+            :placeholder="
+              legacyIsTcmMode
+                ? legacyTcmCatalogKind === 'syndrome'
+                  ? '证候名称或编码'
+                  : '疾病名称或编码'
+                : '请输入'
+            "
             clearable
           />
         </div>
@@ -821,6 +856,7 @@ const legacyConfirmDisabled = computed(() => {
           height="320"
           highlight-current-row
           @current-change="onLegacyTableRow"
+          @row-click="onLegacyTableRow"
           @row-dblclick="handleLegacyRowDblclick"
         >
           <ElTableColumn prop="code" label="诊断编码" width="220" />
@@ -841,7 +877,7 @@ const legacyConfirmDisabled = computed(() => {
             class="min-w-0 flex-1"
             readonly
             :model-value="legacyTcmDiseasePick?.conditionName ?? ''"
-            placeholder="请先点选疾病，再点选证候"
+            placeholder="切换到「疾病」后点选"
           />
         </div>
         <div class="dx-picker-dialog__form-row form-row flex items-center gap-2">
@@ -853,7 +889,7 @@ const legacyConfirmDisabled = computed(() => {
             class="min-w-0 flex-1"
             readonly
             :model-value="legacyTcmSyndromePick?.conditionName ?? ''"
-            placeholder="请在上方列表点选证候"
+            placeholder="切换到「证候」后点选"
           />
         </div>
       </template>

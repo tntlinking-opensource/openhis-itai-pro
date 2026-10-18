@@ -12,7 +12,7 @@ import type {
   PatientHistoryDoctorStationAdviceEncounterDto,
 } from '#/api/doctor-station/advice.types';
 
-import { formatDateTime } from '@vben/utils';
+import { formatDateTime } from '@zxplat/utils';
 
 import { httpPageDoctorStationAdvice } from '#/api/doctor-station/advice.http';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';

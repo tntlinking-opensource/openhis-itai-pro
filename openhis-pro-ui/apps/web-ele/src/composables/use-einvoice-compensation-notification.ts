@@ -1,10 +1,10 @@
-import type { NotificationItem } from '@vben/layouts';
+import type { NotificationItem } from '@zxplat/layouts';
 
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { useAccess } from '@vben/access';
-import { preferences } from '@vben/preferences';
+import { useAccess } from '@zxplat/access';
+import { preferences } from '@zxplat/preferences';
 
 import { fetchPendingCompensationStatsApi } from '#/api/einvoice-boss/compensation';
 import { refreshEinvoiceCompensationMenuBadge } from '#/composables/use-einvoice-compensation-badge';

@@ -1,6 +1,0 @@
-{
-  "moduleId": "einvoice-boss",
-  "enabledProperty": "openhis.modules.einvoice-boss.enabled",
-  "locations": "classpath:db/migration/einvoice_boss",
-  "historyTable": "flyway_schema_history_einvoice_boss"
-}

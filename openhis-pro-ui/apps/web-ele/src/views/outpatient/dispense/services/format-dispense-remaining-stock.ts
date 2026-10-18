@@ -14,6 +14,11 @@ export interface DispenseRemainingStockUnitContext {
   doseUnitText?: null | string;
   packageUnitCode?: null | string;
   packageUnitRatio?: null | number | string;
+  /**
+   * 包装↔拆零比例展示（服务端拼装，如 1件/120瓶）。
+   * 发放单位仅为拆零/包装之一时，用于补全另一侧单位名，避免「5」+「10瓶」拼成「510瓶」。
+   */
+  packageSplitRatioText?: null | string;
   splitUnitCode?: null | string;
   unitCode?: null | string;
   unitText?: null | string;
@@ -48,6 +53,35 @@ export function sumInventoryRemainingMinQty(
   return has ? sum : undefined;
 }
 
+/**
+ * 从库存口径比例文案解析包装/拆零单位名（如 1件/120瓶 → 件、瓶）。
+ * 同单位无斜杠形如 1支 时两侧同名。
+ */
+function parseLabelsFromPackageSplitRatioText(raw: null | string | undefined): {
+  packageUnitLabel: string;
+  splitUnitLabel: string;
+} {
+  const text = String(raw ?? '').trim();
+  if (!text) {
+    return { packageUnitLabel: '', splitUnitLabel: '' };
+  }
+  // 1件/120瓶：包装名 + 倍数 + 拆零名
+  const slashMatch = /^1(.+?)\/(\d+(?:\.\d+)?)(.+)$/u.exec(text);
+  if (slashMatch) {
+    return {
+      packageUnitLabel: String(slashMatch[1] ?? '').trim(),
+      splitUnitLabel: String(slashMatch[3] ?? '').trim(),
+    };
+  }
+  // 1支：同单位无换算斜杠
+  const sameMatch = /^1(.+)$/u.exec(text);
+  if (sameMatch) {
+    const label = String(sameMatch[1] ?? '').trim();
+    return { packageUnitLabel: label, splitUnitLabel: label };
+  }
+  return { packageUnitLabel: '', splitUnitLabel: '' };
+}
+
 /** 从发放行单位码推断包装/拆零展示名 */
 function resolvePackageSplitUnitLabels(ctx: DispenseRemainingStockUnitContext): {
   packageUnitLabel: string;
@@ -72,6 +106,23 @@ function resolvePackageSplitUnitLabels(ctx: DispenseRemainingStockUnitContext): 
   // 剂量单位与拆零同码时补拆零展示名
   if (!splitUnitLabel && splitUnitCode && doseUnitCode === splitUnitCode) {
     splitUnitLabel = doseUnitText;
+  }
+  // 仅一侧有 unitText 时（常见：发放按瓶），从 1件/120瓶 补另一侧，避免 5+10瓶→510瓶
+  if (!packageUnitLabel || !splitUnitLabel) {
+    const fromRatio = parseLabelsFromPackageSplitRatioText(ctx.packageSplitRatioText);
+    if (!packageUnitLabel) {
+      packageUnitLabel = fromRatio.packageUnitLabel;
+    }
+    if (!splitUnitLabel) {
+      splitUnitLabel = fromRatio.splitUnitLabel;
+    }
+  }
+  // 仍缺时回落单位码（与后端字典缺省同族），禁止裸数字拼接
+  if (!packageUnitLabel && packageUnitCode) {
+    packageUnitLabel = packageUnitCode;
+  }
+  if (!splitUnitLabel && splitUnitCode) {
+    splitUnitLabel = splitUnitCode;
   }
   return { packageUnitLabel, splitUnitLabel };
 }

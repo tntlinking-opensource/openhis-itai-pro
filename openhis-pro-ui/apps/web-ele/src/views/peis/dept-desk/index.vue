@@ -8,7 +8,7 @@ import type { PeisCommonResultDto } from '#/api/peis/diagnosis-config';
 
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
-import { RotateCw } from '@vben/icons';
+import { RotateCw } from '@zxplat/icons';
 
 import { useDebounceFn } from '@vueuse/core';
 import { searchCommonResultApi } from '#/api/peis/diagnosis-config';

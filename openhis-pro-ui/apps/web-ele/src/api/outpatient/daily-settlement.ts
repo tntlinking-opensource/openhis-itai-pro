@@ -25,6 +25,8 @@ export interface LoadOutpatientDailySettlementPageInitResponse {
   expensePropertyOptions?: ApiOptionItem[];
   cashierOptions?: ApiOptionItem[];
   currentCashierId?: string;
+  /** 是否已配置有效折扣（ACTIVE 配置>0；下半区展示折扣合计）。 */
+  discountFeatureEnabled?: boolean;
 }
 
 export interface PreviewOutpatientDailySettlementRequest {
@@ -100,6 +102,8 @@ export interface DailySettlementWorkInjurySummaryDto {
 export interface DailySettlementSummaryDto {
   dateRange?: string;
   totalIncome?: string;
+  /** 药品合计金额（折后；西药/外购/中草药/中成药） */
+  medicationTotalAmount?: string;
   receivableAmount?: string;
   discountAmount?: string;
   actualAmount?: string;
@@ -124,6 +128,24 @@ export interface DailySettlementSummaryDto {
   summaryRows?: DailySettlementSummaryRowDto[];
 }
 
+/**
+ * 门诊日结患者分项块（只读统计；各块加总勾回合计；不含预交金；不影响交账）。
+ */
+export interface OutpatientDailySettlementPatientSummaryDto {
+  seqNo?: number;
+  encounterId?: string;
+  patientId?: string;
+  patientName?: string;
+  encounterBusNo?: string;
+  /** 收费日期（yyyy-MM-dd；桶内首笔 billDate） */
+  chargeDate?: string;
+  /** 是否住院 */
+  hospitalized?: boolean;
+  /** 是否住院展示文案（是/否） */
+  hospitalizedText?: string;
+  summary?: DailySettlementSummaryDto;
+}
+
 export interface PreviewOutpatientDailySettlementResponse {
   /** 待归档 payment 流水条数（含 0 元与收支抵净，不因净额排除）。 */
   paymentCount?: number;
@@ -131,6 +153,8 @@ export interface PreviewOutpatientDailySettlementResponse {
   items?: DailySettlementHandoverPaymentItemDto[];
   rows?: DailySettlementChannelRowDto[];
   summary?: DailySettlementSummaryDto;
+  /** 患者分项（只读；与 summary 同源口径按就诊拆分） */
+  patientSummaries?: OutpatientDailySettlementPatientSummaryDto[];
   /** 本次待交账合计上半区（仅未交账；全选时弹窗底部与之对齐）。 */
   handoverRows?: DailySettlementHandoverChannelRowDto[];
   /** 本次待交账合计下半区（仅未交账）。 */
@@ -147,7 +171,7 @@ export interface PreviewOutpatientDailySettlementResponse {
 }
 
 /**
- * 预览响应透传（仅认嵌套 summary）。
+ * 预览响应透传（仅认嵌套 summary / patientSummaries）。
  */
 export function normalizePreviewOutpatientDailySettlementResponse(
   raw: PreviewOutpatientDailySettlementResponse,
@@ -157,6 +181,7 @@ export function normalizePreviewOutpatientDailySettlementResponse(
     items: raw.items,
     rows: raw.rows,
     summary: raw.summary,
+    patientSummaries: raw.patientSummaries,
     handoverRows: raw.handoverRows,
     handoverSummary: raw.handoverSummary,
     gapHardBlockEarliestAt: raw.gapHardBlockEarliestAt,
@@ -231,6 +256,8 @@ export interface LoadOutpatientCashierSettlementVoucherResponse {
     settlementPeriodText?: string;
     rows?: DailySettlementChannelRowDto[];
     summary?: DailySettlementSummaryDto;
+    /** 患者分项（挂载现算；可空） */
+    patientSummaries?: OutpatientDailySettlementPatientSummaryDto[];
     paymentIds?: string[];
   };
 }
@@ -259,6 +286,24 @@ export async function previewOutpatientDailySettlementApi(
 ) {
   return publicRequestClient.post<PreviewOutpatientDailySettlementResponse>(
     `${BASE}/previewOutpatientDailySettlement`,
+    body,
+    dailySettlementLongRequestConfig(),
+  );
+}
+
+/** 导出门诊日结患者分项 Excel（后端 POI 真 xlsx；与预览同筛）。 */
+export interface ExportOutpatientDailySettlementPatientResponse {
+  fileName?: string;
+  contentType?: string;
+  body?: string;
+  rowCount?: number;
+}
+
+export async function exportOutpatientDailySettlementPatientSummariesApi(
+  body: PreviewOutpatientDailySettlementRequest,
+) {
+  return publicRequestClient.post<ExportOutpatientDailySettlementPatientResponse>(
+    `${BASE}/exportOutpatientDailySettlementPatientSummaries`,
     body,
     dailySettlementLongRequestConfig(),
   );

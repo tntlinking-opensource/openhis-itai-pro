@@ -1,0 +1,10 @@
+{
+  "moduleId": "miniapp",
+  "displayName": "微信小程序（Miniapp）",
+  "enabledProperty": "zxplat.modules.miniapp.enabled",
+  "autoConfigurationClass": "com.zxplat.plugin.miniapp.application.config.MiniappAutoConfiguration",
+  "appServiceNames": [
+    "miniappAuth",
+    "miniappPeis"
+  ]
+}

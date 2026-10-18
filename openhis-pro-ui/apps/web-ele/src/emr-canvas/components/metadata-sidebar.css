@@ -1,0 +1,167 @@
+/**
+ * MetadataSidebar 元数据栏样式。
+ * 不走 SFC scoped：院点 override 生产构建曾丢失 scoped CSS，导致芯片连成纯文本。
+ */
+.meta-side {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 232px;
+  flex-shrink: 0;
+  padding: 10px 10px 12px;
+  overflow: hidden;
+  background: var(--el-bg-color);
+  border-right: 1px solid var(--el-border-color-lighter);
+}
+
+.meta-side__head {
+  flex-shrink: 0;
+}
+
+.meta-side__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.meta-side__hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--el-text-color-regular);
+}
+
+.meta-side__list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.meta-side__empty {
+  padding: 16px 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.meta-group {
+  margin-bottom: 8px;
+  padding: 4px;
+  background: var(--el-fill-color-blank);
+  border: 1px solid var(--el-border-color-extra-light);
+  border-radius: 8px;
+}
+
+.meta-group__head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.meta-group__caret {
+  display: inline-block;
+  width: 12px;
+  color: var(--el-text-color-secondary);
+  transform: rotate(-90deg);
+}
+
+.meta-group__caret.is-open {
+  transform: rotate(0deg);
+}
+
+.meta-group__label {
+  flex: 1;
+}
+
+.meta-group__count {
+  min-width: 18px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 18px;
+  color: var(--el-text-color-secondary);
+  text-align: center;
+  background: var(--el-fill-color);
+  border-radius: 9px;
+}
+
+.meta-group__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 6px 8px;
+}
+
+.meta-chip {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 8px;
+  text-align: left;
+  background: var(--el-fill-color-light);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.meta-chip:hover {
+  background: var(--el-color-primary-light-9);
+  border-color: var(--el-color-primary-light-7);
+}
+
+.meta-chip__dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.meta-chip__dot.is-lock {
+  background: var(--el-color-info);
+}
+
+.meta-chip__dot.is-edit {
+  background: var(--el-color-success);
+}
+
+.meta-chip__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--el-text-color-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta-chip__badge {
+  flex-shrink: 0;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 18px;
+  border-radius: 4px;
+}
+
+.meta-chip__badge.is-lock {
+  color: var(--el-color-info);
+  background: var(--el-color-info-light-9);
+}
+
+.meta-chip__badge.is-edit {
+  color: var(--el-color-success);
+  background: var(--el-color-success-light-9);
+}
+
+.meta-side__apply {
+  flex-shrink: 0;
+  width: 100%;
+}

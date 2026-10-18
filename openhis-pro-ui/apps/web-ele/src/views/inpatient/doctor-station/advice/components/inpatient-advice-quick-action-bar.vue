@@ -32,8 +32,6 @@ const QUICK_ACTION_ITEMS: Array<{ action: InpatientAdviceQuickAction; label: str
   { action: 'entrust', label: '嘱托医嘱' },
   { action: 'lab', label: '检验申请' },
   { action: 'treatment', label: '治疗申请' },
-  { action: 'transfusion', label: '输血申请' },
-  { action: 'pathology', label: '病理申请' },
   { action: 'surgery', label: '手术申请' },
   { action: 'anesthesia', label: '麻醉申请' },
   { action: 'allergy', label: '过敏史' },

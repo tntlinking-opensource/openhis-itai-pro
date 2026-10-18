@@ -86,7 +86,7 @@ function resolveStatusTagType(
       <div class="bg-background px-2 py-1.5">
         <SectionTitle title="耗材明细" />
         <p class="mt-0.5 text-[11px] leading-snug text-[var(--el-text-color-regular)]">
-          勾选「待发放」随批执行；已发放可点「取消执行」回退。
+          勾选「待发放」随批执行；已计费可点「取消执行」回退。
         </p>
       </div>
       <div class="max-h-[42%] min-h-0 flex-1 overflow-hidden px-2 pb-2">

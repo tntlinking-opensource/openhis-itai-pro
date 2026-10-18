@@ -104,7 +104,10 @@ export function isAdviceRowBoundConsumableFromService(row: AdviceRowItem): boole
   return tbl === DEVICE_DEFINITION_TABLE || tbl.includes('device');
 }
 
-/** 诊疗绑定带出的诊疗行（合管采血费等派生 ServiceRequest，basedOnServiceRequestId 锚定父诊疗） */
+/**
+ * 诊疗绑定带出的诊疗行（旧口径：basedOnServiceRequestId 锚定父诊疗）。
+ * <p>新口径合管采血费为独立 ServiceRequest（无 based_on），不走本判定。</p>
+ */
 export function isAdviceRowBoundActivityFromService(row: AdviceRowItem): boolean {
   const basedOn = String(row.basedOnServiceRequestId ?? '').trim();
   if (!basedOn) {

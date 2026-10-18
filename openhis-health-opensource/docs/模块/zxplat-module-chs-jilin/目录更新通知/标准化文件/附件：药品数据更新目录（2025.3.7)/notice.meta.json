@@ -1,0 +1,10 @@
+{
+  "doc_kind": "CATALOG_DELTA",
+  "category": "DRUG",
+  "title": "附件：药品数据更新目录（2025.3.7)",
+  "source_filename": "附件：药品数据更新目录（2025.3.7) .xlsx",
+  "notice_date": "2025-03-07",
+  "effective_date": null,
+  "wash_note": "药品目录更新xlsx→标准包; hilist_code←医疗目录编码|药品代码; 文件名日期:2025-03-07; 标准目录名已rstrip尾随空格/点：原stem=[附件：药品数据更新目录（2025.3.7) ]",
+  "wash_tool": "cursor-ai"
+}

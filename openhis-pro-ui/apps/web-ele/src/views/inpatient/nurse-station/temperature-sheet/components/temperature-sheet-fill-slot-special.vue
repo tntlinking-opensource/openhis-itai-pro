@@ -19,11 +19,15 @@ defineOptions({
 });
 
 interface Props {
+  /** 早于入院时间时锁定，避免写入无效测量 */
+  disabled?: boolean;
   row: TemperatureSheetFillRowDraft;
   specialEventSelectOptions: TemperatureSheetSpecialEventOption[];
 }
 
-defineProps<Props>();
+withDefaults(defineProps<Props>(), {
+  disabled: false,
+});
 </script>
 
 <template>
@@ -32,6 +36,7 @@ defineProps<Props>();
       <ElCheckbox
         v-model="row.dischargeEnabled"
         class="special-cooling-checkbox"
+        :disabled="disabled"
         label="出院"
         @change="syncSpecialEventShortcutFields(row)"
       />
@@ -39,6 +44,7 @@ defineProps<Props>();
         v-if="row.dischargeEnabled"
         v-model="row.specialEventTimesByCode[SPECIAL_EVENT_ITEM_CODE.DISCHARGE]"
         class="special-event-time-picker"
+        :disabled="disabled"
         format="HH:mm"
         placeholder="时间"
         popper-class="temperature-sheet-fill-popper"
@@ -50,12 +56,14 @@ defineProps<Props>();
       <ElCheckbox
         v-model="row.physicalCoolingEnabled"
         class="special-cooling-checkbox"
+        :disabled="disabled"
         label="物理降温"
       />
       <ElInput
         v-if="row.physicalCoolingEnabled"
         v-model="row.cooledTemperature"
         class="cooled-temp-input"
+        :disabled="disabled"
         placeholder="降温后"
       >
         <template #suffix>℃</template>
@@ -63,6 +71,7 @@ defineProps<Props>();
       <ElCheckbox
         v-model="row.medicationCoolingEnabled"
         class="special-cooling-checkbox"
+        :disabled="disabled"
         label="药物降温"
         @change="syncSpecialEventShortcutFields(row)"
       />
@@ -70,6 +79,7 @@ defineProps<Props>();
         v-if="row.medicationCoolingEnabled"
         v-model="row.medicationCooledTemperature"
         class="cooled-temp-input"
+        :disabled="disabled"
         placeholder="降温后"
       >
         <template #suffix>℃</template>
@@ -77,6 +87,7 @@ defineProps<Props>();
       <ElCheckbox
         v-model="row.tempNotRisingEnabled"
         class="special-cooling-checkbox"
+        :disabled="disabled"
         label="体温不升"
       />
       <template
@@ -86,6 +97,7 @@ defineProps<Props>();
         <ElSelect
           class="special-event-select"
           clearable
+          :disabled="disabled"
           :model-value="resolveSpecialEventPickerValue(row, slotIndex)"
           :popper-options="{ strategy: 'fixed' }"
           :teleported="true"
@@ -112,6 +124,7 @@ defineProps<Props>();
             row.specialEventTimesByCode[resolveSpecialEventPickerValue(row, slotIndex) ?? '']
           "
           class="special-event-time-picker"
+          :disabled="disabled"
           format="HH:mm"
           placeholder="时间"
           popper-class="temperature-sheet-fill-popper"

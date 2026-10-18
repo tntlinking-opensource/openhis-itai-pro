@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { DrawRequisitionItem, PageWarehouseDrawParams } from '#/api/warehouse/draw';
 import type { ApiOptionItem } from '#/types/api-response';
@@ -7,9 +7,9 @@ import type { ApiOptionItem } from '#/types/api-response';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { ElMessage, ElMessageBox } from 'element-plus';
 

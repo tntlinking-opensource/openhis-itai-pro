@@ -29,6 +29,8 @@ export interface LoadInpatientDailySettlementPageInitResponse {
   expensePropertyOptions?: ApiOptionItem[];
   cashierOptions?: ApiOptionItem[];
   currentCashierId?: string;
+  /** 是否已配置有效折扣（ACTIVE 配置>0；下半区展示折扣合计）。 */
+  discountFeatureEnabled?: boolean;
 }
 
 export interface PreviewInpatientDailySettlementRequest {
@@ -52,6 +54,8 @@ export interface InpatientDailySettlementChannelRowDto {
 export interface InpatientDailySettlementSummaryDto {
   dateRange?: string;
   totalIncome?: string;
+  /** 药品合计金额（折后；西药/外购/中草药/中成药） */
+  medicationTotalAmount?: string;
   receivableAmount?: string;
   discountAmount?: string;
   actualAmount?: string;
@@ -163,6 +167,24 @@ export async function previewInpatientDailySettlementApi(
 ) {
   return publicRequestClient.post<PreviewInpatientDailySettlementResponse>(
     `${BASE}/previewInpatientDailySettlement`,
+    body,
+    dailySettlementLongRequestConfig(),
+  );
+}
+
+/** 导出住院日结患者分项 Excel（后端 POI 真 xlsx；与预览同筛）。 */
+export interface ExportInpatientDailySettlementPatientResponse {
+  fileName?: string;
+  contentType?: string;
+  body?: string;
+  rowCount?: number;
+}
+
+export async function exportInpatientDailySettlementPatientSummariesApi(
+  body: PreviewInpatientDailySettlementRequest,
+) {
+  return publicRequestClient.post<ExportInpatientDailySettlementPatientResponse>(
+    `${BASE}/exportInpatientDailySettlementPatientSummaries`,
     body,
     dailySettlementLongRequestConfig(),
   );

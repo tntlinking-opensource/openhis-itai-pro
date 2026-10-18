@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 
 import type { EmrPrintPaperPayload } from '#/api/emr/document';
 import type { OptionDto } from '#/api/outpatient-registration';
@@ -7,11 +7,11 @@ import type { OutpatientEmrListItemDto, QueryOutpatientEmrParams } from '#/api/m
 
 import { computed, onActivated, onMounted, provide, reactive, ref, watch } from 'vue';
 
-import { Page } from '@vben/common-ui';
-import { useUserStore } from '@vben/stores';
-import { formatDateTime } from '@vben/utils';
+import { Page } from '@zxplat/common-ui';
+import { useUserStore } from '@zxplat/stores';
+import { formatDateTime } from '@zxplat/utils';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 
 import { ElButton, ElDialog, ElMessage, ElMessageBox, ElTag } from 'element-plus';
 
@@ -19,6 +19,7 @@ import { generateDocumentPdfApi } from '#/api/emr/document';
 import {
   archiveOutpatientClinicalCaseApi,
   queryOutpatientEmrPageApi,
+  submitOutpatientDocumentArchiveApi,
   unarchiveOutpatientClinicalCaseApi,
 } from '#/api/mrms';
 import { httpListDepartments, httpListPractitioners } from '#/api/outpatient-registration';
@@ -154,6 +155,8 @@ const formItems = computed<FormItemConfig[]>(() => [
     options: departmentOptions.value,
     clearable: true,
     filterable: true,
+    // FormItem 默认 multiple=true，单选筛选必须显式关闭
+    multiple: false,
   },
   {
     label: '接诊医生',
@@ -163,6 +166,7 @@ const formItems = computed<FormItemConfig[]>(() => [
     options: doctorOptions.value,
     clearable: true,
     filterable: true,
+    multiple: false,
   },
   {
     label: '状态',
@@ -170,6 +174,7 @@ const formItems = computed<FormItemConfig[]>(() => [
     type: 'select',
     options: DOCUMENT_STATUS_OPTIONS,
     clearable: true,
+    multiple: false,
   },
   {
     label: '就诊日期',
@@ -192,7 +197,7 @@ const tableColumns: TableColumn[] = [
   { prop: 'title', label: '文书标题', minWidth: 160, align: 'center', showOverflowTooltip: true },
   { prop: 'statusCode', label: '状态', width: 100, align: 'center', slot: 'status' },
   { prop: 'updatedAt', label: '更新时间', width: 168, align: 'center', slot: 'updatedAt' },
-  { label: '操作', width: 320, fixed: 'right', slot: 'actions', align: 'center' },
+  { label: '操作', width: 400, fixed: 'right', slot: 'actions', align: 'center' },
 ];
 
 /** 格式化日期时间展示 */
@@ -203,18 +208,38 @@ function fmtTime(v?: string): string {
   return formatDateTime(v);
 }
 
+/** 日期截成 yyyy-MM-dd（兼容快捷区间带时分秒） */
+function toDateOnly(v?: string): string | undefined {
+  if (!v) {
+    return undefined;
+  }
+  return v.slice(0, 10);
+}
+
 /** 组装分页查询参数 */
 function buildQuery(): QueryOutpatientEmrParams {
   const range = queryParams.encounterRange;
+  const statusRaw = queryParams.statusCode;
+  const statusCode = Array.isArray(statusRaw)
+    ? String(statusRaw[0] ?? '').trim() || undefined
+    : statusRaw?.trim() || undefined;
   return {
     pageNo: queryParams.pageNo,
     pageSize: queryParams.pageSize,
     keyword: queryParams.keyword?.trim() || undefined,
-    organizationId: preserveApiIdForRequest(queryParams.organizationId),
-    admitterPractitionerId: preserveApiIdForRequest(queryParams.admitterPractitionerId),
-    statusCode: queryParams.statusCode?.trim() || undefined,
-    encounterDateFrom: range?.[0],
-    encounterDateTo: range?.[1],
+    organizationId: preserveApiIdForRequest(
+      Array.isArray(queryParams.organizationId)
+        ? queryParams.organizationId[0]
+        : queryParams.organizationId,
+    ),
+    admitterPractitionerId: preserveApiIdForRequest(
+      Array.isArray(queryParams.admitterPractitionerId)
+        ? queryParams.admitterPractitionerId[0]
+        : queryParams.admitterPractitionerId,
+    ),
+    statusCode,
+    encounterDateFrom: toDateOnly(range?.[0]),
+    encounterDateTo: toDateOnly(range?.[1]),
   };
 }
 
@@ -350,6 +375,46 @@ async function onPreviewPaperChange(paper: EmrPrintPaperPayload) {
 }
 
 /**
+ * 单份文书提交归档：DRAFT → PENDING_ARCHIVE（进审批，非管理员一键锁定）。
+ *
+ * @param row 列表行
+ */
+async function handleSubmitDocumentArchive(row: OutpatientEmrListItemDto) {
+  const documentId = preserveApiIdForRequest(row.documentId);
+  if (!documentId) {
+    ElMessage.warning('文书主键缺失，无法提交归档');
+    return;
+  }
+  if ((row.statusCode ?? '').trim() !== 'DRAFT') {
+    ElMessage.warning('仅草稿文书可提交归档');
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      '提交后文书将进入待归档审批且不可编辑，确认提交归档？',
+      '提交归档',
+      {
+        type: 'warning',
+        confirmButtonText: '确认提交',
+        cancelButtonText: '取消',
+      },
+    );
+  } catch {
+    return;
+  }
+  try {
+    loading.value = true;
+    await submitOutpatientDocumentArchiveApi({ documentId });
+    ElMessage.success('已提交归档审批');
+    await getList();
+  } catch {
+    // 错误由全局拦截器提示
+  } finally {
+    loading.value = false;
+  }
+}
+
+/**
  * 归档病例：确认后锁定该就诊下 EMR 文书。
  *
  * @param row 列表行
@@ -464,6 +529,14 @@ onActivated(() => {
         <ElButton link type="primary" @click="openEdit(row)">病历</ElButton>
         <ElButton link type="primary" @click="openPdf(row, false)">预览</ElButton>
         <ElButton link type="primary" @click="openPdf(row, true)">打印</ElButton>
+        <ElButton
+          v-if="row.statusCode === 'DRAFT'"
+          link
+          type="success"
+          @click="handleSubmitDocumentArchive(row)"
+        >
+          提交归档
+        </ElButton>
         <ElButton
           v-if="!row.clinicalArchived"
           link

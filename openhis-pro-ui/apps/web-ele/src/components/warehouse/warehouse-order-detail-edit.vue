@@ -9,7 +9,7 @@ import type {
 
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
-import { formatDateTime } from '@vben/utils';
+import { formatDateTime } from '@zxplat/utils';
 
 import { dayjs, ElCard, ElMessage, ElMessageBox } from 'element-plus';
 

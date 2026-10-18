@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { provide } from 'vue';
 
-import { TABLE_LAYOUT_OVERLAY_HOST } from '@vben-core/table-layout-ui';
+import { TABLE_LAYOUT_OVERLAY_HOST } from '@zxplat-core/table-layout-ui';
 import { ElDialog } from 'element-plus';
 
 defineOptions({

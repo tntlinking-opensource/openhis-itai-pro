@@ -3,12 +3,12 @@
   左侧分页选品（排除已绑定），点击行加入右侧已选；确认后回写父表。
 -->
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@zxplat-core/table-layout-ui';
 import type { ServiceCatalogItem } from '#/api';
 
 import { computed, ref, watch } from 'vue';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { TableLayout } from '@zxplat-core/table-layout-ui';
 import { ElButton, ElMessage } from 'element-plus';
 
 import { pageServiceCatalogApi } from '#/api';

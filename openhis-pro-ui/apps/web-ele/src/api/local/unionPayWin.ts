@@ -1,7 +1,7 @@
 /**
- * OpenHIS.Win 银联 HTTP 客户端（/api/unionpay/*）。
+ * zxplat.Win 银联 HTTP 客户端（/api/unionpay/*）。
  */
-import { getOpenHisWinOrigin } from '#/api/local/openhisWin';
+import { getZxplatWinOrigin } from '#/api/local/zxplatWin';
 
 const DEFAULT_TIMEOUT_MS = 65_000;
 const QUERY_TIMEOUT_MS = 15_000;
@@ -57,7 +57,7 @@ export interface RefundRequest {
   posNo?: string;
 }
 
-function getUnionPayBaseUrl(origin = getOpenHisWinOrigin()): string {
+function getUnionPayBaseUrl(origin = getZxplatWinOrigin()): string {
   return `${origin}/api/unionpay`;
 }
 
@@ -102,7 +102,7 @@ async function postUnionPay<T extends UnionPayWinBaseResponse>(
         url,
       );
     }
-    throw new UnionPayWinError('无法连接 OpenHIS.Win 银联桥接', 'NETWORK', url);
+    throw new UnionPayWinError('无法连接 Zxplat.Win 银联桥接', 'NETWORK', url);
   } finally {
     window.clearTimeout(timer);
   }
@@ -131,7 +131,7 @@ export async function refundApi(body: RefundRequest): Promise<UnionPayWinBaseRes
   return result;
 }
 
-/** 映射 Win 回传 → Whale settle clientScanResult */
+/** 映射 Win 回传 → ZXPlat settle clientScanResult */
 export function toClientScanResultDto(result: UnionPayWinBaseResponse) {
   return {
     merTradeNo: result.merTradeNo ?? '',
@@ -143,12 +143,12 @@ export function toClientScanResultDto(result: UnionPayWinBaseResponse) {
   };
 }
 
-/** 映射 Win 回传 → Whale 退费 clientRefundResult */
+/** 映射 Win 回传 → ZXPlat 退费 clientRefundResult */
 export function toClientRefundResultDto(result: UnionPayWinBaseResponse, refundAmountYuan: string) {
   return {
     merTradeNo: result.merTradeNo ?? '',
     tradeNo: result.tradeNo ?? '',
-    // refundMerTradeNo 由 Whale 生成；Win 回传的 merTradeNo 为原单回显，不可当作逆向单号
+    // refundMerTradeNo 由 ZXPlat 生成；Win 回传的 merTradeNo 为原单回显，不可当作逆向单号
     respCode: result.respCode ?? '',
     respMsg: result.respMsg ?? '',
     refundAmountYuan,

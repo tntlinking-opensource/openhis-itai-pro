@@ -1,0 +1,6 @@
+# 转换工具依赖（勿提交 node_modules）
+_convert_tmp/
+
+# 生产密钥（本地保留 md/xls 供联调，勿 push 公开仓库）
+电子处方正式环境秘钥.md
+电子处方正式环境秘钥.xls

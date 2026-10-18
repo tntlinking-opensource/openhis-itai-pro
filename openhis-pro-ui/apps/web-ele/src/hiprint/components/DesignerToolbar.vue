@@ -64,7 +64,7 @@ function onPaperCommand(label: string): void {
     <div class="sv-top-bar">
       <div class="sv-brand">
         <i class="svicon sv-print sv-brand-icon"></i>
-        <span class="sv-brand-text">OpenHIS 打印设计器</span>
+        <span class="sv-brand-text">ZXPlat 打印设计器</span>
         <span v-if="subtitle" class="sv-brand-subtitle">{{ subtitle }}</span>
       </div>
       <div class="sv-top-actions">

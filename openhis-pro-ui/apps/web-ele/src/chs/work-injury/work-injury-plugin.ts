@@ -1,5 +1,5 @@
 /**
- * 工伤 Win 本地桥接（OpenHIS.Win :5000 /api/work-injury/invoke）。
+ * 工伤 Win 本地桥接（Zxplat.Win :5000 /api/work-injury/invoke）。
  */
 import type {
   PrepareWorkInjuryInvokeResult,
@@ -63,7 +63,7 @@ export async function isWorkInjuryPluginOnline(
   }
 }
 
-/** 调用 OpenHIS.Win 工伤 invoke（单步）。 */
+/** 调用 Zxplat.Win 工伤 invoke（单步）。 */
 export async function invokeWorkInjuryPlugin(
   step: Pick<
     PrepareWorkInjuryInvokeResult,
@@ -98,9 +98,9 @@ export async function invokeWorkInjuryPlugin(
     const aborted = error instanceof DOMException && error.name === 'AbortError';
     throw new WorkInjuryPluginError(
       aborted
-        ? '工伤 Win 调用超时，请确认 OpenHIS.Win 未卡住且专线正常'
+        ? '工伤 Win 调用超时，请确认 Zxplat.Win 未卡住且专线正常'
         : /failed to fetch|networkerror|load failed|econnrefused|连接/i.test(raw)
-          ? '无法连接 OpenHIS.Win（127.0.0.1:5000），请启动客户端并启用工伤模块'
+          ? '无法连接 Zxplat.Win（127.0.0.1:5000），请启动客户端并启用工伤模块'
           : raw || '工伤 Win 插件网络异常',
       'NETWORK',
       raw || undefined,
@@ -130,7 +130,7 @@ export async function invokeWorkInjuryPlugin(
 
   if (json.success === false) {
     const platformMsg = extractPlatformErrMsg(json.errMsg) || json.errMsg || '工伤 Win 调用失败';
-    // 2205 空撤 / 2207 单据号已使用 / 2203 已存在结算：平台侧已达目标态，交 Whale 幂等落账
+    // 2205 空撤 / 2207 单据号已使用 / 2203 已存在结算：平台侧已达目标态，交 ZXPlat 幂等落账
     if (
       isWorkInjury2205EmptyRevoke(step.infno, platformMsg) ||
       isWorkInjury2207BillAlreadyUsed(step.infno, platformMsg) ||
@@ -228,7 +228,7 @@ function extractPlatformErrMsg(errMsg?: string): string {
 /** .NET SEHException / 平台固定文案 → 可操作提示 */
 function friendlyWorkInjuryNativeErr(message: string): string {
   if (/外部组件|External component/i.test(message)) {
-    return '工伤读卡组件异常（请确认已放社保卡、勿与省医保读卡同时操作，并重启 OpenHIS.Win 后重试）';
+    return '工伤读卡组件异常（请确认已放社保卡、勿与省医保读卡同时操作，并重启 Zxplat.Win 后重试）';
   }
   if (/异常错误|未知错误/.test(message)) {
     return '工伤读卡忙冲突（请确认卡已放稳，勿与省医保读卡同时点选，稍后重试查询备案）';

@@ -11,6 +11,8 @@ export type OutpatientChargeQueueTabCode = 'ALL' | 'PENDING' | 'SETTLED';
 export interface LoadChargePageInitResponse {
   chargeItemStatusOptions: OptionDto[];
   paymentChannelOptions?: OptionDto[];
+  /** 是否已配置 ACTIVE 打折内容；false 时收银台不展示折扣控件 */
+  discountFeatureEnabled?: boolean;
 }
 
 /** IF-OPC-01 初始化请求 */
@@ -30,6 +32,8 @@ export interface ChargeQueueRowDto {
   organizationName?: null | string;
   patientId: string;
   patientName: string;
+  /** 患者身份证号（BR-OPC-035：读卡核验） */
+  idCard?: null | string;
   paidAmount?: null | number | string;
   /** 最近一次成功支付流水（补打收费小票） */
   paymentId?: null | string;
@@ -85,6 +89,10 @@ export interface PendingChargeItemRowDto {
   medTypeCode?: null | string;
   /** 就诊类型展示（YbMedType 文案；供收费项目列表「就诊类型」列） */
   medTypeDisplay?: null | string;
+  /** 病种展示名（绑定诊断首位；供收费列表「病种」列） */
+  diseName?: null | string;
+  /** 绑定就诊诊断主键有序串（首位为主诊断） */
+  encounterDiagnosisIds?: null | string;
   quantityDisplay?: null | string;
   quantityUnit?: null | string;
   quantityValue?: null | number | string;
@@ -93,7 +101,21 @@ export interface PendingChargeItemRowDto {
   statusCode: string;
   statusText?: null | string;
   totalPrice?: null | number | string;
+  /**
+   * 折后应收（ChargeItem.discount_amount）。
+   * 结算后为实收刻度；未打折可与 totalPrice 相同。患者信息栏「已收/折扣」用本字段，勿用 Number 转主键。
+   */
+  discountAmount?: null | number | string;
   unitPrice?: null | number | string;
+  /** 折后价（列表试算回填；未试算时页面回落金额） */
+  discountedAmount?: null | number | string;
+  /**
+   * 执行科室主键（诊疗申请 org_id，缺省 location_id）。
+   * Long 以字符串传输，禁止 Number()。
+   */
+  performOrgId?: null | string;
+  /** 执行科室名称（导诊按科室拆单、申请单回显） */
+  performOrgName?: null | string;
 }
 
 /** IF-OPC-03 请求 */
@@ -154,6 +176,8 @@ export interface ChargeSettlementInsuranceSummaryDto {
   medfeeSumamt?: null | number | string;
   paymentId?: null | string;
   paymentNo?: null | string;
+  /** 本支付实收渠道展示（如「微信」「医保统筹、微信」） */
+  payMethodText?: null | string;
   psnCashPay?: null | string | number;
   /** 2206/2207 setlinfo 细项；无正式回执时为空 */
   setlinfo?: ChargeSettlementSetlinfoDto | null;
@@ -199,18 +223,30 @@ export interface SwitchEncounterChargeItemsRequest {
 /** IF-OPC-06 预结算预览行 */
 export interface PreSettleChargeLinePreviewDto {
   chargeItemId: string;
+  /** 本行有效折扣率 (0,1]；未打折为空 */
+  discountRate?: null | number | string;
   /** 费用性质展示（账户 contract_no → fin_contract 名称，与 IF-OPC-03 同口径） */
   feeNatureDisplay?: null | string;
   itemLabel?: null | string;
   lineAmount: number | string;
+  /** 行原价合计（结算窗「金额」列） */
+  originalAmount?: null | number | string;
+  /** 单价（原价口径，结算窗「单价」列） */
+  unitPrice?: null | number | string;
+  /** 折后应收（结算窗「折后价」列；未打折=原价） */
+  discountedAmount?: null | number | string;
   quantityDisplay?: null | string;
   quantityUnit?: null | string;
+  /** 费用分类展示 */
+  chargeCategoryDisplay?: null | string;
 }
 
 /** 医保预结算分组 */
 export interface OpInsurancePreSettleGroupDto {
   accountId?: null | string;
   acctPay?: null | number | string;
+  /** 家庭共济（2206 acct_mulaid_pay；含于 acctPay） */
+  acctMulaidPay?: null | number | string;
   chargeItemIds?: string[];
   chrgBchno?: null | string;
   contractId?: null | string;
@@ -224,6 +260,10 @@ export interface OpInsurancePreSettleGroupDto {
   medfeeSumamt?: null | number | string;
   preSettleId?: null | string;
   psnCashPay?: null | number | string;
+  /** 本组起付线（单病种一笔的平台报价） */
+  actPayDedc?: null | number | string;
+  /** 本组统筹 */
+  hifpPay?: null | number | string;
 }
 
 /** 自费汇总 */
@@ -235,6 +275,8 @@ export interface OpSelfPayRollupDto {
 
 /** IF-OPC-06 请求 */
 export interface PreSettleOutpatientChargesRequest {
+  /** 款员所选折扣率 (0,1]；仅已配置有效折扣时可传；含款员定率项目时必传 */
+  cashierDiscountRate?: null | number;
   chargeItemIds: string[];
   contractId?: null | string;
   encounterId: string;
@@ -242,6 +284,10 @@ export interface PreSettleOutpatientChargesRequest {
   insutype?: null | string;
   medType?: null | string;
   psnNo?: null | string;
+  /** 1101 参保人身份证号（BR-OPC-035） */
+  payerCertno?: null | string;
+  /** 1101 参保人姓名（BR-OPC-035） */
+  payerPsnName?: null | string;
   ybCardInfo?: null | string;
   ybMediumType?: null | string;
 }
@@ -249,6 +295,8 @@ export interface PreSettleOutpatientChargesRequest {
 /** IF-OPC-06 响应 */
 export interface PreSettleOutpatientChargesResponse {
   displayAmount: number | string;
+  /** 本批优惠合计（原价−折后）；未打折为 0 */
+  discountAmountTotal?: null | number | string;
   insuranceGroups?: OpInsurancePreSettleGroupDto[];
   insurancePreSettled?: boolean;
   paymentDraftId: string;
@@ -270,6 +318,8 @@ export interface PreSettleOutpatientChargesResponse {
     errMsg?: string;
   };
   ybAcctPay?: null | number | string;
+  /** 家庭共济（2206 acct_mulaid_pay；含于 ybAcctPay，仅展示） */
+  ybAcctMulaidPay?: null | number | string;
   /** 实际支付起付线（2206 act_pay_dedc；仅展示） */
   ybActPayDedc?: null | number | string;
   ybChrgBchno?: null | string;
@@ -285,6 +335,31 @@ export interface PreSettleOutpatientChargesResponse {
   /** 其他支出（oth_pay，含电子钱包等） */
   ybOthPay?: null | number | string;
   ybPsnCashPay?: null | number | string;
+}
+
+/** 列表折后价试算请求 */
+export interface PreviewOutpatientChargeDiscountsRequest {
+  encounterId: string;
+  chargeItemIds: string[];
+  /** 款员所选折扣率 (0,1]；空=不传手动折扣 */
+  cashierDiscountRate?: null | number;
+}
+
+/** 列表折后价试算行 */
+export interface PreviewOutpatientChargeDiscountLineDto {
+  chargeItemId: string;
+  originalAmount?: null | number | string;
+  discountedAmount?: null | number | string;
+  discountGap?: null | number | string;
+  discountRate?: null | number | string;
+  discounted?: boolean;
+}
+
+/** 列表折后价试算响应 */
+export interface PreviewOutpatientChargeDiscountsResponse {
+  encounterId?: string;
+  discountAmountTotal?: null | number | string;
+  lines?: PreviewOutpatientChargeDiscountLineDto[];
 }
 
 /** IF-OPC-07 支付明细分录 */
@@ -313,6 +388,8 @@ export interface PrepareUnionPayMakeupCollectRequest {
 /** IF-OPC-07 正式结算请求 */
 export interface ConfirmOutpatientChargeSettlementRequest {
   billDate: string;
+  /** 款员所选折扣率；须与预结算一致；仅已配置有效折扣时可传 */
+  cashierDiscountRate?: null | number;
   chargeItemIds: string[];
   encounterId: string;
   outcomeEnum: string;
@@ -356,7 +433,23 @@ export interface ChargeReceiptChargeLineDto {
   chargeCategoryText?: string;
 }
 
-/** 收费小票 slip（printChargeReceipt 返回） */
+/** 门诊患者费用清单明细行 */
+export interface ChargeFeeListRowDto {
+  encounterBusNo?: string;
+  patientName?: string;
+  departmentName?: string;
+  orderingDoctorName?: string;
+  itemName?: string;
+  unitPriceText?: string;
+  quantityText?: string;
+  amountText?: string;
+  insuranceLevelText?: string;
+  visitTypeText?: string;
+  itemTypeText?: string;
+  timeText?: string;
+}
+
+/** 收费小票 slip（printChargeReceipt 返回；亦供发票/费用清单） */
 export interface ChargeReceiptSlipDto {
   encounterId?: null | number | string;
   patientName?: string;
@@ -382,6 +475,47 @@ export interface ChargeReceiptSlipDto {
   accountBalanceText?: string; // 医保个账余额（扣款后展示文案）
   cashierName?: string;
   chargeTimeText?: string;
+  encounterBusNo?: string;
+  /** 挂号时间（yyyy-MM-dd HH:mm:ss） */
+  registerTimeText?: string;
+  departmentName?: string;
+  doctorName?: string;
+  /** 开方科室 */
+  orderingDepartmentName?: string;
+  /** 开方医生 */
+  orderingDoctorName?: string;
+  prescriptionNoText?: string;
+  paymentNoText?: string;
+  insuranceNoText?: string;
+  chargeDateText?: string;
+  westernMedicineFeeText?: string;
+  examFeeText?: string;
+  chinesePatentFeeText?: string;
+  surgeryFeeText?: string;
+  herbalFeeText?: string;
+  oxygenFeeText?: string;
+  labFeeText?: string;
+  bloodFeeText?: string;
+  xrayFeeText?: string;
+  disposeFeeText?: string;
+  electroFeeText?: string;
+  injectionFeeText?: string;
+  therapyFeeText?: string;
+  materialFeeText?: string;
+  originalAccountBalanceText?: string;
+  insurancePayText?: string;
+  invoiceCashPayText?: string;
+  employeeCriticalFeeText?: string;
+  residentCriticalFeeText?: string;
+  totalAmountChineseText?: string;
+  /** 费用清单标题（普通/慢病） */
+  documentTitle?: string;
+  /** 机构行（机构：xxx） */
+  organizationLabel?: string;
+  /** 费用清单明细 */
+  feeListRows?: ChargeFeeListRowDto[];
+  /** 费用清单合计 */
+  feeListTotalAmountText?: string;
 }
 
 export interface PrintChargeReceiptParams {

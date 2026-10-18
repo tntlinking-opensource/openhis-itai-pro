@@ -8,7 +8,7 @@ import type { ReportPrintColumnDef } from '#/utils/print/print-report-list';
 
 import { computed, onMounted, reactive, ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
+import { Page } from '@zxplat/common-ui';
 
 import { Download, Printer, Refresh, Search, Setting } from '@element-plus/icons-vue';
 import {

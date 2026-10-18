@@ -1,0 +1,60 @@
+<html>
+	<script>
+		var DUmsocx1;
+		
+		function init()
+		{
+			DUmsocx1 = document.getElementById("DUmsocx");
+		}
+				 
+		function confirm1()
+		{
+			DUmsocx1.initApp();
+			alert(DUmsocx1.appCode);			
+			alert(DUmsocx1.appName);
+		}	
+
+		function confirm2()
+		{		
+			var ret;
+			DUmsocx1.apptype = document.getElementById("field1").value;
+			DUmsocx1.transtype = document.getElementById("field2").value;
+			ret = DUmsocx1.getTransMode();
+			alert(ret);
+		}	
+
+		function confirm3()
+		{		
+			var ret;
+			DUmsocx1.strIn = document.getElementById("field3").value;
+			ret = DUmsocx1.bankallStandard();
+			alert(DUmsocx1.strOut);			
+		}			
+	</script>
+		
+	<body onload="init()">
+		<form>
+			<p></p>应用类型(2)<input type="text" name="field1" size=2 maxlength=2 value="00" id="field1"/>
+			'00'--银行卡&nbsp&nbsp'01'--有硬件pos通&nbsp&nbsp'02'--无硬件pos通&nbsp&nbsp
+			<p></p>交易类型(2)<input type="text" name="field2" size=2 maxlength=2 value="05" id="field2"/>
+			'00'--消费&nbsp&nbsp'01'--撤销&nbsp&nbsp'02'--退货&nbsp&nbsp'03'--查余&nbsp&nbsp'04'--重打印&nbsp&nbsp'05'--签到&nbsp&nbsp
+			'06'--结算&nbsp&nbsp'07'--重打印结算单&nbsp&nbsp
+			<p></p>传入参数<input type="text" name="field3" size=100 maxlength=100 value="00|05" id="field3"/>
+			<p id="result1"></p>
+			<input type="button" name="confirmBtn1" value="initApp" onclick="javascript:confirm1()" style="height:50px">
+			<input type="button" name="confirmBtn2" value="getTransMode" onclick="javascript:confirm2()" style="height:50px">
+			<input type="button" name="confirmBtn3" value="bankall_standard" onclick="javascript:confirm3()" style="height:50px">
+			<p>－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－ </p>
+		</form></p>
+		
+		<div style="display:none">	
+		<OBJECT id="DUmsocx" classid=clsid:E083E848-B477-4F16-BCD5-72D74BC1E2AF>
+		<PARAM NAME="_ExtentX" VALUE="7000">
+		<PARAM NAME="_ExtentY" VALUE="4000">
+		</OBJECT>	
+		</div>		
+		
+		<font color=blue>运行之前请先注册控件!</font><br>
+		银联商务有限公司技术开发中心
+	</body>
+</html>

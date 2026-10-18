@@ -1,18 +1,18 @@
 /**
  * 该文件可自行根据业务逻辑进行调整
  */
-import type { RequestClientOptions } from '@vben/request';
+import type { RequestClientOptions } from '@zxplat/request';
 
 import type { ApiResponse } from '#/types/api-response';
 
-import { useAppConfig } from '@vben/hooks';
-import { preferences } from '@vben/preferences';
+import { useAppConfig } from '@zxplat/hooks';
+import { preferences } from '@zxplat/preferences';
 import {
   authenticateResponseInterceptor,
   errorMessageResponseInterceptor,
   RequestClient,
-} from '@vben/request';
-import { useAccessStore } from '@vben/stores';
+} from '@zxplat/request';
+import { useAccessStore } from '@zxplat/stores';
 
 import { ElMessage } from 'element-plus';
 
@@ -265,6 +265,19 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
 
       // 门诊皮试跨批确认（EX-ORD-309）/ 跨批次金额确认（EX-ORD-310）：交给医嘱页弹确认框，避免先 toast 再弹窗
       if (errorCode === 'EX-ORD-309' || errorCode === 'EX-ORD-310') {
+        throw error;
+      }
+
+      // 医保凭证过期（INS-015）：交给挂号/收费页展示重读提示，避免与业务 toast 叠两条
+      if (errorCode === 'INS-015') {
+        throw error;
+      }
+
+      // 调用方声明软失败：拦截器不 toast，由业务层决定提示（如主档已成、附属接口失败）
+      const softFailHeader =
+        error?.config?.headers?.['X-Zxplat-Soft-Fail'] ??
+        error?.config?.headers?.['x-zxplat-soft-fail'];
+      if (softFailHeader === '1' || softFailHeader === 1) {
         throw error;
       }
 

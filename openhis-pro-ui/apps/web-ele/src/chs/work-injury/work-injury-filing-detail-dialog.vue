@@ -224,7 +224,7 @@ async function runProbe(options?: { silent?: boolean }) {
   loading.value = true;
   try {
     if (!(await isWorkInjuryPluginOnline())) {
-      throw new Error('请启动 OpenHIS.Win 并启用工伤模块');
+      throw new Error('请启动 Zxplat.Win 并启用工伤模块');
     }
     const result = await probeWorkInjuryFilingViaWin();
     probe.value = result;
@@ -355,7 +355,7 @@ async function refreshQualification() {
   try {
     if (anchorReady.value) {
       if (!(await isWorkInjuryPluginOnline())) {
-        throw new Error('请启动 OpenHIS.Win 并启用工伤模块');
+        throw new Error('请启动 Zxplat.Win 并启用工伤模块');
       }
       await runWorkInjuryRegister9102(
         {

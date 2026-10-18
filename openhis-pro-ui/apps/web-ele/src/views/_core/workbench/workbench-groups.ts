@@ -2,7 +2,7 @@ import type { WorkbenchGroupConfig } from './workbench-types';
 
 /**
  * 平台管理员工作台分组与菜单映射（非管理员走 workbench-staff-allowlist + 菜单树父级分组）。
- * menuCodes 须与 whale_menus.code / 路由 name 一致。
+ * menuCodes 须与 zxplat_menus.code / 路由 name 一致。
  */
 export const WORKBENCH_GROUPS: WorkbenchGroupConfig[] = [
   {

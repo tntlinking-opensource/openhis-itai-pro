@@ -1,0 +1,10 @@
+{
+  "doc_kind": "CATALOG_DELTA",
+  "category": "DRUG",
+  "title": "附件：药品数据更新目录（2025.1.26)",
+  "source_filename": "附件：药品数据更新目录（2025.1.26).xlsx",
+  "notice_date": "2025-01-26",
+  "effective_date": null,
+  "wash_note": "药品目录更新xlsx→标准包; sheet动作按前缀映射ADD/STOP/MODIFY/PROVINCE_MODIFY; hilist_code←医疗目录编码|药品代码; list_type默认101或取目录类别; 文件名日期:2025-01-26",
+  "wash_tool": "cursor-ai"
+}

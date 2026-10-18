@@ -1,0 +1,734 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.zxplat.application.basic.executelocation.service;
+
+import com.zxplat.application.basic.executelocation.dto.ExecuteLocationDto;
+import com.zxplat.application.basic.executelocation.dto.ExecuteLocationInitDto;
+import com.zxplat.application.basic.executelocation.mapper.ExecuteLocationMapper;
+import com.zxplat.application.basic.executelocation.request.BatchCreateExecuteLocationRequest;
+import com.zxplat.application.basic.executelocation.request.CreateExecuteLocationRequest;
+import com.zxplat.application.basic.executelocation.request.QueryActivityDefinitionForExecuteLocationRequest;
+import com.zxplat.application.basic.executelocation.request.QueryActivityTypeForExecuteLocationRequest;
+import com.zxplat.application.basic.executelocation.request.QueryExecuteLocationRequest;
+import com.zxplat.application.basic.executelocation.request.UpdateExecuteLocationRequest;
+import com.zxplat.application.shared.option.TerminologyOptionLoader;
+import com.zxplat.application.shared.advice.OrderCatalogDisplayAssembler;
+import com.zxplat.application.shared.pagination.PageQueryBinder;
+import com.zxplat.application.shared.validator.CurrentPractitionerResolver;
+import com.zxplat.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.zxplat.application.shared.product.ProductDefinitionCatalogPageLoader;
+import com.zxplat.application.shared.product.ProductDefinitionPageQuery;
+import com.zxplat.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.zxplat.domain.administration.location.service.LocationQueryService;
+import com.zxplat.domain.administration.organization.entity.Organization;
+import com.zxplat.domain.administration.organization.service.OrganizationQueryService;
+import com.zxplat.domain.share.enums.OrganizationClassification;
+import com.zxplat.domain.share.enums.OrganizationType;
+import com.zxplat.domain.custom.activityexecutionlocation.command.CreateExecutionRuleCommand;
+import com.zxplat.domain.custom.activityexecutionlocation.command.DeleteExecutionRuleCommand;
+import com.zxplat.domain.custom.activityexecutionlocation.command.UpdateExecutionRuleCommand;
+import com.zxplat.domain.custom.activityexecutionlocation.queries.model.ExecutionRuleListQueryModel;
+import com.zxplat.domain.custom.activityexecutionlocation.service.ActivityExecutionLocationDomainService;
+import com.zxplat.domain.custom.activityexecutionlocation.service.ActivityExecutionLocationQueryService;
+import com.zxplat.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
+import com.zxplat.domain.share.constants.ErrorCodeConstants;
+import com.zxplat.domain.share.constants.TableNameConstants;
+import com.zxplat.domain.share.constants.TerminologyCodeSystemNameConstants;
+import com.zxplat.domain.share.query.ProductDefinitionBatchLookup;
+import com.zxplat.domain.share.utils.ProductDefinitionKeyUtil;
+import com.zxplat.framework.core.application.dto.OptionDto;
+import com.zxplat.framework.core.application.dto.PagedResult;
+import com.zxplat.framework.core.application.exception.BusinessException;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import com.zxplat.framework.core.application.util.StringUtils;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * 基础数据「执行科室」配置应用服务：WH-EXE001 按开立科室维护诊疗项目执行规则（行内选执行科室，对齐取药科室）。
+ *
+ * <p>职责边界：</p>
+ * <ul>
+ *   <li>{@link ActivityExecutionLocationQueryService}：按开立科室列出规则（配置读侧）</li>
+ *   <li>{@link ActivityExecutionLocationDomainService}：单条/批量 CRUD</li>
+ *   <li>{@link ProductDefinitionCatalogPageLoader}：挑选待绑定的诊疗活动（复用既有目录读能力，不新增查询 IF）</li>
+ *   <li>{@link ProductDefinitionDisplayTerminologyAssembler}：列表 enrich 诊疗项目名称</li>
+ * </ul>
+ *
+ * <p>分类门禁（DM-CUS-001 BR-ACT-EXEC-004）：左树开立科室仅门诊/住院；规则行执行科室仅护士站/医技。</p>
+ *
+ * <p>接入方式：由 {@code AppServiceControllerRegistrar} 注册为
+ * {@code POST /api/app/executeLocation/{methodName}}。</p>
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class ExecuteLocationAppService {
+
+    /** 开立科室允许的机构分类：门诊、住院。药房、护士站、医技等不得作左树锚点。 */
+    private static final Set<OrganizationClassification> ORDERING_DEPARTMENT_CLASSES = Set.of(
+        OrganizationClassification.CLINIC,
+        OrganizationClassification.INPATIENT);
+
+    /** 执行科室允许的机构分类：护士站、医技。临床开立科室不能再被选成执行目的地。 */
+    private static final Set<OrganizationClassification> EXECUTION_DEPARTMENT_CLASSES = Set.of(
+        OrganizationClassification.NS,
+        OrganizationClassification.TECH);
+
+    /** 执行规则请求/读模型与 DTO、领域命令映射。 */
+    private final ExecuteLocationMapper executeLocationMapper;
+    /** 执行规则读侧。 */
+    private final ActivityExecutionLocationQueryService activityExecutionLocationQueryService;
+    /** 执行规则写侧。 */
+    private final ActivityExecutionLocationDomainService activityExecutionLocationDomainService;
+    /** 写路径操作人门控 B.6.1。 */
+    private final CurrentPractitionerResolver currentPractitionerResolver;
+    /** 组织机构读侧：科室树与名称解析。 */
+    private final OrganizationQueryService organizationQueryService;
+    /** 位置读侧：执行地点名称 enrich。 */
+    private final LocationQueryService locationQueryService;
+    /** 术语下拉与码→文案映射。 */
+    private final TerminologyOptionLoader terminologyOptionLoader;
+    /** 诊疗活动定义分页：挑选待绑定项目。 */
+    private final ProductDefinitionCatalogPageLoader productDefinitionCatalogPageLoader;
+    /** 诊疗活动定义批量展示加载。 */
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
+    /** 诊疗定义读侧：按大类汇总业务类型码。 */
+    private final ActivityDefinitionQueryService activityDefinitionQueryService;
+
+    /**
+     * 返回执行科室配置页初始化选项：开立科室树、执行科室树、诊疗大类、业务类型。
+     *
+     * @return 初始化 DTO
+     */
+    public ExecuteLocationInitDto init() {
+        // Gate：只读页初始化，不写库
+        // Pre：开立科室树仅门诊/住院科室（上级节点保留以便成树）；执行科室仅护士站与医技科室
+        // Asm：映射页初始化响应
+        ExecuteLocationInitDto dto = new ExecuteLocationInitDto();
+        dto.setOrganizationOptions(this.buildOrganizationOptions());
+        dto.setExecutionOrgOptions(this.buildDepartmentExecutionOrgOptions());
+        dto.setActivityCategoryOptions(
+            terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.ACTIVITY_CATEGORY_CODE));
+        // 全量术语仅供列表 enrich 展示名；行内下拉改走 listActivityTypeOptionsByCategory
+        dto.setActivityTypeOptions(
+            terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.ACTIVITY_TYPE_CODE));
+        dto.setExecutionLocationOptions(Collections.emptyList());
+        return dto;
+    }
+
+    /**
+     * 按诊疗大类列出业务类型下拉（该大类目录项目实际出现过的 {@code type_enum}）。
+     *
+     * <p>对齐申请单分类 chips：检查下只出 CT/DR 等，不出护理/手术等同级噪音；
+     * 并排除展示名与大类同名的类型（如大类「检查」时去掉类型「检查」）。</p>
+     *
+     * @param request 须含 {@code activityCategoryCode}
+     * @return 业务类型选项；大类下无项目类型时为空列表
+     * @throws BusinessException 大类缺失时
+     */
+    public List<OptionDto> listActivityTypeOptionsByCategory(QueryActivityTypeForExecuteLocationRequest request) {
+        // Gate：大类必填，否则无法圈定子类型
+        if (request == null || StringUtils.isEmpty(request.getActivityCategoryCode())) {
+            throw new BusinessException(
+                ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "诊疗大类不能为空");
+        }
+        String categoryCode = request.getActivityCategoryCode().trim();
+        // Pre：读该大类下目录实际用过的业务类型码
+        List<String> typeCodes = activityDefinitionQueryService.listDistinctTypeEnumsByCategoryCode(categoryCode);
+        Map<String, String> typeLabels =
+            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.ACTIVITY_TYPE_CODE);
+        Map<String, String> categoryLabels =
+            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.ACTIVITY_CATEGORY_CODE);
+        String categoryLabel = OrderCatalogDisplayAssembler.resolveCategoryDisplay(categoryLabels, categoryCode);
+        // Asm：码→术语展示名；排除与大类同名的类型，避免「检查」下再选「检查」
+        List<OptionDto> options = new ArrayList<>();
+        long sort = 0L;
+        for (String typeCode : typeCodes) {
+            if (StringUtils.isEmpty(typeCode)) {
+                continue;
+            }
+            String typeLabel = OrderCatalogDisplayAssembler.resolveCategoryDisplay(typeLabels, typeCode);
+            // 展示名与大类相同则跳过（存量 type_enum=2「检查」等）
+            if (StringUtils.isNotEmpty(categoryLabel) && categoryLabel.equals(typeLabel)) {
+                continue;
+            }
+            sort++;
+            String label = typeLabel;
+            if (StringUtils.isEmpty(label)) {
+                label = typeCode;
+            }
+            options.add(new OptionDto(sort, typeCode, label));
+        }
+        return options;
+    }
+
+    /**
+     * 分页检索可供绑定的诊疗活动定义，复用产品定义读模型（{@code wkf_activity_definition}）。
+     *
+     * @param request 分页条件，须含开立科室与诊疗大类
+     * @return 分页选项；value 为产品定义主键字符串
+     * @throws BusinessException 必填参数缺失时
+     */
+    public PagedResult<OptionDto> pageActivityDefinitionsForExecution(
+        QueryActivityDefinitionForExecuteLocationRequest request
+    ) {
+        // Gate：开立科室与诊疗大类必填
+        if (request == null || request.getOrganizationId() == null) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "开立科室ID不能为空");
+        }
+        if (request.getActivityCategoryCode() == null || request.getActivityCategoryCode().isBlank()) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "诊疗大类不能为空");
+        }
+        // Pre：装配产品定义分页查询
+        ProductDefinitionPageQuery query = new ProductDefinitionPageQuery();
+        query.setProductTableName(TableNameConstants.WKF_ACTIVITY_DEFINITION);
+        query.setCategoryCode(request.getActivityCategoryCode());
+        // 配置页按业务类型收窄候选单品，与申请单 chips 同轴。
+        if (StringUtils.isNotEmpty(request.getActivityTypeCode())) {
+            query.setTypeEnum(request.getActivityTypeCode().trim());
+        }
+        PageQueryBinder.bind(request, query);
+        query.setPageSize(request.getBoundedPageSize());
+        Page<ProductDefinitionDisplayDto> page = productDefinitionCatalogPageLoader.pageProductDefinition(query);
+        // Asm：映射为分页选项
+        Page<OptionDto> optionPage = page.map(item -> new OptionDto(
+            item.getProductDefinitionId(),
+            resolveProductDefinitionIdValue(item),
+            item.getProductName()
+        ));
+        return PagedResult.fromPage(optionPage);
+    }
+
+    /**
+     * 按开立科室（及可选诊疗大类）列出已配置执行规则，并在应用层 enrich 展示名。
+     *
+     * <p><b>规模说明</b>：当前实现先拉全量规则再在内存 {@code subList} 分页；规则数量显著增大时应改为查询层数据库分页。</p>
+     *
+     * @param request 查询请求，须含 {@code organizationId}
+     * @return 内存分页后的 DTO 页
+     * @throws BusinessException 开立科室 id 缺失或不存在时
+     */
+    public PagedResult<ExecuteLocationDto> listByOrganizationId(QueryExecuteLocationRequest request) {
+        // Gate：开立科室 id 必填且须存在
+        if (request == null || request.getOrganizationId() == null) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "开立科室ID不能为空");
+        }
+        Organization organization = organizationQueryService.loadOrganizationByIdForDisplay(request.getOrganizationId());
+        if (organization == null) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "开立科室不存在");
+        }
+        // 左侧只服务门诊、住院科室；其它分类即使库里有历史规则也不在本页列出
+        this.assertOrderingDepartment(organization);
+        // Pre：拉取该开立科室下全部规则并在内存分页
+        List<ExecutionRuleListQueryModel> rows = activityExecutionLocationQueryService.listExecutionRulesByOrganization(
+            request.getOrganizationId(),
+            request.getActivityCategoryCode()
+        );
+        List<ExecuteLocationDto> content = new ArrayList<>();
+        for (ExecutionRuleListQueryModel row : rows) {
+            content.add(executeLocationMapper.toDto(row));
+        }
+        this.enrichDtoList(content, organization.getName());
+
+        // Asm：内存 subList 分页后返回
+        int pageNum = 1;
+        if (request.getPageNo() != null && request.getPageNo() > 0) {
+            pageNum = request.getPageNo();
+        }
+        int pageSize = 20;
+        if (request.getPageSize() != null && request.getPageSize() > 0) {
+            pageSize = request.getPageSize();
+        }
+        int from = Math.min((pageNum - 1) * pageSize, content.size());
+        int to = Math.min(from + pageSize, content.size());
+        Page<ExecuteLocationDto> page = new PageImpl<>(
+            content.subList(from, to),
+            PageRequest.of(pageNum - 1, pageSize),
+            content.size()
+        );
+        return PagedResult.fromPage(page);
+    }
+
+    /**
+     * 创建单条执行规则，返回领域生成的主键列表中的第一条。
+     *
+     * @param request 创建请求
+     * @return 新建规则主键；若领域返回空列表则 {@code null}
+     * @throws BusinessException 请求体非法或校验失败时
+     */
+    public Long create(CreateExecuteLocationRequest request) {
+        // Gate：请求体、开立科室、诊疗大类、执行科室与写路径公共校验
+        if (request == null) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "创建请求不能为空");
+        }
+        if (request.getActivityCategoryCode() == null || request.getActivityCategoryCode().isBlank()) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "诊疗大类不能为空");
+        }
+        this.validateWriteRequest(
+            request.getOrganizationId(),
+            request.getExecutionOrgId(),
+            request.getStartTime(),
+            request.getEndTime());
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
+            ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT,
+            "请先登录后再保存执行科室规则");
+        // Cmd：创建单条执行规则
+        CreateExecutionRuleCommand command = new CreateExecutionRuleCommand();
+        command.setOrganizationId(request.getOrganizationId());
+        command.setExecutionOrgId(request.getExecutionOrgId());
+        command.setActivityCategoryCode(request.getActivityCategoryCode());
+        command.setOperatorId(operatorId);
+        List<CreateExecutionRuleCommand.CreateExecutionRuleItemCommand> items = new ArrayList<>();
+        items.add(executeLocationMapper.toCreateItem(request));
+        command.setRules(items);
+        List<Long> ids = activityExecutionLocationDomainService.createExecutionRule(command);
+        // Branch：领域返回空列表时无新建主键
+        if (ids.isEmpty()) {
+            return null;
+        }
+        return ids.get(0);
+    }
+
+    /**
+     * 更新单条执行规则。
+     *
+     * @param request 更新请求
+     * @throws BusinessException id 缺失或校验失败时
+     */
+    public void update(UpdateExecuteLocationRequest request) {
+        // Gate：主键非空与写路径公共校验
+        if (request == null || request.getId() == null) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "ID不能为空");
+        }
+        this.validateWriteRequest(
+            request.getOrganizationId(),
+            request.getExecutionOrgId(),
+            request.getStartTime(),
+            request.getEndTime());
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
+            ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT,
+            "请先登录后再保存执行科室规则");
+        UpdateExecutionRuleCommand command = executeLocationMapper.toUpdateCommand(request);
+        command.setOperatorId(operatorId);
+        // Cmd：更新执行规则
+        activityExecutionLocationDomainService.updateExecutionRule(command);
+    }
+
+    /**
+     * 按主键删除执行规则。
+     *
+     * @param id 主键
+     * @throws BusinessException id 为空时
+     */
+    public void deleteById(Long id) {
+        // Gate：主键非空且须已登录操作人
+        if (id == null) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "ID不能为空");
+        }
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
+            ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT,
+            "请先登录后再删除执行科室规则");
+        DeleteExecutionRuleCommand command = new DeleteExecutionRuleCommand();
+        command.setId(id);
+        command.setOperatorId(operatorId);
+        command.setDeleteReason("应用层删除执行规则");
+        // Cmd：逻辑删除执行规则
+        activityExecutionLocationDomainService.deleteExecutionRule(command);
+    }
+
+    /**
+     * 批量创建执行规则：将多条诊疗定义展开为同一时段/地点的子命令后一次性调用领域批量创建。
+     *
+     * @param request 批量请求
+     * @throws BusinessException 科室、大类或诊疗定义列表不合法时
+     */
+    public void batchCreate(BatchCreateExecuteLocationRequest request) {
+        // Gate：开立科室、执行科室、大类、诊疗定义列表与写路径公共校验
+        if (request == null || request.getOrganizationId() == null) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "开立科室ID不能为空");
+        }
+        if (request.getExecutionOrgId() == null) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "执行科室ID不能为空");
+        }
+        if (request.getActivityCategoryCode() == null || request.getActivityCategoryCode().isBlank()) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "活动类别不能为空");
+        }
+        if (request.getActivityDefinitionIds() == null || request.getActivityDefinitionIds().isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "诊疗定义列表不能为空");
+        }
+        this.validateWriteRequest(
+            request.getOrganizationId(),
+            request.getExecutionOrgId(),
+            request.getStartTime(),
+            request.getEndTime());
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
+            ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT,
+            "请先登录后再保存执行科室规则");
+        // Cmd：批量展开为子命令后一次性创建
+        CreateExecutionRuleCommand command = new CreateExecutionRuleCommand();
+        command.setOrganizationId(request.getOrganizationId());
+        command.setExecutionOrgId(request.getExecutionOrgId());
+        command.setActivityCategoryCode(request.getActivityCategoryCode());
+        command.setOperatorId(operatorId);
+        List<CreateExecutionRuleCommand.CreateExecutionRuleItemCommand> items = new ArrayList<>();
+        for (Long definitionId : request.getActivityDefinitionIds()) {
+            if (definitionId == null) {
+                throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "诊疗定义不能为空");
+            }
+            CreateExecuteLocationRequest single = new CreateExecuteLocationRequest();
+            single.setOrganizationId(request.getOrganizationId());
+            single.setExecutionOrgId(request.getExecutionOrgId());
+            single.setActivityCategoryCode(request.getActivityCategoryCode());
+            single.setActivityTypeCode(request.getActivityTypeCode());
+            single.setActivityDefinitionId(definitionId);
+            single.setExecutionLocationId(request.getExecutionLocationId());
+            single.setStartTime(request.getStartTime());
+            single.setEndTime(request.getEndTime());
+            single.setPriority(request.getPriority());
+            single.setDisplayOrder(request.getDisplayOrder());
+            single.setRemark(request.getRemark());
+            items.add(executeLocationMapper.toCreateItem(single));
+        }
+        command.setRules(items);
+        activityExecutionLocationDomainService.createExecutionRule(command);
+    }
+
+    /**
+     * 写路径公共校验：开立科室与执行科室均须存在、时段合法。
+     *
+     * @param organizationId 开立科室
+     * @param executionOrgId 执行科室
+     * @param startTime 开始时间字符串
+     * @param endTime 结束时间字符串
+     */
+    private void validateWriteRequest(
+        Long organizationId,
+        Long executionOrgId,
+        String startTime,
+        String endTime
+    ) {
+        if (organizationId == null) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "开立科室ID不能为空");
+        }
+        Organization orderingOrg = organizationQueryService.loadOrganizationByIdForDisplay(organizationId);
+        if (orderingOrg == null) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "开立科室不存在");
+        }
+        this.assertOrderingDepartment(orderingOrg);
+        if (executionOrgId == null) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "执行科室ID不能为空");
+        }
+        Organization executionOrg = organizationQueryService.loadOrganizationByIdForDisplay(executionOrgId);
+        if (executionOrg == null) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "执行科室不存在");
+        }
+        this.assertExecutionDepartment(executionOrg);
+        if (StringUtils.isNotEmpty(startTime) && StringUtils.isNotEmpty(endTime)) {
+            java.time.LocalTime start = executeLocationMapper.parseTime(startTime);
+            java.time.LocalTime end = executeLocationMapper.parseTime(endTime);
+            if (start != null && end != null && !start.isBefore(end)) {
+                throw new BusinessException(
+                    ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT,
+                    "生效开始时间必须早于结束时间");
+            }
+        }
+    }
+
+    /**
+     * 批量 enrich 规则行展示字段（开立/执行科室名、地点名、诊疗大类文案、诊疗项目名称）。
+     *
+     * @param rows 待 enrich 列表
+     * @param organizationName 当前选中开立科室名称
+     */
+    private void enrichDtoList(List<ExecuteLocationDto> rows, String organizationName) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        Set<Long> locationIds = new HashSet<>();
+        Set<Long> executionOrgIds = new HashSet<>();
+        List<ProductDefinitionBatchLookup> productLookups = new ArrayList<>();
+        for (ExecuteLocationDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            row.setOrganizationName(organizationName);
+            if (row.getExecutionOrgId() != null) {
+                executionOrgIds.add(row.getExecutionOrgId());
+            }
+            if (row.getExecutionLocationId() != null) {
+                locationIds.add(row.getExecutionLocationId());
+            }
+            if (row.getActivityDefinitionId() != null) {
+                ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+                lookup.setProductTableName(TableNameConstants.WKF_ACTIVITY_DEFINITION);
+                lookup.setProductDefinitionId(row.getActivityDefinitionId());
+                productLookups.add(lookup);
+            }
+        }
+        Map<Long, String> executionOrgNameById = organizationQueryService.mapNamesByIds(executionOrgIds);
+        Map<Long, String> locationNameById = locationQueryService.mapNamesByIds(locationIds);
+        Map<String, ProductDefinitionDisplayDto> productByKey = productDefinitionDisplayTerminologyAssembler.loadAsMap(productLookups);
+        Map<String, String> activityCategoryLabels =
+            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.ACTIVITY_CATEGORY_CODE);
+        Map<String, String> activityTypeLabels =
+            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.ACTIVITY_TYPE_CODE);
+        for (ExecuteLocationDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getExecutionOrgId() != null) {
+                row.setExecutionOrgName(executionOrgNameById.get(row.getExecutionOrgId()));
+            }
+            if (row.getExecutionLocationId() != null) {
+                row.setExecutionLocationName(locationNameById.get(row.getExecutionLocationId()));
+            }
+            row.setActivityCategoryCode_dictText(
+                OrderCatalogDisplayAssembler.resolveCategoryDisplay(activityCategoryLabels, row.getActivityCategoryCode()));
+            // 业务类型可空，仅有码时回填术语展示名。
+            if (StringUtils.isNotEmpty(row.getActivityTypeCode())) {
+                row.setActivityTypeCode_dictText(
+                    OrderCatalogDisplayAssembler.resolveCategoryDisplay(activityTypeLabels, row.getActivityTypeCode()));
+            }
+            if (row.getActivityDefinitionId() != null) {
+                String key = ProductDefinitionKeyUtil.buildCompositeKey(
+                    TableNameConstants.WKF_ACTIVITY_DEFINITION, row.getActivityDefinitionId());
+                ProductDefinitionDisplayDto product = productByKey.get(key);
+                if (product != null) {
+                    row.setActivityDefinitionName(product.getProductName());
+                }
+            }
+        }
+    }
+
+    /**
+     * 将机构列表组装为左侧开立科室树：仅门诊、住院科室，医院等上级保留以便挂树。
+     *
+     * @return 树根选项列表
+     */
+    private List<OptionDto> buildOrganizationOptions() {
+        List<Organization> organizations = organizationQueryService.getOrganizationDictTree();
+        if (organizations == null || organizations.isEmpty()) {
+            return Collections.emptyList();
+        }
+        // 左侧只保留门诊、住院科室；医院等上级留下，否则树挂不上
+        organizations = this.retainOrderingDepartmentTree(organizations);
+        if (organizations.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Map<Long, List<Organization>> childrenByParentId = new HashMap<>();
+        Set<Long> organizationIdSet = new HashSet<>();
+        for (Organization organization : organizations) {
+            if (organization == null || organization.getId() == null) {
+                continue;
+            }
+            organizationIdSet.add(organization.getId());
+            List<Organization> children = childrenByParentId.computeIfAbsent(
+                organization.getParentId(), ignored -> new ArrayList<>());
+            children.add(organization);
+        }
+        List<Organization> rootOrganizations = new ArrayList<>();
+        for (Organization organization : organizations) {
+            if (organization == null || organization.getId() == null) {
+                continue;
+            }
+            Long parentId = organization.getParentId();
+            if (parentId == null || !organizationIdSet.contains(parentId)) {
+                rootOrganizations.add(organization);
+            }
+        }
+        return buildOrganizationOptionTree(rootOrganizations, childrenByParentId);
+    }
+
+    /**
+     * 开立科室树裁剪：保留门诊/住院科室，以及能把它们挂起来的医院/上级节点。
+     *
+     * @param organizations 全量机构树平铺
+     * @return 裁剪后的平铺列表；无命中科室时为空列表
+     */
+    private List<Organization> retainOrderingDepartmentTree(List<Organization> organizations) {
+        if (organizations == null || organizations.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, Organization> byId = new LinkedHashMap<>();
+        for (Organization organization : organizations) {
+            if (organization == null || organization.getId() == null) {
+                continue;
+            }
+            byId.put(organization.getId(), organization);
+        }
+        LinkedHashSet<Long> keepIds = new LinkedHashSet<>();
+        // 先收门诊/住院叶科室
+        for (Organization organization : byId.values()) {
+            // 只收门诊、住院科室；医院根靠下面补祖先
+            if (this.isOrderingDepartment(organization)) {
+                keepIds.add(organization.getId());
+            }
+        }
+        if (keepIds.isEmpty()) {
+            return List.of();
+        }
+        // 再沿 parentId 向上补医院等祖先，否则左树挂不上
+        List<Long> frontier = new ArrayList<>(keepIds);
+        int index = 0;
+        while (index < frontier.size()) {
+            Long id = frontier.get(index);
+            index++;
+            Organization current = byId.get(id);
+            if (current == null || current.getParentId() == null) {
+                continue;
+            }
+            Long parentId = current.getParentId();
+            if (keepIds.add(parentId)) {
+                frontier.add(parentId);
+            }
+        }
+        List<Organization> retained = new ArrayList<>();
+        for (Organization organization : organizations) {
+            if (organization != null
+                && organization.getId() != null
+                && keepIds.contains(organization.getId())) {
+                retained.add(organization);
+            }
+        }
+        return retained;
+    }
+
+    /**
+     * 构建执行科室下拉：仅护士站、医技科室。
+     *
+     * @return 扁平科室选项列表
+     */
+    private List<OptionDto> buildDepartmentExecutionOrgOptions() {
+        List<Organization> departments = organizationQueryService.getOrganizationTreeForResponsibilityDept();
+        if (departments == null || departments.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<OptionDto> result = new ArrayList<>();
+        long sort = 0L;
+        for (Organization organization : departments) {
+            if (organization == null || organization.getId() == null) {
+                continue;
+            }
+            // 临床开立科室、药房等不能当执行目的地
+            if (!EXECUTION_DEPARTMENT_CLASSES.contains(organization.getClassEnum())) {
+                continue;
+            }
+            sort++;
+            result.add(new OptionDto(
+                sort,
+                String.valueOf(organization.getId()),
+                organization.getName(),
+                organization.getBusNo(),
+                Collections.emptyList()
+            ));
+        }
+        return result;
+    }
+
+    /**
+     * 递归构建机构树 Option。
+     *
+     * @param organizations 当前层节点
+     * @param childrenByParentId 父 id → 子列表
+     * @return 当前层选项列表
+     */
+    private List<OptionDto> buildOrganizationOptionTree(
+        List<Organization> organizations,
+        Map<Long, List<Organization>> childrenByParentId
+    ) {
+        List<OptionDto> result = new ArrayList<>();
+        long sort = 0L;
+        for (Organization organization : organizations) {
+            if (organization == null || organization.getId() == null) {
+                continue;
+            }
+            sort++;
+            List<OptionDto> children = Collections.emptyList();
+            List<Organization> childOrganizations = childrenByParentId.get(organization.getId());
+            if (childOrganizations != null && !childOrganizations.isEmpty()) {
+                children = buildOrganizationOptionTree(childOrganizations, childrenByParentId);
+            }
+            result.add(new OptionDto(
+                sort,
+                String.valueOf(organization.getId()),
+                organization.getName(),
+                organization.getBusNo(),
+                children
+            ));
+        }
+        return result;
+    }
+
+    /**
+     * 产品定义选项的 value 字段：使用主键字符串。
+     *
+     * @param item 读模型行
+     * @return 主键字符串或 {@code null}
+     */
+    private String resolveProductDefinitionIdValue(ProductDefinitionDisplayDto item) {
+        if (item.getProductDefinitionId() == null) {
+            return null;
+        }
+        return String.valueOf(item.getProductDefinitionId());
+    }
+
+    /**
+     * 开立锚点：科室节点且分类为门诊或住院。
+     *
+     * @param organization 机构节点
+     * @return 可作为执行规则左树锚点时为 true
+     */
+    private boolean isOrderingDepartment(Organization organization) {
+        if (!OrganizationType.DEPARTMENT.getCode().equals(organization.getTypeEnum())) {
+            return false;
+        }
+        return ORDERING_DEPARTMENT_CLASSES.contains(organization.getClassEnum());
+    }
+
+    /**
+     * 开立科室只允许门诊、住院分类的科室节点，避免护士站或医技出现在左侧锚点。
+     *
+     * @param organization 开立科室
+     * @throws BusinessException 不是科室节点或分类不是门诊/住院时
+     */
+    private void assertOrderingDepartment(Organization organization) {
+        if (organization == null || !this.isOrderingDepartment(organization)) {
+            throw new BusinessException(
+                ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT,
+                "开立科室须为门诊或住院科室");
+        }
+    }
+
+    /**
+     * 执行科室只允许护士站、医技分类的科室节点。
+     *
+     * @param organization 执行科室
+     * @throws BusinessException 不是科室节点或分类不是护士站/医技时
+     */
+    private void assertExecutionDepartment(Organization organization) {
+        if (organization == null
+            || !OrganizationType.DEPARTMENT.getCode().equals(organization.getTypeEnum())
+            || organization.getClassEnum() == null
+            || !EXECUTION_DEPARTMENT_CLASSES.contains(organization.getClassEnum())) {
+            throw new BusinessException(
+                ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT,
+                "执行科室须为护士站或医技科室");
+        }
+    }
+}

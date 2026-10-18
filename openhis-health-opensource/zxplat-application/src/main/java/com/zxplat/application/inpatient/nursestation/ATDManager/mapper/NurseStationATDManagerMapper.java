@@ -1,0 +1,313 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.zxplat.application.inpatient.nursestation.ATDManager.mapper;
+
+import com.zxplat.application.inpatient.nursestation.ATDManager.response.*;
+import com.zxplat.application.shared.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.zxplat.application.inpatient.nursestation.ATDManager.dto.BedBoardItemDto;
+import com.zxplat.application.inpatient.nursestation.ATDManager.dto.BedBoardLocationBlockDto;
+import com.zxplat.application.inpatient.nursestation.ATDManager.dto.BedBoardOccupantDto;
+import com.zxplat.application.inpatient.nursestation.ATDManager.dto.DischargePendingExecutionItemDto;
+import com.zxplat.application.inpatient.nursestation.ATDManager.dto.DischargePendingMedicationItemDto;
+import com.zxplat.application.inpatient.nursestation.ATDManager.request.CancelInpatientNurseDischargeRequest;
+import com.zxplat.application.inpatient.nursestation.ATDManager.request.ClearDischargedBedRequest;
+import com.zxplat.application.inpatient.nursestation.ATDManager.request.ExecuteBedOperationRequest;
+import com.zxplat.application.inpatient.nursestation.ATDManager.request.ExecuteInpatientDischargeRequest;
+import com.zxplat.domain.administration.encounter.command.CancelInpatientNurseDischargeCommand;
+import com.zxplat.domain.administration.encounter.command.ClearDischargedBedCommand;
+import com.zxplat.domain.administration.encounter.command.ExecuteInpatientNurseDischargeCommand;
+import com.zxplat.domain.medication.medicationdispense.queries.model.MedicationDispenseListQueryModel;
+import com.zxplat.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
+import com.zxplat.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
+
+import java.time.LocalDateTime;
+import com.zxplat.domain.administration.encounter.command.AssignInpatientBedCommand;
+import com.zxplat.domain.administration.encounter.command.ConfirmBedTransferCommand;
+import com.zxplat.domain.administration.encounter.command.SwapInpatientBedsCommand;
+import com.zxplat.domain.administration.location.command.OccupyBedCommand;
+import com.zxplat.domain.administration.location.command.ReleaseBedCommand;
+import com.zxplat.domain.administration.location.entity.Location;
+import com.zxplat.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+/**
+ * 住院护士站入出转（ATD）Request/Command/Response 映射；禁止承载业务流程判断。
+ */
+public interface NurseStationATDManagerMapper {
+
+    /**
+     * 床位列表行 → 列表响应。
+     *
+     * @param items 已装配列表项；调用方保证非 null
+     * @return 列表响应
+     */
+    ListBedBoardResponse toListBedBoardResponse(List<BedBoardItemDto> items);
+
+    /**
+     * 床位主数据 + 病房展示名 → 位置块 DTO（BR-IP-ATD-001）。
+     *
+     * @param bed       床位 Location；调用方保证非 null
+     * @param houseName 所属病房名称；可 null
+     * @return 位置块；bed 为 null 时返回 null
+     */
+    BedBoardLocationBlockDto toBedBoardLocationBlock(Location bed, String houseName);
+
+    /**
+     * 读模型行 + 展示覆盖 + 余额 → 占床患者块。
+     *
+     * @param row               住院信息读模型；调用方保证非 null
+     * @param overlay           队列展示覆盖；可 null
+     * @param accountBalance    展示余额；可 null
+     * @param lowBalanceWarning 低余额预警
+     * @param priorityEnum      病情 code；可 null
+     * @return 占床块；row 为 null 时返回 null
+     */
+    BedBoardOccupantDto toBedBoardOccupantDto(
+        InpatientEncounterContextQueryModel row,
+        InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay overlay,
+        BigDecimal accountBalance,
+        boolean lowBalanceWarning,
+        String priorityEnum);
+
+    /**
+     * 分床请求 → {@link AssignInpatientBedCommand}。
+     *
+     * @param request    写请求；调用方保证非 null
+     * @param operatorId 操作人主键
+     * @return 领域分床命令
+     */
+    AssignInpatientBedCommand toAssignInpatientBedCommand(ExecuteBedOperationRequest request, Long operatorId);
+
+    /**
+     * 换床请求 + 原床 id → {@link ConfirmBedTransferCommand}。
+     *
+     * @param request        写请求；调用方保证非 null
+     * @param fromLocationId 当前活动床 locationId
+     * @param operatorId     操作人主键
+     * @return 领域转床命令
+     */
+    ConfirmBedTransferCommand toConfirmBedTransferCommand(
+        ExecuteBedOperationRequest request,
+        Long fromLocationId,
+        Long operatorId);
+
+    /**
+     * 互换请求 + 双方活动病房 id → {@link SwapInpatientBedsCommand}。
+     *
+     * @param request            写请求；调用方保证非 null
+     * @param toHouseLocationIdA 就诊 A 活动病房 id
+     * @param toHouseLocationIdB 就诊 B 活动病房 id
+     * @param operatorId         操作人主键
+     * @return 领域互换命令
+     */
+    SwapInpatientBedsCommand toSwapInpatientBedsCommand(
+        ExecuteBedOperationRequest request,
+        Long toHouseLocationIdA,
+        Long toHouseLocationIdB,
+        Long operatorId);
+
+    /**
+     * 占用床位命令。
+     *
+     * @param bedLocationId 床位 id
+     * @param encounterId   就诊 id
+     * @param operatorId    操作人 id
+     * @return 占用命令
+     */
+    OccupyBedCommand toOccupyBedCommand(Long bedLocationId, Long encounterId, Long operatorId);
+
+    OccupyBedCommand toOccupyBedCommand(
+        Long bedLocationId,
+        Long encounterId,
+        Long operatorId,
+        boolean occupyFromReservation);
+
+    /**
+     * 释放床位命令（单条）。
+     *
+     * @param bedLocationId 床位 id
+     * @param encounterId   就诊 id
+     * @param operatorId    操作人 id
+     * @return 释放命令
+     */
+    ReleaseBedCommand toReleaseBedCommand(Long bedLocationId, Long encounterId, Long operatorId);
+
+    /**
+     * 互换床：批量释放双方原床（单命令两条 item，A.9.1）。
+     *
+     * @param operatorId  操作人 id
+     * @param bedIdA      就诊 A 原床 id
+     * @param encounterIdA 就诊 A id
+     * @param bedIdB      就诊 B 原床 id
+     * @param encounterIdB 就诊 B id
+     * @return 批量释放命令
+     */
+    ReleaseBedCommand toSwapReleaseBedCommand(
+        Long operatorId,
+        Long bedIdA,
+        Long encounterIdA,
+        Long bedIdB,
+        Long encounterIdB);
+
+    /**
+     * 互换床：批量占用对调后床位（A→bedB，B→bedA）。
+     *
+     * @param operatorId   操作人 id
+     * @param bedIdForA    就诊 A 迁入床 id（原 B 床）
+     * @param encounterIdA 就诊 A id
+     * @param bedIdForB    就诊 B 迁入床 id（原 A 床）
+     * @param encounterIdB 就诊 B id
+     * @return 批量占用命令
+     */
+    OccupyBedCommand toSwapOccupyBedCommand(
+        Long operatorId,
+        Long bedIdForA,
+        Long encounterIdA,
+        Long bedIdForB,
+        Long encounterIdB);
+
+    /**
+     * 写请求 → 成功响应。
+     *
+     * @param request 原请求；调用方保证非 null
+     * @return 成功响应
+     */
+    ExecuteBedOperationResponse toExecuteBedOperationResponse(ExecuteBedOperationRequest request);
+
+    /**
+     * 待执行医嘱行列表 → 响应。
+     *
+     * @param items 已装配行；调用方保证非 null
+     * @return 列表响应
+     */
+    ListDischargePendingExecutionsResponse toListDischargePendingExecutionsResponse(
+        List<DischargePendingExecutionItemDto> items);
+
+    /**
+     * 药品请求 → 待执行医嘱行（IF-IP-NUR-ATD-03）。
+     *
+     * @param row            药品请求；调用方保证非 null
+     * @param medicationName 药品名称；可 null
+     * @param doseText       剂量展示；可 null
+     * @param blockingReason 阻塞原因码
+     * @return 行 DTO；row 为 null 时返回 null
+     */
+    DischargePendingExecutionItemDto toDischargePendingExecutionItemFromMedication(
+        MedicationRequestListQueryModel row,
+        String medicationName,
+        String doseText,
+        String blockingReason);
+
+    /**
+     * 诊疗请求 → 待执行医嘱行（IF-IP-NUR-ATD-03）。
+     *
+     * @param row             诊疗请求；调用方保证非 null
+     * @param activityName    诊疗名称；可 null
+     * @param doseText        剂量展示；可 null
+     * @param blockingReason  阻塞原因码
+     * @return 行 DTO；row 为 null 时返回 null
+     */
+    DischargePendingExecutionItemDto toDischargePendingExecutionItemFromService(
+        ServiceRequestListModel row,
+        String activityName,
+        String doseText,
+        String blockingReason);
+
+    /**
+     * 待发退药行列表 → 响应。
+     *
+     * @param items 已装配行；调用方保证非 null
+     * @return 列表响应
+     */
+    ListDischargePendingMedicationsResponse toListDischargePendingMedicationsResponse(
+        List<DischargePendingMedicationItemDto> items);
+
+    /**
+     * 发放读模型 → 待发退药行。
+     *
+     * @param row                 发放行；调用方保证非 null
+     * @param medicationName      药品名称；可 null
+     * @param performLocationName 库房名称；可 null
+     * @param statusEnumText      状态展示文案；可 null
+     * @param unitCodeText        单位展示名；可 null（术语解析失败时回落 code）
+     * @return 行 DTO；row 为 null 时返回 null
+     */
+    DischargePendingMedicationItemDto toDischargePendingMedicationItemDto(
+        MedicationDispenseListQueryModel row,
+        String medicationName,
+        String performLocationName,
+        String statusEnumText,
+        String unitCodeText);
+
+    /**
+     * 办理出院请求 → 领域命令。
+     *
+     * @param request      写请求；调用方保证非 null
+     * @param operatorId   操作人主键
+     * @param dischargedAt 出院时间
+     * @return 护士办理出院命令
+     */
+    ExecuteInpatientNurseDischargeCommand toExecuteInpatientNurseDischargeCommand(
+        ExecuteInpatientDischargeRequest request,
+        Long operatorId,
+        LocalDateTime dischargedAt);
+
+    /**
+     * 办理出院成功响应。
+     *
+     * @param encounterId 就诊主键
+     * @return 成功响应
+     */
+    ExecuteInpatientDischargeResponse toExecuteInpatientDischargeResponse(Long encounterId);
+
+    /**
+     * 取消办理出院请求 → 领域命令。
+     *
+     * @param request             写请求；调用方保证非 null
+     * @param operatorId          操作人主键
+     * @param restoreToInProgress 无有效出院嘱时回已入科
+     * @return 取消护士办理出院命令
+     */
+    CancelInpatientNurseDischargeCommand toCancelInpatientNurseDischargeCommand(
+        CancelInpatientNurseDischargeRequest request,
+        Long operatorId,
+        boolean restoreToInProgress);
+
+    /**
+     * 取消办理出院成功响应。
+     *
+     * @param encounterId        就诊主键
+     * @param restoredStatusEnum 取消后状态码
+     * @return 成功响应
+     */
+    CancelInpatientNurseDischargeResponse toCancelInpatientNurseDischargeResponse(
+        Long encounterId,
+        String restoredStatusEnum);
+
+    /**
+     * 清床请求 + 活动床 → 领域清床命令。
+     *
+     * @param request    写请求；调用方保证非 null
+     * @param operatorId 操作人主键
+     * @param bedId      活动床 locationId
+     * @param clearedAt  清床时间
+     * @return 清床命令
+     */
+    ClearDischargedBedCommand toClearDischargedBedCommand(
+        ClearDischargedBedRequest request,
+        Long operatorId,
+        Long bedId,
+        LocalDateTime clearedAt);
+
+    /**
+     * 清床成功响应。
+     *
+     * @param encounterId 就诊主键
+     * @return 成功响应
+     */
+    ClearDischargedBedResponse toClearDischargedBedResponse(Long encounterId);
+}
