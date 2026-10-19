@@ -7,6 +7,23 @@ import { preferences } from '@zxplat/preferences/es/preferences-manager';
 import { fetchHealthInfo } from '#/api/core/health';
 import { AUTH_COPYRIGHT_TEXT } from '#/layouts/auth-copyright';
 
+/** 《天天开源软件（社区版）许可协议》打开协议页面，避免走文件下载地址。 */
+const LICENSE_LABEL = '《天天开源软件（社区版）许可协议》';
+const LICENSE_HREF =
+  'https://gitee.com/tntlinking-opensource/openhis/blob/V2.2/天天开源软件（社区版）许可协议.pdf';
+
+const copyrightParts = computed(() => {
+  const text = AUTH_COPYRIGHT_TEXT;
+  const index = text.indexOf(LICENSE_LABEL);
+  if (index < 0) {
+    return null;
+  }
+  return {
+    after: text.slice(index + LICENSE_LABEL.length),
+    before: text.slice(0, index),
+  };
+});
+
 const appName = computed(() => preferences.app.name);
 const logo = computed(() => preferences.logo.source);
 const logoDark = computed(() => preferences.logo.sourceDark);
@@ -42,7 +59,17 @@ onMounted(async () => {
   >
     <template #copyright>
       <div class="auth-footer">
-        <span>{{ AUTH_COPYRIGHT_TEXT }}</span>
+        <span v-if="copyrightParts">
+          {{ copyrightParts.before }}
+          <a
+            class="auth-footer__license"
+            :href="LICENSE_HREF"
+            rel="noopener noreferrer"
+            target="_blank"
+          >{{ LICENSE_LABEL }}</a>
+          {{ copyrightParts.after }}
+        </span>
+        <span v-else>{{ AUTH_COPYRIGHT_TEXT }}</span>
         <span class="auth-footer__version">{{ versionLine }}</span>
       </div>
     </template>
@@ -52,13 +79,20 @@ onMounted(async () => {
 <style scoped>
 .auth-footer {
   display: flex;
-  flex-flow: row nowrap;
-  gap: 12px;
+  flex-flow: column wrap;
+  gap: 4px;
   align-items: center;
   justify-content: center;
   width: 100%;
+  padding: 0 16px;
   line-height: 1.4;
-  white-space: nowrap;
+  text-align: center;
+  white-space: normal;
+}
+
+.auth-footer__license {
+  color: inherit;
+  text-decoration: underline;
 }
 
 .auth-footer__version {
